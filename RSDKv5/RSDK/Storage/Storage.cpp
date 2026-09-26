@@ -99,6 +99,10 @@ volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte h
 volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX]; // live entries
 volatile uint32 g_ps1StorageLargest[DATASET_MAX];   // largest single allocation
 volatile uint32 g_ps1StorageFail[DATASET_MAX];      // allocations that failed after garbage collection (must be 0)
+// Compactions forced by a full dataset inside AllocateStorage. They move blocks, and only the owner pointers follow:
+// entity pointers into the arena and animator frame pointers into the sprite lists would go stale. STG must stay 0
+// (the scene-start compaction in LoadSceneFolder is the planned one).
+volatile uint32 g_ps1StorageForcedDefrags[DATASET_MAX];
 
 bool32 RSDK::ps1StorageMayFail = false;
 volatile uint32 g_ps1StorageExhausted = 0; // 1 + the dataset of the allocation that stopped the PS1 (GDB)
@@ -181,6 +185,9 @@ void RSDK::AllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet,
             }
             else {
                 // We've run out of room, so perform defragmentation and garbage-collection.
+#if RETRO_PLATFORM == RETRO_PS1
+                g_ps1StorageForcedDefrags[dataSet] = g_ps1StorageForcedDefrags[dataSet] + 1;
+#endif
                 DefragmentAndGarbageCollectStorage(dataSet);
 
                 // If there is now room, then perform allocation.

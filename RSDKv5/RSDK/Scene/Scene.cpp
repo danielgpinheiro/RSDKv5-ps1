@@ -59,6 +59,14 @@ void RSDK::LoadSceneFolder()
         typeGroups[i].entryCount = 0;
     }
 
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 2.3): the previous scene's entity arena is released before the STG compaction below (both paths).
+    // Released only in LoadSceneAssets, it stayed a hole that the next compaction closed in the middle of the load, moving
+    // the new arena from under objectEntityPtr (Title: TitleSonic_StageLoad's sprite load filled STG). The stock code
+    // clears the entity list in LoadSceneAssets; nothing reads it between here and there.
+    PS1EntityStorageClear();
+#endif
+
 #if RETRO_REV02
     // Unload debug values
     ClearViewableVariables();
