@@ -34,11 +34,14 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 - Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
   before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
 
+**Paused 2026-09-26** (the user works on Sonic 2): resume from `../docs/32` "Where we stopped".
+
 ## Build / run / debug
 ```bash
 make objects STAGES=Logos,Title,GHZ  # resident objects + one code overlay per stage folder (tools/gen_overlays.py plan)
 make gfx [STAGES=...]           # build-time graphics (phase 3): tile images (.ptl) + sprite atlas (.atl, scenes with a manifest)
 tools/gfx/capture_manifests.sh END_FRAME   # the sprite files each loaded scene uses -> tools/gfx/manifests/<Folder><N>.txt
+tools/gfx/layer_reference.sh GHZ 1 200     # 8 MB BOOT build: host render of frame 200's layers vs the framebuffer (pixels)
 make -j8 [MEASURE_RAM=8M] [BOOT=1,0]  # engine + game at 2 MB; 8M = measuring link (rsdkv5.map); BOOT = start at GameConfig category,scene
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
