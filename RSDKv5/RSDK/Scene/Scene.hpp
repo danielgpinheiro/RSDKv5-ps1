@@ -149,7 +149,12 @@ struct TileInfo {
 extern ScanlineInfo *scanlines;
 extern TileLayer tileLayers[LAYER_COUNT];
 
+#if RETRO_PLATFORM == RETRO_PS1
+extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT]; // PS1: unflipped only (PS1/PS1Collision.hpp)
+#include "PS1/PS1Collision.hpp"
+#else
 extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT * 4]; // 1024 * 1 per direction
+#endif
 extern TileInfo tileInfo[CPATH_COUNT][TILE_COUNT * 4];            // 1024 * 1 per direction
 
 #if RETRO_REV02

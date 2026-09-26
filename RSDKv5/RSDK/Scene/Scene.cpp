@@ -18,7 +18,11 @@ uint8 RSDK::tilesetPixels[TILESET_SIZE * 4];
 
 ScanlineInfo *RSDK::scanlines = NULL;
 TileLayer RSDK::tileLayers[LAYER_COUNT];
+#if RETRO_PLATFORM == RETRO_PS1
+CollisionMask RSDK::collisionMasks[CPATH_COUNT][TILE_COUNT];
+#else
 CollisionMask RSDK::collisionMasks[CPATH_COUNT][TILE_COUNT * 4];
+#endif
 TileInfo RSDK::tileInfo[CPATH_COUNT][TILE_COUNT * 4];
 
 #if RETRO_REV02
@@ -1008,6 +1012,7 @@ void RSDK::LoadTileConfig(char *filepath)
                 tileInfo[p][t + off].roofAngle  = -tileInfo[p][t].roofAngle;
                 tileInfo[p][t + off].rWallAngle = -tileInfo[p][t].lWallAngle;
 
+#if RETRO_PLATFORM != RETRO_PS1 // PS1: flipped masks derived on access (PS1/PS1Collision.hpp)
                 for (int32 c = 0; c < TILE_SIZE; ++c) {
                     int32 h = collisionMasks[p][t].lWallMasks[c];
                     if (h == 0xFF)
@@ -1024,6 +1029,7 @@ void RSDK::LoadTileConfig(char *filepath)
                     collisionMasks[p][t + off].floorMasks[c] = collisionMasks[p][t].floorMasks[0xF - c];
                     collisionMasks[p][t + off].roofMasks[c]  = collisionMasks[p][t].roofMasks[0xF - c];
                 }
+#endif
             }
 
             // FlipY
@@ -1035,6 +1041,7 @@ void RSDK::LoadTileConfig(char *filepath)
                 tileInfo[p][t + off].roofAngle  = -0x80 - tileInfo[p][t].floorAngle;
                 tileInfo[p][t + off].rWallAngle = -0x80 - tileInfo[p][t].rWallAngle;
 
+#if RETRO_PLATFORM != RETRO_PS1 // PS1: flipped masks derived on access (PS1/PS1Collision.hpp)
                 for (int32 c = 0; c < TILE_SIZE; ++c) {
                     int32 h = collisionMasks[p][t].roofMasks[c];
                     if (h == 0xFF)
@@ -1051,6 +1058,7 @@ void RSDK::LoadTileConfig(char *filepath)
                     collisionMasks[p][t + off].lWallMasks[c] = collisionMasks[p][t].lWallMasks[0xF - c];
                     collisionMasks[p][t + off].rWallMasks[c] = collisionMasks[p][t].rWallMasks[0xF - c];
                 }
+#endif
             }
 
             // FlipXY
@@ -1063,6 +1071,7 @@ void RSDK::LoadTileConfig(char *filepath)
                 tileInfo[p][t + off].roofAngle  = -tileInfo[p][t + offY].roofAngle;
                 tileInfo[p][t + off].rWallAngle = -tileInfo[p][t + offY].lWallAngle;
 
+#if RETRO_PLATFORM != RETRO_PS1 // PS1: flipped masks derived on access (PS1/PS1Collision.hpp)
                 for (int32 c = 0; c < TILE_SIZE; ++c) {
                     int32 h = collisionMasks[p][t + offY].lWallMasks[c];
                     if (h == 0xFF)
@@ -1079,6 +1088,7 @@ void RSDK::LoadTileConfig(char *filepath)
                     collisionMasks[p][t + off].floorMasks[c] = collisionMasks[p][t + offY].floorMasks[0xF - c];
                     collisionMasks[p][t + off].roofMasks[c]  = collisionMasks[p][t + offY].roofMasks[0xF - c];
                 }
+#endif
             }
         }
 
