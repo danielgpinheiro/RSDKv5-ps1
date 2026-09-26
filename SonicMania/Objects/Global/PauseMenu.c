@@ -201,6 +201,9 @@ void PauseMenu_SetupMenu(void)
 
 void PauseMenu_SetupTintTable(void)
 {
+#if defined RETRO_PS1_BUILD
+    return; // PauseMenu.h: no software tint table on the PS1
+#endif
 #if MANIA_USE_PLUS
     for (int32 i = 0; i < 0x10000; ++i) {
         uint32 r = (0x20F * (i >> 11) + 23) >> 6;
