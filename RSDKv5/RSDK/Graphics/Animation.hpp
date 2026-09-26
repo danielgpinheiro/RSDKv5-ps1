@@ -44,7 +44,14 @@ struct SpriteFrame : public GameSpriteFrameType {
     typedef decltype(GameSpriteFrame) frame;
 
     uint8 hitboxCount;
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 2.3e): the hitboxes live after the frames in the same STG block (hitboxCount per frame: what the file
+    // has, mostly 0-2), not 8 inline per frame (84 -> 24 bytes a frame). hitboxOffset is the byte distance from this frame
+    // to its own hitboxes: relative, so it survives the block moving in a compaction.
+    int32 hitboxOffset;
+#else
     Hitbox hitboxes[FRAMEHITBOX_COUNT];
+#endif
 };
 
 struct SpriteAnimationEntry {
@@ -112,6 +119,22 @@ inline SpriteFrame *GetFrame(uint16 aniFrames, uint16 anim, int32 frame)
     return &spr->frames[frame + spr->animations[anim].frameListOffset];
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+extern Hitbox ps1EmptyHitbox; // Animation.cpp: a hitbox the file does not have reads as zero (stock: stale bytes)
+inline Hitbox *GetHitbox(Animator *animator, uint8 hitboxID)
+{
+    if (animator && animator->frames) {
+        SpriteFrame *frame = &animator->frames[animator->frameID];
+        hitboxID &= FRAMEHITBOX_COUNT - 1;
+        if (hitboxID < frame->hitboxCount)
+            return (Hitbox *)((uint8 *)frame + frame->hitboxOffset) + hitboxID;
+        ps1EmptyHitbox = {};
+        return &ps1EmptyHitbox;
+    }
+    else
+        return NULL;
+}
+#else
 inline Hitbox *GetHitbox(Animator *animator, uint8 hitboxID)
 {
     if (animator && animator->frames)
@@ -119,6 +142,7 @@ inline Hitbox *GetHitbox(Animator *animator, uint8 hitboxID)
     else
         return NULL;
 }
+#endif
 
 inline int16 GetFrameID(Animator *animator)
 {

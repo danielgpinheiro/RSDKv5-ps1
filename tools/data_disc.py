@@ -191,6 +191,56 @@ def convert_gameconfig(src):
     return bytes(out), len(writes), dropped
 
 
+# Sprites/UI/SmallFont.bin (docs/32 2.3e): 7,375 glyphs, one animation, for every language the PC ships. The PS1 keeps
+# the glyphs of ASCII and the Latin-script string tables (EN FR GE IT SP): 133 frames. The engine maps characters to
+# frames at run time (SetSpriteString: the first frame with that unicodeChar), so keeping the order keeps the result for
+# every kept character; a dropped one (CJK) maps to -1 as a character the font lacks.
+FONT_TRIM = {'Sprites/UI/SmallFont.bin': ('EN', 'FR', 'GE', 'IT', 'SP')}
+
+
+def font_charset(src_data, langs):
+    chars = set(range(0x20, 0x7F))
+    for lang in langs:
+        text = open(os.path.join(src_data, 'Strings', 'Strings%s.txt' % lang), 'rb').read().decode('utf-16')
+        chars |= set(ord(c) for c in text if ord(c) >= 0x20)
+    return chars
+
+
+def trim_sprite(data, keep):
+    """The sprite file (Animation.cpp LoadSpriteAnimation's order) with only the frames keep(unicodeChar) accepts, each
+    kept frame's bytes unchanged; frame counts rewritten."""
+    r = F.R(data)
+    assert r.bytes(4) == b'SPR\0'
+    r.u32()
+    for _ in range(r.u8()):
+        r.string()
+    hitboxes = r.u8()
+    for _ in range(hitboxes):
+        r.string()
+    head_end = r.p
+    anims = []
+    for _ in range(r.u16()):
+        a0 = r.p
+        r.string()
+        count_at = r.p
+        n = r.u16(); r.i16(); loop = r.u8(); r.u8()
+        frames = []
+        for _ in range(n):
+            f0 = r.p
+            r.u8(); r.i16(); uc = r.u16()
+            r.bytes(12 + 8 * hitboxes)
+            if keep(uc):
+                frames.append(data[f0:r.p])
+        anims.append((data[a0:count_at], data[count_at + 2:count_at + 6], loop, frames))
+    r.done('sprite')
+    out = bytearray(data[:4]) + struct.pack('<I', sum(len(a[3]) for a in anims)) + data[8:head_end]
+    out += struct.pack('<H', len(anims))
+    for name, speed_loop_rot, loop, frames in anims:
+        assert loop < max(1, len(frames)), 'loop index past the kept frames'
+        out += name + struct.pack('<H', len(frames)) + speed_loop_rot + b''.join(frames)
+    return bytes(out)
+
+
 def gif_palette(src):
     """ImageGIF::Load (Sprite.cpp): packed byte at 10, table size 1 << ((packed & 7) + 1) from byte 13; entries
     past it stay 0 (the palette buffer is allocated cleared). A local colour table is not expected in the stage
@@ -243,6 +293,22 @@ def main():
                 out, kept, dropped = convert_gameconfig(s)
                 open(d, 'wb').write(out); n['copied'] += 1
                 print('data_disc: GameConfig global variables remapped to the PS1 layout: %d kept, %d dropped (shortened arrays)' % (kept, dropped))
+            elif os.path.relpath(s, src).replace(os.sep, '/') in FONT_TRIM:
+                chars = font_charset(src, FONT_TRIM[os.path.relpath(s, src).replace(os.sep, '/')])
+                data = open(s, 'rb').read()
+                out = trim_sprite(data, lambda uc: uc in chars)
+                # self-check: read back; the kept frames are the source's in order, nothing else changed
+                a, b = F.read_sprite(s), None
+                open(d, 'wb').write(out)
+                b = F.read_sprite(d)
+                for aa, bb in zip(a['anims'], b['anims']):
+                    assert [x for x in aa['frames'] if x['unicode'] in chars] == bb['frames']
+                    assert {k: v for k, v in aa.items() if k not in ('frames', 'frame_count')} == \
+                        {k: v for k, v in bb.items() if k not in ('frames', 'frame_count')}
+                assert (a['sheets'], a['hitboxes'], len(a['anims'])) == (b['sheets'], b['hitboxes'], len(b['anims']))
+                n['copied'] += 1
+                print('data_disc: %s: %d of %d glyphs kept (%s + ASCII), self-checked' % (
+                    f, b['frame_count'], a['frame_count'], ' '.join(FONT_TRIM[os.path.relpath(s, src).replace(os.sep, '/')])))
             elif top == 'Stages' and f == 'TileConfig.bin':
                 out, b = convert_blocks(s, walk_tileconfig)
                 open(d, 'wb').write(out); n['tileconfig'] += 1; n['blocks'] += b

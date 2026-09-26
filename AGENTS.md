@@ -35,7 +35,7 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 ## Build / run / debug
 ```bash
 make objects STAGES=Logos,Title,GHZ  # which objects link (tools/gen_objects.py -> ps1/rsdk5_objects.inc, build/gen/game_srcs.txt)
-make -j8 MEASURE_RAM=8M         # engine + game (phase 2): 8 MB measuring/debug link until 2.3 fits 2 MB; rsdkv5.map
+make -j8 [MEASURE_RAM=8M] [BOOT=1,0]  # engine + game at 2 MB; 8M = measuring link (rsdkv5.map); BOOT = start at GameConfig category,scene
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
 tools/data_disc.sh              # phase 2 data disc: Data/ without source media, raw scene/tile blocks, tileset .pal

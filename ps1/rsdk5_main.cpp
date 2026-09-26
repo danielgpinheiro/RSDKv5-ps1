@@ -103,6 +103,15 @@ class ManiaPS1App final : public psyqo::Application {
         }
         if (ok) {
             InitEngine();
+#if defined PS1_BOOT_CATEGORY
+            // `make BOOT=cat,index` (docs/32 2.5): start at that scene of GameConfig's lists, as the dev menu's stage
+            // select does (the globals keep GameConfig's defaults).
+            if (PS1_BOOT_CATEGORY < sceneInfo.categoryCount) {
+                sceneInfo.activeCategory = PS1_BOOT_CATEGORY;
+                sceneInfo.listPos        = sceneInfo.listCategory[PS1_BOOT_CATEGORY].sceneOffsetStart + PS1_BOOT_INDEX;
+                sceneInfo.state          = ENGINESTATE_LOAD;
+            }
+#endif
             ok = RenderDevice::Init(); // headless: the 320x240 screen, then AudioDevice::Init + InitInputDevices
             RenderDevice::isRunning = ok;
         }

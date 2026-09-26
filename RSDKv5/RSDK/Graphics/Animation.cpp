@@ -52,7 +52,9 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
         memcpy(spr->hash, hash, 4 * sizeof(uint32));
 
         uint32 frameCount = ReadInt32(&info, false);
+#if RETRO_PLATFORM != RETRO_PS1
         AllocateStorage((void **)&spr->frames, frameCount * sizeof(SpriteFrame), DATASET_STG, false);
+#endif
 
         uint8 sheetCount = ReadInt8(&info);
         for (int32 s = 0; s < sheetCount; ++s) {
@@ -64,6 +66,11 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
         for (int32 h = 0; h < hitboxCount; ++h) {
             ReadString(&info, nameBuffer[h]);
         }
+#if RETRO_PLATFORM == RETRO_PS1
+        // the frames, then each frame's hitboxes (Animation.hpp)
+        Hitbox *hitboxList = NULL;
+        AllocateStorage((void **)&spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)), DATASET_STG, false);
+#endif
 
         spr->animCount = ReadInt16(&info);
         AllocateStorage((void **)&spr->animations, spr->animCount * sizeof(SpriteAnimationEntry), DATASET_STG, false);
@@ -94,12 +101,23 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
                 frame->pivotY      = ReadInt16(&info);
 
                 frame->hitboxCount = hitboxCount;
+#if RETRO_PLATFORM == RETRO_PS1
+                hitboxList          = (Hitbox *)(spr->frames + frameCount) + (frameID - 1) * hitboxCount;
+                frame->hitboxOffset = (int32)((uint8 *)hitboxList - (uint8 *)frame);
+                for (int32 h = 0; h < hitboxCount; ++h) {
+                    hitboxList[h].left   = ReadInt16(&info);
+                    hitboxList[h].top    = ReadInt16(&info);
+                    hitboxList[h].right  = ReadInt16(&info);
+                    hitboxList[h].bottom = ReadInt16(&info);
+                }
+#else
                 for (int32 h = 0; h < hitboxCount; ++h) {
                     frame->hitboxes[h].left   = ReadInt16(&info);
                     frame->hitboxes[h].top    = ReadInt16(&info);
                     frame->hitboxes[h].right  = ReadInt16(&info);
                     frame->hitboxes[h].bottom = ReadInt16(&info);
                 }
+#endif
             }
         }
 
@@ -110,6 +128,10 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
     return -1;
 }
+
+#if RETRO_PLATFORM == RETRO_PS1
+Hitbox RSDK::ps1EmptyHitbox;
+#endif
 
 uint16 RSDK::CreateSpriteAnimation(const char *filename, uint32 frameCount, uint32 animCount, uint8 scope)
 {

@@ -32,7 +32,7 @@ bool32 RSDK::InitStorage()
 #if RETRO_PLATFORM == RETRO_PS1 && PS1_DEBUG_BIGRAM
     // PS1 port, 8 MB debug/measuring link only (docs/32 2.2): room to measure what the datasets really need
     // (g_ps1StorageLivePeak below); 2.3 sizes the 2 MB limits from those peaks.
-    dataStorage[DATASET_STG].storageLimit = 2 * 1024 * 1024;
+    dataStorage[DATASET_STG].storageLimit = 4 * 1024 * 1024;
     dataStorage[DATASET_MUS].storageLimit = 64 * 1024;
     dataStorage[DATASET_SFX].storageLimit = 64 * 1024;
     dataStorage[DATASET_STR].storageLimit = 128 * 1024;

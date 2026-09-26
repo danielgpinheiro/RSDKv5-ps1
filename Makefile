@@ -93,6 +93,11 @@ CPPFLAGS += -msoft-float
 LDFLAGS   += -msoft-float
 LDFLAGS   += -lgcc
 # Retail PS1 = 2 MB RAM (EXE at 0x80010000, ~1.94 MB usable). Never raise this for a release.
+comma := ,
+# `make BOOT=1,0`: start at GameConfig category 1 ("Mania Mode"), scene 0 (GHZ act 1) instead of the Logos (docs/32 2.5).
+ifneq ($(BOOT),)
+CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
