@@ -17,7 +17,9 @@
 // Arena per frame parity. A frame's arena is being DMA'd while the next frame builds in the other one.
 // Sonic CD (docs/28 3.6): 64 KB each, on the heap, time-shared with the CD read-ahead windows (user
 // decision 2026-09-24): released at the start of a load (PS1ChainSuspend), allocated again at its end.
-#define PS1_CHAIN_ARENA_WORDS (64 * 1024 / 4) // Tidal Tempest underwater frames (flipped-tile quads + region replay) reach ~12.3K words
+// Mania (docs/32 3.2): 25 KB each: in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
+// stays allocated after the loads)
+#define PS1_CHAIN_ARENA_WORDS (25 * 1024 / 4)
 // Every chained fragment is kept <= 14 words (psyqo GPU::c_chainThreshold / 4). psyqo links
 // bigger fragments with bit 23 set so the linked-list DMA stops, then its DMA IRQ reads DMA2
 // MADR to find and send the big node by hand. Real hardware leaves MADR at the failing link,
@@ -191,6 +193,21 @@ void PS1ChainResume() {
     s_suspended = false;
     if (s_gpu)
         PS1ChainBegin(*s_gpu); // the current frame's chain starts over in the new arena
+}
+
+// The psyqo-free wrappers (gpu_chain_raw.hh)
+extern psyqo::GPU *g_ps1GPU;
+void PS1ChainBeginFrame() { PS1ChainBegin(*g_ps1GPU); }
+void *PS1ChainClearRGB(uint8_t r, uint8_t g, uint8_t b) { return PS1ChainClear(r, g, b); }
+void PS1ChainClearSetRGB(void *clear, uint8_t r, uint8_t g, uint8_t b) {
+    if (clear)
+        ((psyqo::Prim::FastFill *)clear)->setColor(psyqo::Color{{.r = r, .g = g, .b = b}});
+}
+void PS1ChainTPageRaw(uint16_t attr) {
+    psyqo::PrimPieces::TPageAttr a;
+    static_assert(sizeof(a) == sizeof(attr), "TPageAttr is 16 bits");
+    memcpy(&a, &attr, sizeof(attr));
+    PS1ChainTPage(a);
 }
 
 void PS1GpuImmediate() {

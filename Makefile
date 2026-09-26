@@ -111,6 +111,17 @@ ifneq ($(MEASURE_RAM),2M)
 CPPFLAGS  += -DPS1_DEBUG_BIGRAM=1 # measuring datasets (RSDKv5/RSDK/Storage/Storage.cpp); never a release setting
 endif
 LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
+# The switches above are defines: a stamp per switch (rewritten only when its value changes) rebuilds just the
+# objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind.
+define ps1_stamp
+$(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || echo "$(2)" > build/gen/$(1).txt)
+endef
+$(call ps1_stamp,boot,$(BOOT))
+$(call ps1_stamp,ram,$(MEASURE_RAM))
+$(call ps1_stamp,profile,$(PROFILE))
+ps1/rsdk5_main.o: build/gen/boot.txt build/gen/profile.txt
+ps1/vram.o RSDKv5/RSDK/Storage/Storage.o: build/gen/ram.txt
+RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o SonicMania/Objects/Global/Soundboard.o: build/gen/profile.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).

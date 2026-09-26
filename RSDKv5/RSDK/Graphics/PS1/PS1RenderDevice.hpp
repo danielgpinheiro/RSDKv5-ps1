@@ -7,6 +7,12 @@
 // Included inside namespace RSDK by Drawing.hpp, like the other backends.
 using ShaderEntry = ShaderEntryBase;
 
+// The chained frame (docs/32 3.2, PS1RenderDevice.cpp): begin (ps1/rsdk5_main.cpp frame()), open at the first draw
+// (clear) or at the end (the last frame copied), end after FlipScreen.
+void PS1RenderBeginFrame();
+void PS1FrameStart(bool clear);
+void PS1RenderEndFrame();
+
 class RenderDevice : public RenderDeviceBase
 {
 public:

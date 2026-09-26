@@ -198,7 +198,9 @@ class ManiaPS1App final : public psyqo::Application {
 
         if (g_ps1InitDone == 1 && RenderDevice::isRunning) {
             readPad();
+            PS1RenderBeginFrame(); // this frame's chain (docs/32 3.2)
             engineFrame();
+            PS1RenderEndFrame();
             if (g_ps1PerfFrames % 60 == 0)
                 PS1EntityCheckGhosts(); // empty entity slots must read as blank (docs/32 2.3)
         }

@@ -30,7 +30,7 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 extern "C" char __heap_start, __stack_start;
 extern "C" void *psyqo_heap_end();
 #define PS1_STACK_RESERVE (16 * 1024)
-#define PS1_INIT_RESERVE  (128 * 1024) // 2.3p: user database 62 KB (0xE0 rows)
+#define PS1_INIT_RESERVE  (128 * 1024) // 2.3p: user database 62 KB (0xE0 rows); in play the chain arenas take ~50 KB of it (3.2)
 volatile uint32 g_ps1StgLimit = 0; // STG's usable size now (GDB)
 // 2.4a: STG ends at a fixed address, the RAM top less the stack (__stack_start - PS1_STACK_RESERVE): a scene's code
 // overlay sits at the top of STG, linked at that address less its size, and STG's limit ends where the overlay starts

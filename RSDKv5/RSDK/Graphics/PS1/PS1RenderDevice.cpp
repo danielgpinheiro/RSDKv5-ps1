@@ -1,5 +1,46 @@
-// PS1 port: headless RenderDevice (see PS1RenderDevice.hpp). Included by Drawing.cpp like the other backends.
-#include "../../../../ps1/video.hh" // PS1Hblanks (root counter 1)
+// PS1 port: the RenderDevice (see PS1RenderDevice.hpp). Included by Drawing.cpp like the other backends.
+#include "../../../../ps1/video.hh"         // PS1Hblanks (root counter 1)
+#include "../../../../ps1/gpu_chain_raw.hh" // the chained renderer (docs/32 3.2)
+
+// 3.2: each frame is one DMA chain (ps1/gpu_chain, from Sonic CD): PS1RenderBeginFrame picks this parity's arena
+// (nothing chained yet, so a load in this frame can still lend the arenas to the CD windows), the first draw opens the
+// frame (a clear), PS1RenderEndFrame closes it; a frame that drew nothing (a load) copies the last one over, so both
+// buffers show it. psyqo sends the chain after frame() returns.
+extern "C" {
+volatile uint32 g_ps1RenderFrames  = 0; // frames opened with a clear
+volatile uint32 g_ps1RenderRepeats = 0; // frames that drew nothing (the last frame copied over)
+volatile uint32 g_ps1ClearColour   = 0; // clear colour, r | g << 8 | b << 16 (GDB; 3.2's test)
+}
+namespace
+{
+bool s_ps1FrameOpen = false;
+}
+void RSDK::PS1RenderBeginFrame()
+{
+    PS1ChainBeginFrame();
+    s_ps1FrameOpen = false;
+}
+void RSDK::PS1FrameStart(bool clear)
+{
+    if (s_ps1FrameOpen)
+        return;
+    s_ps1FrameOpen = true;
+    if (clear) {
+        uint32 c = g_ps1ClearColour;
+        PS1ChainClearRGB(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF);
+        g_ps1RenderFrames = g_ps1RenderFrames + 1;
+    }
+    else {
+        PS1ChainRepeatLastFrame();
+        g_ps1RenderRepeats = g_ps1RenderRepeats + 1;
+    }
+}
+void RSDK::PS1RenderEndFrame()
+{
+    if (!s_ps1FrameOpen)
+        PS1FrameStart(false);
+    PS1ChainEnd();
+}
 
 #define PS1_SCREEN_W 320 // user decision: 320 px (PC 424)
 #define PS1_SCREEN_H SCREEN_YSIZE
@@ -38,12 +79,12 @@ bool RenderDevice::SetupRendering()
     // The per-line scroll positions the layers' parallax (Scene.cpp ProcessParallax) and the game's scanline
     // callbacks write every frame: every upstream device allocates them here (DX9RenderDevice.cpp), and with it
     // missing they wrote through NULL into the BIOS kernel's RAM (docs/32 2.2: stale saved registers, then crashes).
+    // 3.2: static (5 KB): allocated here it landed between the CD read-ahead windows' heap blocks and split the heap
+    // the chain arenas take in play (ps1/gpu_chain) into 32 + 14 KB.
+    static ScanlineInfo s_ps1Scanlines[PS1_SCREEN_W > SCREEN_YSIZE ? PS1_SCREEN_W : SCREEN_YSIZE];
     if (!scanlines) {
-        int32 size = videoSettings.pixWidth >= SCREEN_YSIZE ? videoSettings.pixWidth : SCREEN_YSIZE;
-        scanlines  = (ScanlineInfo *)malloc(size * sizeof(ScanlineInfo));
-        if (!scanlines)
-            return false;
-        memset(scanlines, 0, size * sizeof(ScanlineInfo));
+        scanlines = s_ps1Scanlines;
+        memset(scanlines, 0, sizeof(s_ps1Scanlines));
     }
     videoSettings.screenCount = 1;
     engine.inFocus = 1;
@@ -64,7 +105,10 @@ void RenderDevice::GetDisplays()
     displayHeight[0] = PS1_SCREEN_H;
 }
 void RenderDevice::CopyFrameBuffer() {}
-void RenderDevice::FlipScreen() {}
+void RenderDevice::FlipScreen()
+{
+    PS1FrameStart(true); // 3.2: nothing draws yet (3.3+), the frame is its clear
+}
 void RenderDevice::Release(bool32 isRefresh) {}
 void RenderDevice::RefreshWindow() {}
 void RenderDevice::GetWindowSize(int32 *width, int32 *height)
