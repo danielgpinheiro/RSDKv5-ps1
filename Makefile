@@ -58,7 +58,6 @@ ps1/mdec.cpp \
 ps1/video.cpp \
 ps1/fmv.cpp \
 ps1/loading.cpp \
-ps1/sprite_atlas.cpp \
 ps1/tileset.cpp \
 ps1/memcard.cpp \
 ps1/overlay.cpp \
@@ -165,12 +164,19 @@ STAGES ?= Logos,Title,GHZ
 objects:
 	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 
-# Build-time graphics (docs/32 3.1): each scene's tile images of the STAGES folders -> build/gfx/<Folder>/Scene<N>.ptl
+# Build-time graphics (docs/32 3.1): each scene of the STAGES folders -> build/gfx/<Folder>/Scene<N>.ptl (tile images)
+# and, for the scenes with a sprite manifest (tools/gfx/manifests), Scene<N>.atl (the sprite atlas; it reads the
+# disc's sprite files: run tools/data_disc.sh first)
 GAME_DATA ?= ../SonicMania_Extracted/Data
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \
 	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
 	  /usr/bin/python3 tools/gfx/build_tiles.py $(GAME_DATA) build/gfx $$f $$ids || exit 1; \
+	  for i in $$ids; do \
+	    if [ -f tools/gfx/manifests/$$f$$i.txt ]; then \
+	      /usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx $$f $$i sonic | head -1 || exit 1; \
+	    fi; \
+	  done; \
 	done
 
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
@@ -178,7 +184,7 @@ gfx:
 disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
 	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
-	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl build/iso/Data/Stages/$$f/; done
+	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 

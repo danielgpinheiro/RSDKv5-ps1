@@ -428,6 +428,7 @@ void RSDK::LoadSceneAssets()
     dataStorage[DATASET_TMP].usedStorage = 0;
 #if RETRO_PLATFORM == RETRO_PS1
     PS1TilesLoad(currentSceneFolder, sceneEntry->id); // tilesetPixels' job: the tile images go to VRAM (docs/32 3.1a)
+    PS1AtlasLoad(currentSceneFolder, sceneEntry->id); // the sheets' job: the sprite atlas's default state (3.1c)
 #endif
 
     for (int32 s = 0; s < SCREEN_COUNT; ++s) screens[s].waterDrawPos = screens[s].size.y;
@@ -766,6 +767,7 @@ void RSDK::LoadSceneAssets()
         }
 
         PS1SceneEntitiesPlace();
+        PS1AtlasLoadBindings(); // the tail is free again: the frame bindings for the StageLoads to come (3.1c)
 #else
 #if RETRO_REV02
         EntityBase *tempEntityList = NULL;

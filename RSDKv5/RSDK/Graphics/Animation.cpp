@@ -6,6 +6,10 @@ using namespace RSDK;
 #include "Legacy/AnimationLegacy.cpp"
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+#include "PS1/PS1Atlas.cpp" // the scene's sprite atlas (docs/32 3.1c)
+#endif
+
 SpriteAnimation RSDK::spriteAnimationList[SPRFILE_COUNT];
 
 uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
@@ -122,6 +126,9 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
         }
 
         CloseFile(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1AtlasBind(id); // each frame's place in VRAM (docs/32 3.1c)
+#endif
 
         return id;
     }
@@ -164,6 +171,9 @@ uint16 RSDK::CreateSpriteAnimation(const char *filename, uint32 frameCount, uint
     memcpy(spr->hash, hash, 4 * sizeof(uint32));
 
     AllocateStorage((void **)&spr->frames, sizeof(SpriteFrame) * MIN(frameCount, SPRITEFRAME_COUNT), DATASET_STG, true);
+#if RETRO_PLATFORM == RETRO_PS1
+    for (uint32 f = 0; f < MIN(frameCount, SPRITEFRAME_COUNT); ++f) spr->frames[f].ps1Attr = PS1_ATLAS_MISSING; // not in the atlas
+#endif
     AllocateStorage((void **)&spr->animations, sizeof(SpriteAnimationEntry) * MIN(animCount, SPRITEANIM_COUNT), DATASET_STG, true);
 
     return id;

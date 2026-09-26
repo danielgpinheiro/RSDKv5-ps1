@@ -54,12 +54,16 @@ struct SpriteFrame : public GameSpriteFrameType {
     // to its own hitboxes: relative, so it survives the block moving in a compaction. 2.3n: in 2-byte units (22-byte frames: the
     // game's 17 bytes pad to 18; the largest distance in the data is 21,204 B, SuperSonic).
     uint16 hitboxOffset;
+    // 3.1c: where the frame's texels are in VRAM (PS1Atlas.hpp: page, depth, half resolution, CLUT slot; or missing)
+    uint8 ps1U, ps1V;
+    uint16 ps1Attr;
 #else
     Hitbox hitboxes[FRAMEHITBOX_COUNT];
 #endif
 };
 #if RETRO_PLATFORM == RETRO_PS1
-static_assert(sizeof(SpriteFrame) == 22, "PS1 sprite frame layout (docs/32 2.3n)");
+static_assert(sizeof(SpriteFrame) == 26, "PS1 sprite frame layout (docs/32 2.3n, 3.1c)");
+#include "PS1/PS1Atlas.hpp"
 #endif
 
 struct SpriteAnimationEntry {

@@ -377,6 +377,9 @@ void RSDK::InitObjects()
     }
 
     sceneInfo.state = ENGINESTATE_REGULAR;
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1AtlasBindEnd(); // every StageLoad / Create has bound its frames (docs/32 3.1c)
+#endif
 
     if (!cameraCount)
         AddCamera(&screens[0].position, TO_FIXED(screens[0].center.x), TO_FIXED(screens[0].center.y), false);

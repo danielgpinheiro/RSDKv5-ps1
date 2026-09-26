@@ -192,6 +192,7 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void frame() override {
+        PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/32 3.1c)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
 
