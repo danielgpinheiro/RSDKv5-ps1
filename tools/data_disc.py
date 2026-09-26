@@ -295,6 +295,11 @@ def convert_gameconfig(src):
 # frames at run time (SetSpriteString: the first frame with that unicodeChar), so keeping the order keeps the result for
 # every kept character; a dropped one (CJK) maps to -1 as a character the font lacks.
 FONT_TRIM = {'Sprites/UI/SmallFont.bin': ('EN', 'FR', 'GE', 'IT', 'SP')}
+# Animations the PS1 never shows, their frames dropped (the animation entries stay, so every animation ID keeps its
+# meaning): Sprites/Global/SuperButtons.bin (3.1, docs/32): HUD_GetButtonFrame picks the prompt animation from
+# UIButtonPrompt_GetGamepadType, and the PS1 pad reports DEVICE_TYPE_CONTROLLER / DEVICE_PS4 (PS1InputDevice.cpp), so
+# the five PC keyboard layouts (97 frames each: 485 of the file's 530) are unreachable.
+ANIM_TRIM = {'Sprites/Global/SuperButtons.bin': {1: 'PC EN/JP', 9: 'PC FR', 10: 'PC IT', 11: 'PC GE', 12: 'PC SP'}}
 
 
 def font_charset(src_data, langs):
@@ -306,8 +311,8 @@ def font_charset(src_data, langs):
 
 
 def trim_sprite(data, keep):
-    """The sprite file (Animation.cpp LoadSpriteAnimation's order) with only the frames keep(unicodeChar) accepts, each
-    kept frame's bytes unchanged; frame counts rewritten."""
+    """The sprite file (Animation.cpp LoadSpriteAnimation's order) with only the frames keep(unicodeChar, animation)
+    accepts, each kept frame's bytes unchanged; frame counts rewritten."""
     r = F.R(data)
     assert r.bytes(4) == b'SPR\0'
     r.u32()
@@ -318,7 +323,7 @@ def trim_sprite(data, keep):
         r.string()
     head_end = r.p
     anims = []
-    for _ in range(r.u16()):
+    for ai in range(r.u16()):
         a0 = r.p
         r.string()
         count_at = r.p
@@ -328,7 +333,7 @@ def trim_sprite(data, keep):
             f0 = r.p
             r.u8(); r.i16(); uc = r.u16()
             r.bytes(12 + 8 * hitboxes)
-            if keep(uc):
+            if keep(uc, ai):
                 frames.append(data[f0:r.p])
         anims.append((data[a0:count_at], data[count_at + 2:count_at + 6], loop, frames))
     r.done('sprite')
@@ -398,7 +403,7 @@ def main():
             elif os.path.relpath(s, src).replace(os.sep, '/') in FONT_TRIM:
                 chars = font_charset(src, FONT_TRIM[os.path.relpath(s, src).replace(os.sep, '/')])
                 data = open(s, 'rb').read()
-                out = trim_sprite(data, lambda uc: uc in chars)
+                out = trim_sprite(data, lambda uc, ai: uc in chars)
                 # self-check: read back; the kept frames are the source's in order, nothing else changed
                 a, b = F.read_sprite(s), None
                 open(d, 'wb').write(out)
@@ -411,6 +416,19 @@ def main():
                 n['copied'] += 1
                 print('data_disc: %s: %d of %d glyphs kept (%s + ASCII), self-checked' % (
                     f, b['frame_count'], a['frame_count'], ' '.join(FONT_TRIM[os.path.relpath(s, src).replace(os.sep, '/')])))
+            elif os.path.relpath(s, src).replace(os.sep, '/') in ANIM_TRIM:
+                drop = ANIM_TRIM[os.path.relpath(s, src).replace(os.sep, '/')]
+                out = trim_sprite(open(s, 'rb').read(), lambda uc, ai: ai not in drop)
+                open(d, 'wb').write(out)
+                a, b = F.read_sprite(s), F.read_sprite(d)  # self-check: the kept animations unchanged, the others empty
+                for ai, (aa, bb) in enumerate(zip(a['anims'], b['anims'])):
+                    assert bb['frames'] == ([] if ai in drop else aa['frames'])
+                    assert {k: v for k, v in aa.items() if k not in ('frames', 'frame_count')} == \
+                        {k: v for k, v in bb.items() if k not in ('frames', 'frame_count')}
+                assert (a['sheets'], a['hitboxes'], len(a['anims'])) == (b['sheets'], b['hitboxes'], len(b['anims']))
+                n['copied'] += 1
+                print('data_disc: %s: %d of %d frames kept (dropped: %s), self-checked' % (
+                    f, b['frame_count'], a['frame_count'], ', '.join(drop.values())))
             elif top == 'Stages' and f == 'TileConfig.bin':
                 out, b = convert_blocks(s, walk_tileconfig)
                 open(d, 'wb').write(out); n['tileconfig'] += 1; n['blocks'] += b

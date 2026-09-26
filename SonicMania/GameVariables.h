@@ -28,7 +28,12 @@ typedef enum {
 #endif
     ID_TAILS_ASSIST    = ID_TAILS << 8,
     ID_KNUCKLES_ASSIST = ID_KNUCKLES << 8, // custom-added, can be used to check if "& knux" is active
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32 3.1, user decision 2026-09-26): single characters; the VRAM holds one player's sprites
+    ID_DEFAULT_PLAYER = ID_SONIC,
+#else
     ID_DEFAULT_PLAYER  = ID_SONIC | ID_TAILS_ASSIST,
+#endif
 } PlayerIDs;
 
 #define GET_CHARACTER_ID(playerNum)                (((globals->playerID >> (8 * ((playerNum)-1))) & 0xFF))

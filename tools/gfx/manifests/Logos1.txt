@@ -1,0 +1,3 @@
+# Logos1: the sprite files (SPR) and sheets (SHT) the scene loads, in load order (tools/gfx/capture_manifests.sh, 2026-09-26)
+SPR Logos/Logos.bin
+SHT Logos/Logos.gif

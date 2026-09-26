@@ -1,0 +1,223 @@
+#!/usr/bin/python3
+"""What a scene can show (docs/32 3.1): the static analysis the sprite atlas selects frames with.
+
+- Objects of the scene: GameConfig's global objects + the folder's StageConfig objects.
+- Active objects: those with Mania-mode entities in the scene file (filter & 3: FILTER_BOTH | FILTER_MANIA), then every
+  object an active object's code can create (CREATE_ENTITY(X, …), X->classID passed to CreateEntity / ResetEntity /
+  ResetEntitySlot, or assigned to a classID), repeated until nothing is added. An object's code is its own file plus
+  the files of every object whose functions it calls (PauseMenu calls UIDialog_CreateActiveDialog, which creates the
+  dialog), transitively, plus the helpers (BadnikHelpers creates a badnik's Animals). An object that is never active draws
+  nothing (Draw callbacks run for entities), so the sprite files only it loads can be left out.
+- Sprite file owners: the objects whose source loads the file (LoadSpriteAnimation("path") literals; Player's files
+  and UIWidgets' language text are built at runtime and listed here).
+- Player animations: every ANI_* constant an active object's code names (the Plus enum of Player.h; aliases resolve to
+  their value). A gimmick animation (hang bars, pole swings, turntables…) no active object sets is never shown.
+- Shields a zone can give: the ItemBox types of the folder's scenes (the player keeps a shield across acts).
+The runtime guard for anything this misses is the atlas miss counter (phase 3.2 renderer).
+
+Usage: scene_usage.py FOLDER SCENE_ID   (prints the analysis)
+"""
+import glob, os, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
+sys.path.insert(0, os.path.join(HERE, '..'))
+import rsdk5_formats as F  # noqa: E402
+
+DATA = os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
+RUNTIME_OWNERS = {'Players/Sonic.bin': {'Player'}, 'Players/SuperSonic.bin': {'Player'}, 'Players/Tails.bin': {'Player'},
+                  'Players/TailSprite.bin': {'Player'}, 'Players/Knux.bin': {'Player'}, 'Players/Mighty.bin': {'Player'},
+                  'Players/Ray.bin': {'Player'}, 'UI/TextEN.bin': {'UIWidgets'}}
+
+
+def sources():
+    m = {}
+    for p in glob.glob(os.path.join(REPO, 'SonicMania', 'Objects', '*', '*.c')):
+        m.setdefault(os.path.basename(p)[:-2], p)
+    return m
+
+
+def strip_comments(t):
+    t = re.sub(r'/\*.*?\*/', '', t, flags=re.S)
+    return re.sub(r'//[^\n]*', '', t)
+
+
+def scene_objects(folder, scene_id, data=DATA):
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    sc = F.read_stageconfig(os.path.join(data, 'Stages', folder, 'StageConfig.bin'))
+    names = g['objects'] + sc['objects']
+    s = F.read_scene(os.path.join(data, 'Stages', folder, 'Scene%s.bin' % scene_id), names)
+    placed = {o['name'] for o in s['objects'] if any(e['filter'] & 3 for e in o['entities'])}
+    return names, placed, s
+
+
+def creation_edges(names, src):
+    edges = {}
+    pat_create = re.compile(r'CREATE_ENTITY\(\s*(\w+)')
+    pat_classid = re.compile(r'(?:CreateEntity|ResetEntity|ResetEntitySlot)\([^;]*?\b(\w+)->classID')
+    pat_assign = re.compile(r'classID\s*=\s*(\w+)->classID')
+    for n in names:
+        p = src.get(n)
+        if not p:
+            continue
+        t = strip_comments(open(p).read())
+        edges[n] = set(pat_create.findall(t)) | set(pat_classid.findall(t)) | set(pat_assign.findall(t))
+    return edges
+
+
+def helper_sources():
+    """SonicMania/Objects/Helpers: shared functions objects call (BadnikHelpers creates the Animals of a destroyed
+    badnik); counted as code of every active set."""
+    return sorted(glob.glob(os.path.join(REPO, 'SonicMania', 'Objects', 'Helpers', '*.c')))
+
+
+_code_cache = {}
+
+
+def code_of(path):
+    if path not in _code_cache:
+        _code_cache[path] = strip_comments(open(path).read())
+    return _code_cache[path]
+
+
+def called_objects(text, known):
+    """Objects whose functions the code calls (Name_Function(...)): their code runs in the caller's context."""
+    return {m for m in re.findall(r'\b([A-Z]\w*?)_[A-Z]\w*\s*\(', text) if m in known}
+
+
+def code_closure(objs, known, src):
+    """The source files that run for these objects: their own, every object's whose functions they call (repeated),
+    and the helpers."""
+    files, todo, seen = set(helper_sources()), list(objs), set()
+    for p in helper_sources():
+        todo += list(called_objects(code_of(p), known))
+    while todo:
+        o = todo.pop()
+        if o in seen or o not in src:
+            continue
+        seen.add(o)
+        files.add(src[o])
+        todo += list(called_objects(code_of(src[o]), known) - seen)
+    return files
+
+
+def active_objects(folder, scene_id, data=DATA):
+    names, placed, scene = scene_objects(folder, scene_id, data)
+    src = sources()
+    known = set(names)
+    pat_create = re.compile(r'CREATE_ENTITY\(\s*(\w+)')
+    pat_classid = re.compile(r'(?:CreateEntity|ResetEntity|ResetEntitySlot)\([^;]*?\b(\w+)->classID')
+    pat_assign = re.compile(r'classID\s*=\s*(\w+)->classID')
+    active = set(placed) & known
+    while True:
+        code = ''.join(code_of(f) for f in code_closure(active, known, src))
+        made = (set(pat_create.findall(code)) | set(pat_classid.findall(code)) | set(pat_assign.findall(code))) & known
+        if made <= active:
+            break
+        active |= made
+    return names, placed, active, scene
+
+
+def active_code(names, active):
+    src = sources()
+    return ''.join(code_of(f) for f in code_closure(active, set(names), src))
+
+
+def file_handles(names):
+    """sprite path -> the handles (Owner->field) it is loaded into, from `X->f = RSDK.LoadSpriteAnimation("path", …)`."""
+    src = sources()
+    handles = {}
+    pat = re.compile(r'(\w+->\w+)\s*=\s*RSDK\.LoadSpriteAnimation\("([^"]+)"')
+    for n in names:
+        p = src.get(n)
+        if p:
+            for h, path in pat.findall(strip_comments(open(p).read())):
+                handles.setdefault(path, set()).add(h)
+    return handles
+
+
+def needed_files(names, active, paths):
+    """The sprite files an active object can draw: one of its handles is named by an active object's code (or a
+    helper's), or it has no handle found (kept)."""
+    code = active_code(names, active)
+    handles = file_handles(names)
+    out = {}
+    for path in paths:
+        hs = handles.get(path)
+        if not hs:
+            out[path] = 'kept (no handle found)'
+        else:
+            users = [h for h in hs if re.search(r'\b' + re.escape(h) + r'\b', code)]
+            out[path] = ('used via ' + ', '.join(sorted(users))) if users else None
+    return out
+
+
+def file_owners(names):
+    src = sources()
+    owners = {}
+    for n in names:
+        p = src.get(n)
+        if not p:
+            continue
+        for path in re.findall(r'LoadSpriteAnimation\("([^"]+)"', strip_comments(open(p).read())):
+            owners.setdefault(path, set()).add(n)
+    for path, o in RUNTIME_OWNERS.items():
+        owners.setdefault(path, set()).update(o)
+    return owners
+
+
+def player_anim_values():
+    """ANI_* name -> animation index (Player.h, Plus enum: the data has Flume at 46)."""
+    t = open(os.path.join(REPO, 'SonicMania', 'Objects', 'Global', 'Player.h')).read()
+    body = t[t.index('ANI_IDLE'):]
+    body = body[:body.index('}')]
+    body = re.sub(r'#if MANIA_USE_PLUS|#endif|//[^\n]*', '', body)
+    val, cur = {}, -1
+    for m in re.finditer(r'(ANI_\w+)\s*(=\s*(ANI_\w+))?\s*,', body):
+        if m.group(3):
+            val[m.group(1)] = val[m.group(3)]
+        else:
+            cur += 1
+            val[m.group(1)] = cur
+    return val
+
+
+def player_anims(active, names):
+    used = set(re.findall(r'\bANI_\w+\b', active_code(names, active)))
+    val = player_anim_values()
+    return {v for n, v in val.items() if n in used}, val
+
+
+def itembox_types(folder, data=DATA):
+    """ItemBox 'type' values of every scene of the folder (Mania-mode entities)."""
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    sc = F.read_stageconfig(os.path.join(data, 'Stages', folder, 'StageConfig.bin'))
+    th = F.name_hash('type')
+    types = set()
+    for p in sorted(glob.glob(os.path.join(data, 'Stages', folder, 'Scene*.bin'))):
+        s = F.read_scene(p, g['objects'] + sc['objects'])
+        for o in s['objects']:
+            if o['name'] == 'ItemBox':
+                for e in o['entities']:
+                    if e['filter'] & 3 and th in e['vars']:
+                        types.add(int.from_bytes(e['vars'][th][:4], 'little', signed=True))
+    return types
+
+
+def main():
+    folder, sid = sys.argv[1], sys.argv[2]
+    names, placed, active, _ = active_objects(folder, sid)
+    print('%s%s: %d objects, %d placed, %d active' % (folder, sid, len(names), len(placed), len(active)))
+    print('  never active:', ' '.join(sorted(set(names) - active)))
+    keep, val = player_anims(active, names)
+    print('  player animations kept %d of %d; dropped: %s' % (len(keep), max(val.values()) + 1,
+                                                            ' '.join(sorted(n for n, v in val.items() if v not in keep))))
+    print('  ItemBox types in the folder:', sorted(itembox_types(folder)))
+    man = [l.split() for l in open(os.path.join(HERE, 'manifests', '%s%s.txt' % (folder, sid))) if l[:3] == 'SPR']
+    need = needed_files(names, active, [p for _, p in man])
+    print('  sprite files not needed:', ' '.join(p for p, why in need.items() if why is None))
+    print('  kept without a handle:', ' '.join(p for p, why in need.items() if why and why.startswith('kept')))
+
+
+if __name__ == '__main__':
+    main()

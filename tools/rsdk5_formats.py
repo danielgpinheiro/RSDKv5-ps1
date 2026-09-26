@@ -159,7 +159,7 @@ def read_scene(path, names=()):
             for (vh, vt), v in zip(vars_, vals):
                 if vh == FILTER_HASH and vt == 0:
                     filt = v[0]
-            ents.append({'slot': slot, 'x': x, 'y': y, 'filter': filt})
+            ents.append({'slot': slot, 'x': x, 'y': y, 'filter': filt, 'vars': {vh: v for (vh, _), v in zip(vars_, vals)}})
         objects.append({'hash': h, 'name': by_hash.get(h, h.hex()[:8]), 'var_types': [t for _, t in vars_], 'entities': ents})
     r.done(path)
     return {'layers': layers, 'objects': objects}
