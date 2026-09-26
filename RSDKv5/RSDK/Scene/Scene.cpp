@@ -243,6 +243,10 @@ void RSDK::LoadSceneFolder()
     // Clear stage storage
     DefragmentAndGarbageCollectStorage(DATASET_STG);
     DefragmentAndGarbageCollectStorage(DATASET_SFX);
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 2.4): the stage folder's code overlay, at the top of STG (ps1/overlay.cpp)
+    PS1LoadOverlay(sceneInfo.listData[sceneInfo.listPos].folder);
+#endif
 
     for (int32 s = 0; s < SCREEN_COUNT; ++s) {
         screens[s].position.x = 0;

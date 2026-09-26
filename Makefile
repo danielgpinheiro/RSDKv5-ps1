@@ -4,8 +4,8 @@
 # (../RSDKv3-ps1/Makefile: the flags below come from there). Plan: ../docs/32.
 #
 # The RSDKv5 engine (RSDKv5/RSDK, vendored from the dependencies/RSDKv5 submodule at bd59396 and modified
-# behind RETRO_PLATFORM == RETRO_PS1) + the Mania game code (SonicMania/, the objects tools/gen_objects.py
-# selects) on the PS1 platform layer (ps1/, from RSDKv3-ps1 at 8d7c1cd). `make PLATFORM_TEST=1` builds the
+# behind RETRO_PLATFORM == RETRO_PS1) + the Mania game code (SonicMania/: the resident objects here, the stage objects
+# as code overlays, tools/gen_overlays.py) on the PS1 platform layer (ps1/, from RSDKv3-ps1 at 8d7c1cd). `make PLATFORM_TEST=1` builds the
 # phase 0 smoke test (ps1/platform_test.cpp) on that layer instead.
 TARGET = rsdkv5
 TYPE = ps-exe
@@ -38,7 +38,7 @@ RSDKv5/RSDK/User/Core/UserPresence.cpp \
 RSDKv5/RSDK/User/Core/UserStats.cpp \
 RSDKv5/RSDK/User/Core/UserStorage.cpp \
 
-# The game: Game.c + the objects of build/gen/game_srcs.txt (tools/gen_objects.py, from the data).
+# The game: Game.c + the resident objects of build/gen/game_srcs.txt (tools/gen_overlays.py plan, from the data).
 GAME_SRCS = SonicMania/Game.c $(shell cat build/gen/game_srcs.txt 2>/dev/null)
 
 PS1_SRCS = \
@@ -61,6 +61,7 @@ ps1/loading.cpp \
 ps1/sprite_atlas.cpp \
 ps1/tileset.cpp \
 ps1/memcard.cpp \
+ps1/overlay.cpp \
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 
@@ -127,15 +128,29 @@ ps1/gpu_chain.o: CPPFLAGS += -O2
 # (ps1/libc/string, vector, ...) listed in .dep files must not be rebuilt from `string.o`.
 %: %.o
 
-# Game symbols the linked objects name but this build does not link: NULL object pointers + counted function stubs
-# (tools/gen_stubs.py, from nm over every other object of the link).
-STUBS = build/gen/unlinked_stubs
-LDFLAGS += $(STUBS).o
+# Code overlays (docs/32 2.4, tools/gen_overlays.py): the resident game objects link here; every other object's code
+# goes to the overlay of each stage folder that lists it (build/ovl/<folder>.bin, linked at STG's fixed top less its
+# size, loaded by ps1/overlay.cpp). The resident keeps every other object's pointer and a jump stub for each overlay
+# function resident code or another overlay names.
+OVL_FOLDERS = $(shell cat build/gen/ovl/folders.txt 2>/dev/null)
+OVL_OBJS    = $(foreach f,$(OVL_FOLDERS),$(patsubst %.c,%.o,$(shell cat build/gen/ovl/$(f).srcs)))
+OVL_BINS    = $(foreach f,$(OVL_FOLDERS),build/ovl/$(f).bin)
+STUBS = build/gen/ovl_resident
+LDFLAGS += $(STUBS).o -Wl,@build/gen/ovl_keep.txt
 $(TARGET).elf: $(STUBS).o
-$(STUBS).c: $(OBJS) tools/gen_stubs.py
-	@/usr/bin/python3 tools/gen_stubs.py $@ $(OBJS)
+$(STUBS).c: $(OBJS) $(OVL_OBJS) tools/gen_overlays.py
+	@/usr/bin/python3 tools/gen_overlays.py stubs $@ $(OBJS)
 $(STUBS).o: $(STUBS).c
 	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<
+build/gen/ovl/%_reg.c: $(STUBS).c
+	@test -f $@
+build/ovl/%.bin: $(TARGET).elf build/gen/ovl/%_reg.o tools/gen_overlays.py
+	@/usr/bin/python3 tools/gen_overlays.py link $* $(TARGET).elf $(CC) $(ARCHFLAGS) -msoft-float -g
+overlays: $(OVL_BINS)
+all: overlays
+ifneq ($(PLATFORM_TEST),1)
+$(TARGET).$(TYPE): | $(OVL_BINS)
+endif
 
 # Trig tables computed at build time on the host (tools/trig/gen_trig.c), included by Math.cpp on PS1.
 build/gen/trig_tables.inc: tools/trig/gen_trig.c
@@ -147,12 +162,14 @@ RSDKv5/RSDK/Core/Math.o RSDKv5/RSDK/Core/Math.dep: build/gen/trig_tables.inc
 # The objects to link (writes ps1/rsdk5_objects.inc + build/gen/game_srcs.txt; rerun after changing STAGES).
 STAGES ?= Logos,Title,GHZ
 objects:
-	/usr/bin/python3 tools/gen_objects.py --stages $(STAGES)
+	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
+	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
+	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 
-.PHONY: disc objects
+.PHONY: disc objects overlays

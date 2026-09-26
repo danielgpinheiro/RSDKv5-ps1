@@ -167,7 +167,8 @@ void InitGameLogic(void)
 #endif
 
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32): only the objects this build links (tools/gen_objects.py); the rest of the list is
+    // PS1 port (docs/32): the resident objects only (tools/gen_overlays.py; the stage objects register from their
+    // code overlay); the rest of the list is
     // the PC's.
 #include "../ps1/rsdk5_objects.inc"
 #else

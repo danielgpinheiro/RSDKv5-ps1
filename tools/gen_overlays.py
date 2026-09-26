@@ -1,0 +1,307 @@
+#!/usr/bin/env python3
+"""Code overlays (docs/32 2.4).
+
+Resident EXE: the engine, the port layer, the GameConfig's global objects, the helpers and the objects whose static
+variables Game.c registers. Every other object's code lives in the overlay of each stage folder that lists it (a
+StageConfig object not resident), loaded by the engine at the scene load (ps1/overlay.cpp) at the top of STG: linked
+at STG's fixed top (__stack_start - 16 KB, RSDK/Storage/Storage.cpp) less its size.
+
+What stays resident for the overlays:
+  - every non-resident object's pointer variable (`ObjectBridge *Bridge`): global code tests them (`if (Water) ...`);
+  - a jump stub for every function of a non-resident object that resident code, or another overlay, names: it jumps
+    (lui / lw / nop for the R3000's load delay / jr) through ps1OvlTable[k], which the loaded overlay fills and the loader resets to a counted "missing" handler (the
+    old unlinked stubs). The overlay's own references bind to the stub as well (its link takes the resident's symbols
+    first, --allow-multiple-definition), so `player->state == Current_PlayerState_Down` compares one address.
+The overlay links against a NOBITS image of the resident symbols (section-relative: GNU ld refuses R_MIPS_26 to
+absolute --just-symbols addresses).
+
+Commands:
+  plan [--stages Logos,Title,GHZ]
+      ps1/rsdk5_objects.inc  Game.c's registration list for the resident objects (conditionals, static variables)
+      build/gen/game_srcs.txt  resident object sources
+      build/gen/ovl/folders.txt, build/gen/ovl/<F>.srcs  the overlays and their sources
+  stubs OUT.c RESIDENT_OBJ...   (after compiling every object)
+      OUT.c  pointer variables, ps1OvlTable, jump stubs, missing handlers
+      build/gen/ovl/<F>_reg.c  the overlay's registrations, stub-table fills and header
+      build/gen/ovl/<F>.syms  per object file: the stubbed functions it defines (for `link`)
+  link F RESIDENT.elf CC...     build/ovl/<F>.bin (two links: size, then at the top)
+"""
+import os, re, subprocess, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..'))
+sys.path.insert(0, HERE)
+import rsdk5_formats as F
+
+GEN = os.path.join(REPO, 'build', 'gen')
+OVL = os.path.join(GEN, 'ovl')
+NM, OBJCOPY = 'mipsel-none-elf-nm', 'mipsel-none-elf-objcopy'
+STACK_RESERVE = 16 * 1024  # RSDK/Storage/Storage.cpp PS1_STACK_RESERVE
+MAGIC = 0x314C564F         # 'OVL1'
+
+
+def run(args):
+    return subprocess.run(args, capture_output=True, text=True, check=True).stdout
+
+
+def sources():
+    srcs = {}
+    for root, _, files in sorted(os.walk(os.path.join(REPO, 'SonicMania', 'Objects'))):
+        for f in sorted(files):
+            if f.endswith('.c') and f != 'All.c':
+                srcs[f[:-2]] = os.path.relpath(os.path.join(root, f), REPO)
+    return srcs
+
+
+def game_c_region():
+    game_c = open(os.path.join(REPO, 'SonicMania', 'Game.c')).read()
+    region = game_c[game_c.index('#include "../ps1/rsdk5_objects.inc"'):]
+    return region[region.index('#else') + len('#else'):region.index('#endif // RETRO_PS1_BUILD')].strip('\n').split('\n')
+
+
+def resident_set(data, srcs):
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    res = [o for o in g['objects'] if o in srcs]
+    res += [os.path.basename(p)[:-2] for p in sorted(srcs.values()) if '/Helpers/' in p]
+    # objects whose functions work without the object in the scene (tools/gen_objects.py history: 2.2, 2.3j)
+    res += ['MenuParam', 'CutsceneRules', 'UIButtonPrompt']
+    game_c = open(os.path.join(REPO, 'SonicMania', 'Game.c')).read()
+    res += re.findall(r'RSDK_REGISTER_STATIC_VARIABLES\((\w+)\)', game_c)
+    out = []
+    for o in res:
+        if o in srcs and o not in out:
+            out.append(o)
+    return out
+
+
+def plan(argv):
+    stages = ['Logos', 'Title', 'GHZ']
+    if '--stages' in argv:
+        i = argv.index('--stages'); stages = argv[i + 1].split(','); del argv[i:i + 2]
+    data = argv[0] if argv else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
+    srcs = sources()
+    res = resident_set(data, srcs)
+    os.makedirs(OVL, exist_ok=True)
+    for f in os.listdir(OVL):
+        if f.endswith('.srcs'):
+            os.remove(os.path.join(OVL, f))
+    folders = []
+    for st in stages:
+        p = os.path.join(data, 'Stages', st, 'StageConfig.bin')
+        objs = [o for o in F.read_stageconfig(p)['objects'] if o in srcs and o not in res] if os.path.exists(p) else []
+        if objs:
+            folders.append(st)
+            open(os.path.join(OVL, st + '.srcs'), 'w').write('\n'.join(srcs[o] for o in objs) + '\n')
+            open(os.path.join(OVL, st + '.objs'), 'w').write('\n'.join(objs) + '\n')
+    open(os.path.join(OVL, 'folders.txt'), 'w').write('\n'.join(folders) + '\n')
+    region = game_c_region()
+    kept = 0
+    with open(os.path.join(REPO, 'ps1', 'rsdk5_objects.inc'), 'w') as f:
+        f.write('// generated by tools/gen_overlays.py: Game.c\'s registration list for the resident objects (the stage\n'
+                '// objects register from their overlay, build/gen/ovl/<folder>_reg.c)\n')
+        for line in region:
+            m = re.match(r'\s*RSDK_REGISTER_OBJECT\((\w+)\);', line)
+            if m and m.group(1) not in res:
+                continue
+            kept += bool(m)
+            f.write(line + '\n')
+    open(os.path.join(GEN, 'game_srcs.txt'), 'w').write('\n'.join(srcs[o] for o in res) + '\n')
+    print('gen_overlays: %d resident objects (%d registrations); overlays: %s' % (
+        len(res), kept, ', '.join('%s (%d)' % (st, len(open(os.path.join(OVL, st + '.objs')).read().split())) for st in folders)))
+
+
+def nm_syms(objs, opt):
+    out = {}
+    for line in run([NM, opt] + objs).splitlines() if objs else []:
+        p = line.split()
+        if opt == '-u' and len(p) == 2 and p[0] == 'U':
+            out.setdefault(p[1], 'U')
+        elif opt != '-u' and len(p) == 3:
+            out[p[2]] = p[1]
+    return out
+
+
+def objs_of(folder):
+    return [s[:-2] + '.o' for s in open(os.path.join(OVL, folder + '.srcs')).read().split()]
+
+
+def stubs(argv):
+    out, res_objs = argv[0], [o for o in argv[1:] if o.endswith('.o')]
+    folders = open(os.path.join(OVL, 'folders.txt')).read().split()
+    classes = set(sources())
+    libs = [os.path.join(REPO, '..', 'nugget', 'psyqo', 'libpsyqo.a')]
+    res_def = set(nm_syms(res_objs + libs, '--defined-only'))
+    res_names = set(open(os.path.join(GEN, 'game_srcs.txt')).read().split())
+    resident = {os.path.basename(p)[:-2] for p in res_names}
+
+    def wanted(sym, defined):
+        return not sym.startswith('_') and sym not in defined and sym not in res_def and sym not in classes
+
+    stubbed = set(u for u in nm_syms([o for o in res_objs if o.startswith('SonicMania/')], '-u') if wanted(u, set()))
+    ovl_def = {}
+    for fo in folders:
+        objs = objs_of(fo)
+        d = nm_syms(objs, '--defined-only')
+        ovl_def[fo] = {o: nm_syms([o], '--defined-only') for o in objs}
+        for u in nm_syms(objs, '-u'):
+            if wanted(u, d):
+                stubbed.add(u)
+        # data a resident object would need from an overlay: not supported (pointer variables are resident)
+    stubbed = sorted(stubbed)
+    index = {s: i for i, s in enumerate(stubbed)}
+    # resident symbols only overlays use: --gc-sections would drop them from the resident link; they become roots
+    # (ld reads build/gen/ovl_keep.txt as `-u symbol` options)
+    keep = set()
+    for fo in folders:
+        for u in nm_syms(objs_of(fo), '-u'):
+            if u in res_def:
+                keep.add(u)
+    open(os.path.join(GEN, 'ovl_keep.txt'), 'w').write(''.join('-u %s\n' % k for k in sorted(keep)))
+    others = sorted(c for c in classes if c not in resident)
+    with open(out, 'w') as f:
+        f.write('// generated by tools/gen_overlays.py: %d non-resident object pointers, %d overlay functions behind stubs\n'
+                % (len(others), len(stubbed)))
+        f.write('volatile unsigned g_ps1UnlinkedCalls = 0; // stubs reached with no overlay function behind them (GDB)\n')
+        f.write('volatile unsigned g_ps1UnlinkedLast  = 0; // 1 + index of the last one (ps1OvlNames)\n')
+        f.write('volatile unsigned g_ps1UnlinkedSeen[8];   // the first 8 distinct ones reached (1 + index)\n')
+        f.write('static unsigned s_scratch[1024];\n')
+        f.write('static void *hit(unsigned id) {\n')
+        f.write('    g_ps1UnlinkedCalls++; g_ps1UnlinkedLast = id;\n')
+        f.write('    for (int i = 0; i < 8; i++) { if (g_ps1UnlinkedSeen[i] == id) break; if (!g_ps1UnlinkedSeen[i]) { g_ps1UnlinkedSeen[i] = id; break; } }\n')
+        f.write('    for (int i = 0; i < 1024; i++) s_scratch[i] = 0;\n')
+        f.write('    return s_scratch;\n}\n\n')
+        for c in others:
+            f.write('void *%s = 0;\n' % c)
+        f.write('\n')
+        for i, s in enumerate(stubbed):
+            f.write('static void *miss%d(void) { return hit(%d); } // %s\n' % (i, i + 1, s))
+        f.write('\nconst unsigned ps1OvlCount = %d;\n' % len(stubbed))
+        f.write('void *const ps1OvlMiss[%d] = {%s};\n' % (max(len(stubbed), 1), ', '.join('(void *)miss%d' % i for i in range(len(stubbed))) or '0'))
+        f.write('void *ps1OvlTable[%d] = {%s};\n\n' % (max(len(stubbed), 1), ', '.join('(void *)miss%d' % i for i in range(len(stubbed))) or '0'))
+        f.write('__asm__(".section .text.ps1ovlstubs,\\"ax\\",@progbits\\n"\n        ".set noreorder\\n.global ps1OvlStubsBase\\nps1OvlStubsBase:\\n"\n')
+        for i, s in enumerate(stubbed):
+            f.write('        ".global %s\\n.type %s,@function\\n%s:\\n lui $t9, %%hi(ps1OvlTable+%d)\\n lw $t9, %%lo(ps1OvlTable+%d)($t9)\\n nop\\n jr $t9\\n nop\\n"\n'
+                    % (s, s, s, 4 * i, 4 * i))
+        f.write('        ".set reorder\\n.previous\\n");\n')
+        f.write('// the loader reads this: it keeps the stub section in a --gc-sections link (overlays may name stubs no\n'
+                '// resident code does)\nextern char ps1OvlStubsBase[];\nvoid *const ps1OvlStubsRef = ps1OvlStubsBase;\n')
+    region = game_c_region()
+    for fo in folders:
+        objs_names = open(os.path.join(OVL, fo + '.objs')).read().split()
+        fills, syms = [], []
+        for o, d in ovl_def[fo].items():
+            mine = [s for s in d if s in index and d[s] in 'Tt']
+            syms.append('%s %s' % (o, ' '.join(mine)))
+            fills += mine
+        open(os.path.join(OVL, fo + '.syms'), 'w').write('\n'.join(syms) + '\n')
+        with open(os.path.join(OVL, fo + '_reg.c'), 'w') as f:
+            f.write('// generated by tools/gen_overlays.py: overlay %s (%d objects)\n' % (fo, len(objs_names)))
+            f.write('#include "Game.h"\n\n')
+            f.write('extern void *ps1OvlTable[];\n')
+            for s in fills:
+                f.write('extern void __ovl_%s(void);\n' % s)
+            f.write('\nstatic void PS1OverlayRegister(void)\n{\n')
+            for line in region:
+                m = re.match(r'\s*RSDK_REGISTER_OBJECT\((\w+)\);', line)
+                if m:
+                    if m.group(1) in objs_names:
+                        f.write(line + '\n')
+                elif 'RSDK_REGISTER_STATIC_VARIABLES' not in line:
+                    f.write(line + '\n')
+            for s in fills:
+                f.write('    ps1OvlTable[%d] = (void *)__ovl_%s;\n' % (index[s], s))
+            f.write('}\n\n')
+            f.write('typedef struct { unsigned magic, size; void (*reg)(void); unsigned base; } PS1OverlayHeader;\n')
+            f.write('extern char __ps1_ovl_start[], PS1_OVL_SIZE[];\n')
+            f.write('__attribute__((section(".ovl_header"), used)) const PS1OverlayHeader ps1OvlHeader = {\n')
+            f.write('    0x%08X, (unsigned)PS1_OVL_SIZE, PS1OverlayRegister, (unsigned)__ps1_ovl_start };\n' % MAGIC)
+    print('gen_overlays: %d pointers, %d stubbed functions -> %s; %d resident symbols kept for the overlays; overlays %s' % (
+        len(others), len(stubbed), out, len(keep), ' '.join(folders)))
+
+
+def resimg(elf, out_s):
+    syms = []
+    for line in run([NM, '-n', '--defined-only', elf]).splitlines():
+        p = line.split()
+        if len(p) == 3 and p[1] in 'TBDRWVG' and not p[2].startswith('__ps1_ovl'):
+            syms.append((int(p[0], 16), p[2]))
+    lo = min(a for a, _ in syms if a >= 0x80000000)
+    hi = run([NM, elf])
+    bss_end = int(re.search(r'([0-9a-f]+) . __bss_end', hi).group(1), 16)
+    syms = [(a, n) for a, n in syms if lo <= a <= bss_end]
+    with open(out_s, 'w') as f:
+        f.write('.section .resimg,"aw",@nobits\n')
+        for a, n in sorted(syms):
+            f.write('.org 0x%x\n.global %s\n%s:\n' % (a - lo, n, n))
+    return lo
+
+
+def link(argv):
+    fo, elf, cc = argv[0], argv[1], argv[2:]
+    work = os.path.join(OVL, fo)
+    os.makedirs(work, exist_ok=True)
+    img_s, img_o = os.path.join(OVL, 'resimg.s'), os.path.join(OVL, 'resimg.o')
+    if not os.path.exists(img_o) or os.path.getmtime(img_o) < os.path.getmtime(elf):
+        base = resimg(elf, img_s)
+        open(os.path.join(OVL, 'resimg.base'), 'w').write('0x%x\n' % base)
+        run(['mipsel-none-elf-as', '-march=mips1', '-EL', img_s, '-o', img_o])
+    base = int(open(os.path.join(OVL, 'resimg.base')).read(), 16)
+    stack = int(re.search(r'([0-9a-f]+) . __stack_start', run([NM, elf])).group(1), 16)
+    top = stack - STACK_RESERVE
+    objs = []
+    for line in open(os.path.join(OVL, fo + '.syms')).read().splitlines():
+        p = line.split()
+        if not p:
+            continue
+        o, mine = p[0], p[1:]
+        dst = os.path.join(work, os.path.basename(o))
+        args = [OBJCOPY]
+        for s in mine:
+            args += ['--add-symbol', '__ovl_%s=.text.%s:0,global,function' % (s, s)]
+        run(args + [o, dst])
+        objs.append(dst)
+    libc = [os.path.join(REPO, 'ps1', 'libc', n) for n in ('string.o', 'stdlib.o', 'math.o', 'stdio.o')]
+    reg = os.path.join(OVL, fo + '_reg.o')
+
+    def do_link(at):
+        ld = os.path.join(work, 'ovl.ld')
+        open(ld, 'w').write('''SECTIONS {
+  .resimg 0x%x (NOLOAD) : { *(.resimg) }
+  .ovl 0x%x : {
+    __ps1_ovl_start = .;
+    KEEP(*(.ovl_header))
+    *(.text .text.*)
+    *(.rodata .rodata.* .rdata .rdata.*)
+    *(.data .data.* .sdata .sdata.*)
+    *(.sbss .sbss.* .bss .bss.* COMMON)
+    . = ALIGN(16);
+    __ps1_ovl_end = .;
+  }
+  PS1_OVL_SIZE = __ps1_ovl_end - __ps1_ovl_start;
+  /DISCARD/ : { *(.MIPS.abiflags) *(.reginfo) *(.pdr) *(.comment) *(.gnu.attributes) *(.note .note.*) *(.mdebug.*) }
+}
+''' % (base, at))
+        out = os.path.join(work, '%s.elf' % fo)
+        subprocess.run(cc + ['-nostdlib', '-Wl,-T,' + ld, '-Wl,--allow-multiple-definition', '-Wl,--gc-sections',
+                             '-Wl,-wrap,memcpy', '-Wl,-wrap,memset', '-Wl,-wrap,_Znwj', '-Wl,-wrap,_Znaj',
+                             '-Wl,-e,ps1OvlHeader', '-o', out, img_o, reg] + objs + libc + ['-lgcc'], check=True)
+        nmout = run([NM, out])
+        s = int(re.search(r'([0-9a-f]+) . __ps1_ovl_start', nmout).group(1), 16)
+        e = int(re.search(r'([0-9a-f]+) . __ps1_ovl_end', nmout).group(1), 16)
+        return out, e - s
+    _, size = do_link(0x80100000)
+    at = (top - size) & ~15
+    out, size2 = do_link(at)
+    assert size2 == size, (size, size2)
+    os.makedirs(os.path.join(REPO, 'build', 'ovl'), exist_ok=True)
+    binf = os.path.join(REPO, 'build', 'ovl', fo + '.bin')
+    run([OBJCOPY, '-O', 'binary', '-j', '.ovl', out, binf])
+    data = open(binf, 'rb').read()
+    magic, hsize, _, hbase = (int.from_bytes(data[i:i + 4], 'little') for i in (0, 4, 8, 12))
+    assert magic == MAGIC and hsize == size == len(data) and hbase == at, (hex(magic), hsize, size, len(data), hex(hbase), hex(at))
+    print('gen_overlays: %s.bin %d bytes at 0x%08x (top 0x%08x)' % (fo, size, at, top))
+
+
+if __name__ == '__main__':
+    cmd, argv = sys.argv[1], sys.argv[2:]
+    {'plan': plan, 'stubs': stubs, 'link': link}[cmd](argv)

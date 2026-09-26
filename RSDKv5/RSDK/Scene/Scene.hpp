@@ -156,6 +156,7 @@ struct TileInfo {
 extern ScanlineInfo *scanlines;
 extern TileLayer tileLayers[LAYER_COUNT];
 #if RETRO_PLATFORM == RETRO_PS1
+void PS1LoadOverlay(const char *folder); // ps1/overlay.cpp (docs/32 2.4)
 extern volatile uint32 g_ps1StageObjectsMissing;
 extern volatile uint32 g_ps1ScrollInfoDropped;
 #endif
