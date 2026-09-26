@@ -694,6 +694,19 @@ RSDK::SKU::UserDBStorage::UserDBStorage()
 {
     unknown = 0;
 
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 2.3i): the stock sets 8 of each whatever RETRO_USERDB_MAX is; with fewer databases that wrote past the
+    // object (with 2: over its own dbLoadCB..unused; with 1: into the heap's block headers)
+    void (*const loadCBs[8])(int32) = { UserDBStorage_LoadCB1, UserDBStorage_LoadCB2, UserDBStorage_LoadCB3, UserDBStorage_LoadCB4,
+                                        UserDBStorage_LoadCB5, UserDBStorage_LoadCB6, UserDBStorage_LoadCB7, UserDBStorage_LoadCB8 };
+    void (*const saveCBs[8])(int32) = { UserDBStorage_SaveCB1, UserDBStorage_SaveCB2, UserDBStorage_SaveCB3, UserDBStorage_SaveCB4,
+                                        UserDBStorage_SaveCB5, UserDBStorage_SaveCB6, UserDBStorage_SaveCB7, UserDBStorage_SaveCB8 };
+    for (int32 i = 0; i < RETRO_USERDB_MAX; ++i) {
+        this->loadCallback[i] = loadCBs[i];
+        this->saveCallback[i] = saveCBs[i];
+    }
+    return;
+#endif
     this->loadCallback[0] = UserDBStorage_LoadCB1;
     this->loadCallback[1] = UserDBStorage_LoadCB2;
     this->loadCallback[2] = UserDBStorage_LoadCB3;

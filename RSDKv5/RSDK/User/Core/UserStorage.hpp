@@ -11,7 +11,8 @@ namespace SKU
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 port (docs/32): Mania opens two databases (TimeAttackData's TimeAttackDB, ReplayDB); Time Attack keeps the top 3 per
 // zone / act / character: 12 x 2 x 3 x 3 = 216 rows in the base-Mania scope. Stock (8 x 0x400 rows of ~272 B) = 2.2 MB.
-#define RETRO_USERDB_MAX     (2)
+// One database (2.3i): replays are out of scope, and a ReplayDB request gets table -1, which every DB call checks.
+#define RETRO_USERDB_MAX     (1)
 #define RETRO_USERDB_COL_MAX (8)
 #define RETRO_USERDB_ROW_MAX (0x100)
 #else
