@@ -51,12 +51,16 @@ struct SpriteFrame : public GameSpriteFrameType {
 #if RETRO_PLATFORM == RETRO_PS1
     // PS1 (docs/32 2.3e): the hitboxes live after the frames in the same STG block (hitboxCount per frame: what the file
     // has, mostly 0-2), not 8 inline per frame (84 -> 24 bytes a frame). hitboxOffset is the byte distance from this frame
-    // to its own hitboxes: relative, so it survives the block moving in a compaction.
-    int32 hitboxOffset;
+    // to its own hitboxes: relative, so it survives the block moving in a compaction. 2.3n: in 2-byte units (22-byte frames: the
+    // game's 17 bytes pad to 18; the largest distance in the data is 21,204 B, SuperSonic).
+    uint16 hitboxOffset;
 #else
     Hitbox hitboxes[FRAMEHITBOX_COUNT];
 #endif
 };
+#if RETRO_PLATFORM == RETRO_PS1
+static_assert(sizeof(SpriteFrame) == 22, "PS1 sprite frame layout (docs/32 2.3n)");
+#endif
 
 struct SpriteAnimationEntry {
     RETRO_HASH_MD5(hash);
@@ -131,7 +135,7 @@ inline Hitbox *GetHitbox(Animator *animator, uint8 hitboxID)
         SpriteFrame *frame = &animator->frames[animator->frameID];
         hitboxID &= FRAMEHITBOX_COUNT - 1;
         if (hitboxID < frame->hitboxCount)
-            return (Hitbox *)((uint8 *)frame + frame->hitboxOffset) + hitboxID;
+            return (Hitbox *)((uint8 *)frame + ((uint32)frame->hitboxOffset << 1)) + hitboxID;
         ps1EmptyHitbox = {};
         return &ps1EmptyHitbox;
     }

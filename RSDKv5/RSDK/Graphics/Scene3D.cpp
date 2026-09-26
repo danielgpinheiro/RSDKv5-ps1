@@ -494,6 +494,12 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
 
     if (vertexLimit > SCENE3D_VERT_COUNT || !vertexLimit)
         vertexLimit = SCENE3D_VERT_COUNT;
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 2.3n): no software scene buffers (SpecialRing's: 41.5 KB). Phase 3 transforms the models with the GTE
+    // straight into GPU packets (the ordering table sorts them); until then AddModelTo3DScene adds nothing (its limit
+    // check) and Draw3DScene returns.
+    vertexLimit = 0;
+#endif
 
     scene->scope = scope;
     HASH_COPY_MD5(scene->hash, hash);
@@ -825,6 +831,9 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
 
 void RSDK::Draw3DScene(uint16 sceneID)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return; // Create3DScene: no scene buffers on the PS1 (phase 3: GTE)
+#endif
     if (sceneID < SCENE3D_COUNT) {
         Entity *entity = sceneInfo.entity;
         Scene3D *scn   = &scene3DList[sceneID];

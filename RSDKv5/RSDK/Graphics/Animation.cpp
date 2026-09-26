@@ -103,7 +103,7 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
                 frame->hitboxCount = hitboxCount;
 #if RETRO_PLATFORM == RETRO_PS1
                 hitboxList          = (Hitbox *)(spr->frames + frameCount) + (frameID - 1) * hitboxCount;
-                frame->hitboxOffset = (int32)((uint8 *)hitboxList - (uint8 *)frame);
+                frame->hitboxOffset = (uint16)(((uint8 *)hitboxList - (uint8 *)frame) >> 1);
                 for (int32 h = 0; h < hitboxCount; ++h) {
                     hitboxList[h].left   = ReadInt16(&info);
                     hitboxList[h].top    = ReadInt16(&info);
