@@ -43,7 +43,12 @@ extern int32 tan256LookupTable[0x100];
 extern int32 asin256LookupTable[0x100];
 extern int32 acos256LookupTable[0x100];
 
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 (docs/32 2.3j): ratio thresholds instead of the 64 KB table (tools/trig/gen_trig.c, checked against every entry)
+extern const uint8 ps1ArcTanThreshold[64][2];
+#else
 extern uint8 arcTan256LookupTable[0x100 * 0x100];
+#endif
 
 // Setup angles
 void ClearTrigLookupTables();

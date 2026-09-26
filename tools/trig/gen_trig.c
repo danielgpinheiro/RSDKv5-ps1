@@ -74,8 +74,38 @@ int main(void)
     dump("sin256LookupTable", sin256, 0x100); dump("cos256LookupTable", cos256, 0x100);
     dump("tan256LookupTable", tan256, 0x100); dump("asin256LookupTable", asin256, 0x100);
     dump("acos256LookupTable", acos256, 0x100);
-    printf("uint8 RSDK::arcTan256LookupTable[0x100 * 0x100] = {");
-    for (int i = 0; i < 0x10000; ++i) printf("%s%u", i == 0 ? "\n    " : i % 32 ? "," : ",\n    ", arcTan256[i]);
+    // PS1 (docs/32 2.3j): the 64 KB arcTan256 table as 63 ratio thresholds. For x > 0 the value rises with y / x; for each
+    // v = 1..63, the smallest y / x (a (y, x) pair) whose value is >= v. ArcTanLookup counts the thresholds y / x reaches
+    // (x = 0: 64 unless y = 0). Checked here against every entry; a mismatch stops the build.
+    int thrY[64], thrX[64];
+    for (int v = 1; v < 64; ++v) {
+        thrY[v] = -1;
+        for (int x = 1; x < 0x100; ++x)
+            for (int y = 0; y < 0x100; ++y)
+                if (arcTan256[(x << 8) + y] >= v && (thrY[v] < 0 || y * thrX[v] < thrY[v] * x)) {
+                    thrY[v] = y;
+                    thrX[v] = x;
+                }
+        if (thrY[v] < 0) {
+            fprintf(stderr, "gen_trig: no threshold for %d\n", v);
+            return 1;
+        }
+    }
+    for (int x = 0; x < 0x100; ++x) {
+        for (int y = 0; y < 0x100; ++y) {
+            int value = 0;
+            if (!x)
+                value = y ? 64 : 0;
+            else
+                for (int v = 1; v < 64; ++v) value += y * thrX[v] >= thrY[v] * x;
+            if (value != arcTan256[(x << 8) + y]) {
+                fprintf(stderr, "gen_trig: threshold arctan (%d, %d) = %d, table %d\n", x, y, value, arcTan256[(x << 8) + y]);
+                return 1;
+            }
+        }
+    }
+    printf("const uint8 RSDK::ps1ArcTanThreshold[64][2] = {\n    { 0, 0 }");
+    for (int v = 1; v < 64; ++v) printf(",%s{ %d, %d }", v % 8 ? " " : "\n    ", thrY[v], thrX[v]);
     printf("\n};\n");
     return 0;
 }

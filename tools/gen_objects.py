@@ -48,7 +48,9 @@ def main():
     # Objects whose functions work without the object in the scene (called from other objects' code): linked like
     # the helpers. Found by the stub counters (tools/gen_stubs.py) in the boot tests.
     #   MenuParam: MenuParam_GetParam returns the entity in SLOT_MENUPARAM (Title, menus, specials) - 2.2
-    for o in ('MenuParam',):
+    #   CutsceneRules: CutsceneRules_IsAct1 & co. (the zone setups: GHZSetup, CPZSetup, ...) - 2.3j
+    #   UIButtonPrompt: UIButtonPrompt_GetGamepadType (HUD) - 2.3j
+    for o in ('MenuParam', 'CutsceneRules', 'UIButtonPrompt'):
         if o not in names and o not in helpers:
             helpers.append(o)
     # Game.c also registers static variables (allocated at startup, whatever the scene) for a few classes that other

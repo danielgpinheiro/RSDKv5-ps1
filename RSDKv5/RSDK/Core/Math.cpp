@@ -133,6 +133,36 @@ uint8 RSDK::ArcTanLookup(int32 X, int32 Y)
             y >>= 4;
         }
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    // the table's value: how many thresholds y / x reaches (they rise with v: binary search)
+    int32 value = 0;
+    if (!x) {
+        value = y ? 64 : 0;
+    }
+    else {
+        int32 lo = 1, hi = 63;
+        while (lo <= hi) {
+            int32 v = (lo + hi) >> 1;
+            if (y * ps1ArcTanThreshold[v][1] >= ps1ArcTanThreshold[v][0] * x) {
+                value = v;
+                lo    = v + 1;
+            }
+            else {
+                hi = v - 1;
+            }
+        }
+    }
+    if (X <= 0) {
+        if (Y <= 0)
+            return value + 0x80;
+        else
+            return 0x80 - value;
+    }
+    else if (Y <= 0)
+        return -value;
+    else
+        return value;
+#else
     if (X <= 0) {
         if (Y <= 0)
             return arcTan256LookupTable[(x << 8) + y] + 0x80;
@@ -143,4 +173,5 @@ uint8 RSDK::ArcTanLookup(int32 X, int32 Y)
         return -arcTan256LookupTable[(x << 8) + y];
     else
         return arcTan256LookupTable[(x << 8) + y];
+#endif
 }

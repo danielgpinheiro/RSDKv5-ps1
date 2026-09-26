@@ -41,11 +41,13 @@ bool32 RSDK::InitStorage()
     // PS1 port (docs/32 2.3): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA, converted
     // at build time): the datasets hold globals, static variables, the entity arena, layouts and tables. Sized from the
     // measured live peaks (g_ps1StorageLivePeak) of Logos / Title with margin; the zones set theirs with overlays (2.4).
+    // 2.3j: GHZ1 peaks TMP 23.6 KB (the records moved to the STG tail), STR 14.6 KB, MUS / SFX never used (music is
+    // CD-XA, sound effects live in SPU RAM).
     dataStorage[DATASET_STG].storageLimit = 360 * 1024;
-    dataStorage[DATASET_MUS].storageLimit = 4 * 1024;
-    dataStorage[DATASET_SFX].storageLimit = 8 * 1024;
+    dataStorage[DATASET_MUS].storageLimit = 256;
+    dataStorage[DATASET_SFX].storageLimit = 256;
     dataStorage[DATASET_STR].storageLimit = 24 * 1024;
-    dataStorage[DATASET_TMP].storageLimit = 64 * 1024;
+    dataStorage[DATASET_TMP].storageLimit = 32 * 1024;
 #else
     dataStorage[DATASET_STG].storageLimit = 24 * 1024 * 1024; // 24MB
     dataStorage[DATASET_MUS].storageLimit = 8 * 1024 * 1024;  //  8MB

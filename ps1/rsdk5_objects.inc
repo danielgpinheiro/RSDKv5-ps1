@@ -20,6 +20,7 @@
 #endif
     RSDK_REGISTER_OBJECT(CompetitionSession);
     RSDK_REGISTER_OBJECT(COverlay);
+    RSDK_REGISTER_OBJECT(CutsceneRules);
     RSDK_REGISTER_OBJECT(Debris);
     RSDK_REGISTER_OBJECT(DebugMode);
 #if MANIA_USE_PLUS
@@ -145,6 +146,7 @@
 #if MANIA_USE_PLUS
 #endif
     RSDK_REGISTER_OBJECT(UIButton);
+    RSDK_REGISTER_OBJECT(UIButtonPrompt);
 #if MANIA_USE_PLUS
 #endif
     RSDK_REGISTER_OBJECT(UIControl);
