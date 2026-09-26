@@ -189,6 +189,12 @@ extern CollisionMask collisionMasks[1][TILE_COUNT];
 extern TileInfo tileInfo[1][TILE_COUNT];
 #include "PS1/PS1Collision.hpp"
 #include "PS1/PS1Tiles.hpp"
+// 3.3 (PS1/PS1Layers.cpp): the draw lists' frame start (clear + CLUTs), tile layers through the GPU chain
+void PS1LayersFrameBegin();
+void PS1DrawLayerHScroll(TileLayer *layer);
+extern "C" {
+extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl;
+}
 #define PS1_TILE_ANGLE(plane, tile, mode, field) PS1TileAngle(plane, (tile) & 0xFFF, mode)
 #else
 extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT * 4]; // 1024 * 1 per direction

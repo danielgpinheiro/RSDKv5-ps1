@@ -371,9 +371,9 @@ def render(clusters, work, clut_maps):
             hx = X0 + c['hw0']
             words = idx[:, 0::2] | (idx[:, 1::2] << 8)
         else:
-            lut = np.zeros(256, np.uint16)
+            lut = np.zeros(256, np.uint16)  # index 0 stays nibble 0 (transparent): the map's padding entries are 0 too
             for n, p in enumerate(clut_maps[c['clut']]):
-                if n:
+                if n and p:
                     lut[p] = n
             q = lut[idx]
             trail = (-w) % 4
@@ -404,6 +404,8 @@ def decode_check(clusters, vram, work, clut_maps, name):
             hx = c['page_col'] * V.COL_HW + c['u'] // 4
             wd = vram[Y0:Y0 + h, hx:hx + (w + 3) // 4].astype(np.int32)
             nib = np.stack([(wd >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(h, -1)[:, :w]
+            if ((nib == 0) != (c['px'] == 0)).any():
+                raise AtlasError('%s: %s %s: a transparent texel is not nibble 0 (or an opaque one is)' % (name, c['sheet'], c['rect']))
             tex = np.array(clut_maps[c['clut']], np.int32)[nib]
         if not np.array_equal(tex, c['px'].astype(np.int32)):
             raise AtlasError('%s: %s %s does not decode back' % (name, c['sheet'], c['rect']))

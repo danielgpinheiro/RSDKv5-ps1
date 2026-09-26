@@ -138,7 +138,10 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             words = im[:, 0::2].astype(np.uint16) | (im[:, 1::2].astype(np.uint16) << 8)
             hx = X0 + u // 2
         else:
-            lut = {p: n for n, p in enumerate(clut_maps[clut_of[i]])}
+            # index 0 must stay nibble 0 (transparent): the map's padding entries are 0 too, and a plain {p: n} took
+            # the last of them (nibble 15), which decodes back to index 0 here but is an opaque colour on the GPU
+            lut = {p: n for n, p in enumerate(clut_maps[clut_of[i]]) if n}
+            lut[0] = 0
             q = np.vectorize(lambda p: lut[p])(im).astype(np.uint16)
             words = q[:, 0::4] | (q[:, 1::4] << 4) | (q[:, 2::4] << 8) | (q[:, 3::4] << 12)
             hx = X0 + u // 4
@@ -155,6 +158,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         else:
             w = vram[Y0:Y0 + TILE, X0 + u // 4:X0 + u // 4 + 4].astype(np.int32)
             nib = np.stack([(w >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(TILE, TILE)
+            if ((nib == 0) != (im == 0)).any():
+                raise TileError('%s%s: image %d: a transparent texel is not nibble 0 (or an opaque one is)' % (folder, scene_id, i))
             back = np.array(clut_maps[clut_of[i]], np.int32)[nib]
         if not np.array_equal(back, im.astype(np.int32)):
             raise TileError('%s%s: image %d does not decode back' % (folder, scene_id, i))

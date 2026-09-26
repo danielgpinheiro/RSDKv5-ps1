@@ -121,7 +121,7 @@ $(call ps1_stamp,ram,$(MEASURE_RAM))
 $(call ps1_stamp,profile,$(PROFILE))
 ps1/rsdk5_main.o: build/gen/boot.txt build/gen/profile.txt
 ps1/vram.o RSDKv5/RSDK/Storage/Storage.o: build/gen/ram.txt
-RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o SonicMania/Objects/Global/Soundboard.o: build/gen/profile.txt
+RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o: build/gen/profile.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).

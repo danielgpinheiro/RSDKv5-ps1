@@ -1073,6 +1073,9 @@ void RSDK::ProcessFrozenObjects()
 void RSDK::ProcessObjectDrawLists()
 {
     if (sceneInfo.state != ENGINESTATE_LOAD && sceneInfo.state != (ENGINESTATE_LOAD | ENGINESTATE_STEPOVER)) {
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1LayersFrameBegin(); // the frame's clear and CLUTs, before the first layer or sprite (docs/32 3.3)
+#endif
         for (int32 s = 0; s < videoSettings.screenCount; ++s) {
             currentScreen             = &screens[s];
             sceneInfo.currentScreenID = s;

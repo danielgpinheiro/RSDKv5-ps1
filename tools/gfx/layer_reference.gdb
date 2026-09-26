@@ -1,0 +1,36 @@
+set $n = 0
+break PS1LayerDebugHook if g_ps1PerfFrames == REF_FRAME
+commands
+silent
+set $li = $a0
+printf "LAYER call=%d index=%d\n", $n, $li
+eval "dump binary memory REF_DIR/sl_%d_%d.bin (char*)RSDK::scanlines (char*)RSDK::scanlines+3840", $n, $li
+eval "dump binary memory REF_DIR/lb_%d.bin &RSDK::gfxLineBuffer[0] &RSDK::gfxLineBuffer[240]", $n
+if $n == 0
+  dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[0][256]
+  set $tb = (char*)'(anonymous namespace)::s_ps1TileBlob'
+  dump binary memory REF_DIR/tiletable.bin $tb $tb+2048
+end
+set $n = $n + 1
+continue
+end
+break perfTick if g_ps1PerfFrames == REF_FRAME
+commands
+silent
+printf "FRAME bufferY=%u layers=%d bands=%u pieces=%u misses=%u\n", RSDK::g_ps1FrameBufferY, $n, RSDK::g_ps1LayerBands, RSDK::g_ps1LayerPieces, RSDK::g_ps1LayerMisses
+set g_ps1VramDumpX = 0
+set g_ps1VramDumpY = RSDK::g_ps1FrameBufferY
+set g_ps1VramDumpW = 320
+set g_ps1VramDumpH = 240
+set g_ps1VramDumpReq = 1
+continue
+end
+break PS1VramDumpHook
+commands
+silent
+dump binary memory REF_DIR/fb.bin &g_ps1VramDumpBuf[0] &g_ps1VramDumpBuf[76800]
+printf "DONE\n"
+detach
+quit
+end
+continue

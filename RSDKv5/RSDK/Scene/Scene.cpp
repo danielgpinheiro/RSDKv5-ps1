@@ -10,7 +10,8 @@ using namespace RSDK;
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-#include "PS1/PS1Tiles.cpp" // the scene's tile images in VRAM (docs/32 3.1a)
+#include "PS1/PS1Tiles.cpp"  // the scene's tile images in VRAM (docs/32 3.1a)
+#include "PS1/PS1Layers.cpp" // tile layers drawn by the GPU (3.3)
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
@@ -1698,6 +1699,10 @@ void RSDK::CopyTileLayer(uint16 dstLayerID, int32 dstStartX, int32 dstStartY, ui
 
 void RSDK::DrawLayerHScroll(TileLayer *layer)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawLayerHScroll(layer); // bands of tile pieces through the GPU chain (docs/32 3.3)
+    return;
+#endif
 #if RETRO_PS1_HEADLESS
     return; // PS1 phase 2: headless (docs/32)
 #endif

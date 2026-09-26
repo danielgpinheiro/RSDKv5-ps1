@@ -268,8 +268,11 @@ void RSDK::RenderDeviceBase::ProcessDimming()
 
 void RSDK::GenerateBlendLookupTable()
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 (docs/32 3.3): the GPU blends, so no software blend tables; but the RGB -> 565 tables below are how every
+    // palette colour is stored (LoadPalette, SetPaletteEntry, the tileset rows): skipped with the rest in phase 2, they
+    // left every palette entry 0.
+    goto rgbTables;
 #endif
     for (int32 y = 0; y < 0x100; y++) {
         for (int32 x = 0; x < 0x20; x++) {
@@ -285,6 +288,9 @@ void RSDK::GenerateBlendLookupTable()
     }
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+rgbTables:
+#endif
     for (int32 c = 0; c < 0x100; ++c) {
         rgb32To16_R[c] = (c & 0xFFF8) << 8;
         rgb32To16_G[c] = (c & 0xFFFC) << 3;
