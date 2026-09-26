@@ -28,6 +28,9 @@ volatile uint32_t g_ps1PerfVsyncs   = 0; // vblanks elapsed while running
 volatile uint32_t g_ps1PerfLastHbl  = 0; // last frame's CPU time (hblanks; 262 = one NTSC frame)
 volatile uint32_t g_ps1PerfMaxHbl   = 0;
 volatile uint32_t g_ps1PerfOverHbl  = 0; // frames longer than a vblank
+#if PS1_PROFILE
+volatile uint32_t g_ps1ProfEngine = 0, g_ps1ProfHbl = 0; // hblanks of ProcessEngine / of the whole frame (PROFILE=1)
+#endif
 volatile uint32_t g_ps1InitDone     = 0; // engine initialised (1) / init failed (2)
 volatile uint32_t g_ps1HeapTotal    = 0, g_ps1HeapHeadroom = 0;
 static uint32_t s_lastCount         = 0;
@@ -81,6 +84,9 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void start() override {
+#if PS1_PROFILE
+        *(volatile uint16_t *)0xBF801124 = 0x200; // root counter 2: system clock / 8, free-running (the profile's clock)
+#endif
         m_cdrom.resetBlocking(gpu());
         g_ps1CDRom = &m_cdrom;
 #if !PS1_NO_IRQ_GUARD // bisect switch (docs/32 2.2)
@@ -164,7 +170,13 @@ class ManiaPS1App final : public psyqo::Application {
                 ProcessInputDevices();
                 if (engine.devMenu)
                     ProcessDebugCommands();
+#if PS1_PROFILE
+                uint32_t pe0 = PS1Hblanks();
                 ProcessEngine();
+                g_ps1ProfEngine += PS1HblanksSince(pe0);
+#else
+                ProcessEngine();
+#endif
             }
             if (videoSettings.windowState != WINDOWSTATE_ACTIVE)
                 flip = false;
@@ -180,6 +192,7 @@ class ManiaPS1App final : public psyqo::Application {
 
     void frame() override {
         uint32_t t0 = PS1Hblanks();
+
         if (g_ps1InitDone == 1 && RenderDevice::isRunning) {
             readPad();
             engineFrame();
@@ -187,6 +200,9 @@ class ManiaPS1App final : public psyqo::Application {
                 PS1EntityCheckGhosts(); // empty entity slots must read as blank (docs/32 2.3)
         }
         uint32_t cpu     = PS1HblanksSince(t0);
+#if PS1_PROFILE
+        g_ps1ProfHbl += cpu;
+#endif
         g_ps1PerfLastHbl = cpu;
         if (cpu > g_ps1PerfMaxHbl)
             g_ps1PerfMaxHbl = cpu;

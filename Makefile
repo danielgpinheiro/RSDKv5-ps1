@@ -95,6 +95,10 @@ LDFLAGS   += -lgcc
 # Retail PS1 = 2 MB RAM (EXE at 0x80010000, ~1.94 MB usable). Never raise this for a release.
 comma := ,
 # `make BOOT=1,0`: start at GameConfig category 1 ("Mania Mode"), scene 0 (GHZ act 1) instead of the Logos (docs/32 2.5).
+# `make PROFILE=1`: CPU time per object class and engine phase (root counter 2), read with GDB (docs/32 phase 4).
+ifneq ($(PROFILE),)
+CPPFLAGS += -DPS1_PROFILE=1
+endif
 ifneq ($(BOOT),)
 CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
 endif

@@ -310,6 +310,24 @@ void RSDK::LoadStaticVariables(uint8 *classPtr, uint32 *hash, int32 readOffset)
     }
 }
 
+#if PS1_PROFILE
+// `make PROFILE=1` (docs/32 phase 4 preview): CPU time per class, in root counter 2 ticks (system clock / 8 = 8 cycles),
+// summed over the frames since boot; GDB reads them per objectClassList index. [0] staticUpdate + update + lateUpdate,
+// [1] draw. Engine phases: g_ps1ProfPhase (RetroEngine.cpp).
+volatile uint32 g_ps1ProfClass[OBJECT_COUNT][2];
+volatile uint32 g_ps1ProfCalls[OBJECT_COUNT];
+static inline uint16 PS1ProfNow() { return *(volatile uint16 *)0xBF801120; }
+#define PS1_PROF(kind, id, call)                                                                                           \
+    do {                                                                                                                   \
+        uint16 ps1T_ = PS1ProfNow();                                                                                       \
+        call;                                                                                                              \
+        g_ps1ProfClass[id][kind] += (uint16)(PS1ProfNow() - ps1T_);                                                        \
+        g_ps1ProfCalls[id]++;                                                                                              \
+    } while (0)
+#else
+#define PS1_PROF(kind, id, call) call
+#endif
+
 void RSDK::InitObjects()
 {
     sceneInfo.entitySlot = 0;
@@ -366,7 +384,7 @@ void RSDK::ProcessObjects()
         ObjectClass *classInfo = &objectClassList[stageObjectIDs[o]];
         if ((*classInfo->staticVars)->active == ACTIVE_ALWAYS || (*classInfo->staticVars)->active == ACTIVE_NORMAL) {
             if (classInfo->staticUpdate)
-                classInfo->staticUpdate();
+                PS1_PROF(0, stageObjectIDs[o], classInfo->staticUpdate());
         }
     }
 
@@ -465,7 +483,7 @@ void RSDK::ProcessObjects()
 
             if (sceneInfo.entity->inRange) {
                 if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update)
-                    objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update();
+                    PS1_PROF(0, stageObjectIDs[sceneInfo.entity->classID], objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update());
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
 #if RETRO_PLATFORM == RETRO_PS1
@@ -533,7 +551,7 @@ void RSDK::ProcessObjects()
 
         if (sceneInfo.entity->inRange) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate)
-                objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate();
+                PS1_PROF(0, stageObjectIDs[sceneInfo.entity->classID], objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate());
         }
 
         sceneInfo.entity->onScreen = 0;
@@ -850,7 +868,7 @@ void RSDK::ProcessObjectDrawLists()
                         sceneInfo.entity     = OBJECT_ENTITY(list->entries[i]);
                         if (sceneInfo.entity->visible) {
                             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].draw)
-                                objectClassList[stageObjectIDs[sceneInfo.entity->classID]].draw();
+                                PS1_PROF(1, stageObjectIDs[sceneInfo.entity->classID], objectClassList[stageObjectIDs[sceneInfo.entity->classID]].draw());
 
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
                             if (i == list->entityCount - 1)

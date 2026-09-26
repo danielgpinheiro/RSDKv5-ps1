@@ -349,6 +349,10 @@ int32 RSDK::RunRetroEngine(int32 argc, char *argv[])
     return 0;
 }
 
+#if PS1_PROFILE
+volatile uint32 g_ps1ProfPhase[4]; // `make PROFILE=1`: hblanks per regular-frame phase
+volatile uint32 g_ps1ProfFrames = 0;
+#endif
 void RSDK::ProcessEngine()
 {
     switch (sceneInfo.state) {
@@ -399,10 +403,29 @@ void RSDK::ProcessEngine()
             break;
 
         case ENGINESTATE_REGULAR:
+#if PS1_PROFILE
+        {
+            // phases: 0 input, 1 objects (all of ProcessObjects), 2 parallax, 3 draw lists (ProcessObjectDrawLists), in
+            // hblanks (root counter 1: a whole phase can pass counter 2's 16 bits)
+            uint16 t0 = *(volatile uint16 *)0xBF801110;
+            ProcessInput();
+            uint16 t1 = *(volatile uint16 *)0xBF801110;
+            ProcessSceneTimer();
+            ProcessObjects();
+            uint16 t2 = *(volatile uint16 *)0xBF801110;
+            ProcessParallaxAutoScroll();
+            uint16 t3 = *(volatile uint16 *)0xBF801110;
+            g_ps1ProfPhase[0] += (uint16)(t1 - t0);
+            g_ps1ProfPhase[1] += (uint16)(t2 - t1);
+            g_ps1ProfPhase[2] += (uint16)(t3 - t2);
+            g_ps1ProfFrames++;
+        }
+#else
             ProcessInput();
             ProcessSceneTimer();
             ProcessObjects();
             ProcessParallaxAutoScroll();
+#endif
 
             for (int32 i = 1; i < engine.gameSpeed; ++i) {
                 if (sceneInfo.state != ENGINESTATE_REGULAR)
@@ -416,7 +439,15 @@ void RSDK::ProcessEngine()
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
             SKU::ProcessAchievements();
 #endif
+#if PS1_PROFILE
+        {
+            uint16 t0 = *(volatile uint16 *)0xBF801110;
             ProcessObjectDrawLists();
+            g_ps1ProfPhase[3] += (uint16)(*(volatile uint16 *)0xBF801110 - t0);
+        }
+#else
+            ProcessObjectDrawLists();
+#endif
 
             break;
 
