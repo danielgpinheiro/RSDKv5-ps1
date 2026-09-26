@@ -26,6 +26,14 @@ enum {
 
 DataStorage RSDK::dataStorage[DATASET_MAX];
 
+#if RETRO_PLATFORM == RETRO_PS1 && !PS1_DEBUG_BIGRAM
+extern "C" char __heap_start, __stack_start;
+extern "C" void *psyqo_heap_end();
+#define PS1_STACK_RESERVE (16 * 1024)
+#define PS1_INIT_RESERVE  (136 * 1024)
+volatile uint32 g_ps1StgLimit = 0; // STG's size on the 2 MB link (GDB)
+#endif
+
 bool32 RSDK::InitStorage()
 {
     // Storage limits.
@@ -43,11 +51,24 @@ bool32 RSDK::InitStorage()
     // measured live peaks (g_ps1StorageLivePeak) of Logos / Title with margin; the zones set theirs with overlays (2.4).
     // 2.3j: GHZ1 peaks TMP 23.6 KB (the records moved to the STG tail), STR 14.6 KB, MUS / SFX never used (music is
     // CD-XA, sound effects live in SPU RAM).
-    dataStorage[DATASET_STG].storageLimit = 360 * 1024;
     dataStorage[DATASET_MUS].storageLimit = 256;
     dataStorage[DATASET_SFX].storageLimit = 256;
     dataStorage[DATASET_STR].storageLimit = 24 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 32 * 1024;
+    // 2.3k: STG takes the rest of the heap, less what is allocated after this (user core + database ~87 KB, InitEngine
+    // ~37 KB, measured on GHZ1 from psyqo's heap high-water mark) and the stack. Code growth then shows as a smaller STG
+    // (g_ps1StgLimit) instead of a failed allocation at init.
+    {
+        uint32 top  = (uint32)(uintptr_t)psyqo_heap_end();
+        uint32 base = (uint32)(uintptr_t)&__heap_start;
+        if (top < base)
+            top = base;
+        uint32 others = 0;
+        for (int32 s = DATASET_MUS; s < DATASET_MAX; ++s) others += dataStorage[s].storageLimit + 8; // + psyqo's block header
+        uint32 room = (uint32)(uintptr_t)&__stack_start - PS1_STACK_RESERVE - PS1_INIT_RESERVE - top - others - 8;
+        dataStorage[DATASET_STG].storageLimit = room & ~3u;
+        g_ps1StgLimit                         = dataStorage[DATASET_STG].storageLimit;
+    }
 #else
     dataStorage[DATASET_STG].storageLimit = 24 * 1024 * 1024; // 24MB
     dataStorage[DATASET_MUS].storageLimit = 8 * 1024 * 1024;  //  8MB
