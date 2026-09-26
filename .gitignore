@@ -247,3 +247,12 @@ android/local.properties
 
 *.res
 dependencies/*
+
+# PS1 port build outputs
+/build/
+*.o
+*.dep
+*.ps-exe
+*.elf
+*.map
+/output/

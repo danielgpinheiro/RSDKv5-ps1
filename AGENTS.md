@@ -1,0 +1,69 @@
+# AGENTS.md — RSDKv5-ps1 (Sonic Mania on PlayStation)
+
+Operating manual for this repo. Workspace rules: `../AGENTS.md`. Knowledge base: `../docs/` (start at
+`../docs/README.md`). **Plan and phase table: `../docs/32-rsdkv5-mania-port-plan.md`. Lessons from the
+earlier ports: `../docs/29` (Sonic CD) and `../docs/31` (real hardware).**
+
+## What this is
+`RSDKModding/Sonic-Mania-Decompilation` (the game, C, `SonicMania/`) with its `RSDKv5-Decompilation`
+submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **psyqo** (C++20) on branch
+`ps1`. Remotes: `origin` = upstream RSDKModding (read-only), `fork` = github.com/danielgpinheiro/RSDKv5-ps1
+(**private**; push here). The submodule stays upstream (read-only, like `../nugget`); PS1 changes to the
+engine live in this repo's own copies/overrides (decided in phase 2).
+
+## First checks (every session)
+- `git status` / `git log --oneline -10` (uncommitted work may be another agent's).
+- Phase + status in `../docs/32` (and the `rsdkv5-ps1-port` skill).
+- Game data: `../SonicMania_Extracted/` (the user's Mania **Plus** `Data.rsdk`, 208 MB, SHA-256 `77a90438…`,
+  extracted `Data/`). Never commit game data.
+- `../nugget` and `dependencies/RSDKv5` stay plain upstream.
+- Emulators: another session may hold PCSX-Redux (`pgrep -fl PCSX-Redux` first). DuckStation with the
+  user's SCPH-101 BIOS is the accurate check (`../docs/31` §6).
+
+## User decisions (2026-09-26)
+- Fresh upstream clone (`9dc6994`, submodule `bd59396`) + private fork; the `ps1/` layer and tools come from
+  `RSDKv3-ps1` (`8d7c1cd`, with the real-hardware fixes).
+- References: the Dreamcast port (`../../Dreamcast/RSDKv5-Decompilation`, `Sonic-Mania-Decompilation`,
+  michael-fadely forks) and our own PS1 ports. Not the Xbox v5 port.
+- Scope (base Mania vs Plus: Mighty, Ray, Encore) decided after phase 1's numbers.
+- Icons: `../Memcard icons/sonic-mania-loading.gif` (loading, quantised to 15 colours), `mania-mc-icon.png`
+  (save); credit to be given by the user before the public README.
+- Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
+  before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
+
+## Build / run / debug
+```bash
+make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
+python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
+tools/smoke_disc.sh             # phase 0 test disc (GHZ subset + Jump.vag) + make disc
+tools/smoke_test_ds.sh [OUT]    # phase 0 smoke test in DuckStation (file CRCs, SPU, loading icon, fps)
+tools/smoke_test.sh [OUT]       # the same in PCSX-Redux (+ VRAM icon pixels, pad), when it is free
+python3 tools/loading/build_icon.py "../Memcard icons/sonic-mania-loading.gif" ps1/loading_icon.h --quantize 15
+```
+Emulator runs in the background with a timeout. GDB for evidence (`../docs/21`, `../docs/31` §6 for
+DuckStation: `file` the ELF before `target remote localhost:2345`, `set architecture mips:3000`).
+
+## Layout
+| Path | Role |
+|---|---|
+| `SonicMania/` | the game (upstream): `Objects/<zone>/*.c` (610 files), `Game.h`, `GameLink.h` |
+| `dependencies/RSDKv5/RSDKv5/` | the engine (upstream submodule): `RSDK/{Core,Scene,Graphics,Audio,Storage,Input,User}` |
+| `ps1/` | PS1 platform layer (see `ps1/README.md`), from Sonic CD: CD stream + file index, XA music, SPU, MDEC/STR (CPU-driven), IRQ guard, loading icon, memory card, chained GPU renderer (joins in phase 3) |
+| `tools/extract_rsdk.py`, `tools/rsdkv5_filelist.txt` | RSDKv5 datapack extractor (md5 names + the Dreamcast port's file list) |
+| `tools/disc/`, `tools/loading/`, `tools/memcard/`, `tools/audio/` | disc builder + verifier, icon builders, memory card images, SFX/XA converters (from Sonic CD; adapted per phase) |
+| `tools/smoke_*.sh`, `vramshot.py`, `pad.lua` | phase 0 harness |
+
+## Invariants (from the Nexus, Sonic CD and Sonic 2 ports)
+- **2 MB RAM** (`RAM_SIZE=2M`); track heap high-water incl. load peaks. v5 needs per-zone code overlays and
+  per-scene pools (`../docs/32`): nothing "stock" fits.
+- **Golden rule**: no runtime asset decoding; converters decode their output back and compare.
+- Per-frame drawing is **DMA-chained** (`ps1/gpu_chain.hh`); fragments ≤ 14 words; immediate VRAM writes
+  go to the other buffer (`../docs/29` §3). Clip primitives beyond the GPU limits.
+- **Pads = `psyqo::AdvancedPad`**. **One CD action at a time**. CLUT index 0 = transparent; visible black
+  = 0x8000. Hardware access in `start()` / `frame()`, not `prepare()`.
+- Real hardware (`../docs/31`): keep `ps1/irq_guard`, the CPU-driven MDEC, bounded CD waits.
+
+## Definition of done for a step
+Builds cleanly · fits 2 MB · verified in DuckStation / PCSX-Redux with evidence · `../docs/32` status
+updated · commit (prefixes `feature:` `fix:` `chore:` `housekeeping:`) and push to `fork ps1` when the user
+asks (or per verified step while the user is away).
