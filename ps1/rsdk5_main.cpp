@@ -41,6 +41,7 @@ psyqo::CDRomDevice *g_ps1CDRom = nullptr;
 
 extern "C" char __heap_start, __stack_start;
 extern "C" void *psyqo_heap_end();
+extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
 
 namespace {
 
@@ -64,11 +65,10 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
         g_ps1PerfVsyncs = g_ps1PerfVsyncs + (now - s_lastCount);
     s_lastCount     = now;
     g_ps1PerfFrames = g_ps1PerfFrames + 1;
-    uintptr_t hs = (uintptr_t)&__heap_start, ss = (uintptr_t)&__stack_start, top = (uintptr_t)psyqo_heap_end();
-    if (top < hs)
-        top = hs;
+    uintptr_t hs = (uintptr_t)&__heap_start, ss = (uintptr_t)&__stack_start;
     g_ps1HeapTotal    = ss - hs;
-    g_ps1HeapHeadroom = ss - top;
+    // 2.4a: the part of the init reserve no allocation has reached (STG and the stack guard fill the rest of the heap)
+    g_ps1HeapHeadroom = g_ps1ReserveEnd > g_ps1ReserveHigh ? g_ps1ReserveEnd - g_ps1ReserveHigh : 0;
 }
 
 class ManiaPS1App final : public psyqo::Application {

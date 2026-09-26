@@ -3,22 +3,41 @@
  * malloc/free/realloc are thin wrappers over psyqo's allocator.
  */
 #include "stdlib.h"
+#include <stdint.h>
 #include "string.h"
 
+// docs/32 2.4a: the init reserve's high-water mark (RSDK/Storage/Storage.cpp sets the bounds): the end of the highest
+// block allocated inside it (operator new counts too: ps1/libc/new_guard.cpp).
+extern "C" {
+volatile uint32_t g_ps1ReserveHigh = 0;
+extern volatile uint32_t g_ps1ReserveStart, g_ps1ReserveEnd;
+void PS1NoteAlloc(void *p, size_t size)
+{
+    uint32_t a = (uint32_t)(uintptr_t)p;
+    if (p && a >= g_ps1ReserveStart && a < g_ps1ReserveEnd && a + size > g_ps1ReserveHigh)
+        g_ps1ReserveHigh = a + size;
+}
+}
+
 void *malloc(size_t size) {
-    return psyqo_malloc(size);
+    void *p = psyqo_malloc(size);
+    PS1NoteAlloc(p, size);
+    return p;
 }
 
 void *calloc(size_t nmemb, size_t size) {
     size_t total = nmemb * size;
     void *p      = psyqo_malloc(total);
+    PS1NoteAlloc(p, total);
     if (p)
         memset(p, 0, total);
     return p;
 }
 
 void *realloc(void *ptr, size_t size) {
-    return psyqo_realloc(ptr, size);
+    void *p = psyqo_realloc(ptr, size);
+    PS1NoteAlloc(p, size);
+    return p;
 }
 
 void free(void *ptr) {

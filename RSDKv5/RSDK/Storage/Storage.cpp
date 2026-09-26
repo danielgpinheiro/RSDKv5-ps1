@@ -26,12 +26,21 @@ enum {
 
 DataStorage RSDK::dataStorage[DATASET_MAX];
 
-#if RETRO_PLATFORM == RETRO_PS1 && !PS1_DEBUG_BIGRAM
+#if RETRO_PLATFORM == RETRO_PS1
 extern "C" char __heap_start, __stack_start;
 extern "C" void *psyqo_heap_end();
 #define PS1_STACK_RESERVE (16 * 1024)
 #define PS1_INIT_RESERVE  (128 * 1024) // 2.3p: user database 62 KB (0xE0 rows)
-volatile uint32 g_ps1StgLimit = 0; // STG's size on the 2 MB link (GDB)
+volatile uint32 g_ps1StgLimit = 0; // STG's usable size now (GDB)
+// 2.4a: STG ends at a fixed address, the RAM top less the stack (__stack_start - PS1_STACK_RESERVE): a scene's code
+// overlay sits at the top of STG, linked at that address less its size, and STG's limit ends where the overlay starts
+// (PS1SetOverlaySize). Below STG, the init reserve (the blocks allocated after InitStorage: user core and database,
+// the CD file index and stream windows, scanlines) is one freed placeholder; above it a guard block covers the stack.
+uint32 RSDK::ps1StgCapacity = 0;
+extern "C" {
+volatile uint32 g_ps1ReserveStart = 0, g_ps1ReserveEnd = 0; // the init reserve (ps1/libc: its high-water mark)
+extern volatile uint32 g_ps1ReserveHigh;
+}
 #endif
 
 bool32 RSDK::InitStorage()
@@ -39,36 +48,20 @@ bool32 RSDK::InitStorage()
     // Storage limits.
 #if RETRO_PLATFORM == RETRO_PS1 && PS1_DEBUG_BIGRAM
     // PS1 port, 8 MB debug/measuring link only (docs/32 2.2): room to measure what the datasets really need
-    // (g_ps1StorageLivePeak below); 2.3 sizes the 2 MB limits from those peaks.
-    dataStorage[DATASET_STG].storageLimit = 4 * 1024 * 1024;
+    // (g_ps1StorageLivePeak below); STG takes the rest of the 8 MB (2.4a layout below).
     dataStorage[DATASET_MUS].storageLimit = 64 * 1024;
     dataStorage[DATASET_SFX].storageLimit = 64 * 1024;
     dataStorage[DATASET_STR].storageLimit = 128 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 1024 * 1024;
 #elif RETRO_PLATFORM == RETRO_PS1
     // PS1 port (docs/32 2.3): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA, converted
-    // at build time): the datasets hold globals, static variables, the entity arena, layouts and tables. Sized from the
-    // measured live peaks (g_ps1StorageLivePeak) of Logos / Title with margin; the zones set theirs with overlays (2.4).
+    // at build time): the datasets hold globals, static variables, the entity arena, layouts and tables.
     // 2.3j: GHZ1 peaks TMP 23.6 KB (the records moved to the STG tail), STR 14.6 KB, MUS / SFX never used (music is
-    // CD-XA, sound effects live in SPU RAM).
+    // CD-XA, sound effects live in SPU RAM). STG takes the rest of the heap (2.4a layout below).
     dataStorage[DATASET_MUS].storageLimit = 256;
     dataStorage[DATASET_SFX].storageLimit = 256;
     dataStorage[DATASET_STR].storageLimit = 24 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 32 * 1024;
-    // 2.3k: STG takes the rest of the heap, less what is allocated after this (user core + database ~78 KB, the CD file
-    // index 12 KB and stream window 32 KB, scanlines 5 KB: measured on GHZ1 from psyqo's heap high-water mark) and the stack. Code growth then shows as a smaller STG
-    // (g_ps1StgLimit) instead of a failed allocation at init.
-    {
-        uint32 top  = (uint32)(uintptr_t)psyqo_heap_end();
-        uint32 base = (uint32)(uintptr_t)&__heap_start;
-        if (top < base)
-            top = base;
-        uint32 others = 0;
-        for (int32 s = DATASET_MUS; s < DATASET_MAX; ++s) others += dataStorage[s].storageLimit + 8; // + psyqo's block header
-        uint32 room = (uint32)(uintptr_t)&__stack_start - PS1_STACK_RESERVE - PS1_INIT_RESERVE - top - others - 8;
-        dataStorage[DATASET_STG].storageLimit = room & ~3u;
-        g_ps1StgLimit                         = dataStorage[DATASET_STG].storageLimit;
-    }
 #else
     dataStorage[DATASET_STG].storageLimit = 24 * 1024 * 1024; // 24MB
     dataStorage[DATASET_MUS].storageLimit = 8 * 1024 * 1024;  //  8MB
@@ -81,11 +74,44 @@ bool32 RSDK::InitStorage()
         dataStorage[s].usedStorage = 0;
         dataStorage[s].entryCount  = 0;
         dataStorage[s].clearCount  = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+        if (s == DATASET_STG)
+            continue; // below
+#endif
         dataStorage[s].memoryTable = (uint32 *)malloc(dataStorage[s].storageLimit);
 
         if (dataStorage[s].memoryTable == NULL)
             return false;
     }
+
+#if RETRO_PLATFORM == RETRO_PS1
+    {
+        // 2.4a layout (see ps1StgCapacity): reserve placeholder, STG up to the fixed top, guard over the stack
+        void *reserve = malloc(PS1_INIT_RESERVE);
+        if (!reserve)
+            return false;
+        uint32 from = (uint32)(uintptr_t)psyqo_heap_end(); // the first free byte: nothing has been freed yet
+        uint32 top  = (uint32)(uintptr_t)&__stack_start - PS1_STACK_RESERVE;
+        uint32 size = (top - from - 8) & ~7u; // psyqo puts an 8-byte header before each block
+        dataStorage[DATASET_STG].memoryTable = (uint32 *)malloc(size);
+        if (!dataStorage[DATASET_STG].memoryTable)
+            return false;
+        // the rest, up to the stack, as one block no allocation can get (a best-fit allocator gives small requests the
+        // smallest free block: that would be this one)
+        uint32 next = (uint32)(uintptr_t)psyqo_heap_end();
+        for (uint32 g = (uint32)(uintptr_t)&__stack_start - next; g >= 16; g -= 8) {
+            if (malloc(g - 8))
+                break;
+        }
+        g_ps1ReserveStart = (uint32)(uintptr_t)reserve;
+        g_ps1ReserveEnd   = (uint32)(uintptr_t)reserve + PS1_INIT_RESERVE;
+        g_ps1ReserveHigh  = g_ps1ReserveStart;
+        free(reserve);
+        ps1StgCapacity                        = size;
+        dataStorage[DATASET_STG].storageLimit = size;
+        g_ps1StgLimit                         = size;
+    }
+#endif
 
     return true;
 }
