@@ -20,7 +20,13 @@ struct PS1EntityHeader {
 };
 
 #define PS1_TEMP_SMALL_CAP   (256)  // 190 of the 223 classes the game creates at run time fit (docs/32 2.3)
-#define PS1_TEMP_LARGE_COUNT (0x20) // temp slots with the largest class's size
+// 2.3l: CreateEntity uses the first PS1_TEMP_BLOCKS temp slots only (createSlot wraps there; the rest stay ghosts). GHZ1
+// play peaked at 8 live temp entities; a full ring scatter makes 32. Every PS1_TEMP_LARGE_EVERY-th block has the largest
+// class's size, so CreateEntity's 16-slot search meets one wherever createSlot is.
+#define PS1_TEMP_BLOCKS      (0x70)
+#define PS1_TEMP_LARGE_EVERY (7)
+#define PS1_TEMP_IS_LARGE(t) ((t) % PS1_TEMP_LARGE_EVERY == PS1_TEMP_LARGE_EVERY - 1)
+#define PS1_TEMP_LARGE_COUNT (PS1_TEMP_BLOCKS / PS1_TEMP_LARGE_EVERY)
 
 extern EntityBase *objectEntityPtr[ENTITY_COUNT];
 extern uint8 ps1EntityGhosts[];

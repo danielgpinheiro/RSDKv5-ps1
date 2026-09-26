@@ -1228,7 +1228,11 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
             ++permCnt;
 
         sceneInfo.createSlot++;
+#if RETRO_PLATFORM == RETRO_PS1
+        if (sceneInfo.createSlot == TEMPENTITY_START + PS1_TEMP_BLOCKS) { // PS1Entities.hpp: the temp slots with blocks
+#else
         if (sceneInfo.createSlot == ENTITY_COUNT) {
+#endif
             sceneInfo.createSlot = TEMPENTITY_START;
             entity               = OBJECT_ENTITY(sceneInfo.createSlot);
         }

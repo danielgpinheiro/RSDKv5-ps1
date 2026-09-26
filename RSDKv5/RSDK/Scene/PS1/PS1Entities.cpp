@@ -293,7 +293,7 @@ void RSDK::PS1SceneEntitiesPlace()
             bytes += sizeof(PS1EntityHeader) + Align4(objectClassList[stageObjectIDs[r->classID]].entityClassSize);
         ++placed;
     }
-    bytes += (TEMPENTITY_COUNT - PS1_TEMP_LARGE_COUNT) * (sizeof(PS1EntityHeader) + PS1_TEMP_SMALL_CAP);
+    bytes += (PS1_TEMP_BLOCKS - PS1_TEMP_LARGE_COUNT) * (sizeof(PS1EntityHeader) + PS1_TEMP_SMALL_CAP);
     bytes += PS1_TEMP_LARGE_COUNT * (sizeof(PS1EntityHeader) + maxCap);
     uint32 spareBytes = 16 * 1024;
     bytes += spareBytes;
@@ -348,9 +348,9 @@ void RSDK::PS1SceneEntitiesPlace()
         ++slot;
     }
 
-    for (int32 t = 0; t < TEMPENTITY_COUNT; ++t) {
-        uint16 s              = TEMPENTITY_START + t;
-        objectEntityPtr[s]    = Carve(p, s, t < TEMPENTITY_COUNT - PS1_TEMP_LARGE_COUNT ? PS1_TEMP_SMALL_CAP : maxCap);
+    for (int32 t = 0; t < PS1_TEMP_BLOCKS; ++t) {
+        uint16 s           = TEMPENTITY_START + t;
+        objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? maxCap : PS1_TEMP_SMALL_CAP);
     }
     s_spare         = p;
     s_spareEnd      = s_arena + bytes;
