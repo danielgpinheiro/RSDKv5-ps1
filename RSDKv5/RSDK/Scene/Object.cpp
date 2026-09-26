@@ -13,7 +13,11 @@ int32 RSDK::globalObjectCount = 0;
 int32 RSDK::globalObjectIDs[OBJECT_COUNT];
 int32 RSDK::stageObjectIDs[OBJECT_COUNT];
 
+#if RETRO_PLATFORM == RETRO_PS1
+#include "PS1/PS1Entities.cpp" // per-slot entity storage (docs/32 2.3)
+#else
 EntityBase RSDK::objectEntityList[ENTITY_COUNT];
+#endif
 
 EditableVarInfo *RSDK::editableVarList;
 int32 RSDK::editableVarCount = 0;
@@ -329,9 +333,13 @@ void RSDK::InitObjects()
     RunModCallbacks(MODCB_ONSTAGELOAD, NULL);
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; e = PS1NextSlot(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
+#endif
         sceneInfo.entitySlot = e;
-        sceneInfo.entity     = &objectEntityList[e];
+        sceneInfo.entity     = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->classID) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].create) {
@@ -382,8 +390,12 @@ void RSDK::ProcessObjects()
     }
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
         if (sceneInfo.entity->classID) {
             switch (sceneInfo.entity->active) {
                 default:
@@ -463,34 +475,57 @@ void RSDK::ProcessObjects()
             sceneInfo.entity->inRange = false;
         }
 
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONUPDATE, INT_TO_VOID(ENGINESTATE_REGULAR));
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TypeGroupsBegin();
+#else
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
+#endif
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange && sceneInfo.entity->interaction) {
+#if RETRO_PLATFORM == RETRO_PS1
+            PS1TypeGroupsAdd(e, sceneInfo.entity->classID, sceneInfo.entity->group);
+#else
             typeGroups[GROUP_ALL].entries[typeGroups[GROUP_ALL].entryCount++] = e; // All active objects
 
             typeGroups[sceneInfo.entity->classID].entries[typeGroups[sceneInfo.entity->classID].entryCount++] = e; // class-based groups
 
             if (sceneInfo.entity->group >= TYPE_COUNT)
                 typeGroups[sceneInfo.entity->group].entries[typeGroups[sceneInfo.entity->group].entryCount++] = e; // extra groups
+#endif
         }
 
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TypeGroupsBuild();
+#endif
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate)
@@ -498,7 +533,9 @@ void RSDK::ProcessObjects()
         }
 
         sceneInfo.entity->onScreen = 0;
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
 
 #if RETRO_USE_MOD_LOADER
@@ -526,8 +563,12 @@ void RSDK::ProcessPausedObjects()
 #endif
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->classID) {
             if (sceneInfo.entity->active == ACTIVE_ALWAYS || sceneInfo.entity->active == ACTIVE_PAUSED) {
@@ -542,7 +583,9 @@ void RSDK::ProcessPausedObjects()
             sceneInfo.entity->inRange = false;
         }
 
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
 
 #if RETRO_USE_MOD_LOADER
@@ -550,8 +593,12 @@ void RSDK::ProcessPausedObjects()
 #endif
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->active == ACTIVE_ALWAYS || sceneInfo.entity->active == ACTIVE_PAUSED) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate)
@@ -559,7 +606,9 @@ void RSDK::ProcessPausedObjects()
         }
 
         sceneInfo.entity->onScreen = 0;
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
 
 #if RETRO_USE_MOD_LOADER
@@ -602,8 +651,12 @@ void RSDK::ProcessFrozenObjects()
     }
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->classID) {
             switch (sceneInfo.entity->active) {
@@ -686,18 +739,28 @@ void RSDK::ProcessFrozenObjects()
             sceneInfo.entity->inRange = false;
         }
 
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONUPDATE, INT_TO_VOID(ENGINESTATE_FROZEN));
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TypeGroupsBegin();
+#else
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
+#endif
 
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+#else
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-        sceneInfo.entity = &objectEntityList[e];
+#endif
+        sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange) {
             if (sceneInfo.entity->active == ACTIVE_ALWAYS || sceneInfo.entity->active == ACTIVE_PAUSED) {
@@ -706,18 +769,27 @@ void RSDK::ProcessFrozenObjects()
             }
 
             if (sceneInfo.entity->interaction) {
+#if RETRO_PLATFORM == RETRO_PS1
+                PS1TypeGroupsAdd(e, sceneInfo.entity->classID, sceneInfo.entity->group);
+#else
                 typeGroups[GROUP_ALL].entries[typeGroups[GROUP_ALL].entryCount++] = e; // All active entities
 
                 typeGroups[sceneInfo.entity->classID].entries[typeGroups[sceneInfo.entity->classID].entryCount++] = e; // type-based groups
 
                 if (sceneInfo.entity->group >= TYPE_COUNT)
                     typeGroups[sceneInfo.entity->group].entries[typeGroups[sceneInfo.entity->group].entryCount++] = e; // extra groups
+#endif
             }
         }
 
         sceneInfo.entity->onScreen = 0;
+#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
+#endif
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TypeGroupsBuild();
+#endif
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONLATEUPDATE, INT_TO_VOID(ENGINESTATE_FROZEN));
@@ -752,7 +824,7 @@ void RSDK::ProcessObjectDrawLists()
                             for (int32 i = list->entityCount - 1; i > e; --i) {
                                 int32 slot1 = list->entries[i - 1];
                                 int32 slot2 = list->entries[i];
-                                if (objectEntityList[slot2].zdepth > objectEntityList[slot1].zdepth) {
+                                if (OBJECT_ENTITY(slot2)->zdepth > OBJECT_ENTITY(slot1)->zdepth) {
                                     list->entries[i - 1] = slot2;
                                     list->entries[i]     = slot1;
                                 }
@@ -763,7 +835,7 @@ void RSDK::ProcessObjectDrawLists()
                     for (int32 i = 0; i < list->entityCount; ++i) {
                         sceneInfo.entitySlot = list->entries[i];
                         validDraw            = false;
-                        sceneInfo.entity     = &objectEntityList[list->entries[i]];
+                        sceneInfo.entity     = OBJECT_ENTITY(list->entries[i]);
                         if (sceneInfo.entity->visible) {
                             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].draw)
                                 objectClassList[stageObjectIDs[sceneInfo.entity->classID]].draw();
@@ -833,7 +905,7 @@ void RSDK::ProcessObjectDrawLists()
                     if (engine.drawGroupVisible[l]) {
                         DrawList *list = &drawGroups[l];
                         for (int32 i = 0; i < list->entityCount; ++i) {
-                            Entity *entity     = &objectEntityList[list->entries[i]];
+                            Entity *entity     = OBJECT_ENTITY(list->entries[i]);
 
                             if (entity->visible || (engine.showUpdateRanges & 2)) {
                                 switch (entity->active) {
@@ -902,7 +974,7 @@ void RSDK::ProcessObjectDrawLists()
                     if (engine.drawGroupVisible[l]) {
                         DrawList *list = &drawGroups[l];
                         for (int32 i = 0; i < list->entityCount; ++i) {
-                            Entity *entity = &objectEntityList[list->entries[i]];
+                            Entity *entity = OBJECT_ENTITY(list->entries[i]);
 
                             if (entity->visible || (engine.showEntityInfo & 2)) {
                                 char buffer[0x100];
@@ -1028,8 +1100,12 @@ int32 RSDK::GetEntityCount(uint16 classID, bool32 isActive)
         return typeGroups[classID].entryCount;
 
     int32 entityCount = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    for (int32 i = 0; i < ENTITY_COUNT; i = PS1NextSlot(i)) {
+#else
     for (int32 i = 0; i < ENTITY_COUNT; ++i) {
-        if (objectEntityList[i].classID == classID)
+#endif
+        if (OBJECT_ENTITY(i)->classID == classID)
             entityCount++;
     }
 
@@ -1040,7 +1116,22 @@ void RSDK::ResetEntity(Entity *entity, uint16 classID, void *data)
 {
     if (entity) {
         ObjectClass *info = &objectClassList[stageObjectIDs[classID]];
+#if RETRO_PLATFORM == RETRO_PS1
+        // A slot's block must hold the new class (a spare block if not: PS1Entities.cpp); only the block is cleared.
+        uint32 clearSize = info->entityClassSize;
+        int32 slot       = PS1EntitySlotOf(entity);
+        if (slot >= 0) {
+            if (!classID && PS1EntityIsGhost(entity))
+                return; // blanking an empty slot: it is blank already
+            if (classID && !(entity = PS1EntityEnsure((EntityBase *)entity, slot, info->entityClassSize)))
+                return;
+            if (clearSize > PS1EntityCapacity(entity))
+                clearSize = PS1EntityCapacity(entity);
+        }
+        memset(entity, 0, clearSize);
+#else
         memset(entity, 0, info->entityClassSize);
+#endif
 
         if (info->create) {
             Entity *curEnt = sceneInfo.entity;
@@ -1069,8 +1160,17 @@ void RSDK::ResetEntitySlot(uint16 slot, uint16 classID, void *data)
     ObjectClass *object = &objectClassList[stageObjectIDs[classID]];
     slot                = slot < ENTITY_COUNT ? slot : (ENTITY_COUNT - 1);
 
-    Entity *entity = &objectEntityList[slot];
-    memset(&objectEntityList[slot], 0, object->entityClassSize);
+#if RETRO_PLATFORM == RETRO_PS1
+    Entity *entity = OBJECT_ENTITY(slot);
+    if (!classID && PS1EntityIsGhost(entity))
+        return; // blanking an empty slot: it is blank already
+    if (classID && !(entity = PS1EntityEnsure((EntityBase *)entity, slot, object->entityClassSize)))
+        return;
+    memset(entity, 0, object->entityClassSize < PS1EntityCapacity(entity) ? object->entityClassSize : PS1EntityCapacity(entity));
+#else
+    Entity *entity = OBJECT_ENTITY(slot);
+    memset(OBJECT_ENTITY(slot), 0, object->entityClassSize);
+#endif
 
     if (object->create) {
         Entity *curEnt = sceneInfo.entity;
@@ -1097,10 +1197,17 @@ void RSDK::ResetEntitySlot(uint16 slot, uint16 classID, void *data)
 Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
 {
     ObjectClass *object = &objectClassList[stageObjectIDs[classID]];
-    Entity *entity      = &objectEntityList[sceneInfo.createSlot];
+    Entity *entity      = OBJECT_ENTITY(sceneInfo.createSlot);
 
     int32 permCnt = 0, loopCnt = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1: a free temp slot must also be big enough for the class (PS1Entities.hpp: small and large temp slots).
+    while (entity->classID || PS1EntityCapacity(entity) < object->entityClassSize) {
+        if (!entity->classID)
+            g_ps1EntityCreateSkips = g_ps1EntityCreateSkips + 1;
+#else
     while (entity->classID) {
+#endif
         // after 16 loops, the game says fuck it and will start overwriting non-temp objects
         if (!entity->isPermanent && loopCnt >= 16)
             break;
@@ -1111,10 +1218,10 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
         sceneInfo.createSlot++;
         if (sceneInfo.createSlot == ENTITY_COUNT) {
             sceneInfo.createSlot = TEMPENTITY_START;
-            entity               = &objectEntityList[sceneInfo.createSlot];
+            entity               = OBJECT_ENTITY(sceneInfo.createSlot);
         }
         else {
-            entity = &objectEntityList[sceneInfo.createSlot];
+            entity = OBJECT_ENTITY(sceneInfo.createSlot);
         }
 
         if (permCnt >= TEMPENTITY_COUNT)
@@ -1123,6 +1230,13 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
         ++loopCnt;
     }
 
+#if RETRO_PLATFORM == RETRO_PS1
+    {
+        static EntityBase s_createOverflow; // no block at all (no spare room): counted, never a write through NULL
+        Entity *e = PS1EntityEnsure((EntityBase *)entity, sceneInfo.createSlot, object->entityClassSize);
+        entity    = e ? e : &s_createOverflow;
+    }
+#endif
     memset(entity, 0, object->entityClassSize);
     entity->position.x  = x;
     entity->position.y  = y;
@@ -1169,8 +1283,8 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
         foreachStackPtr->id = 0;
     }
 
-    for (Entity *nextEntity = &objectEntityList[typeGroups[group].entries[foreachStackPtr->id]]; foreachStackPtr->id < typeGroups[group].entryCount;
-         ++foreachStackPtr->id, nextEntity = &objectEntityList[typeGroups[group].entries[foreachStackPtr->id]]) {
+    for (Entity *nextEntity = OBJECT_ENTITY(typeGroups[group].entries[foreachStackPtr->id]); foreachStackPtr->id < typeGroups[group].entryCount;
+         ++foreachStackPtr->id, nextEntity = OBJECT_ENTITY(typeGroups[group].entries[foreachStackPtr->id])) {
         if (nextEntity->classID == group) {
             *entity = nextEntity;
             return true;
@@ -1197,8 +1311,12 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
         foreachStackPtr->id = 0;
     }
 
+#if RETRO_PLATFORM == RETRO_PS1
+    for (; foreachStackPtr->id < ENTITY_COUNT; foreachStackPtr->id = PS1NextSlot(foreachStackPtr->id)) {
+#else
     for (; foreachStackPtr->id < ENTITY_COUNT; ++foreachStackPtr->id) {
-        Entity *nextEntity = &objectEntityList[foreachStackPtr->id];
+#endif
+        Entity *nextEntity = OBJECT_ENTITY(foreachStackPtr->id);
         if (nextEntity->classID == classID) {
             *entity = nextEntity;
             return true;

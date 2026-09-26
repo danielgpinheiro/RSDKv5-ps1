@@ -367,7 +367,7 @@ inline Entity *GetDrawListRef(uint8 drawGroup, uint16 listPos)
 {
     DrawList *listPtr = &drawGroups[drawGroup];
     if (drawGroup < DRAWGROUP_COUNT && listPos < listPtr->entityCount)
-        return &objectEntityList[listPtr->entries[listPos]];
+        return OBJECT_ENTITY(listPtr->entries[listPos]);
 
     return NULL;
 }

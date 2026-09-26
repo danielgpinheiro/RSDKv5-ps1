@@ -3,7 +3,7 @@
 using namespace RSDK;
 
 #if RETRO_PLATFORM == RETRO_PS1
-volatile uint32 g_ps1EntitiesDropped = 0; // scene entities past the PS1 lists (GDB; must stay 0)
+#define PS1_SCENE_RECORD_BYTES (96 * 1024) // the scene loader's entity records (DATASET_TMP); peak in g_ps1SceneRecordBytes
 #endif
 
 #if RETRO_REV0U
@@ -294,7 +294,11 @@ void RSDK::LoadSceneAssets()
     ShowLoadingIcon();
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1EntityStorageClear(); // every slot a ghost until the scene's arena is placed (PS1Entities.cpp)
+#else
     memset(objectEntityList, 0, ENTITY_COUNT * sizeof(EntityBase));
+#endif
 
     SceneListEntry *sceneEntry = &sceneInfo.listData[sceneInfo.listPos];
     char fullFilePath[0x40];
@@ -463,6 +467,126 @@ void RSDK::LoadSceneAssets()
         editableVarList   = NULL;
         AllocateStorage((void **)&editableVarList, sizeof(EditableVarInfo) * EDITABLEVAR_COUNT, DATASET_TMP, false);
 
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 2.3): the entities go to compact records first (file slot, class, position, the active
+        // variables), then PS1SceneEntitiesPlace compacts them as below and gives each slot a block of its class's size.
+        PS1SceneEntitiesBegin(PS1_SCENE_RECORD_BYTES);
+
+        for (int32 i = 0; i < objectCount; ++i) {
+            RETRO_HASH_MD5(objHash);
+            objHash[0] = ReadInt32(&info, false);
+            objHash[1] = ReadInt32(&info, false);
+            objHash[2] = ReadInt32(&info, false);
+            objHash[3] = ReadInt32(&info, false);
+
+            int32 classID = 0;
+            for (int32 o = 0; o < sceneInfo.classCount; ++o) {
+                if (HASH_MATCH_MD5(objHash, objectClassList[stageObjectIDs[o]].hash)) {
+                    classID = o;
+                    break;
+                }
+            }
+
+#if !RETRO_USE_ORIGINAL_CODE
+            if (!classID && i >= TYPE_DEFAULT_COUNT)
+                PrintLog(PRINT_NORMAL, "Object Class %d is unimplemented!", i);
+#endif
+
+            ObjectClass *objectClass = &objectClassList[stageObjectIDs[classID]];
+
+            uint8 varCount           = ReadInt8(&info);
+            EditableVarInfo *varList = NULL;
+            AllocateStorage((void **)&varList, sizeof(EditableVarInfo) * varCount, DATASET_TMP, false);
+            editableVarCount = 0;
+            if (classID) {
+#if RETRO_REV02
+                SetEditableVar(VAR_UINT8, "filter", classID, offsetof(Entity, filter));
+#endif
+
+#if RETRO_USE_MOD_LOADER
+                currentObjectID = classID;
+#endif
+
+                if (objectClass->serialize)
+                    objectClass->serialize();
+            }
+
+            for (int32 e = 1; e < varCount; ++e) {
+                RETRO_HASH_MD5(varHash);
+                varHash[0] = ReadInt32(&info, false);
+                varHash[1] = ReadInt32(&info, false);
+                varHash[2] = ReadInt32(&info, false);
+                varHash[3] = ReadInt32(&info, false);
+
+                int32 varID = 0;
+                MEM_ZERO(varList[e]);
+                for (int32 v = 0; v < editableVarCount; ++v) {
+                    if (HASH_MATCH_MD5(varHash, editableVarList[v].hash)) {
+                        varID = v;
+                        HASH_COPY_MD5(varList[e].hash, editableVarList[v].hash);
+                        varList[e].offset = editableVarList[v].offset;
+                        varList[e].active = true;
+                        break;
+                    }
+                }
+
+                editableVarList[varID].type = varList[e].type = ReadInt8(&info);
+            }
+
+            uint16 entityCount = ReadInt16(&info);
+            for (int32 e = 0; e < entityCount; ++e) {
+                uint16 slotID = ReadInt16(&info);
+                int32 posX    = ReadInt32(&info, false);
+                int32 posY    = ReadInt32(&info, false);
+                PS1SceneEntityBegin(slotID, classID, posX, posY);
+
+                uint8 tempBuffer[0x10];
+                for (int32 v = 1; v < varCount; ++v) {
+                    uint16 len = 0;
+                    switch (varList[v].type) {
+                        case VAR_UINT8:
+                        case VAR_INT8: len = sizeof(int8); break;
+                        case VAR_UINT16:
+                        case VAR_INT16: len = sizeof(int16); break;
+                        case VAR_UINT32:
+                        case VAR_INT32:
+                        case VAR_ENUM:
+                        case VAR_BOOL:
+                        case VAR_FLOAT:
+                        case VAR_COLOR: len = sizeof(int32); break;
+                        case VAR_VECTOR2: len = 2 * sizeof(int32); break;
+                        case VAR_STRING: {
+                            uint16 chars = ReadInt16(&info);
+                            if (varList[v].active) {
+                                uint16 buf[0x100];
+                                uint16 n = chars < 0x100 ? chars : 0x100;
+                                ReadBytes(&info, buf, n * sizeof(uint16));
+                                if (chars > n)
+                                    Seek_Cur(&info, (chars - n) * sizeof(uint16));
+                                PS1SceneEntityVar(varList[v].offset, VAR_STRING, buf, n * sizeof(uint16));
+                            }
+                            else {
+                                Seek_Cur(&info, chars * sizeof(uint16));
+                            }
+                            continue;
+                        }
+                    }
+                    // The stock loader copies each value's bytes into the entity (little-endian as the PS1): kept as
+                    // raw bytes in the record.
+                    ReadBytes(&info, tempBuffer, len);
+                    if (varList[v].active)
+                        PS1SceneEntityVar(varList[v].offset, varList[v].type, tempBuffer, len);
+                }
+            }
+
+#if !RETRO_USE_ORIGINAL_CODE
+            RemoveStorageEntry((void **)&varList);
+            varList = NULL;
+#endif
+        }
+
+        PS1SceneEntitiesPlace();
+#else
 #if RETRO_REV02
         EntityBase *tempEntityList = NULL;
         AllocateStorage((void **)&tempEntityList, SCENEENTITY_COUNT * sizeof(EntityBase), DATASET_TMP, true);
@@ -538,14 +662,6 @@ void RSDK::LoadSceneAssets()
 #if RETRO_REV02
                 if (slotID < SCENEENTITY_COUNT)
                     entity = &objectEntityList[slotID + RESERVE_ENTITY_COUNT];
-#if RETRO_PLATFORM == RETRO_PS1
-                else if (slotID >= 2 * SCENEENTITY_COUNT) {
-                    // PS1 (docs/32 2.2): past the temp list sized for the PS1 counts: read into a scratch entity, counted.
-                    static EntityBase ps1DroppedEntity;
-                    entity = &ps1DroppedEntity;
-                    g_ps1EntitiesDropped = g_ps1EntitiesDropped + 1;
-                }
-#endif
                 else
                     entity = &tempEntityList[slotID - SCENEENTITY_COUNT];
 #else
@@ -720,6 +836,7 @@ void RSDK::LoadSceneAssets()
 #endif
         tempEntityList = NULL;
 #endif
+#endif // RETRO_PLATFORM == RETRO_PS1
 
 #if !RETRO_USE_ORIGINAL_CODE
         RemoveStorageEntry((void **)&editableVarList);

@@ -35,7 +35,8 @@ set architecture mips:3000
 target remote localhost:2345
 define snap
   printf "SNAP %s frames=%u vsyncs=%u hbl=%u maxhbl=%u over=%u init=%u state=%d listPos=%d cat=%d classes=%d objs=%d heapTotal=%u headroom=%u\n", \$arg0, g_ps1PerfFrames, g_ps1PerfVsyncs, g_ps1PerfLastHbl, g_ps1PerfMaxHbl, g_ps1PerfOverHbl, g_ps1InitDone, RSDK::sceneInfo.state, RSDK::sceneInfo.listPos, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.classCount, RSDK::objectClassCount, g_ps1HeapTotal, g_ps1HeapHeadroom
-  printf "GUARD dropped=%u compressed=%u unlinkedCalls=%u unlinkedLast=%u globalVarsDropped=%u globalsSize=%d oom=%u\n", g_ps1EntitiesDropped, RSDK::g_ps1CompressedMismatch, (unsigned)g_ps1UnlinkedCalls, (unsigned)g_ps1UnlinkedLast, RSDK::g_ps1GlobalVarsDropped, RSDK::g_ps1GlobalVarsSize, g_ps1OutOfMemory
+  printf "ENTITIES arena=%u peak=%u relocations=%u spareFail=%u ghostWrites=%u createSkips=%u records=%u recordsDropped=%u\n", RSDK::g_ps1EntityArenaBytes, RSDK::g_ps1EntityArenaPeak, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntitySpareFail, RSDK::g_ps1EntityGhostWrites, RSDK::g_ps1EntityCreateSkips, RSDK::g_ps1SceneRecordBytes, RSDK::g_ps1SceneRecordDropped
+  printf "GUARD dropped=%u compressed=%u unlinkedCalls=%u unlinkedLast=%u globalVarsDropped=%u globalsSize=%d oom=%u\n", RSDK::g_ps1EntitiesDropped, RSDK::g_ps1CompressedMismatch, (unsigned)g_ps1UnlinkedCalls, (unsigned)g_ps1UnlinkedLast, RSDK::g_ps1GlobalVarsDropped, RSDK::g_ps1GlobalVarsSize, g_ps1OutOfMemory
   printf "STUBS seen %u %u %u %u %u %u %u %u (1 + index in build/gen/unlinked_stubs.c)\n", ((unsigned*)&g_ps1UnlinkedSeen)[0], ((unsigned*)&g_ps1UnlinkedSeen)[1], ((unsigned*)&g_ps1UnlinkedSeen)[2], ((unsigned*)&g_ps1UnlinkedSeen)[3], ((unsigned*)&g_ps1UnlinkedSeen)[4], ((unsigned*)&g_ps1UnlinkedSeen)[5], ((unsigned*)&g_ps1UnlinkedSeen)[6], ((unsigned*)&g_ps1UnlinkedSeen)[7]
   set \$d = 0
   while \$d < 5
@@ -88,6 +89,6 @@ pkill -f "DuckStation.app/Contents/MacOS" 2>/dev/null; sleep 1
 EMU=$!
 sleep 6
 timeout ${TIMEOUT:-150} /opt/homebrew/bin/gdb --batch -x "$OUT.gdb" > "$OUT.log" 2>&1
-grep -E "^(SCENE|SNAP|GUARD|STUBS|DATASET|STOP|#[0-9])|in section|^ R[0-9]| sr " "$OUT.log" | tee "$OUT.txt"
+grep -E "^(SCENE|SNAP|GUARD|ENTITIES|STUBS|DATASET|STOP|#[0-9])|in section|^ R[0-9]| sr " "$OUT.log" | tee "$OUT.txt"
 kill $EMU 2>/dev/null; wait $EMU 2>/dev/null
 echo "(log: $OUT.log)"

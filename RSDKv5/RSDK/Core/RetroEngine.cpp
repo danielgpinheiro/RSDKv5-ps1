@@ -1212,7 +1212,11 @@ void RSDK::InitGameLink()
 #if RETRO_USE_MOD_LOADER
     objectClassCount = 0;
     memset(globalObjectIDs, 0, sizeof(globalObjectIDs));
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1EntityStorageClear();
+#else
     memset(objectEntityList, 0, sizeof(objectEntityList));
+#endif
     editableVarCount = 0;
     foreachStackPtr  = foreachStackList;
     currentMod       = NULL;

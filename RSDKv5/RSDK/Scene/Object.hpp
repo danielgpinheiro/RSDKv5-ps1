@@ -205,7 +205,11 @@ struct ForeachStackInfo {
 };
 
 struct TypeGroupList {
+#if RETRO_PLATFORM == RETRO_PS1
+    uint16 *entries; // into one pool rebuilt every frame (PS1Entities.cpp PS1TypeGroupsBuild)
+#else
     uint16 entries[ENTITY_COUNT];
+#endif
     int32 entryCount;
 };
 
@@ -219,7 +223,12 @@ extern int32 globalObjectIDs[OBJECT_COUNT];
 // Loaded Stage Objects (includes Globals if "loadGlobals" is enabled)
 extern int32 stageObjectIDs[OBJECT_COUNT];
 
+#if RETRO_PLATFORM == RETRO_PS1
+#include "PS1/PS1Entities.hpp" // per-slot entity storage (docs/32 2.3): objectEntityPtr[], OBJECT_ENTITY(slot)
+#else
 extern EntityBase objectEntityList[ENTITY_COUNT];
+#define OBJECT_ENTITY(slot) (&objectEntityList[slot])
+#endif
 
 extern EditableVarInfo *editableVarList;
 extern int32 editableVarCount;
@@ -298,14 +307,28 @@ void ProcessObjectDrawLists();
 
 uint16 FindObject(const char *name);
 
+#if RETRO_PLATFORM == RETRO_PS1
+inline Entity *GetEntity(uint16 slot) { return OBJECT_ENTITY(slot < ENTITY_COUNT ? slot : (ENTITY_COUNT - 1)); }
+inline int32 GetEntitySlot(EntityBase *entity)
+{
+    int32 slot = PS1EntitySlotOf(entity);
+    return slot < 0 ? 0 : slot;
+}
+#else
 inline Entity *GetEntity(uint16 slot) { return &objectEntityList[slot < ENTITY_COUNT ? slot : (ENTITY_COUNT - 1)]; }
 inline int32 GetEntitySlot(EntityBase *entity) { return (int32)((uint32)(entity - objectEntityList) < ENTITY_COUNT ? entity - objectEntityList : 0); }
+#endif
 int32 GetEntityCount(uint16 classID, bool32 isActive);
 
 void ResetEntity(Entity *entity, uint16 classID, void *data);
 void ResetEntitySlot(uint16 slot, uint16 classID, void *data);
 Entity *CreateEntity(uint16 classID, void *data, int32 x, int32 y);
 
+#if RETRO_PLATFORM == RETRO_PS1
+// Stock copies sizeof(EntityBase); here the source block's bytes, into a destination block at least that big (moved to a
+// spare block if smaller: counted), the rest of the destination cleared.
+void CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity);
+#else
 inline void CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
 {
     if (destEntity && srcEntity) {
@@ -315,6 +338,7 @@ inline void CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
             memset(srcEntity, 0, sizeof(EntityBase));
     }
 }
+#endif
 
 bool32 GetActiveEntities(uint16 group, Entity **entity);
 bool32 GetAllEntities(uint16 classID, Entity **entity);

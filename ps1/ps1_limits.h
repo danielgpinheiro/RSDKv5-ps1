@@ -3,14 +3,14 @@
  * Both include this file under RETRO_PS1_BUILD, so a slot count can never differ between the two (the game loops
  * over SCENEENTITY_COUNT slots, indexes TEMPENTITY_START, sizes globals->atlEntityData by it).
  *
- * Phase 2.2 (headless boot to the title, 8 MB debug link): the stock stride with a small list. Logos has 5 scene
- * entities and Title 77. Phase 2.3 replaces this with per-scene storage sized from the scene files.
+ * Phase 2.3: the stock counts. The memory is no longer ENTITY_COUNT x sizeof(EntityBase): every slot points to a
+ * block sized for what it holds (RSDKv5/RSDK/Scene/PS1/PS1Entities.hpp), so the game's slot constants stay the PC's.
  */
 #ifndef PS1_LIMITS_H
 #define PS1_LIMITS_H
 
-#define RESERVE_ENTITY_COUNT (0x40)  /* stock: SLOT_PLAYER1.. and the other fixed slots live here */
-#define SCENEENTITY_COUNT    (0x100) /* stock 0x800 */
-#define TEMPENTITY_COUNT     (0x40)  /* stock 0x100 */
+#define RESERVE_ENTITY_COUNT (0x40)  /* SLOT_PLAYER1.. and the other fixed slots */
+#define SCENEENTITY_COUNT    (0x800) /* the largest Mania-mode scene keeps 2017 entities (PSZ2/2, docs/32 phase 1) */
+#define TEMPENTITY_COUNT     (0x100)
 
 #endif /* PS1_LIMITS_H */
