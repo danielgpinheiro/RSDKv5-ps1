@@ -30,7 +30,7 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 extern "C" char __heap_start, __stack_start;
 extern "C" void *psyqo_heap_end();
 #define PS1_STACK_RESERVE (16 * 1024)
-#define PS1_INIT_RESERVE  (136 * 1024)
+#define PS1_INIT_RESERVE  (128 * 1024) // 2.3p: user database 62 KB (0xE0 rows)
 volatile uint32 g_ps1StgLimit = 0; // STG's size on the 2 MB link (GDB)
 #endif
 
@@ -55,8 +55,8 @@ bool32 RSDK::InitStorage()
     dataStorage[DATASET_SFX].storageLimit = 256;
     dataStorage[DATASET_STR].storageLimit = 24 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 32 * 1024;
-    // 2.3k: STG takes the rest of the heap, less what is allocated after this (user core + database ~87 KB, InitEngine
-    // ~37 KB, measured on GHZ1 from psyqo's heap high-water mark) and the stack. Code growth then shows as a smaller STG
+    // 2.3k: STG takes the rest of the heap, less what is allocated after this (user core + database ~78 KB, the CD file
+    // index 12 KB and stream window 32 KB, scanlines 5 KB: measured on GHZ1 from psyqo's heap high-water mark) and the stack. Code growth then shows as a smaller STG
     // (g_ps1StgLimit) instead of a failed allocation at init.
     {
         uint32 top  = (uint32)(uintptr_t)psyqo_heap_end();

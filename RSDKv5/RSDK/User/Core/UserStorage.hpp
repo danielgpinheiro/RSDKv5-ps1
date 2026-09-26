@@ -14,7 +14,8 @@ namespace SKU
 // One database (2.3i): replays are out of scope, and a ReplayDB request gets table -1, which every DB call checks.
 #define RETRO_USERDB_MAX     (1)
 #define RETRO_USERDB_COL_MAX (8)
-#define RETRO_USERDB_ROW_MAX (0x100)
+// 2.3p: 0xE0 rows: TimeAttackData_AddRecord adds a row, then prunes that zone / act / character back to 3 (216 + 1)
+#define RETRO_USERDB_ROW_MAX (0xE0)
 #else
 #define RETRO_USERDB_MAX     (8)
 #define RETRO_USERDB_COL_MAX (8)
