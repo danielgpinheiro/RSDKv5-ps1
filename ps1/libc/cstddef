@@ -1,0 +1,4 @@
+// PS1 port: <cstddef> = <stddef.h> in std.
+#pragma once
+#include <stddef.h>
+namespace std { using ::size_t; using ::ptrdiff_t; typedef decltype(nullptr) nullptr_t; }

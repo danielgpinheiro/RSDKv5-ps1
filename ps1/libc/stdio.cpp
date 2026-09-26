@@ -595,3 +595,6 @@ extern "C" int vxprintf(void (*func)(const char *, int, void *), void *opaque, c
         func(buf, len, opaque);
     return n;
 }
+
+// The CD is read-only (RSDKv5 UserStorage deletes save files through remove; saves are on the memory card).
+extern "C" int remove(const char *path) { (void)path; return -1; }

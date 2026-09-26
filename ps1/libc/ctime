@@ -1,0 +1,3 @@
+// PS1 port: <ctime> = the port's time.h (RSDKv5 includes <ctime>).
+#pragma once
+#include "time.h"

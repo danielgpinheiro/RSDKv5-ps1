@@ -27,6 +27,8 @@ float  powf(float base, float exp);
 float  logf(float x);
 float  expf(float x);
 float  atan2f(float y, float x);
+static inline float fminf(float a, float b) { return a < b ? a : b; }
+static inline float fmaxf(float a, float b) { return a > b ? a : b; }
 
 double sin(double x);
 double cos(double x);

@@ -8,8 +8,8 @@ earlier ports: `../docs/29` (Sonic CD) and `../docs/31` (real hardware).**
 `RSDKModding/Sonic-Mania-Decompilation` (the game, C, `SonicMania/`) with its `RSDKv5-Decompilation`
 submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **psyqo** (C++20) on branch
 `ps1`. Remotes: `origin` = upstream RSDKModding (read-only), `fork` = github.com/danielgpinheiro/RSDKv5-ps1
-(**private**; push here). The submodule stays upstream (read-only, like `../nugget`); PS1 changes to the
-engine live in this repo's own copies/overrides (decided in phase 2).
+(**private**; push here). The submodule stays upstream (read-only, like `../nugget`); the engine the port builds is the vendored copy
+`RSDKv5/RSDK` (phase 2.1).
 
 ## First checks (every session)
 - `git status` / `git log --oneline -10` (uncommitted work may be another agent's).
@@ -33,6 +33,8 @@ engine live in this repo's own copies/overrides (decided in phase 2).
 
 ## Build / run / debug
 ```bash
+make objects STAGES=Logos,Title,GHZ  # which objects link (tools/gen_objects.py -> ps1/rsdk5_objects.inc, build/gen/game_srcs.txt)
+make -j8 MEASURE_RAM=8M         # engine + game (phase 2): 8 MB measuring/debug link until 2.3 fits 2 MB; rsdkv5.map
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
 tools/smoke_disc.sh             # phase 0 test disc (GHZ subset + Jump.vag) + make disc
@@ -47,7 +49,10 @@ DuckStation: `file` the ELF before `target remote localhost:2345`, `set architec
 | Path | Role |
 |---|---|
 | `SonicMania/` | the game (upstream): `Objects/<zone>/*.c` (610 files), `Game.h`, `GameLink.h` |
-| `dependencies/RSDKv5/RSDKv5/` | the engine (upstream submodule): `RSDK/{Core,Scene,Graphics,Audio,Storage,Input,User}` |
+| `dependencies/RSDKv5/RSDKv5/` | the engine (upstream submodule, read-only): `RSDK/{Core,Scene,Graphics,Audio,Storage,Input,User}` |
+| `RSDKv5/RSDK/` | **the engine the port builds**: vendored from the submodule at `bd59396`, PS1 changes behind `RETRO_PLATFORM == RETRO_PS1` (diff against the submodule to see them); PS1 backends in `{Graphics,Audio,Input}/PS1` |
+| `ps1/rsdk5_main.cpp`, `ps1/ps1_limits.h` | the psyqo app (RunRetroEngine's init + loop); limits shared by engine and game (entity slots) |
+| `tools/gen_objects.py`, `tools/gen_stubs.py`, `tools/trig/` | linked object set; NULL pointers / counted stubs for unlinked objects; build-time trig tables |
 | `ps1/` | PS1 platform layer (see `ps1/README.md`), from Sonic CD: CD stream + file index, XA music, SPU, MDEC/STR (CPU-driven), IRQ guard, loading icon, memory card, chained GPU renderer (joins in phase 3) |
 | `tools/extract_rsdk.py`, `tools/rsdkv5_filelist.txt` | RSDKv5 datapack extractor (md5 names + the Dreamcast port's file list) |
 | `tools/disc/`, `tools/loading/`, `tools/memcard/`, `tools/audio/` | disc builder + verifier, icon builders, memory card images, SFX/XA converters (from Sonic CD; adapted per phase) |

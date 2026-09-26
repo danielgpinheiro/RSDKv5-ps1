@@ -145,6 +145,11 @@ void InitGameLogic(void)
     RSDK.RegisterGlobalVariables((void **)&globals, sizeof(GlobalVariables));
 #endif
 
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32): only the objects this build links (tools/gen_objects.py); the rest of the list is
+    // the PC's.
+#include "../ps1/rsdk5_objects.inc"
+#else
     RSDK_REGISTER_OBJECT(Acetone);
     RSDK_REGISTER_OBJECT(ActClear);
     RSDK_REGISTER_OBJECT(AIZEggRobo);
@@ -852,6 +857,7 @@ void InitGameLogic(void)
     RSDK_REGISTER_OBJECT(YoyoPulley);
     RSDK_REGISTER_OBJECT(ZipLine);
     RSDK_REGISTER_OBJECT(Zone);
+#endif // RETRO_PS1_BUILD
 
 #if RETRO_USE_MOD_LOADER
     InitModAPI();

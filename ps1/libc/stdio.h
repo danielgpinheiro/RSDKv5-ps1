@@ -67,6 +67,7 @@ int   feof(FILE *f);
 int   ferror(FILE *f);
 void  clearerr(FILE *f);
 void  perror(const char *s);
+int   remove(const char *path); /* the CD is read-only: always fails (-1) */
 
 #ifdef __cplusplus
 }
