@@ -119,6 +119,10 @@ inline void PS1TryAllocateStorage(void **dataPtr, uint32 size, StorageDataSets d
     AllocateStorage(dataPtr, size, dataSet, clear);
     ps1StorageMayFail = false;
 }
+// Load-time scratch from the top of a dataset's free space (docs/32 2.3h): the dataset's limit is lowered by the block
+// until PS1StorageTailRelease, so no allocation (and no compaction) reaches it. NULL when the free space is too small.
+void *PS1StorageTailAlloc(StorageDataSets set, uint32 size);
+void PS1StorageTailRelease(StorageDataSets set);
 #endif
 void DefragmentAndGarbageCollectStorage(StorageDataSets set);
 void RemoveStorageEntry(void **dataPtr);

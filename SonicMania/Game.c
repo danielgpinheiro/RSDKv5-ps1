@@ -141,10 +141,12 @@ void LinkGameLogicDLL(EngineInfo info)
 #if defined RETRO_PS1_BUILD
 // PS1 port (docs/32 2.3): tools/data_disc.py remaps GameConfig's global-variable offsets with GV_REGIONS; the compiled
 // GlobalVariables must be exactly that layout.
-#define PS1_GV_SHIFT_SAVE (0x4000 - 0xD00)
+#define PS1_GV_SHIFT_ATL  (0x4000 - 0x200 * 8)
+#define PS1_GV_SHIFT_SAVE (PS1_GV_SHIFT_ATL + 0x4000 - 0xD00)
 #define PS1_GV_SHIFT_MENU (0x4000 - 0x80)
 #define PS1_GV_SHIFT_COMP (0x4000 - 0x80)
-_Static_assert(offsetof(GlobalVariables, saveRAM) == 4 * 16425, "GlobalVariables layout != tools/data_disc.py GV_REGIONS");
+_Static_assert(offsetof(GlobalVariables, atlEntityData) == 4 * 40, "GlobalVariables layout != tools/data_disc.py GV_REGIONS");
+_Static_assert(offsetof(GlobalVariables, saveRAM) == 4 * (16425 - PS1_GV_SHIFT_ATL), "GlobalVariables layout");
 _Static_assert(offsetof(GlobalVariables, menuParam) == 4 * (33834 - PS1_GV_SHIFT_SAVE), "GlobalVariables layout");
 _Static_assert(offsetof(GlobalVariables, competitionSession) == 4 * (50221 - PS1_GV_SHIFT_SAVE - PS1_GV_SHIFT_MENU), "GlobalVariables layout");
 _Static_assert(offsetof(GlobalVariables, replayWriteBuffer) == 4 * (67037 - PS1_GV_SHIFT_SAVE - PS1_GV_SHIFT_MENU - PS1_GV_SHIFT_COMP),

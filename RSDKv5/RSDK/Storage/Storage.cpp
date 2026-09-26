@@ -116,6 +116,29 @@ extern "C" __attribute__((noinline)) void PS1StorageExhausted(uint32 set, uint32
     }
 }
 
+// Tail blocks (Storage.hpp): bytes held per dataset, and the peak of used + tail (what the dataset had to hold).
+static uint32 s_ps1TailBytes[DATASET_MAX];
+volatile uint32 g_ps1StorageTailPeak[DATASET_MAX];
+
+void *RSDK::PS1StorageTailAlloc(StorageDataSets set, uint32 size)
+{
+    DataStorage *st = &dataStorage[set];
+    size            = (size + 3) & ~3u;
+    if (st->usedStorage * sizeof(uint32) + (HEADER_SIZE * sizeof(uint32)) + size >= st->storageLimit)
+        return NULL;
+    st->storageLimit -= size;
+    s_ps1TailBytes[set] += size;
+    if (st->usedStorage * sizeof(uint32) + s_ps1TailBytes[set] > g_ps1StorageTailPeak[set])
+        g_ps1StorageTailPeak[set] = st->usedStorage * sizeof(uint32) + s_ps1TailBytes[set];
+    return (uint8 *)st->memoryTable + st->storageLimit;
+}
+
+void RSDK::PS1StorageTailRelease(StorageDataSets set)
+{
+    dataStorage[set].storageLimit += s_ps1TailBytes[set];
+    s_ps1TailBytes[set] = 0;
+}
+
 static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
 {
     DataStorage *st = &dataStorage[set];

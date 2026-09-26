@@ -205,7 +205,12 @@ typedef struct {
     int32 atlEnabled;
     int32 atlEntityCount;
     int32 atlEntitySlot[0x20];
+#if defined RETRO_PS1_BUILD
+    int32 atlEntityData[0x200 * 8]; // PS1 (docs/32 2.3h): 8 stored entities (players, signpost, item boxes; Zone.c counts
+                                    // the rest); tools/data_disc.py remaps GameConfig
+#else
     int32 atlEntityData[0x4000];
+#endif
     int32 saveLoaded;
 #if defined RETRO_PS1_BUILD
     int32 saveRAM[0xD00]; // PS1 (docs/32 2.3f): what the game indexes (slots 0-7, time attack 0x800, progress 0x900, encore

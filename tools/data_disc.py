@@ -214,6 +214,7 @@ def convert_blocks(src, walk):
 # written for the PC layout: offsets after a shortened array move down, writes into dropped elements go. SonicMania/Game.c
 # checks the same numbers against the compiled layout (_Static_assert).
 GV_REGIONS = [
+    (40, 0x4000, 0x200 * 8),                # atlEntityData: 8 stored entities (Zone.c counts the rest)
     (16425, 0x4000, 0xD00),                 # saveRAM: the offsets the game indexes (slots, time attack, progress, encore)
     (33834, 0x4000, 0x80),                  # menuParam: only MenuParam_GetParam's EntityMenuParam (432 B)
     (50221, 0x4000, 0x80),                  # competitionSession: only CompetitionSession_GetSession (380 B)

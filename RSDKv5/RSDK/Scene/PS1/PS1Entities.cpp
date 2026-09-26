@@ -161,10 +161,13 @@ struct SceneRec {
     uint16 payloadLen;
 };
 
-// One DATASET_TMP block of records per object (sized exactly from its variable list and entity count).
+// One block of records per object (sized exactly from its variable list and entity count): carved from the top of STG's
+// free space while the scene loads (docs/32 2.3h: the arena is placed below it, the stage's sprites fill that space only
+// later), else DATASET_TMP.
 #define PS1_SCENE_BLOCKS 0x100
 uint8 *s_blocks[PS1_SCENE_BLOCKS];
 uint32 s_blockSize[PS1_SCENE_BLOCKS], s_blockUsed[PS1_SCENE_BLOCKS];
+bool s_blockTail[PS1_SCENE_BLOCKS];
 int32 s_blockCount = 0;
 uint8 *s_rec       = NULL; // the current object's block
 uint32 s_recSize   = 0;
@@ -176,6 +179,7 @@ SceneRec *s_cur    = NULL;
 
 void RSDK::PS1SceneEntitiesBegin()
 {
+    PS1StorageTailRelease(DATASET_STG); // (a load that never reached PS1SceneEntitiesPlace)
     s_blockCount = 0;
     s_rec        = NULL;
     s_recSize = s_recUsed = 0;
@@ -197,7 +201,10 @@ void RSDK::PS1SceneObjectBegin(uint32 bytes)
         g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
         return;
     }
-    PS1TryAllocateStorage((void **)&s_blocks[s_blockCount], bytes, DATASET_TMP, false);
+    s_blocks[s_blockCount]    = (uint8 *)PS1StorageTailAlloc(DATASET_STG, bytes);
+    s_blockTail[s_blockCount] = s_blocks[s_blockCount] != NULL;
+    if (!s_blocks[s_blockCount])
+        PS1TryAllocateStorage((void **)&s_blocks[s_blockCount], bytes, DATASET_TMP, false);
     if (!s_blocks[s_blockCount]) {
         g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
         return;
@@ -350,7 +357,11 @@ void RSDK::PS1SceneEntitiesPlace()
     ps1SceneSlotEnd = slot;
 
     RemoveStorageEntry((void **)&index);
-    for (int32 b = 0; b < s_blockCount; ++b) RemoveStorageEntry((void **)&s_blocks[b]);
+    for (int32 b = 0; b < s_blockCount; ++b) {
+        if (!s_blockTail[b])
+            RemoveStorageEntry((void **)&s_blocks[b]);
+    }
+    PS1StorageTailRelease(DATASET_STG);
     s_blockCount = 0;
     s_rec        = NULL;
 }

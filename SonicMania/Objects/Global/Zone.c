@@ -350,6 +350,10 @@ int32 Zone_GetZoneID(void)
     return ZONE_INVALID;
 }
 
+#if defined RETRO_PS1_BUILD
+volatile int32 ps1AtlDropped = 0; // entities an act transition could not store (GDB; must stay 0)
+#endif
+
 void Zone_StoreEntities(int32 xOffset, int32 yOffset)
 {
     // "Normalize" the positions of players, signposts & itemboxes when we store them
@@ -359,6 +363,12 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
     int32 dataPos = 0;
     foreach_active(Player, player)
     {
+#if defined RETRO_PS1_BUILD
+        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+            ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
+            continue;
+        }
+#endif
         player->position.x -= xOffset;
         player->position.y -= yOffset;
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(player);
@@ -369,6 +379,12 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
 
     foreach_active(SignPost, signPost)
     {
+#if defined RETRO_PS1_BUILD
+        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+            ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
+            continue;
+        }
+#endif
         signPost->position.x -= xOffset;
         signPost->position.y -= yOffset;
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(signPost);
@@ -379,6 +395,12 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
 
     foreach_active(ItemBox, itemBox)
     {
+#if defined RETRO_PS1_BUILD
+        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+            ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
+            continue;
+        }
+#endif
         itemBox->position.x -= xOffset;
         itemBox->position.y -= yOffset;
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(itemBox);

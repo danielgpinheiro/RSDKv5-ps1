@@ -40,7 +40,7 @@ define snap
   printf "STUBS seen %u %u %u %u %u %u %u %u (1 + index in build/gen/unlinked_stubs.c)\n", ((unsigned*)&g_ps1UnlinkedSeen)[0], ((unsigned*)&g_ps1UnlinkedSeen)[1], ((unsigned*)&g_ps1UnlinkedSeen)[2], ((unsigned*)&g_ps1UnlinkedSeen)[3], ((unsigned*)&g_ps1UnlinkedSeen)[4], ((unsigned*)&g_ps1UnlinkedSeen)[5], ((unsigned*)&g_ps1UnlinkedSeen)[6], ((unsigned*)&g_ps1UnlinkedSeen)[7]
   set \$d = 0
   while \$d < 5
-    printf "DATASET %d live=%u entries=%u largest=%u fail=%u forcedDefrag=%u used=%u limit=%u\n", \$d, g_ps1StorageLivePeak[\$d], g_ps1StorageEntryPeak[\$d], g_ps1StorageLargest[\$d], g_ps1StorageFail[\$d], g_ps1StorageForcedDefrags[\$d], RSDK::dataStorage[\$d].usedStorage * 4, RSDK::dataStorage[\$d].storageLimit
+    printf "DATASET %d live=%u entries=%u largest=%u fail=%u forcedDefrag=%u tailPeak=%u used=%u limit=%u\n", \$d, g_ps1StorageLivePeak[\$d], g_ps1StorageEntryPeak[\$d], g_ps1StorageLargest[\$d], g_ps1StorageFail[\$d], g_ps1StorageForcedDefrags[\$d], g_ps1StorageTailPeak[\$d], RSDK::dataStorage[\$d].usedStorage * 4, RSDK::dataStorage[\$d].storageLimit
     set \$d = \$d + 1
   end
 end
