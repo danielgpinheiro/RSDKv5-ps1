@@ -46,11 +46,15 @@ if g_ps1PerfFrames == 240
   set $q3 = g_ps1ProfPart[3]
   set $q4 = g_ps1ProfPart[4]
   set $q5 = g_ps1ProfPart[5]
+  set $fa0 = g_ps1ProfForeachAll[0]
+  set $fa1 = g_ps1ProfForeachAll[1]
   set $hb0 = g_ps1ProfHbl
 end
 if g_ps1PerfFrames >= 900
   printf "PROF frames=%u phases input=%u objects=%u parallax=%u drawlists=%u (hblanks, frames 240-900)\n", g_ps1ProfFrames - $f0, g_ps1ProfPhase[0] - $p0, g_ps1ProfPhase[1] - $p1, g_ps1ProfPhase[2] - $p2, g_ps1ProfPhase[3] - $p3
   printf "PARTS static=%u update=%u typegroups=%u lateupdate=%u entitydraws=%u scanlines=%u (hblanks, frames 240-900)\n", g_ps1ProfPart[0] - $q0, g_ps1ProfPart[1] - $q1, g_ps1ProfPart[2] - $q2, g_ps1ProfPart[3] - $q3, g_ps1ProfPart[4] - $q4, g_ps1ProfPart[5] - $q5
+  printf "FOREACHALL loops=%u slots=%u (frames 240-900)\n", g_ps1ProfForeachAll[0] - $fa0, g_ps1ProfForeachAll[1] - $fa1
+  printf "SOUNDBOARD check=%u update=%u (ticks of 8 cycles, since boot)\n", ps1ProfSoundboard[0], ps1ProfSoundboard[1]
   printf "FRAMES engineHbl=%u frameHbl=%u\n", g_ps1ProfEngine - $en0, g_ps1ProfHbl - $hb0
   set $o = 0
   while $o < RSDK::objectClassCount

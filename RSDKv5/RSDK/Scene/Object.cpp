@@ -327,6 +327,7 @@ static inline uint16 PS1ProfNow() { return *(volatile uint16 *)0xBF801120; }
 // Engine parts in hblanks (root counter 1): [0] static updates, [1] the update pass, [2] type groups, [3] the late
 // update pass, [4] draw-list entity draws, [5] layer scanline callbacks / parallax, [6] layer drawing
 volatile uint32 g_ps1ProfPart[8];
+volatile uint32 g_ps1ProfForeachAll[2]; // foreach_all loops started, slots they visited
 #define PS1_HBL() (*(volatile uint16 *)0xBF801110)
 #define PS1_PART_BEGIN(n) uint16 ps1P##n = PS1_HBL()
 #define PS1_PART_END(n)   g_ps1ProfPart[n] += (uint16)(PS1_HBL() - ps1P##n)
@@ -1560,7 +1561,14 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
 #if RETRO_PLATFORM == RETRO_PS1
     // 3.0: the cursor in a register (the stock loop re-read foreachStackPtr->id every slot: ~65 hblanks a frame for
     // GHZ's waterfall-sound check); the same slots in the same order, the cursor stored where stock leaves it
+#if PS1_PROFILE
+    if (!*entity)
+        g_ps1ProfForeachAll[0]++;
+#endif
     for (int32 id = foreachStackPtr->id; id < ENTITY_COUNT; id = PS1NextSlot(id)) {
+#if PS1_PROFILE
+        g_ps1ProfForeachAll[1]++;
+#endif
         Entity *nextEntity = OBJECT_ENTITY(id);
         if (nextEntity->classID == classID) {
             foreachStackPtr->id = id;

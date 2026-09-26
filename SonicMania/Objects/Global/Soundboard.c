@@ -13,13 +13,24 @@ void Soundboard_Update(void) {}
 
 void Soundboard_LateUpdate(void) {}
 
+#if PS1_PROFILE
+volatile unsigned ps1ProfSoundboard[2]; // counter-2 ticks of the check / update callbacks (docs/32 3.0)
+#endif
+
 void Soundboard_StaticUpdate(void)
 {
     for (int32 s = 0; s < MIN(Soundboard->sfxCount, SOUNDBOARD_SFX_COUNT); ++s) {
         bool32 shouldStopSfx = true;
 
         if (Soundboard->sfxCheckCallback[s] && SceneInfo->state == ENGINESTATE_REGULAR) {
+#if PS1_PROFILE
+            unsigned short ps1T = *(volatile unsigned short *)0xBF801120;
+            bool32 ps1Check     = Soundboard->sfxCheckCallback[s]();
+            ps1ProfSoundboard[0] += (unsigned short)(*(volatile unsigned short *)0xBF801120 - ps1T);
+            if (ps1Check) {
+#else
             if (Soundboard->sfxCheckCallback[s]()) {
+#endif
                 shouldStopSfx                  = false;
                 Soundboard->sfxFadeOutTimer[s] = 0;
 
@@ -33,7 +44,13 @@ void Soundboard_StaticUpdate(void)
                     RSDK.SetChannelAttributes(Soundboard->sfxChannel[s], 1.0, 0.0, 1.0);
 
                 if (Soundboard->sfxUpdateCallback[s]) {
+#if PS1_PROFILE
+                    unsigned short ps1U = *(volatile unsigned short *)0xBF801120;
                     Soundboard->sfxUpdateCallback[s](s);
+                    ps1ProfSoundboard[1] += (unsigned short)(*(volatile unsigned short *)0xBF801120 - ps1U);
+#else
+                    Soundboard->sfxUpdateCallback[s](s);
+#endif
                     ++Soundboard->sfxPlayingTimer[s];
                 }
             }

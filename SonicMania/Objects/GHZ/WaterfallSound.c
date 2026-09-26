@@ -10,6 +10,33 @@
 #if MANIA_USE_PLUS
 ObjectWaterfallSound *WaterfallSound;
 
+#if defined RETRO_PS1_BUILD
+// PS1 (docs/32 3.0b): the check and the update below walked every entity slot twice a frame with foreach_all (~18 of
+// Soundboard's ~56 hblanks in GHZ1). No code creates a WaterfallSound: the scene's are collected once per stage load, in
+// slot order, and each use re-checks the class (one blanked since is skipped, as foreach_all would skip it). Slots, not
+// pointers: a PS1 entity block may move. More than PS1_WATERFALL_MAX falls back to foreach_all.
+#define PS1_WATERFALL_MAX (0x40)
+static uint16 ps1WaterfallSlots[PS1_WATERFALL_MAX];
+static int32 ps1WaterfallCount = -1; // -1: not collected for this stage load; -2: too many (foreach_all)
+
+static void PS1WaterfallCollect(void)
+{
+    int32 count = 0;
+    foreach_all(WaterfallSound, sound)
+    {
+        if (count < PS1_WATERFALL_MAX)
+            ps1WaterfallSlots[count] = RSDK.GetEntitySlot(sound);
+        ++count;
+    }
+    ps1WaterfallCount = count <= PS1_WATERFALL_MAX ? count : -2;
+}
+
+#define PS1_FOREACH_WATERFALL(entityOut)                                                                                                             \
+    for (int32 ps1W = 0; ps1W < ps1WaterfallCount; ++ps1W)                                                                                           \
+        for (EntityWaterfallSound *entityOut = RSDK_GET_ENTITY(ps1WaterfallSlots[ps1W], WaterfallSound);                                             \
+             entityOut && entityOut->classID == WaterfallSound->classID; entityOut = NULL)
+#endif
+
 void WaterfallSound_Update(void) {}
 
 void WaterfallSound_LateUpdate(void) {}
@@ -49,9 +76,48 @@ void WaterfallSound_Create(void *data)
 
 void WaterfallSound_StageLoad(void)
 {
+#if defined RETRO_PS1_BUILD
+    ps1WaterfallCount = -1;
+#endif
     if (globals->gameMode != MODE_COMPETITION)
         Soundboard_LoadSfx("Stage/WaterfallLoop.wav", 2820, WaterfallSound_SfxCheck_WaterfallLoop, WaterfallSound_SfxUpdate_WaterfallLoop);
 }
+
+#if defined RETRO_PS1_BUILD
+// the foreach_all body of WaterfallSound_SfxCheck_WaterfallLoop, unchanged (the PS1 walks the collected slots)
+static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldCenterX, int32 worldCenterY, int32 *pcount)
+{
+#define count (*pcount)
+        sound->sfxActive = false;
+        sound->sfxPos.x  = 0;
+        sound->sfxPos.y  = 0;
+
+        Hitbox hitbox;
+        hitbox.left   = -(sound->size.x >> 12);
+        hitbox.top    = -(sound->size.y >> 12);
+        hitbox.right  = sound->size.x >> 12;
+        hitbox.bottom = sound->size.y >> 12;
+
+        if (MathHelpers_PointInHitbox(sound->position.x, sound->position.y, worldCenterX, worldCenterY, FLIP_NONE, &hitbox)) {
+            ++count;
+            sound->sfxActive = true;
+            sound->sfxPos.x  = worldCenterX;
+            sound->sfxPos.y  = worldCenterY;
+        }
+        else {
+            if (MathHelpers_Distance(sound->position.x, sound->position.y, worldCenterX, worldCenterY) - 8 * sound->size.y - 8 * sound->size.x
+                <= 0x2800000) {
+                if (MathHelpers_ConstrainToBox(&sound->sfxPos, worldCenterX, worldCenterY, sound->position, hitbox)) {
+                    if (MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY) <= 0x2800000) {
+                        sound->sfxActive = true;
+                        ++count;
+                    }
+                }
+            }
+        }
+#undef count
+}
+#endif
 
 bool32 WaterfallSound_SfxCheck_WaterfallLoop(void)
 {
@@ -61,6 +127,15 @@ bool32 WaterfallSound_SfxCheck_WaterfallLoop(void)
     WaterfallSound->activeCount = 0;
     int32 count                 = 0;
 
+#if defined RETRO_PS1_BUILD
+    if (ps1WaterfallCount == -1)
+        PS1WaterfallCollect();
+    if (ps1WaterfallCount >= 0) {
+        PS1_FOREACH_WATERFALL(sound) { WaterfallSound_PS1CheckOne(sound, worldCenterX, worldCenterY, &count); }
+        WaterfallSound->activeCount = count;
+        return WaterfallSound->activeCount > 0;
+    }
+#endif
     foreach_all(WaterfallSound, sound)
     {
         sound->sfxActive = false;
@@ -106,6 +181,30 @@ void WaterfallSound_SfxUpdate_WaterfallLoop(int32 sfxID)
     float volDivisor = 0.0f;
     int32 dist       = 0x7FFF0000;
 
+#if defined RETRO_PS1_BUILD
+    if (ps1WaterfallCount >= 0) {
+        PS1_FOREACH_WATERFALL(sound)
+        {
+            if (sound->sfxActive) {
+                int16 sqRoot   = MIN(MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY) >> 16, 640);
+                float volume   = (sqRoot / -640.0f) + 1.0f;
+                float distance = -1.0;
+                if (sound->sfxPos.x > worldLeft) {
+                    distance = 1.0;
+                    if (sound->sfxPos.x < worldRight) {
+                        distance = (((sound->sfxPos.x - worldCenterX) >> 16) / (float)ScreenInfo->center.x);
+                    }
+                }
+                volDivisor += volume;
+                if (dist >= (sqRoot << 16))
+                    dist = (sqRoot << 16);
+                pan += volume * distance;
+            }
+        }
+    }
+    else
+#endif
+    {
     foreach_all(WaterfallSound, sound)
     {
         if (sound->sfxActive) {
@@ -123,6 +222,7 @@ void WaterfallSound_SfxUpdate_WaterfallLoop(int32 sfxID)
                 dist = (sqRoot << 16);
             pan += volume * distance;
         }
+    }
     }
 
     float div = FABS(volDivisor);
