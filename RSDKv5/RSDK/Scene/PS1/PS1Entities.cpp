@@ -14,6 +14,7 @@ volatile uint32 RSDK::g_ps1SceneRecordBytes  = 0;
 volatile uint32 RSDK::g_ps1SceneRecordDropped = 0;
 volatile uint32 RSDK::g_ps1EntitiesDropped    = 0;
 int32 RSDK::ps1SceneSlotEnd = RESERVE_ENTITY_COUNT;
+int32 RSDK::ps1TempSlotEnd  = TEMPENTITY_START + PS1_TEMP_BLOCKS;
 
 namespace
 {
@@ -62,6 +63,7 @@ void RSDK::PS1EntityStorageClear()
     s_arena = s_spare = s_spareEnd = NULL;
     g_ps1EntityArenaBytes = 0;
     ps1SceneSlotEnd       = RESERVE_ENTITY_COUNT;
+    ps1TempSlotEnd        = TEMPENTITY_START + PS1_TEMP_BLOCKS;
 }
 
 EntityBase *RSDK::PS1EntityRelocate(uint16 slot, uint32 size)
@@ -77,6 +79,8 @@ EntityBase *RSDK::PS1EntityRelocate(uint16 slot, uint32 size)
     g_ps1EntityRelocations = g_ps1EntityRelocations + 1;
     if (slot >= ps1SceneSlotEnd && slot < TEMPENTITY_START)
         ps1SceneSlotEnd = slot + 1; // a formerly empty scene slot: the slot loops must visit it now
+    if (slot >= ps1TempSlotEnd)
+        ps1TempSlotEnd = slot + 1; // a temp slot past the blocks: the same
     return e;
 }
 

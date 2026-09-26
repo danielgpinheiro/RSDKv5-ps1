@@ -324,8 +324,16 @@ static inline uint16 PS1ProfNow() { return *(volatile uint16 *)0xBF801120; }
         g_ps1ProfClass[id][kind] += (uint16)(PS1ProfNow() - ps1T_);                                                        \
         g_ps1ProfCalls[id]++;                                                                                              \
     } while (0)
+// Engine parts in hblanks (root counter 1): [0] static updates, [1] the update pass, [2] type groups, [3] the late
+// update pass, [4] draw-list entity draws, [5] layer scanline callbacks / parallax, [6] layer drawing
+volatile uint32 g_ps1ProfPart[8];
+#define PS1_HBL() (*(volatile uint16 *)0xBF801110)
+#define PS1_PART_BEGIN(n) uint16 ps1P##n = PS1_HBL()
+#define PS1_PART_END(n)   g_ps1ProfPart[n] += (uint16)(PS1_HBL() - ps1P##n)
 #else
 #define PS1_PROF(kind, id, call) call
+#define PS1_PART_BEGIN(n)
+#define PS1_PART_END(n)
 #endif
 
 void RSDK::InitObjects()
@@ -372,10 +380,217 @@ void RSDK::InitObjects()
     if (!cameraCount)
         AddCamera(&screens[0].position, TO_FIXED(screens[0].center.x), TO_FIXED(screens[0].center.y), false);
 }
+#if RETRO_PLATFORM == RETRO_PS1
+// 3.0 (docs/32): the update pass tests each ACTIVE_BOUNDS entity against every camera (three in GHZ1): ~200 hblanks a
+// frame. An entity outside the union of the cameras' boxes, grown by its own range, is out of range for every camera
+// (in range for camera s means |x - cx| <= rx + ox, so x lies in [min(cx - ox) - rx, max(cx + ox) + rx], and the same
+// for y): it skips the per-camera loop. The prefilter only applies where no sum can overflow (|position| < 2^30,
+// |range|, |offset| <= 2^28); otherwise, and inside the box, the stock loop decides.
+namespace
+{
+bool s_camUnionOk = false;
+int32 s_camMinX, s_camMaxX, s_camMinY, s_camMaxY;
+inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
+void PS1CameraUnion()
+{
+    s_camUnionOk = cameraCount > 0;
+    for (int32 s = 0; s < cameraCount; ++s) {
+        CameraInfo *c = &cameras[s];
+        if (!PS1Small(c->position.x, 0x3FFFFFFF) || !PS1Small(c->position.y, 0x3FFFFFFF) || !PS1Small(c->offset.x, 0x10000000)
+            || !PS1Small(c->offset.y, 0x10000000)) {
+            s_camUnionOk = false;
+            return;
+        }
+        int32 x0 = c->position.x - c->offset.x, x1 = c->position.x + c->offset.x;
+        int32 y0 = c->position.y - c->offset.y, y1 = c->position.y + c->offset.y;
+        if (!s || x0 < s_camMinX)
+            s_camMinX = x0;
+        if (!s || x1 > s_camMaxX)
+            s_camMaxX = x1;
+        if (!s || y0 < s_camMinY)
+            s_camMinY = y0;
+        if (!s || y1 > s_camMaxY)
+            s_camMaxY = y1;
+    }
+}
+// false: out of range for every camera (the stock loop would say so too)
+inline bool PS1MayBeInRange(const EntityBase *ent)
+{
+    int32 x = ent->position.x, y = ent->position.y, rx = ent->updateRange.x, ry = ent->updateRange.y;
+    if (!s_camUnionOk || !PS1Small(x, 0x3FFFFFFF) || !PS1Small(y, 0x3FFFFFFF) || !PS1Small(rx, 0x10000000) || !PS1Small(ry, 0x10000000))
+        return true;
+    return x >= s_camMinX - rx && x <= s_camMaxX + rx && y >= s_camMinY - ry && y <= s_camMaxY + ry;
+}
+
+// The three per-frame passes over the slots (ProcessObjects), with the stock semantics: the same slots in the same
+// order (the scene range up to ps1SceneSlotEnd, then the temp range up to ps1TempSlotEnd: the other slots are ghosts
+// with class 0), the same writes, sceneInfo set as stock whenever a callback runs (and, after the pass, to the last
+// slot's entity and ENTITY_COUNT), bounds and cameras re-read after a callback (it may create entities or add cameras).
+// The locals are what makes them faster: without a data cache every global re-read costs a RAM access.
+#define PS1_SLOT_WALK_NEXT(e, end, phase)                                                                                  \
+    if (++e >= end) {                                                                                                      \
+        if (phase)                                                                                                         \
+            break;                                                                                                         \
+        phase = 1;                                                                                                         \
+        e     = TEMPENTITY_START;                                                                                          \
+        end   = ps1TempSlotEnd;                                                                                            \
+        if (e >= end)                                                                                                      \
+            break;                                                                                                         \
+    }
+
+void PS1UpdatePass()
+{
+    PS1CameraUnion();
+    bool ok    = s_camUnionOk;
+    int32 minX = s_camMinX, maxX = s_camMaxX, minY = s_camMinY, maxY = s_camMaxY;
+    int32 e = 0, end = ps1SceneSlotEnd, phase = 0;
+    EntityBase *ent = NULL;
+    if (end <= 0) {
+        phase = 1, e = TEMPENTITY_START, end = ps1TempSlotEnd;
+    }
+    while (e < end) {
+        ent = OBJECT_ENTITY(e);
+        if (!ent->classID) {
+            ent->inRange = false;
+        }
+        else {
+            switch (ent->active) {
+                default:
+                case ACTIVE_DISABLED: break;
+
+                case ACTIVE_NEVER:
+                case ACTIVE_PAUSED: ent->inRange = false; break;
+
+                case ACTIVE_ALWAYS:
+                case ACTIVE_NORMAL: ent->inRange = true; break;
+
+                case ACTIVE_BOUNDS: {
+                    ent->inRange = false;
+                    int32 x = ent->position.x, y = ent->position.y, rx = ent->updateRange.x, ry = ent->updateRange.y;
+                    if (ok && PS1Small(x, 0x3FFFFFFF) && PS1Small(y, 0x3FFFFFFF) && PS1Small(rx, 0x10000000) && PS1Small(ry, 0x10000000)
+                        && (x < minX - rx || x > maxX + rx || y < minY - ry || y > maxY + ry))
+                        break; // outside every camera's box
+                    for (int32 s = 0; s < cameraCount; ++s) {
+                        int32 sx = abs(x - cameras[s].position.x);
+                        int32 sy = abs(y - cameras[s].position.y);
+                        if (sx <= rx + cameras[s].offset.x && sy <= ry + cameras[s].offset.y) {
+                            ent->inRange = true;
+                            break;
+                        }
+                    }
+                    break;
+                }
+
+                case ACTIVE_XBOUNDS:
+                    ent->inRange = false;
+                    for (int32 s = 0; s < cameraCount; ++s) {
+                        int32 sx = abs(ent->position.x - cameras[s].position.x);
+                        if (sx <= ent->updateRange.x + cameras[s].offset.x) {
+                            ent->inRange = true;
+                            break;
+                        }
+                    }
+                    break;
+
+                case ACTIVE_YBOUNDS:
+                    ent->inRange = false;
+                    for (int32 s = 0; s < cameraCount; ++s) {
+                        int32 sy = abs(ent->position.y - cameras[s].position.y);
+                        if (sy <= ent->updateRange.y + cameras[s].offset.y) {
+                            ent->inRange = true;
+                            break;
+                        }
+                    }
+                    break;
+
+                case ACTIVE_RBOUNDS:
+                    ent->inRange = false;
+                    for (int32 s = 0; s < cameraCount; ++s) {
+                        int32 sx = FROM_FIXED(abs(ent->position.x - cameras[s].position.x));
+                        int32 sy = FROM_FIXED(abs(ent->position.y - cameras[s].position.y));
+                        if (sx * sx + sy * sy <= ent->updateRange.x + cameras[s].offset.x) {
+                            ent->inRange = true;
+                            break;
+                        }
+                    }
+                    break;
+            }
+
+            if (ent->inRange) {
+                sceneInfo.entitySlot = e;
+                sceneInfo.entity     = ent;
+                void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
+                if (update) {
+                    PS1_PROF(0, stageObjectIDs[ent->classID], update());
+                    PS1CameraUnion();
+                    ok = s_camUnionOk, minX = s_camMinX, maxX = s_camMaxX, minY = s_camMinY, maxY = s_camMaxY;
+                    end = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+                }
+                // stock reads these after the callback
+                if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+            }
+        }
+        PS1_SLOT_WALK_NEXT(e, end, phase)
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+
+void PS1TypeGroupPass()
+{
+    // no callback runs here
+    int32 e = 0, end = ps1SceneSlotEnd, phase = 0;
+    EntityBase *ent = NULL;
+    if (end <= 0) {
+        phase = 1, e = TEMPENTITY_START, end = ps1TempSlotEnd;
+    }
+    while (e < end) {
+        ent = OBJECT_ENTITY(e);
+        if (ent->inRange && ent->interaction)
+            PS1TypeGroupsAdd(e, ent->classID, ent->group);
+        PS1_SLOT_WALK_NEXT(e, end, phase)
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+
+void PS1LateUpdatePass()
+{
+    int32 e = 0, end = ps1SceneSlotEnd, phase = 0;
+    EntityBase *ent = NULL;
+    if (end <= 0) {
+        phase = 1, e = TEMPENTITY_START, end = ps1TempSlotEnd;
+    }
+    while (e < end) {
+        ent = OBJECT_ENTITY(e);
+        if (ent->inRange) {
+            void (*lateUpdate)(void) = objectClassList[stageObjectIDs[ent->classID]].lateUpdate;
+            if (lateUpdate) {
+                sceneInfo.entitySlot = e;
+                sceneInfo.entity     = ent;
+                PS1_PROF(0, stageObjectIDs[ent->classID], lateUpdate());
+                ent = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
+                end = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+            }
+        }
+        ent->onScreen = 0;
+        PS1_SLOT_WALK_NEXT(e, end, phase)
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+} // namespace
+#endif
+
 void RSDK::ProcessObjects()
 {
     for (int32 i = 0; i < DRAWGROUP_COUNT; ++i) drawGroups[i].entityCount = 0;
 
+    PS1_PART_BEGIN(0);
     for (int32 o = 0; o < sceneInfo.classCount; ++o) {
 #if RETRO_USE_MOD_LOADER
         currentObjectID = o;
@@ -387,6 +602,7 @@ void RSDK::ProcessObjects()
                 PS1_PROF(0, stageObjectIDs[o], classInfo->staticUpdate());
         }
     }
+    PS1_PART_END(0);
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONSTATICUPDATE, INT_TO_VOID(ENGINESTATE_REGULAR));
@@ -407,12 +623,12 @@ void RSDK::ProcessObjects()
         }
     }
 
-    sceneInfo.entitySlot = 0;
+    PS1_PART_BEGIN(1);
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1UpdatePass();
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
         if (sceneInfo.entity->classID) {
             switch (sceneInfo.entity->active) {
@@ -483,25 +699,22 @@ void RSDK::ProcessObjects()
 
             if (sceneInfo.entity->inRange) {
                 if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update)
-                    PS1_PROF(0, stageObjectIDs[sceneInfo.entity->classID], objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update());
+                    objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update();
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
-#if RETRO_PLATFORM == RETRO_PS1
-                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
-#else
                     drawGroups[sceneInfo.entity->drawGroup].entries[drawGroups[sceneInfo.entity->drawGroup].entityCount++] = sceneInfo.entitySlot;
-#endif
             }
         }
         else {
             sceneInfo.entity->inRange = false;
         }
 
-#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
-#endif
     }
 
+#endif
+    PS1_PART_END(1);
+    PS1_PART_BEGIN(2);
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONUPDATE, INT_TO_VOID(ENGINESTATE_REGULAR));
 #endif
@@ -512,54 +725,49 @@ void RSDK::ProcessObjects()
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
 #endif
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1TypeGroupPass();
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange && sceneInfo.entity->interaction) {
-#if RETRO_PLATFORM == RETRO_PS1
-            PS1TypeGroupsAdd(e, sceneInfo.entity->classID, sceneInfo.entity->group);
-#else
             typeGroups[GROUP_ALL].entries[typeGroups[GROUP_ALL].entryCount++] = e; // All active objects
 
             typeGroups[sceneInfo.entity->classID].entries[typeGroups[sceneInfo.entity->classID].entryCount++] = e; // class-based groups
 
             if (sceneInfo.entity->group >= TYPE_COUNT)
                 typeGroups[sceneInfo.entity->group].entries[typeGroups[sceneInfo.entity->group].entryCount++] = e; // extra groups
-#endif
         }
 
-#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
-#endif
     }
+#endif
 #if RETRO_PLATFORM == RETRO_PS1
     PS1TypeGroupsBuild();
 #endif
+    PS1_PART_END(2);
+    PS1_PART_BEGIN(3);
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1LateUpdatePass();
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate)
-                PS1_PROF(0, stageObjectIDs[sceneInfo.entity->classID], objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate());
+                objectClassList[stageObjectIDs[sceneInfo.entity->classID]].lateUpdate();
         }
 
         sceneInfo.entity->onScreen = 0;
-#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
-#endif
     }
+#endif
 
+    PS1_PART_END(3);
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONLATEUPDATE, INT_TO_VOID(ENGINESTATE_REGULAR));
 #endif
@@ -862,6 +1070,7 @@ void RSDK::ProcessObjectDrawLists()
                         }
                     }
 
+                    PS1_PART_BEGIN(4);
                     for (int32 i = 0; i < list->entityCount; ++i) {
                         sceneInfo.entitySlot = list->entries[i];
                         validDraw            = false;
@@ -879,16 +1088,19 @@ void RSDK::ProcessObjectDrawLists()
                         }
                     }
 
+                    PS1_PART_END(4);
                     for (int32 i = 0; i < list->layerCount; ++i) {
                         TileLayer *layer = &tileLayers[list->layerDrawList[i]];
 
 #if RETRO_USE_MOD_LOADER
                         RunModCallbacks(MODCB_ONSCANLINECB, (void *)layer->scanlineCallback);
 #endif
+                        PS1_PART_BEGIN(5);
                         if (layer->scanlineCallback)
                             layer->scanlineCallback(scanlines);
                         else
                             ProcessParallax(layer);
+                        PS1_PART_END(5);
 
                         switch (layer->type) {
                             case LAYER_HSCROLL: DrawLayerHScroll(layer); break;
@@ -1346,16 +1558,25 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
     }
 
 #if RETRO_PLATFORM == RETRO_PS1
-    for (; foreachStackPtr->id < ENTITY_COUNT; foreachStackPtr->id = PS1NextSlot(foreachStackPtr->id)) {
+    // 3.0: the cursor in a register (the stock loop re-read foreachStackPtr->id every slot: ~65 hblanks a frame for
+    // GHZ's waterfall-sound check); the same slots in the same order, the cursor stored where stock leaves it
+    for (int32 id = foreachStackPtr->id; id < ENTITY_COUNT; id = PS1NextSlot(id)) {
+        Entity *nextEntity = OBJECT_ENTITY(id);
+        if (nextEntity->classID == classID) {
+            foreachStackPtr->id = id;
+            *entity             = nextEntity;
+            return true;
+        }
+    }
 #else
     for (; foreachStackPtr->id < ENTITY_COUNT; ++foreachStackPtr->id) {
-#endif
         Entity *nextEntity = OBJECT_ENTITY(foreachStackPtr->id);
         if (nextEntity->classID == classID) {
             *entity = nextEntity;
             return true;
         }
     }
+#endif
 
     foreachStackPtr--;
 

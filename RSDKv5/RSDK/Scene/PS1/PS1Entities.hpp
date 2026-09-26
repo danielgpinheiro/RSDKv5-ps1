@@ -47,10 +47,14 @@ extern volatile uint32 g_ps1SceneRecordDropped;
 // (2.3); an empty slot is a ghost with classID 0, which every such loop skips anyway. ps1SceneSlotEnd grows if an empty
 // slot gets an entity (PS1EntityRelocate).
 extern int32 ps1SceneSlotEnd;
+// 3.0: the temp range ends at the last slot with a block (PS1_TEMP_BLOCKS; a relocation into a higher one moves it)
+extern int32 ps1TempSlotEnd;
 inline int32 PS1NextSlot(int32 e)
 {
     ++e;
-    return (e == ps1SceneSlotEnd && e < TEMPENTITY_START) ? TEMPENTITY_START : e;
+    if (e == ps1SceneSlotEnd && e < TEMPENTITY_START)
+        return TEMPENTITY_START;
+    return e == ps1TempSlotEnd ? ENTITY_COUNT : e;
 }
 // For the loops that keep sceneInfo.entitySlot equal to the loop index: the jump moves it too.
 #define PS1_NEXT_SLOT_ES(e) ((e) = PS1NextSlot(e), sceneInfo.entitySlot = (uint16)(e))
