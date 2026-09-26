@@ -137,6 +137,19 @@ void LinkGameLogicDLL(EngineInfo info)
 #endif
 
 // This is actually part of "LinkGameLogicDLL" but since we have 2 versions of it, its easier to use shared code this way
+
+#if defined RETRO_PS1_BUILD
+// PS1 port (docs/32 2.3): tools/data_disc.py remaps GameConfig's global-variable offsets with GV_REGIONS; the compiled
+// GlobalVariables must be exactly that layout.
+#define PS1_GV_SHIFT_MENU (0x4000 - 0x80)
+#define PS1_GV_SHIFT_COMP (0x4000 - 0x80)
+_Static_assert(offsetof(GlobalVariables, menuParam) == 4 * 33834, "GlobalVariables layout != tools/data_disc.py GV_REGIONS");
+_Static_assert(offsetof(GlobalVariables, competitionSession) == 4 * (50221 - PS1_GV_SHIFT_MENU), "GlobalVariables layout");
+_Static_assert(offsetof(GlobalVariables, replayWriteBuffer) == 4 * (67037 - PS1_GV_SHIFT_MENU - PS1_GV_SHIFT_COMP), "GlobalVariables layout");
+_Static_assert(offsetof(GlobalVariables, replayTableID) == 4 * (1115613 - PS1_GV_SHIFT_MENU - PS1_GV_SHIFT_COMP - 4 * (0x40000 - 1)), "GlobalVariables layout");
+_Static_assert(sizeof(GlobalVariables) == 4 * (1115625 - PS1_GV_SHIFT_MENU - PS1_GV_SHIFT_COMP - 4 * (0x40000 - 1)), "GlobalVariables layout");
+#endif
+
 void InitGameLogic(void)
 {
 #if RETRO_REV0U

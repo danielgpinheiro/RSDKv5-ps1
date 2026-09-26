@@ -1,4 +1,7 @@
 #include "RSDK/Core/RetroEngine.hpp"
+#if RETRO_PLATFORM == RETRO_PS1
+#include "../../../ps1/loading.hh"
+#endif
 
 using namespace RSDK;
 
@@ -360,9 +363,17 @@ void RSDK::ProcessEngine()
                 if (devMenu.modsChanged)
                     RefreshModFolders();
 #endif
+#if RETRO_PLATFORM == RETRO_PS1
+                // As the Sonic CD port: the loading icon, the CD read-ahead windows' lifetime and the load time
+                // (g_ps1LoadingLastUs) span the scene load (ps1/loading.cpp).
+                PS1LoadingBegin();
+#endif
                 LoadSceneFolder();
                 LoadSceneAssets();
                 InitObjects();
+#if RETRO_PLATFORM == RETRO_PS1
+                PS1LoadingEnd();
+#endif
 
 #if RETRO_REV02
 #if !RETRO_USE_ORIGINAL_CODE

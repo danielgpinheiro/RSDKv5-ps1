@@ -98,8 +98,27 @@ struct CameraInfo {
     bool32 worldRelative;
 };
 
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 port (docs/32 2.3): a draw group lists the entities drawn in it this frame (visible and in range, plus
+// AddDrawListRef), far fewer than ENTITY_COUNT (0x940): 16 x 4.7 KB stock. Appends past the cap are dropped, counted.
+#define PS1_DRAWLIST_MAX (0x200)
+extern volatile uint32 g_ps1DrawListOverflow;
+#define PS1_DRAWLIST_APPEND(list, slot)                                                                                                    \
+    do {                                                                                                                                     \
+        DrawList *ps1List_ = (list);                                                                                                         \
+        if (ps1List_->entityCount < PS1_DRAWLIST_MAX)                                                                                        \
+            ps1List_->entries[ps1List_->entityCount++] = (slot);                                                                             \
+        else                                                                                                                                 \
+            g_ps1DrawListOverflow = g_ps1DrawListOverflow + 1;                                                                               \
+    } while (0)
+#endif
+
 struct DrawList {
+#if RETRO_PLATFORM == RETRO_PS1
+    uint16 entries[PS1_DRAWLIST_MAX];
+#else
     uint16 entries[ENTITY_COUNT];
+#endif
     uint16 layerDrawList[LAYER_COUNT];
     void (*hookCB)();
     bool32 sorted;
@@ -351,7 +370,11 @@ void SetVideoSetting(int32 id, int32 value);
 inline void AddDrawListRef(uint8 drawGroup, uint16 entityID)
 {
     if (drawGroup < DRAWGROUP_COUNT)
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1_DRAWLIST_APPEND(&drawGroups[drawGroup], entityID);
+#else
         drawGroups[drawGroup].entries[drawGroups[drawGroup].entityCount++] = entityID;
+#endif
 }
 
 inline uint16 GetDrawListRefSlot(uint8 drawGroup, uint16 listPos)

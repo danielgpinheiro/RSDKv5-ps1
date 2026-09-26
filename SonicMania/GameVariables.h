@@ -210,11 +210,19 @@ typedef struct {
     int32 saveRAM[0x4000];
     int32 saveSlotID;
     int32 noSaveSlot[0x400];
+#if defined RETRO_PS1_BUILD
+    int32 menuParam[0x80]; // PS1 (docs/32 2.3): only EntityMenuParam (432 B) lives here; tools/data_disc.py remaps GameConfig
+#else
     int32 menuParam[0x4000];
+#endif
     int32 itemMode;
     int32 suppressTitlecard;
     int32 suppressAutoMusic;
+#if defined RETRO_PS1_BUILD
+    int32 competitionSession[0x80]; // PS1: only EntityCompetitionSession (380 B); no Competition mode in scope
+#else
     int32 competitionSession[0x4000];
+#endif
     int32 medalMods;
     int32 parallaxOffset[0x100];
     int32 enableIntro;

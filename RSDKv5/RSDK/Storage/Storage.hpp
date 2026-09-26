@@ -4,7 +4,7 @@
 namespace RSDK
 {
 #if RETRO_PLATFORM == RETRO_PS1
-#define STORAGE_ENTRY_COUNT (0x400) // PS1: allocations per dataset (peaks measured in 2.2); stock 0x1000
+#define STORAGE_ENTRY_COUNT (0x200) // PS1: allocations per dataset (2.2 peaks: STG 37, STR 70, TMP 3); stock 0x1000
 #else
 #define STORAGE_ENTRY_COUNT (0x1000)
 #endif
@@ -109,6 +109,17 @@ bool32 InitStorage();
 void ReleaseStorage();
 
 void AllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet, bool32 clear);
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 port (docs/32 2.3): a failed AllocateStorage stops at PS1StorageExhausted (stock code writes through the NULL it
+// would get, into the BIOS kernel's RAM). PS1TryAllocateStorage is for the few callers that handle NULL themselves.
+extern bool32 ps1StorageMayFail;
+inline void PS1TryAllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet, bool32 clear)
+{
+    ps1StorageMayFail = true;
+    AllocateStorage(dataPtr, size, dataSet, clear);
+    ps1StorageMayFail = false;
+}
+#endif
 void DefragmentAndGarbageCollectStorage(StorageDataSets set);
 void RemoveStorageEntry(void **dataPtr);
 void CopyStorage(uint32 **src, uint32 **dst);

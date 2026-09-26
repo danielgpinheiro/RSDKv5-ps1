@@ -468,7 +468,11 @@ void RSDK::ProcessObjects()
                     objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update();
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+#if RETRO_PLATFORM == RETRO_PS1
+                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+#else
                     drawGroups[sceneInfo.entity->drawGroup].entries[drawGroups[sceneInfo.entity->drawGroup].entityCount++] = sceneInfo.entitySlot;
+#endif
             }
         }
         else {
@@ -576,7 +580,11 @@ void RSDK::ProcessPausedObjects()
                     objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update();
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+#if RETRO_PLATFORM == RETRO_PS1
+                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+#else
                     drawGroups[sceneInfo.entity->drawGroup].entries[drawGroups[sceneInfo.entity->drawGroup].entityCount++] = sceneInfo.entitySlot;
+#endif
             }
         }
         else {
@@ -732,7 +740,11 @@ void RSDK::ProcessFrozenObjects()
                 }
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+#if RETRO_PLATFORM == RETRO_PS1
+                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+#else
                     drawGroups[sceneInfo.entity->drawGroup].entries[drawGroups[sceneInfo.entity->drawGroup].entityCount++] = sceneInfo.entitySlot;
+#endif
             }
         }
         else {

@@ -55,6 +55,14 @@ ${EXC_BREAK}info registers
 ${EXC_BREAK}snap "exception"
 ${EXC_BREAK}quit
 ${EXC_BREAK}end
+break PS1StorageExhausted
+commands
+silent
+printf "STOP dataset exhausted: set=%u size=%u\n", \$a0, \$a1
+bt 12
+snap "exhausted"
+quit
+end
 break PS1OutOfMemory
 commands
 silent

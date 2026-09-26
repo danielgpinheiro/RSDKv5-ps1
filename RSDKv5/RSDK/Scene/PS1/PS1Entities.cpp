@@ -35,13 +35,15 @@ inline EntityBase *Carve(uint8 *&p, uint16 slot, uint32 cap)
     return (EntityBase *)(h + 1);
 }
 
-// The largest entity class this build registered (DefaultObject's sizeof(EntityBase) left out: it is the blank class).
+// The largest entity class of the loaded stage (its classes include the global ones; DefaultObject's sizeof(EntityBase)
+// left out: it is the blank class). A reserved or temp slot can only hold one of these.
 uint32 MaxClassSize()
 {
     uint32 m = sizeof(Entity);
-    for (int32 i = 0; i < objectClassCount; ++i) {
-        if (objectClassList[i].entityClassSize > m && objectClassList[i].entityClassSize < sizeof(EntityBase))
-            m = objectClassList[i].entityClassSize;
+    for (int32 i = 0; i < sceneInfo.classCount; ++i) {
+        uint32 size = objectClassList[stageObjectIDs[i]].entityClassSize;
+        if (size > m && size < sizeof(EntityBase))
+            m = size;
     }
     return Align4(m);
 }
@@ -159,21 +161,52 @@ struct SceneRec {
     uint16 payloadLen;
 };
 
-uint8 *s_rec      = NULL; // DATASET_TMP
-uint32 s_recSize  = 0;
-uint32 s_recUsed  = 0;
-SceneRec *s_cur   = NULL;
+// One DATASET_TMP block of records per object (sized exactly from its variable list and entity count).
+#define PS1_SCENE_BLOCKS 0x100
+uint8 *s_blocks[PS1_SCENE_BLOCKS];
+uint32 s_blockSize[PS1_SCENE_BLOCKS], s_blockUsed[PS1_SCENE_BLOCKS];
+int32 s_blockCount = 0;
+uint8 *s_rec       = NULL; // the current object's block
+uint32 s_recSize   = 0;
+uint32 s_recUsed   = 0;
+SceneRec *s_cur    = NULL;
 } // namespace
 
 #define PS1_SCENE_FILESLOTS (2 * SCENEENTITY_COUNT) // stock: < SCENEENTITY_COUNT main list, then the temp list
 
-void RSDK::PS1SceneEntitiesBegin(uint32 bytes)
+void RSDK::PS1SceneEntitiesBegin()
 {
+    s_blockCount = 0;
+    s_rec        = NULL;
+    s_recSize = s_recUsed = 0;
+    s_cur                 = NULL;
+}
+
+void RSDK::PS1SceneObjectBegin(uint32 bytes)
+{
+    if (s_rec && s_blockCount < PS1_SCENE_BLOCKS) {
+        s_blockUsed[s_blockCount - 1] = s_recUsed;
+        g_ps1SceneRecordBytes         = g_ps1SceneRecordBytes; // (peak kept in Place)
+    }
     s_rec = NULL;
-    AllocateStorage((void **)&s_rec, bytes, DATASET_TMP, false);
-    s_recSize = s_rec ? bytes : 0;
-    s_recUsed = 0;
-    s_cur     = NULL;
+    s_recSize = s_recUsed = 0;
+    s_cur                 = NULL;
+    if (!bytes)
+        return;
+    if (s_blockCount >= PS1_SCENE_BLOCKS) {
+        g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
+        return;
+    }
+    PS1TryAllocateStorage((void **)&s_blocks[s_blockCount], bytes, DATASET_TMP, false);
+    if (!s_blocks[s_blockCount]) {
+        g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
+        return;
+    }
+    s_rec                      = s_blocks[s_blockCount];
+    s_recSize                  = bytes;
+    s_blockSize[s_blockCount]  = bytes;
+    s_blockUsed[s_blockCount]  = 0;
+    ++s_blockCount;
 }
 
 void RSDK::PS1SceneEntityBegin(uint16 fileSlot, uint16 classID, int32 x, int32 y)
@@ -218,19 +251,25 @@ void RSDK::PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16
 // entity is kept when (sceneInfo.filter & its filter), and takes the next slot from RESERVE_ENTITY_COUNT on.
 void RSDK::PS1SceneEntitiesPlace()
 {
-    if (s_recUsed > g_ps1SceneRecordBytes)
-        g_ps1SceneRecordBytes = s_recUsed;
+    if (s_rec && s_blockCount)
+        s_blockUsed[s_blockCount - 1] = s_recUsed;
+    uint32 recordBytes = 0;
+    for (int32 b = 0; b < s_blockCount; ++b) recordBytes += s_blockSize[b];
+    if (recordBytes > g_ps1SceneRecordBytes)
+        g_ps1SceneRecordBytes = recordBytes;
 
-    // file slot -> record offset + 1 (a later record for the same slot replaces an earlier one, as stock)
-    uint32 *index = NULL;
-    AllocateStorage((void **)&index, PS1_SCENE_FILESLOTS * sizeof(uint32), DATASET_TMP, true);
-    for (uint32 p = 0; index && p < s_recUsed;) {
-        SceneRec *r = (SceneRec *)(s_rec + p);
-        if (r->fileSlot < PS1_SCENE_FILESLOTS)
-            index[r->fileSlot] = p + 1;
-        else
-            g_ps1EntitiesDropped = g_ps1EntitiesDropped + 1;
-        p += sizeof(SceneRec) + r->payloadLen;
+    // file slot -> record (a later record for the same slot replaces an earlier one, as stock)
+    SceneRec **index = NULL;
+    AllocateStorage((void **)&index, PS1_SCENE_FILESLOTS * sizeof(SceneRec *), DATASET_TMP, true);
+    for (int32 b = 0; b < s_blockCount; ++b) {
+        for (uint32 p = 0; p < s_blockUsed[b];) {
+            SceneRec *r = (SceneRec *)(s_blocks[b] + p);
+            if (r->fileSlot < PS1_SCENE_FILESLOTS)
+                index[r->fileSlot] = r;
+            else
+                g_ps1EntitiesDropped = g_ps1EntitiesDropped + 1;
+            p += sizeof(SceneRec) + r->payloadLen;
+        }
     }
 
     // capacities: reserved + scene (in final order) + temp + spare
@@ -240,7 +279,7 @@ void RSDK::PS1SceneEntitiesPlace()
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS && placed < SCENEENTITY_COUNT; ++f) {
         if (!index[f])
             continue;
-        SceneRec *r = (SceneRec *)(s_rec + index[f] - 1);
+        SceneRec *r = index[f];
         if (!(sceneInfo.filter & r->filter))
             continue;
         if (r->classID)
@@ -253,11 +292,7 @@ void RSDK::PS1SceneEntitiesPlace()
     bytes += spareBytes;
 
     s_arena = NULL;
-    AllocateStorage((void **)&s_arena, bytes, DATASET_STG, true);
-    if (!s_arena) {
-        g_ps1EntitySpareFail = g_ps1EntitySpareFail + 1;
-        return;
-    }
+    AllocateStorage((void **)&s_arena, bytes, DATASET_STG, true); // stops at PS1StorageExhausted if STG is too small
     g_ps1EntityArenaBytes = bytes;
     if (bytes > g_ps1EntityArenaPeak)
         g_ps1EntityArenaPeak = bytes;
@@ -269,7 +304,7 @@ void RSDK::PS1SceneEntitiesPlace()
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS && slot < RESERVE_ENTITY_COUNT + SCENEENTITY_COUNT; ++f) {
         if (!index[f])
             continue;
-        SceneRec *r = (SceneRec *)(s_rec + index[f] - 1);
+        SceneRec *r = index[f];
         if (!(sceneInfo.filter & r->filter))
             continue;
         if (r->classID) {
@@ -315,8 +350,9 @@ void RSDK::PS1SceneEntitiesPlace()
     ps1SceneSlotEnd = slot;
 
     RemoveStorageEntry((void **)&index);
-    RemoveStorageEntry((void **)&s_rec);
-    s_rec = NULL;
+    for (int32 b = 0; b < s_blockCount; ++b) RemoveStorageEntry((void **)&s_blocks[b]);
+    s_blockCount = 0;
+    s_rec        = NULL;
 }
 
 // Stock copies sizeof(EntityBase) bytes. Here: the source's class (its whole block for a slot-less pointer), into a

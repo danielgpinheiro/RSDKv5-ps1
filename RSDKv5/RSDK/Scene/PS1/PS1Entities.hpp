@@ -94,7 +94,8 @@ void PS1TypeGroupsBuild();
 // The scene file's entities (Scene.cpp LoadSceneAssets on PS1): parsed into compact records in DATASET_TMP (file slot,
 // class, position, the active variables' bytes), then placed in their final slots in one arena sized from them.
 extern volatile uint32 g_ps1EntitiesDropped; // scene entities past the file-slot range (GDB; must stay 0)
-void PS1SceneEntitiesBegin(uint32 bytes);
+void PS1SceneEntitiesBegin();
+void PS1SceneObjectBegin(uint32 bytes); // a DATASET_TMP block for one object's records (0: the object has none)
 void PS1SceneEntityBegin(uint16 fileSlot, uint16 classID, int32 x, int32 y);
 void PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16 len);
 void PS1SceneEntitiesPlace();

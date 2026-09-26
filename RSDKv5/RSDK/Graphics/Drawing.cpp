@@ -148,6 +148,9 @@ const RenderVertex rsdkVertexBuffer[24] =
 RenderDevice::WindowInfo RenderDevice::displayInfo;
 
 DrawList RSDK::drawGroups[DRAWGROUP_COUNT];
+#if RETRO_PLATFORM == RETRO_PS1
+volatile uint32 RSDK::g_ps1DrawListOverflow = 0; // draw-list appends past PS1_DRAWLIST_MAX (GDB; must stay 0)
+#endif
 
 #if RETRO_PS1_HEADLESS
 uint16 RSDK::blendLookupTable[1];

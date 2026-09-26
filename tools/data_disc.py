@@ -9,8 +9,8 @@ engine reads without decoding anything at runtime (golden rule):
       the GIF's colour table as ImageGIF::Load reads it (256 x RGB, entries past the table 0); LoadStageGIF on PS1
       applies it to the palette rows. The tile pixels go to VRAM at build time in phase 3.
   Game/GameConfig.bin
-      the global-variable blocks remapped to the PS1 GlobalVariables (the Plus replay buffers are one element each;
-      SonicMania/GameVariables.h): the same values land in the same fields (self-checked)
+      the global-variable blocks remapped to the PS1 GlobalVariables (shorter menuParam / competitionSession / replay
+      buffers; SonicMania/GameVariables.h): the same values land in the same fields (self-checked)
   everything else in the kept folders: copied as is
 
 Not on the disc (converted by later phases or not used on the PS1): .gif sprite sheets (VRAM atlases, phase 3),
@@ -112,25 +112,32 @@ def convert_blocks(src, walk):
     return out, len(rw.blocks)
 
 
-# GlobalVariables on the PS1 (SonicMania/GameVariables.h, RETRO_PS1_BUILD): the four Plus replay buffers keep one
-# element each instead of 0x40000. GameConfig.bin's global-variable blocks (u32 int offset, u32 count, values) are
-# written for the PC layout: offsets past the buffers move down, writes into dropped buffer elements go.
-GV_REPLAY_START = 67037          # int offset of replayWriteBuffer (the PC layout; GameConfig has a block there)
-GV_REPLAY_PC, GV_REPLAY_PS1 = 0x40000, 1
-GV_REPLAY_COUNT = 4
+# GlobalVariables on the PS1 (SonicMania/GameVariables.h, RETRO_PS1_BUILD) is the PC struct with some arrays shorter:
+# (PC int offset, PC length, PS1 length). GameConfig.bin's global-variable blocks (u32 int offset, u32 count, values) are
+# written for the PC layout: offsets after a shortened array move down, writes into dropped elements go. SonicMania/Game.c
+# checks the same numbers against the compiled layout (_Static_assert).
+GV_REGIONS = [
+    (33834, 0x4000, 0x80),                  # menuParam: only MenuParam_GetParam's EntityMenuParam (432 B)
+    (50221, 0x4000, 0x80),                  # competitionSession: only CompetitionSession_GetSession (380 B)
+    (67037 + 0 * 0x40000, 0x40000, 1),      # replayWriteBuffer  (no replays in scope)
+    (67037 + 1 * 0x40000, 0x40000, 1),      # replayReadBuffer
+    (67037 + 2 * 0x40000, 0x40000, 1),      # replayTempWBuffer
+    (67037 + 3 * 0x40000, 0x40000, 1),      # replayTempRBuffer
+]
 GV_PC_INTS = 1115625             # sizeof(GlobalVariables) / 4 on the PC (4,462,500 bytes, measured in 2.2)
-GV_AFTER = GV_REPLAY_START + GV_REPLAY_COUNT * GV_REPLAY_PC
-GV_SHIFT = GV_REPLAY_COUNT * (GV_REPLAY_PC - GV_REPLAY_PS1)
 
 
 def gv_remap(off):
-    if off < GV_REPLAY_START:
-        return off
-    if off < GV_AFTER:
-        k, i = divmod(off - GV_REPLAY_START, GV_REPLAY_PC)
-        return GV_REPLAY_START + k * GV_REPLAY_PS1 + i if i < GV_REPLAY_PS1 else None
+    shift = 0
+    for start, pc_len, ps1_len in GV_REGIONS:
+        if off < start:
+            return off - shift
+        if off < start + pc_len:
+            i = off - start
+            return start - shift + i if i < ps1_len else None
+        shift += pc_len - ps1_len
     assert off < GV_PC_INTS, off
-    return off - GV_SHIFT
+    return off - shift
 
 
 def convert_gameconfig(src):
@@ -235,7 +242,7 @@ def main():
             elif top == 'Game' and f == 'GameConfig.bin':
                 out, kept, dropped = convert_gameconfig(s)
                 open(d, 'wb').write(out); n['copied'] += 1
-                print('data_disc: GameConfig global variables remapped to the PS1 layout: %d kept, %d dropped (replay buffers)' % (kept, dropped))
+                print('data_disc: GameConfig global variables remapped to the PS1 layout: %d kept, %d dropped (shortened arrays)' % (kept, dropped))
             elif top == 'Stages' and f == 'TileConfig.bin':
                 out, b = convert_blocks(s, walk_tileconfig)
                 open(d, 'wb').write(out); n['tileconfig'] += 1; n['blocks'] += b

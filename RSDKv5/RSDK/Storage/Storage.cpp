@@ -38,13 +38,14 @@ bool32 RSDK::InitStorage()
     dataStorage[DATASET_STR].storageLimit = 128 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 1024 * 1024;
 #elif RETRO_PLATFORM == RETRO_PS1
-    // PS1 port (docs/32 phase 2): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA,
-    // converted at build time), so the datasets hold the scene's layouts, entity data and tables only.
-    dataStorage[DATASET_STG].storageLimit = 640 * 1024;
+    // PS1 port (docs/32 2.3): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA, converted
+    // at build time): the datasets hold globals, static variables, the entity arena, layouts and tables. Sized from the
+    // measured live peaks (g_ps1StorageLivePeak) of Logos / Title with margin; the zones set theirs with overlays (2.4).
+    dataStorage[DATASET_STG].storageLimit = 360 * 1024;
     dataStorage[DATASET_MUS].storageLimit = 4 * 1024;
-    dataStorage[DATASET_SFX].storageLimit = 16 * 1024;
-    dataStorage[DATASET_STR].storageLimit = 16 * 1024;
-    dataStorage[DATASET_TMP].storageLimit = 96 * 1024;
+    dataStorage[DATASET_SFX].storageLimit = 8 * 1024;
+    dataStorage[DATASET_STR].storageLimit = 24 * 1024;
+    dataStorage[DATASET_TMP].storageLimit = 64 * 1024;
 #else
     dataStorage[DATASET_STG].storageLimit = 24 * 1024 * 1024; // 24MB
     dataStorage[DATASET_MUS].storageLimit = 8 * 1024 * 1024;  //  8MB
@@ -98,6 +99,18 @@ volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte h
 volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX]; // live entries
 volatile uint32 g_ps1StorageLargest[DATASET_MAX];   // largest single allocation
 volatile uint32 g_ps1StorageFail[DATASET_MAX];      // allocations that failed after garbage collection (must be 0)
+
+bool32 RSDK::ps1StorageMayFail = false;
+volatile uint32 g_ps1StorageExhausted = 0; // 1 + the dataset of the allocation that stopped the PS1 (GDB)
+
+// GDB: `break PS1StorageExhausted` (tools/boot_test_ds.sh). Never returns.
+extern "C" __attribute__((noinline)) void PS1StorageExhausted(uint32 set, uint32 size)
+{
+    g_ps1StorageExhausted = set + 1;
+    __asm__ volatile("" ::"r"(size));
+    for (;;) {
+    }
+}
 
 static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
 {
@@ -212,6 +225,8 @@ void RSDK::AllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet,
                 memset(*data, 0, size);
 #if RETRO_PLATFORM == RETRO_PS1
             PS1StorageStats(dataSet, *data != NULL, size);
+            if (!*data && !ps1StorageMayFail)
+                PS1StorageExhausted(dataSet, size);
 #endif
         }
     }

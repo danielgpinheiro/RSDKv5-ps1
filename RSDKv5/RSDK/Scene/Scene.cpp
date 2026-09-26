@@ -3,7 +3,6 @@
 using namespace RSDK;
 
 #if RETRO_PLATFORM == RETRO_PS1
-#define PS1_SCENE_RECORD_BYTES (96 * 1024) // the scene loader's entity records (DATASET_TMP); peak in g_ps1SceneRecordBytes
 #endif
 
 #if RETRO_REV0U
@@ -474,7 +473,7 @@ void RSDK::LoadSceneAssets()
 #if RETRO_PLATFORM == RETRO_PS1
         // PS1 (docs/32 2.3): the entities go to compact records first (file slot, class, position, the active
         // variables), then PS1SceneEntitiesPlace compacts them as below and gives each slot a block of its class's size.
-        PS1SceneEntitiesBegin(PS1_SCENE_RECORD_BYTES);
+        PS1SceneEntitiesBegin();
 
         for (int32 i = 0; i < objectCount; ++i) {
             RETRO_HASH_MD5(objHash);
@@ -538,6 +537,27 @@ void RSDK::LoadSceneAssets()
             }
 
             uint16 entityCount = ReadInt16(&info);
+            {
+                // this object's records, exactly: a 16-byte header per entity + each active variable (6-byte item header,
+                // its bytes, 4-byte aligned; a string at most 0x100 characters)
+                uint32 perEntity = 16;
+                for (int32 v = 1; v < varCount; ++v) {
+                    if (!varList[v].active)
+                        continue;
+                    uint32 len = 0;
+                    switch (varList[v].type) {
+                        case VAR_UINT8:
+                        case VAR_INT8: len = 1; break;
+                        case VAR_UINT16:
+                        case VAR_INT16: len = 2; break;
+                        case VAR_VECTOR2: len = 8; break;
+                        case VAR_STRING: len = 0x100 * sizeof(uint16); break;
+                        default: len = 4; break;
+                    }
+                    perEntity += (6 + len + 3) & ~3u;
+                }
+                PS1SceneObjectBegin(entityCount * perEntity);
+            }
             for (int32 e = 0; e < entityCount; ++e) {
                 uint16 slotID = ReadInt16(&info);
                 int32 posX    = ReadInt32(&info, false);
@@ -865,13 +885,32 @@ void RSDK::LoadTileConfig(char *filepath)
             return;
         }
 
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 2.3): the block is stored raw on the disc (tools/data_disc.py), so the 2 x 1024 tile records (38 B
+        // each, 77,824 B) are read one at a time instead of into a DATASET_TMP buffer.
+        uint32 cSize  = ReadInt32(&info, false) - 4;
+        uint32 sizeBE = ReadInt32(&info, false);
+        uint32 sizeLE = (sizeBE << 24) | ((sizeBE << 8) & 0x00FF0000) | ((sizeBE >> 8) & 0x0000FF00) | (sizeBE >> 24);
+        if (cSize != sizeLE || sizeLE != CPATH_COUNT * TILE_COUNT * 38) {
+            g_ps1CompressedMismatch = g_ps1CompressedMismatch + 1;
+            CloseFile(&info);
+            return;
+        }
+        uint8 tileRecord[38];
+        uint8 *buffer = tileRecord;
+#else
         uint8 *buffer = NULL;
         ReadCompressed(&info, &buffer);
+#endif
 
         int32 bufPos = 0;
         for (int32 p = 0; p < CPATH_COUNT; ++p) {
             // No Flip/Stored in file
             for (int32 t = 0; t < TILE_COUNT; ++t) {
+#if RETRO_PLATFORM == RETRO_PS1
+                ReadBytes(&info, tileRecord, sizeof(tileRecord));
+                bufPos = 0;
+#endif
                 uint8 maskHeights[0x10];
                 uint8 maskActive[0x10];
 
@@ -1092,7 +1131,7 @@ void RSDK::LoadTileConfig(char *filepath)
             }
         }
 
-#if !RETRO_USE_ORIGINAL_CODE
+#if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_PS1
         RemoveStorageEntry((void **)&buffer);
         buffer = NULL;
 #endif
