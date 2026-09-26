@@ -99,6 +99,7 @@ void PS1EntityCheckGhosts();
 // on the PS1 the entries of one frame are captured in slot order and counting-sorted into one pool.
 void PS1TypeGroupsBegin();
 void PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group);
+void PS1TypeGroupsCollect(EntityBase **p, EntityBase **pend); // PS1TypeGroupsAdd for each in-range, interacting slot
 void PS1TypeGroupsBuild();
 
 // The scene file's entities (Scene.cpp LoadSceneAssets on PS1): parsed into compact records in DATASET_TMP (file slot,

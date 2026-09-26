@@ -135,6 +135,26 @@ void RSDK::PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group)
     ++s_tgCount;
 }
 
+// The type-group pass (Object.cpp) over [p, pend): a leaf loop, so its locals stay in registers (3.0c)
+__attribute__((optimize("O2"))) void RSDK::PS1TypeGroupsCollect(EntityBase **p, EntityBase **pend)
+{
+    int32 n = s_tgCount;
+    for (; p < pend; ++p) {
+        EntityBase *ent = *p;
+        if (ent->inRange && ent->interaction) {
+            if (n >= PS1_TYPEGROUP_ENTITIES) {
+                g_ps1TypeGroupOverflow = g_ps1TypeGroupOverflow + 1;
+                continue;
+            }
+            s_tgSlot[n]  = (uint16)(p - objectEntityPtr);
+            s_tgClass[n] = ent->classID;
+            s_tgGroup[n] = ent->group;
+            ++n;
+        }
+    }
+    s_tgCount = n;
+}
+
 // The stock loop appends each entity to GROUP_ALL, its class's group and (group >= TYPE_COUNT) its extra group, in slot
 // order: the same lists, each one contiguous in the pool.
 volatile uint32 g_ps1TypeGroupPeak = 0; // most entities captured in one frame (GDB)
