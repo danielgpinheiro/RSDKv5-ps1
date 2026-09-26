@@ -202,7 +202,9 @@ char RSDK::drawGroupNames[0x10][0x10] = {
     "Draw Group 8", "Draw Group 9", "Draw Group 10", "Draw Group 11", "Draw Group 12", "Draw Group 13", "Draw Group 14", "Draw Group 15",
 };
 
+#if RETRO_PLATFORM != RETRO_PS1 // PS1 (docs/32 2.3m): no dev menu, no dev font (8 KB)
 #include "RSDK/Dev/DevFont.hpp"
+#endif
 
 // 50% alpha, but way faster
 #define setPixelBlend(pixel, frameBufferClr) frameBufferClr = ((pixel >> 1) & 0x7BEF) + ((frameBufferClr >> 1) & 0x7BEF)
@@ -305,7 +307,11 @@ void RSDK::InitSystemSurfaces()
     gfxSurface[1].width    = 8;
     gfxSurface[1].height   = 128 * 8;
     gfxSurface[1].lineSize = 3; // 8px
+#if RETRO_PLATFORM == RETRO_PS1
+    gfxSurface[1].pixels   = NULL;
+#else
     gfxSurface[1].pixels   = devTextStencil;
+#endif
 #endif
 }
 
@@ -4437,9 +4443,9 @@ void RSDK::DrawString(Animator *animator, Vector2 *position, String *string, int
 }
 void RSDK::DrawDevString(const char *string, int32 x, int32 y, int32 align, uint32 color)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+#if RETRO_PLATFORM == RETRO_PS1
+    return; // PS1: no dev font (2.3m); phase 3 draws text with the GPU
+#else
     uint16 color16 = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
 
     int32 charOffset   = 0;
@@ -4502,4 +4508,5 @@ void RSDK::DrawDevString(const char *string, int32 x, int32 y, int32 align, uint
 
         y += 8;
     }
+#endif
 }

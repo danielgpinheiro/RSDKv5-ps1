@@ -37,6 +37,10 @@ inline EntityBase *Carve(uint8 *&p, uint16 slot, uint32 cap)
 
 // The largest entity class of the loaded stage (its classes include the global ones; DefaultObject's sizeof(EntityBase)
 // left out: it is the blank class). A reserved or temp slot can only hold one of these.
+// Reserved slots no SLOT_ constant names (SonicMania/GameVariables.h ReservedEntities: 13, 14, 38, 39, 49-59) stay ghosts
+// (2.3m); a reset into one gets a spare block (counted in g_ps1EntityRelocations).
+inline bool PS1ReservedUnused(int32 s) { return s == 13 || s == 14 || s == 38 || s == 39 || (s >= 49 && s <= 59); }
+
 uint32 MaxClassSize()
 {
     uint32 m = sizeof(Entity);
@@ -281,7 +285,8 @@ void RSDK::PS1SceneEntitiesPlace()
 
     // capacities: reserved + scene (in final order) + temp + spare
     uint32 maxCap = MaxClassSize();
-    uint32 bytes  = RESERVE_ENTITY_COUNT * (sizeof(PS1EntityHeader) + maxCap);
+    uint32 bytes  = 0;
+    for (int32 s = 0; s < RESERVE_ENTITY_COUNT; ++s) bytes += PS1ReservedUnused(s) ? 0 : sizeof(PS1EntityHeader) + maxCap;
     int32 placed  = 0;
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS && placed < SCENEENTITY_COUNT; ++f) {
         if (!index[f])
@@ -295,7 +300,7 @@ void RSDK::PS1SceneEntitiesPlace()
     }
     bytes += (PS1_TEMP_BLOCKS - PS1_TEMP_LARGE_COUNT) * (sizeof(PS1EntityHeader) + PS1_TEMP_SMALL_CAP);
     bytes += PS1_TEMP_LARGE_COUNT * (sizeof(PS1EntityHeader) + maxCap);
-    uint32 spareBytes = 16 * 1024;
+    uint32 spareBytes = 8 * 1024; // GHZ1 play: 0 relocations (2.3m)
     bytes += spareBytes;
 
     s_arena = NULL;
@@ -305,7 +310,10 @@ void RSDK::PS1SceneEntitiesPlace()
         g_ps1EntityArenaPeak = bytes;
 
     uint8 *p = s_arena;
-    for (int32 s = 0; s < RESERVE_ENTITY_COUNT; ++s) objectEntityPtr[s] = Carve(p, s, maxCap);
+    for (int32 s = 0; s < RESERVE_ENTITY_COUNT; ++s) {
+        if (!PS1ReservedUnused(s))
+            objectEntityPtr[s] = Carve(p, s, maxCap);
+    }
 
     int32 slot = RESERVE_ENTITY_COUNT;
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS && slot < RESERVE_ENTITY_COUNT + SCENEENTITY_COUNT; ++f) {

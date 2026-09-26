@@ -4,7 +4,11 @@
 namespace RSDK
 {
 
+#if RETRO_PLATFORM == RETRO_PS1
+#define SPRFILE_COUNT     (0x100) // PS1 (docs/32 2.3m): GHZ1 loads 48 sprite files (stock 0x400: 28 KB of table)
+#else
 #define SPRFILE_COUNT     (0x400)
+#endif
 #define SPRITEFRAME_COUNT (0x400)
 #define SPRITEANIM_COUNT  (0x40)
 

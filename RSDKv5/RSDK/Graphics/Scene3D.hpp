@@ -7,7 +7,11 @@ namespace RSDK
 #define RSDK_SIGNATURE_MDL (0x4C444D) // "MDL"
 
 #define SCENE3D_COUNT      (0x20)
+#if RETRO_PLATFORM == RETRO_PS1
+#define MODEL_COUNT        (0x20) // PS1 (docs/32 2.3m): a scene loads a few meshes (special ring, UFO); stock 0x100 = 11 KB
+#else
 #define MODEL_COUNT        (0x100)
+#endif
 #define SCENE3D_VERT_COUNT (0x4000)
 
 enum Scene3DDrawTypes {

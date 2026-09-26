@@ -42,7 +42,7 @@ volatile uint32 RSDK::g_ps1ChunkOverflow     = 0;
 volatile uint32 RSDK::g_ps1ChunkPrivatePeak  = 0;
 
 #define PS1_CHUNK_BYTES   (16 * sizeof(uint16))
-#define PS1_CHUNK_PRIVATE (512) // chunks for writes per scene (16 KB); the peak is measured (g_ps1ChunkPrivatePeak)
+#define PS1_CHUNK_PRIVATE (128) // chunks for writes per scene (4 KB): GHZ1 play uses 6 (g_ps1ChunkPrivatePeak)
 
 namespace
 {
