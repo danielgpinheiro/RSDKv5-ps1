@@ -37,10 +37,9 @@ void SKU::InputDevicePS1::ProcessInput(int32 controllerID)
                               &cont->keyC,  &cont->keyX,    &cont->keyY,     &cont->keyZ,     &cont->keyStart, &cont->keySelect };
     uint8 *states[]       = { &stateUp, &stateDown, &stateLeft, &stateRight, &stateA,     &stateB,
                               &stateC,  &stateX,    &stateY,    &stateZ,     &stateStart, &stateSelect };
-    for (int32 i = 0; i < 12; ++i) {
-        keys[i]->down = *states[i] == 1 || *states[i] == 2;
-        keys[i]->press = *states[i] == 1;
-    }
+    // As the keyboard device: a held button ORs `press`; Input.cpp's pass after the devices turns that into `down` and a
+    // one-frame `press` (writing `down` here was undone by that pass: a held button read as released, 2.5).
+    for (int32 i = 0; i < 12; ++i) keys[i]->press |= *states[i] == 1 || *states[i] == 2;
 }
 
 void SKU::InputDevicePS1::CloseDevice()
