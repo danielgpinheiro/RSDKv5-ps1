@@ -129,6 +129,9 @@ struct TileLayer {
     RETRO_HASH_MD5(name);
     uint16 *layout;
     uint8 *lineScroll;
+#if RETRO_PLATFORM == RETRO_PS1
+    uint8 ps1ChunkShift; // PS1 (docs/32 2.3g): layout is a chunk index, 1 << ps1ChunkShift chunks per row (engine-only field)
+#endif
 };
 
 struct CollisionMask {
@@ -148,6 +151,28 @@ struct TileInfo {
 
 extern ScanlineInfo *scanlines;
 extern TileLayer tileLayers[LAYER_COUNT];
+
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 (docs/32 2.3g, choice 29): a layer's `layout` is an index of 4x4-tile chunks (the stock power-of-two padded size in
+// chunks) into the scene's chunk pool: the scene file's distinct chunks (tools/data_disc.py; chunk 0 = all 0xFFFF, the
+// stock padding) then private chunks for writes. A write into a shared chunk copies it first (PS1SetTile).
+extern uint16 *ps1ChunkPool;
+extern uint32 ps1ChunkShared; // chunks [0, shared) come from the file and may be shared
+extern uint32 ps1ChunkNext;   // next private chunk
+extern uint32 ps1ChunkCap;
+extern volatile uint32 g_ps1ChunkOverflow; // writes lost for want of a private chunk (GDB; must stay 0)
+extern volatile uint32 g_ps1ChunkPrivatePeak;
+
+inline uint16 *PS1TilePtr(TileLayer *layer, int32 tx, int32 ty)
+{
+    uint32 chunk = layer->layout[(tx >> 2) + ((ty >> 2) << layer->ps1ChunkShift)];
+    return &ps1ChunkPool[(chunk << 4) + ((ty & 3) << 2) + (tx & 3)];
+}
+void PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile);
+#define PS1_LAYOUT(layer, tx, ty) (*PS1TilePtr(layer, tx, ty))
+#else
+#define PS1_LAYOUT(layer, tx, ty) ((layer)->layout[(tx) + ((ty) << (layer)->widthShift)])
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT]; // PS1: unflipped only (PS1/PS1Collision.hpp)
@@ -243,7 +268,7 @@ inline uint16 GetTile(uint16 layerID, int32 tileX, int32 tileY)
     if (layerID < LAYER_COUNT) {
         TileLayer *layer = &tileLayers[layerID];
         if (tileX >= 0 && tileX < layer->xsize && tileY >= 0 && tileY < layer->ysize)
-            return layer->layout[tileX + (tileY << layer->widthShift)];
+            return PS1_LAYOUT(layer, tileX, tileY);
     }
 
     return (uint16)-1;
@@ -254,7 +279,11 @@ inline void SetTile(uint16 layerID, int32 tileX, int32 tileY, uint16 tile)
     if (layerID < LAYER_COUNT) {
         TileLayer *layer = &tileLayers[layerID];
         if (tileX >= 0 && tileX < layer->xsize && tileY >= 0 && tileY < layer->ysize)
+#if RETRO_PLATFORM == RETRO_PS1
+            PS1SetTile(layer, tileX, tileY, tile);
+#else
             layer->layout[tileX + (tileY << layer->widthShift)] = tile;
+#endif
     }
 }
 

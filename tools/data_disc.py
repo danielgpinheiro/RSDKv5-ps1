@@ -91,6 +91,103 @@ def walk_scene(r):
     assert r.p == len(r.d), 'scene: read %d of %d' % (r.p, len(r.d))
 
 
+# Scene layouts on the PS1 (docs/32 2.3g, choice 29): each layer's layout block becomes a chunk index (u16 per 4x4 tiles,
+# row-major over the stock power-of-two padded size: pitch 1 << (widthShift - 2), rows 1 << (heightShift - 2), the
+# padding pointing at chunk 0), and one pool of the scene's distinct chunks (16 u16 each, chunk 0 = all 0xFFFF, the stock
+# padding value) follows the last layer as one more raw block. The engine reads tiles through the index (Scene.hpp
+# PS1TilePtr); writes copy a shared chunk first.
+CHUNK = 4
+
+
+def layer_shift(size):
+    """Scene.cpp's loop: the smallest shift >= 1 with 1 << shift >= size."""
+    shift = 1
+    while (1 << shift) < size:
+        shift += 1
+    return shift
+
+
+def raw_block(data):
+    return struct.pack('<I', len(data) + 4) + struct.pack('>I', len(data)) + data
+
+
+def chunk_scene(data):
+    """The raw-block scene (convert_blocks' output) with chunked layouts. Returns (bytes, chunk count)."""
+    r = raw_blocks(data)
+    assert r.bytes(4) == b'SCN\0'
+    r.bytes(16); r.string(); r.u8()
+    out = bytearray(data[:r.p])
+    pool, pool_ids = [(0xFFFF,) * (CHUNK * CHUNK)], {}
+    pool_ids[pool[0]] = 0
+    layer_count = r.u8()
+    out.append(layer_count)
+    for _ in range(layer_count):
+        start = r.p
+        r.u8(); r.string(); r.u8(); r.u8()
+        xsize, ysize = r.u16(), r.u16()
+        r.u16(); r.u16()
+        for _ in range(r.u16()):
+            r.u16(); r.u16(); r.u8(); r.u8()
+        line_scroll = r.compressed()
+        out += data[start:r.p - len(line_scroll) - 8] + raw_block(line_scroll)
+        layout = r.compressed()
+        tiles = struct.unpack('<%dH' % (xsize * ysize), layout)
+        index = b''
+        if xsize or ysize:
+            cws = max(layer_shift(xsize), 2) - 2
+            chs = max(layer_shift(ysize), 2) - 2
+            idx = []
+            for cy in range(1 << chs):
+                for cx in range(1 << cws):
+                    k = tuple(tiles[(cy * CHUNK + y) * xsize + cx * CHUNK + x]
+                              if cy * CHUNK + y < ysize and cx * CHUNK + x < xsize else 0xFFFF
+                              for y in range(CHUNK) for x in range(CHUNK))
+                    if k not in pool_ids:
+                        pool_ids[k] = len(pool)
+                        pool.append(k)
+                    idx.append(pool_ids[k])
+            index = struct.pack('<%dH' % len(idx), *idx)
+        out += raw_block(index)
+    assert len(pool) < 0x8000, 'chunk pool too big for u16 indices with room for private chunks'
+    out += raw_block(b''.join(struct.pack('<16H', *c) for c in pool))
+    out += data[r.p:]
+    return bytes(out), len(pool)
+
+
+def unchunk_check(orig_raw, chunked):
+    """Self-check: every layer's tiles read back through index + pool equal the original layout (padding = 0xFFFF)."""
+    r0, r1 = raw_blocks(orig_raw), raw_blocks(chunked)
+    for r in (r0, r1):
+        assert r.bytes(4) == b'SCN\0'
+        r.bytes(16); r.string(); r.u8()
+    n = r0.u8(); assert r1.u8() == n
+    pending = []
+    for _ in range(n):
+        dims = []
+        for r in (r0, r1):
+            r.u8(); r.string(); r.u8(); r.u8()
+            dims.append((r.u16(), r.u16()))
+            r.u16(); r.u16()
+            for _ in range(r.u16()):
+                r.u16(); r.u16(); r.u8(); r.u8()
+        assert dims[0] == dims[1]
+        assert r0.compressed() == r1.compressed()
+        pending.append((dims[0], r0.compressed(), r1.compressed()))
+    pool = r1.compressed()
+    assert r0.d[r0.p:] == r1.d[r1.p:], 'objects section changed'
+    for (xsize, ysize), layout, index in pending:
+        if not (xsize or ysize):
+            assert index == b''
+            continue
+        cws = max(layer_shift(xsize), 2) - 2
+        for y in range(1 << layer_shift(ysize)):
+            for x in range(1 << layer_shift(xsize)):
+                ci = struct.unpack_from('<H', index, 2 * ((x >> 2) + ((y >> 2) << cws)))[0]
+                t = struct.unpack_from('<H', pool, 2 * ((ci << 4) + ((y & 3) << 2) + (x & 3)))[0]
+                want = struct.unpack_from('<H', layout, 2 * (y * xsize + x))[0] if x < xsize and y < ysize else 0xFFFF
+                assert t == want, (x, y, t, want)
+
+
 def walk_tileconfig(r):
     assert r.bytes(4) == b'TIL\0'
     r.compressed()
@@ -289,7 +386,10 @@ def main():
             size_in += os.path.getsize(s)
             if top == 'Stages' and f.startswith('Scene') and ext == '.bin':
                 out, b = convert_blocks(s, walk_scene)
-                open(d, 'wb').write(out); n['scene'] += 1; n['blocks'] += b
+                chunked, chunks = chunk_scene(out)
+                unchunk_check(out, chunked)
+                open(d, 'wb').write(chunked); n['scene'] += 1; n['blocks'] += b
+                n['chunks'] = max(n.get('chunks', 0), chunks)
             elif top == 'Game' and f == 'GameConfig.bin':
                 out, kept, dropped = convert_gameconfig(s)
                 open(d, 'wb').write(out); n['copied'] += 1
@@ -316,6 +416,8 @@ def main():
             else:
                 shutil.copyfile(s, d); n['copied'] += 1
             size_out += os.path.getsize(d)
+    print('data_disc: scene layouts as 4x4-tile chunk indices + one chunk pool per scene (largest pool %d chunks, '
+          'every tile self-checked)' % n.get('chunks', 0))
     print('data_disc: %(scene)d scenes + %(tileconfig)d tile configs rewritten (%(blocks)d blocks raw, self-checked), '
           '%(pal)d tileset palettes, %(copied)d files copied, %(skipped)d source/media files left out' % n)
     print('data_disc: %.1f MB of kept source -> %.1f MB on the disc tree (%s)' % (size_in / 1048576, size_out / 1048576, dst))

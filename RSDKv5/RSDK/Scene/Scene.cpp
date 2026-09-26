@@ -32,6 +32,70 @@ char RSDK::currentSceneID[0x10];
 
 SceneInfo RSDK::sceneInfo;
 
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 (docs/32 2.3g, choice 29): the scene's layout chunks (Scene.hpp).
+uint16 *RSDK::ps1ChunkPool                   = NULL;
+uint32 RSDK::ps1ChunkShared                  = 0;
+uint32 RSDK::ps1ChunkNext                    = 0;
+uint32 RSDK::ps1ChunkCap                     = 0;
+volatile uint32 RSDK::g_ps1ChunkOverflow     = 0;
+volatile uint32 RSDK::g_ps1ChunkPrivatePeak  = 0;
+
+#define PS1_CHUNK_BYTES   (16 * sizeof(uint16))
+#define PS1_CHUNK_PRIVATE (512) // chunks for writes per scene (16 KB); the peak is measured (g_ps1ChunkPrivatePeak)
+
+namespace
+{
+// A raw block of the PS1 data disc (tools/data_disc.py: u32 size + 4, u32 big-endian size, the bytes) read straight into
+// a new block of `set` with `extra` bytes after it. Returns the block's size (0: none allocated).
+uint32 PS1ReadRawBlock(FileInfo *info, void **buffer, StorageDataSets set, uint32 extra = 0)
+{
+    uint32 cSize  = ReadInt32(info, false) - 4;
+    uint32 sizeBE = ReadInt32(info, false);
+    uint32 size   = (sizeBE << 24) | ((sizeBE << 8) & 0x00FF0000) | ((sizeBE >> 8) & 0x0000FF00) | (sizeBE >> 24);
+    *buffer       = NULL;
+    if (cSize != size) {
+        g_ps1CompressedMismatch = g_ps1CompressedMismatch + 1;
+        Seek_Cur(info, cSize);
+        return 0;
+    }
+    if (!size && !extra)
+        return 0;
+    AllocateStorage(buffer, size + extra, set, false);
+    ReadBytes(info, *buffer, size);
+    return size;
+}
+
+void PS1ReadChunkPool(FileInfo *info)
+{
+    uint32 bytes   = PS1ReadRawBlock(info, (void **)&ps1ChunkPool, DATASET_STG, PS1_CHUNK_PRIVATE * PS1_CHUNK_BYTES);
+    ps1ChunkShared = bytes / PS1_CHUNK_BYTES;
+    ps1ChunkNext   = ps1ChunkShared;
+    ps1ChunkCap    = ps1ChunkShared + PS1_CHUNK_PRIVATE;
+}
+} // namespace
+
+void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
+{
+    uint16 *index = &layer->layout[(tx >> 2) + ((ty >> 2) << layer->ps1ChunkShift)];
+    uint32 in     = ((ty & 3) << 2) + (tx & 3);
+    if (ps1ChunkPool[((uint32)*index << 4) + in] == tile)
+        return;
+    if (*index < ps1ChunkShared) {
+        // a chunk from the file may stand for other places too: this place gets its own copy
+        if (ps1ChunkNext >= ps1ChunkCap) {
+            g_ps1ChunkOverflow = g_ps1ChunkOverflow + 1;
+            return;
+        }
+        memcpy(&ps1ChunkPool[ps1ChunkNext << 4], &ps1ChunkPool[(uint32)*index << 4], PS1_CHUNK_BYTES);
+        *index = (uint16)ps1ChunkNext++;
+        if (ps1ChunkNext - ps1ChunkShared > g_ps1ChunkPrivatePeak)
+            g_ps1ChunkPrivatePeak = ps1ChunkNext - ps1ChunkShared;
+    }
+    ps1ChunkPool[((uint32)*index << 4) + in] = tile;
+}
+#endif
+
 void RSDK::LoadSceneFolder()
 {
 #if RETRO_PLATFORM == RETRO_ANDROID
@@ -65,6 +129,9 @@ void RSDK::LoadSceneFolder()
     // the new arena from under objectEntityPtr (Title: TitleSonic_StageLoad's sprite load filled STG). The stock code
     // clears the entity list in LoadSceneAssets; nothing reads it between here and there.
     PS1EntityStorageClear();
+    // the layout chunks go with the layers (cleared below): the next compaction reclaims them
+    ps1ChunkPool   = NULL;
+    ps1ChunkShared = ps1ChunkNext = ps1ChunkCap = 0;
 #endif
 
 #if RETRO_REV02
@@ -426,15 +493,24 @@ void RSDK::LoadSceneAssets()
             layer->scrollPos      = 0;
 
             layer->layout = NULL;
+#if RETRO_PLATFORM != RETRO_PS1
             if (layer->xsize || layer->ysize) {
                 AllocateStorage((void **)&layer->layout, sizeof(uint16) * (1UL << layer->widthShift) * (1UL << layer->heightShift), DATASET_STG, true);
                 memset(layer->layout, 0xFF, sizeof(uint16) * (1UL << layer->widthShift) * (1UL << layer->heightShift));
             }
+#endif
 
             int32 size = layer->xsize;
             if (size <= layer->ysize)
                 size = layer->ysize;
+#if RETRO_PLATFORM == RETRO_PS1
+            // PS1 (docs/32 2.3g): ProcessParallax indexes lineScroll by pixel row for H-scroll layers and by pixel column for
+            // V-scroll ones; the stock buffer is sized for the larger side (FG: 16 KB of which 2 KB are read)
+            int32 lineScrollSize = TILE_SIZE * (layer->type == LAYER_HSCROLL ? layer->ysize : layer->type == LAYER_VSCROLL ? layer->xsize : size);
+            AllocateStorage((void **)&layer->lineScroll, lineScrollSize, DATASET_STG, true);
+#else
             AllocateStorage((void **)&layer->lineScroll, TILE_SIZE * size, DATASET_STG, true);
+#endif
 
             layer->scrollInfoCount = ReadInt16(&info);
             for (int32 s = 0; s < layer->scrollInfoCount; ++s) {
@@ -450,12 +526,22 @@ void RSDK::LoadSceneAssets()
 
             uint8 *scrollIndexes = NULL;
             ReadCompressed(&info, (uint8 **)&scrollIndexes);
+#if RETRO_PLATFORM == RETRO_PS1
+            memcpy(layer->lineScroll, scrollIndexes, lineScrollSize);
+#else
             memcpy(layer->lineScroll, scrollIndexes, TILE_SIZE * size * sizeof(uint8));
+#endif
 #if !RETRO_USE_ORIGINAL_CODE
             RemoveStorageEntry((void **)&scrollIndexes);
 #endif
             scrollIndexes = NULL;
 
+#if RETRO_PLATFORM == RETRO_PS1
+            // the chunk index, read straight into its STG block (no TMP copy of the layout)
+            layer->ps1ChunkShift = (layer->widthShift > 2 ? layer->widthShift : 2) - 2;
+            PS1ReadRawBlock(&info, (void **)&layer->layout, DATASET_STG);
+            continue;
+#endif
             uint8 *tileLayout = NULL;
             ReadCompressed(&info, (uint8 **)&tileLayout);
 
@@ -472,6 +558,10 @@ void RSDK::LoadSceneAssets()
 #endif
             tileLayout = NULL;
         }
+
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1ReadChunkPool(&info);
+#endif
 
         // Objects
         uint8 objectCount = ReadInt8(&info);
@@ -1499,8 +1589,12 @@ void RSDK::CopyTileLayer(uint16 dstLayerID, int32 dstStartX, int32 dstStartY, ui
 
                 for (int32 y = 0; y < countY; ++y) {
                     for (int32 x = 0; x < countX; ++x) {
+#if RETRO_PLATFORM == RETRO_PS1
+                        PS1SetTile(dstLayer, x + dstStartX, y + dstStartY, PS1_LAYOUT(srcLayer, x + srcStartX, y + srcStartY));
+#else
                         uint16 tile = srcLayer->layout[(x + srcStartX) + ((y + srcStartY) << srcLayer->widthShift)];
                         dstLayer->layout[(x + dstStartX) + ((y + dstStartY) << dstLayer->widthShift)] = tile;
+#endif
                     }
                 }
             }

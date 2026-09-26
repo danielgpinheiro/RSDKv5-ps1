@@ -661,7 +661,7 @@ bool32 RSDK::ObjectTileCollision(Entity *entity, uint16 cLayers, uint8 cMode, ui
                     if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                                uint16 tile = layer->layout[(colX / TILE_SIZE) + ((cy / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (colX / TILE_SIZE), (cy / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 ty = cy + PS1_MASK(PS1MaskFloor, cPlane, tile, colX & 0xF);
                                     if (colY >= ty && abs(colY - ty) <= 14) {
@@ -695,7 +695,7 @@ bool32 RSDK::ObjectTileCollision(Entity *entity, uint16 cLayers, uint8 cMode, ui
                     if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                                uint16 tile = layer->layout[(cx >> 4) + ((colY / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (cx >> 4), (colY / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 tx = cx + PS1_MASK(PS1MaskLWall, cPlane, tile, colY & 0xF);
                                     if (colX >= tx && abs(colX - tx) <= 14) {
@@ -729,7 +729,7 @@ bool32 RSDK::ObjectTileCollision(Entity *entity, uint16 cLayers, uint8 cMode, ui
                     if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                                uint16 tile = layer->layout[(colX >> 4) + ((cy / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (colX >> 4), (cy / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 ty = cy + PS1_MASK(PS1MaskRoof, cPlane, tile, colX & 0xF);
                                     if (colY <= ty && abs(colY - ty) <= 14) {
@@ -763,7 +763,7 @@ bool32 RSDK::ObjectTileCollision(Entity *entity, uint16 cLayers, uint8 cMode, ui
                     if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                                uint16 tile = layer->layout[(cx >> 4) + ((colY / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (cx >> 4), (colY / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 tx = cx + PS1_MASK(PS1MaskRWall, cPlane, tile, colY & 0xF);
                                     if (colX <= tx && abs(colX - tx) <= 14) {
@@ -809,7 +809,7 @@ bool32 RSDK::ObjectTileGrip(Entity *entity, uint16 cLayers, uint8 cMode, uint8 c
                     if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                                uint16 tile = layer->layout[(colX >> 4) + ((cy / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (colX >> 4), (cy / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 mask = PS1_MASK(PS1MaskFloor, cPlane, tile, colX & 0xF);
                                     int32 ty   = cy + mask;
@@ -846,7 +846,7 @@ bool32 RSDK::ObjectTileGrip(Entity *entity, uint16 cLayers, uint8 cMode, uint8 c
                     if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                                uint16 tile = layer->layout[(cx >> 4) + ((colY / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (cx >> 4), (colY / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 mask = PS1_MASK(PS1MaskLWall, cPlane, tile, colY & 0xF);
                                     int32 tx   = cx + mask;
@@ -883,7 +883,7 @@ bool32 RSDK::ObjectTileGrip(Entity *entity, uint16 cLayers, uint8 cMode, uint8 c
                     if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                                uint16 tile = layer->layout[(colX >> 4) + ((cy / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (colX >> 4), (cy / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 mask = PS1_MASK(PS1MaskRoof, cPlane, tile, colX & 0xF);
                                     int32 ty   = cy + mask;
@@ -920,7 +920,7 @@ bool32 RSDK::ObjectTileGrip(Entity *entity, uint16 cLayers, uint8 cMode, uint8 c
                     if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                         for (int32 i = 0; i < 3; ++i) {
                             if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                                uint16 tile = layer->layout[(cx >> 4) + ((colY / TILE_SIZE) << layer->widthShift)];
+                                uint16 tile = PS1_LAYOUT(layer, (cx >> 4), (colY / TILE_SIZE));
                                 if (tile < 0xFFFF && tile & solid) {
                                     int32 mask = PS1_MASK(PS1MaskRWall, cPlane, tile, colY & 0xF);
                                     int32 tx   = cx + mask;
@@ -2211,7 +2211,7 @@ void RSDK::FindFloorPosition(CollisionSensor *sensor)
             if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                        uint16 tile = layer->layout[(colX / TILE_SIZE) + ((cy / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (colX / TILE_SIZE), (cy / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskFloor, collisionEntity->collisionPlane, tile, colX & 0xF);
@@ -2272,7 +2272,7 @@ void RSDK::FindLWallPosition(CollisionSensor *sensor)
             if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                        uint16 tile = layer->layout[(cx / TILE_SIZE) + ((colY / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (cx / TILE_SIZE), (colY / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskLWall, collisionEntity->collisionPlane, tile, colY & 0xF);
@@ -2329,7 +2329,7 @@ void RSDK::FindRoofPosition(CollisionSensor *sensor)
             if (colX >= 0 && colX < TILE_SIZE * layer->xsize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                        uint16 tile = layer->layout[(colX / TILE_SIZE) + ((cy / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (colX / TILE_SIZE), (cy / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskRoof, collisionEntity->collisionPlane, tile, colX & 0xF);
@@ -2378,7 +2378,7 @@ void RSDK::FindRWallPosition(CollisionSensor *sensor)
             if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                        uint16 tile = layer->layout[(cx / TILE_SIZE) + ((colY / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (cx / TILE_SIZE), (colY / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskRWall, collisionEntity->collisionPlane, tile, colY & 0xF);
@@ -2446,7 +2446,7 @@ void RSDK::FloorCollision(CollisionSensor *sensor)
                     int32 step = TILE_SIZE;
 
                     if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
-                        uint16 tile = layer->layout[(colX / TILE_SIZE) + ((cy / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (colX / TILE_SIZE), (cy / TILE_SIZE));
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask = PS1_MASK(PS1MaskFloor, collisionEntity->collisionPlane, tile, colX & 0xF);
 #if RETRO_REV0U
@@ -2512,7 +2512,7 @@ void RSDK::LWallCollision(CollisionSensor *sensor)
             if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                        uint16 tile = layer->layout[(cx / TILE_SIZE) + ((colY / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (cx / TILE_SIZE), (colY / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask = PS1_MASK(PS1MaskLWall, collisionEntity->collisionPlane, tile, colY & 0xF);
@@ -2574,7 +2574,7 @@ void RSDK::RoofCollision(CollisionSensor *sensor)
                     if (cy >= 0 && cy < TILE_SIZE * layer->ysize) {
                         int32 tileX = (colX / TILE_SIZE);
                         int32 tileY = (cy / TILE_SIZE);
-                        uint16 tile = layer->layout[tileX + (tileY << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, tileX, tileY);
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask = PS1_MASK(PS1MaskRoof, collisionEntity->collisionPlane, tile, colX & 0xF);
@@ -2638,7 +2638,7 @@ void RSDK::RWallCollision(CollisionSensor *sensor)
             if (colY >= 0 && colY < TILE_SIZE * layer->ysize) {
                 for (int32 i = 0; i < 3; ++i) {
                     if (cx >= 0 && cx < TILE_SIZE * layer->xsize) {
-                        uint16 tile = layer->layout[(cx / TILE_SIZE) + ((colY / TILE_SIZE) << layer->widthShift)];
+                        uint16 tile = PS1_LAYOUT(layer, (cx / TILE_SIZE), (colY / TILE_SIZE));
 
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask = PS1_MASK(PS1MaskRWall, collisionEntity->collisionPlane, tile, colY & 0xF);
