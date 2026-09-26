@@ -16,6 +16,10 @@ Link::Handle gameLogicHandle = NULL;
 #endif
 
 int32 *RSDK::globalVarsPtr = NULL;
+#if RETRO_PLATFORM == RETRO_PS1
+int32 RSDK::g_ps1GlobalVarsSize                = 0;
+volatile uint32 RSDK::g_ps1GlobalVarsDropped   = 0; // GameConfig global-variable writes outside globals (GDB; must stay 0)
+#endif
 #if RETRO_REV0U
 void (*RSDK::globalVarsInitCB)(void *globals) = NULL;
 #endif
@@ -1175,7 +1179,16 @@ void RSDK::LoadGameConfig()
             int32 offset = ReadInt32(&info, false);
             int32 count  = ReadInt32(&info, false);
             for (int32 v = 0; v < count; ++v) {
+#if RETRO_PLATFORM == RETRO_PS1
+                // tools/data_disc.py remaps these offsets to the PS1 GlobalVariables; anything still outside is counted
+                int32 value = ReadInt32(&info, false);
+                if ((uint32)(offset + v) < (uint32)g_ps1GlobalVarsSize / sizeof(int32))
+                    globalVarsPtr[offset + v] = value;
+                else
+                    g_ps1GlobalVarsDropped = g_ps1GlobalVarsDropped + 1;
+#else
                 globalVarsPtr[offset + v] = ReadInt32(&info, false);
+#endif
             }
 #endif
         }

@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""The phase 2 data disc tree (docs/32 2.2): ../SonicMania_Extracted/Data -> build/iso/Data, in the forms the PS1
+engine reads without decoding anything at runtime (golden rule):
+
+  Stages/*/Scene*.bin, Stages/*/TileConfig.bin
+      every zlib block stored raw: same header (u32 size field = raw length + 4, u32 big-endian raw length), the
+      bytes uncompressed (RSDKv5/RSDK/Core/Reader.hpp ReadCompressed on PS1 copies them)
+  Stages/*/16x16Tiles.gif -> 16x16Tiles.pal
+      the GIF's colour table as ImageGIF::Load reads it (256 x RGB, entries past the table 0); LoadStageGIF on PS1
+      applies it to the palette rows. The tile pixels go to VRAM at build time in phase 3.
+  Game/GameConfig.bin
+      the global-variable blocks remapped to the PS1 GlobalVariables (the Plus replay buffers are one element each;
+      SonicMania/GameVariables.h): the same values land in the same fields (self-checked)
+  everything else in the kept folders: copied as is
+
+Not on the disc (converted by later phases or not used on the PS1): .gif sprite sheets (VRAM atlases, phase 3),
+.wav (SPU ADPCM, phase 5), .ogg (CD-XA, phase 5), .ogv (STR, phase 6), .png/.tga images (phase 3/6), shaders.
+
+Self-check: each rewritten file is read back with the raw rule and its blocks compared with the zlib originals;
+the rest of the file must be byte-identical.
+Usage: data_disc.py [SRC_DATA] [ISO_ROOT]   (defaults ../SonicMania_Extracted/Data build/iso)
+"""
+import os, shutil, struct, sys, zlib
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.abspath(os.path.join(HERE, '..'))
+sys.path.insert(0, HERE)
+import rsdk5_formats as F
+
+SKIP_EXT = ('.gif', '.wav', '.ogg', '.ogv', '.png', '.tga', '.vso', '.fso')
+
+
+class Rewriter(F.R):
+    """Reads like the engine and records where each compressed block is, so the file can be re-emitted with the
+    blocks raw."""
+
+    def __init__(self, data):
+        super().__init__(data)
+        self.blocks = []  # (start, end, raw)
+
+    def compressed(self):
+        start = self.p
+        raw = super().compressed()
+        self.blocks.append((start, self.p, raw))
+        return raw
+
+    def emit(self):
+        out, last = bytearray(), 0
+        for start, end, raw in self.blocks:
+            out += self.d[last:start]
+            out += struct.pack('<I', len(raw) + 4) + struct.pack('>I', len(raw)) + raw
+            last = end
+        out += self.d[last:]
+        return bytes(out)
+
+
+def raw_blocks(data):
+    """Parse helper for the self-check: a compressed() that reads the raw form."""
+    class RawR(F.R):
+        def compressed(self):
+            size = self.u32() - 4
+            be = struct.unpack('>I', struct.pack('<I', self.u32()))[0]
+            assert size == be, (size, be)
+            return self.bytes(size)
+    return RawR(data)
+
+
+def walk_scene(r):
+    """Scene.cpp LoadSceneAssets' read order (as tools/rsdk5_formats.read_scene), calling r.compressed() for the
+    blocks."""
+    assert r.bytes(4) == b'SCN\0'
+    r.bytes(16); r.string(); r.u8()
+    for _ in range(r.u8()):
+        r.u8(); r.string(); r.u8(); r.u8(); r.u16(); r.u16(); r.u16(); r.u16()
+        for _ in range(r.u16()):
+            r.u16(); r.u16(); r.u8(); r.u8()
+        r.compressed(); r.compressed()
+    for _ in range(r.u8()):
+        r.bytes(16)
+        var_count = r.u8()
+        vars_ = [(r.bytes(16), r.u8()) for _ in range(var_count - 1)]
+        for _ in range(r.u16()):
+            r.u16(); r.i32(); r.i32()
+            for _, vt in vars_:
+                if vt == 8:
+                    n = r.u16(); r.bytes(2 * n)
+                elif vt == 9:
+                    r.i32(); r.i32()
+                else:
+                    r.bytes(F.VAR_SIZES[vt])
+    assert r.p == len(r.d), 'scene: read %d of %d' % (r.p, len(r.d))
+
+
+def walk_tileconfig(r):
+    assert r.bytes(4) == b'TIL\0'
+    r.compressed()
+    assert r.p == len(r.d)
+
+
+def convert_blocks(src, walk):
+    data = open(src, 'rb').read()
+    rw = Rewriter(data)
+    walk(rw)
+    out = rw.emit()
+    # self-check: the raw form reads back to the same blocks, and nothing else changed
+    chk = raw_blocks(out)
+    raws = []
+    orig = chk.compressed
+    chk.compressed = lambda: (raws.append(orig()), raws[-1])[1]
+    walk(chk)
+    assert raws == [b[2] for b in rw.blocks], src
+    return out, len(rw.blocks)
+
+
+# GlobalVariables on the PS1 (SonicMania/GameVariables.h, RETRO_PS1_BUILD): the four Plus replay buffers keep one
+# element each instead of 0x40000. GameConfig.bin's global-variable blocks (u32 int offset, u32 count, values) are
+# written for the PC layout: offsets past the buffers move down, writes into dropped buffer elements go.
+GV_REPLAY_START = 67037          # int offset of replayWriteBuffer (the PC layout; GameConfig has a block there)
+GV_REPLAY_PC, GV_REPLAY_PS1 = 0x40000, 1
+GV_REPLAY_COUNT = 4
+GV_PC_INTS = 1115625             # sizeof(GlobalVariables) / 4 on the PC (4,462,500 bytes, measured in 2.2)
+GV_AFTER = GV_REPLAY_START + GV_REPLAY_COUNT * GV_REPLAY_PC
+GV_SHIFT = GV_REPLAY_COUNT * (GV_REPLAY_PC - GV_REPLAY_PS1)
+
+
+def gv_remap(off):
+    if off < GV_REPLAY_START:
+        return off
+    if off < GV_AFTER:
+        k, i = divmod(off - GV_REPLAY_START, GV_REPLAY_PC)
+        return GV_REPLAY_START + k * GV_REPLAY_PS1 + i if i < GV_REPLAY_PS1 else None
+    assert off < GV_PC_INTS, off
+    return off - GV_SHIFT
+
+
+def convert_gameconfig(src):
+    """GameConfig.bin with its global-variable blocks remapped (everything before them is copied as is)."""
+    d = open(src, 'rb').read()
+    r = F.R(d)
+    assert r.bytes(4) == b'CFG\0'
+    r.string(); r.string(); r.string(); r.u8(); r.u16()
+    [r.string() for _ in range(r.u8())]
+    r.palettes()
+    [(r.string(), r.u8()) for _ in range(r.u8())]
+    r.u16()
+    for _ in range(r.u8()):
+        r.string()
+        for _ in range(r.u8()):
+            r.string(); r.string(); r.string(); r.u8()
+    head = d[:r.p]
+    writes, dropped = [], 0
+    for _ in range(r.u8()):
+        off, n = r.u32(), r.u32()
+        for v in range(n):
+            val = r.i32()
+            m = gv_remap(off + v)
+            if m is None:
+                dropped += 1
+            else:
+                writes.append((m, val))
+    r.done(src)
+    # coalesce consecutive offsets into blocks (the loader writes them in file order, as the PC does)
+    blocks = []
+    for off, val in writes:
+        if blocks and blocks[-1][0] + len(blocks[-1][1]) == off:
+            blocks[-1][1].append(val)
+        else:
+            blocks.append((off, [val]))
+    assert len(blocks) < 256
+    out = bytearray(head) + bytes([len(blocks)])
+    for off, vals in blocks:
+        out += struct.pack('<II', off, len(vals)) + b''.join(struct.pack('<i', v) for v in vals)
+    # self-check: the same values land in the same fields
+    pc = {}
+    for off, vals in F.read_gameconfig(src)['global_vars']:
+        for v, val in enumerate(vals):
+            if gv_remap(off + v) is not None:
+                pc[gv_remap(off + v)] = val
+    ps1 = {}
+    for off, vals in blocks:
+        for v, val in enumerate(vals):
+            ps1[off + v] = val
+    assert pc == ps1
+    return bytes(out), len(writes), dropped
+
+
+def gif_palette(src):
+    """ImageGIF::Load (Sprite.cpp): packed byte at 10, table size 1 << ((packed & 7) + 1) from byte 13; entries
+    past it stay 0 (the palette buffer is allocated cleared). A local colour table is not expected in the stage
+    tilesets (its engine path writes palette[0x81..0x100]); the tool stops if one appears."""
+    d = open(src, 'rb').read()
+    assert d[:3] == b'GIF', src
+    size = 1 << ((d[10] & 7) + 1)
+    pal = bytearray(0x100 * 3)
+    pal[:size * 3] = d[13:13 + size * 3]
+    p = 13 + size * 3
+    p = d.index(b',', p)  # the engine scans byte by byte for the image separator
+    packed = d[p + 1 + 8]
+    assert not packed >> 7, '%s: local colour table' % src
+    return bytes(pal)
+
+
+def main():
+    a = sys.argv[1:]
+    src = os.path.abspath(a[0] if a else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data'))
+    root = os.path.abspath(a[1] if len(a) > 1 else os.path.join(REPO, 'build', 'iso'))
+    dst = os.path.join(root, 'Data')
+    if os.path.exists(dst):
+        shutil.rmtree(dst)
+    n = {'copied': 0, 'scene': 0, 'tileconfig': 0, 'blocks': 0, 'pal': 0, 'skipped': 0}
+    size_in = size_out = 0
+    for dirpath, _, files in os.walk(src):
+        rel = os.path.relpath(dirpath, src)
+        for f in sorted(files):
+            if f.startswith('.'):
+                continue
+            s = os.path.join(dirpath, f)
+            d = os.path.join(dst, rel, f)
+            ext = os.path.splitext(f)[1].lower()
+            top = rel.split(os.sep)[0]
+            if top == 'Stages' and f.lower() == '16x16tiles.gif':
+                os.makedirs(os.path.dirname(d), exist_ok=True)
+                open(d[:-4] + '.pal', 'wb').write(gif_palette(s))
+                n['pal'] += 1
+                size_out += 0x300
+                continue
+            if ext in SKIP_EXT or top == 'Shaders':
+                n['skipped'] += 1
+                continue
+            os.makedirs(os.path.dirname(d), exist_ok=True)
+            size_in += os.path.getsize(s)
+            if top == 'Stages' and f.startswith('Scene') and ext == '.bin':
+                out, b = convert_blocks(s, walk_scene)
+                open(d, 'wb').write(out); n['scene'] += 1; n['blocks'] += b
+            elif top == 'Game' and f == 'GameConfig.bin':
+                out, kept, dropped = convert_gameconfig(s)
+                open(d, 'wb').write(out); n['copied'] += 1
+                print('data_disc: GameConfig global variables remapped to the PS1 layout: %d kept, %d dropped (replay buffers)' % (kept, dropped))
+            elif top == 'Stages' and f == 'TileConfig.bin':
+                out, b = convert_blocks(s, walk_tileconfig)
+                open(d, 'wb').write(out); n['tileconfig'] += 1; n['blocks'] += b
+            else:
+                shutil.copyfile(s, d); n['copied'] += 1
+            size_out += os.path.getsize(d)
+    print('data_disc: %(scene)d scenes + %(tileconfig)d tile configs rewritten (%(blocks)d blocks raw, self-checked), '
+          '%(pal)d tileset palettes, %(copied)d files copied, %(skipped)d source/media files left out' % n)
+    print('data_disc: %.1f MB of kept source -> %.1f MB on the disc tree (%s)' % (size_in / 1048576, size_out / 1048576, dst))
+
+
+if __name__ == '__main__':
+    main()

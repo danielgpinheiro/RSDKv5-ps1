@@ -50,9 +50,17 @@ void ReplayRecorder_LateUpdate(void)
     }
 }
 
+// PS1 port (docs/32): no replays in scope; the replay buffers in globals are one element each, so the recorder never
+// sets up in Time Attack (the mode itself stays: records without replays).
+#if defined RETRO_PS1_BUILD
+#define REPLAYRECORDER_ENABLED (false)
+#else
+#define REPLAYRECORDER_ENABLED (true)
+#endif
+
 void ReplayRecorder_StaticUpdate(void)
 {
-    if (globals->gameMode == MODE_TIMEATTACK) {
+    if (REPLAYRECORDER_ENABLED && globals->gameMode == MODE_TIMEATTACK) {
         if (SceneInfo->state & ENGINESTATE_REGULAR)
             ++ReplayRecorder->frameCounter;
 
@@ -154,7 +162,7 @@ void ReplayRecorder_StageLoad(void)
     ReplayRecorder->replayID    = 0;
     ReplayRecorder->replayRowID = -1;
 
-    if (globals->gameMode == MODE_TIMEATTACK) {
+    if (REPLAYRECORDER_ENABLED && globals->gameMode == MODE_TIMEATTACK) {
         ReplayRecorder->active = ACTIVE_ALWAYS;
 
         ReplayRecorder->frameCounter      = -1;

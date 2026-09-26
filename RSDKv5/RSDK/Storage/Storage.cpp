@@ -29,7 +29,15 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 bool32 RSDK::InitStorage()
 {
     // Storage limits.
-#if RETRO_PLATFORM == RETRO_PS1
+#if RETRO_PLATFORM == RETRO_PS1 && PS1_DEBUG_BIGRAM
+    // PS1 port, 8 MB debug/measuring link only (docs/32 2.2): room to measure what the datasets really need
+    // (g_ps1StorageLivePeak below); 2.3 sizes the 2 MB limits from those peaks.
+    dataStorage[DATASET_STG].storageLimit = 2 * 1024 * 1024;
+    dataStorage[DATASET_MUS].storageLimit = 64 * 1024;
+    dataStorage[DATASET_SFX].storageLimit = 64 * 1024;
+    dataStorage[DATASET_STR].storageLimit = 128 * 1024;
+    dataStorage[DATASET_TMP].storageLimit = 1024 * 1024;
+#elif RETRO_PLATFORM == RETRO_PS1
     // PS1 port (docs/32 phase 2): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA,
     // converted at build time), so the datasets hold the scene's layouts, entity data and tables only.
     dataStorage[DATASET_STG].storageLimit = 640 * 1024;
@@ -81,6 +89,36 @@ void RSDK::ReleaseStorage()
     }
 #endif
 }
+
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 port (docs/32 2.2): what each dataset really needs. The datasets are bump allocators that garbage-collect when
+// full, so the high-water mark of usedStorage says little; the live bytes (entries whose owner pointer still points
+// at them: what GarbageCollectStorage keeps) after each allocation give the limit a dataset needs. GDB reads these.
+volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte headers
+volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX]; // live entries
+volatile uint32 g_ps1StorageLargest[DATASET_MAX];   // largest single allocation
+volatile uint32 g_ps1StorageFail[DATASET_MAX];      // allocations that failed after garbage collection (must be 0)
+
+static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
+{
+    DataStorage *st = &dataStorage[set];
+    if (!ok)
+        g_ps1StorageFail[set] = g_ps1StorageFail[set] + 1;
+    uint32 live = 0, entries = 0;
+    for (int32 e = 0; e < (int32)st->entryCount; ++e) {
+        if (st->dataEntries[e] && *st->dataEntries[e] == st->storageEntries[e]) {
+            live += ((uint32 *)st->storageEntries[e])[-HEADER_SIZE + HEADER_DATA_LENGTH] + HEADER_SIZE * sizeof(uint32);
+            ++entries;
+        }
+    }
+    if (live > g_ps1StorageLivePeak[set])
+        g_ps1StorageLivePeak[set] = live;
+    if (entries > g_ps1StorageEntryPeak[set])
+        g_ps1StorageEntryPeak[set] = entries;
+    if (size > g_ps1StorageLargest[set])
+        g_ps1StorageLargest[set] = size;
+}
+#endif
 
 void RSDK::AllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet, bool32 clear)
 {
@@ -172,6 +210,9 @@ void RSDK::AllocateStorage(void **dataPtr, uint32 size, StorageDataSets dataSet,
             // Clear the allocated memory if requested.
             if (*data != NULL && clear == (bool32)true)
                 memset(*data, 0, size);
+#if RETRO_PLATFORM == RETRO_PS1
+            PS1StorageStats(dataSet, *data != NULL, size);
+#endif
         }
     }
 }

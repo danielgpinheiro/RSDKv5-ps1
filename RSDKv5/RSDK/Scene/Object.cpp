@@ -309,7 +309,11 @@ void RSDK::LoadStaticVariables(uint8 *classPtr, uint32 *hash, int32 readOffset)
 void RSDK::InitObjects()
 {
     sceneInfo.entitySlot = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    sceneInfo.createSlot = TEMPENTITY_START; // = ENTITY_COUNT - 0x100 with the stock counts; PS1 has fewer temp slots
+#else
     sceneInfo.createSlot = ENTITY_COUNT - 0x100;
+#endif
     cameraCount          = 0;
 
     for (int32 o = 0; o < sceneInfo.classCount; ++o) {

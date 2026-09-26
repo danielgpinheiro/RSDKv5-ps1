@@ -35,9 +35,21 @@ bool RenderDevice::SetupRendering()
     // RETRO_PS1_HEADLESS). Phase 3 draws through the GPU chain.
     for (int32 s = 0; s < SCREEN_COUNT; ++s)
         screens[s].frameBuffer = NULL;
+    // The per-line scroll positions the layers' parallax (Scene.cpp ProcessParallax) and the game's scanline
+    // callbacks write every frame: every upstream device allocates them here (DX9RenderDevice.cpp), and with it
+    // missing they wrote through NULL into the BIOS kernel's RAM (docs/32 2.2: stale saved registers, then crashes).
+    if (!scanlines) {
+        int32 size = videoSettings.pixWidth >= SCREEN_YSIZE ? videoSettings.pixWidth : SCREEN_YSIZE;
+        scanlines  = (ScanlineInfo *)malloc(size * sizeof(ScanlineInfo));
+        if (!scanlines)
+            return false;
+        memset(scanlines, 0, size * sizeof(ScanlineInfo));
+    }
     videoSettings.screenCount = 1;
     engine.inFocus = 1;
     videoSettings.windowState = WINDOWSTATE_ACTIVE;
+    videoSettings.dimMax      = 1.0; // as every upstream SetupRendering
+    videoSettings.dimPercent  = 1.0;
     return true;
 }
 

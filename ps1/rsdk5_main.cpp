@@ -83,7 +83,9 @@ class ManiaPS1App final : public psyqo::Application {
     void start() override {
         m_cdrom.resetBlocking(gpu());
         g_ps1CDRom = &m_cdrom;
+#if !PS1_NO_IRQ_GUARD // bisect switch (docs/32 2.2)
         PS1IrqGuardInstall(); // real-hardware IRQ fixes (docs/31)
+#endif
         m_pad.initialize(psyqo::AdvancedPad::PollingMode::Fast);
         g_ps1Pad = &m_pad;
 

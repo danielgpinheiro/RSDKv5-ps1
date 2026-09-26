@@ -249,10 +249,20 @@ typedef struct {
     int32 initCoolBonus;
     int32 coolBonus[4];
 #if MANIA_USE_PLUS
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32, scope: no replays): 4 x 1 MB on the PC. One element each keeps every field after them in
+    // place relative to each other; tools/data_disc.py remaps GameConfig's global-variable offsets to this layout and
+    // ReplayRecorder never records (ReplayRecorder.c).
+    int32 replayWriteBuffer[1];
+    int32 replayReadBuffer[1];
+    int32 replayTempWBuffer[1];
+    int32 replayTempRBuffer[1];
+#else
     int32 replayWriteBuffer[0x40000];
     int32 replayReadBuffer[0x40000];
     int32 replayTempWBuffer[0x40000];
     int32 replayTempRBuffer[0x40000];
+#endif
     int32 replayTableID;
     int32 replayTableLoaded;
     int32 taTableID;

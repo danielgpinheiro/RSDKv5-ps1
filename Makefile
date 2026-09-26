@@ -47,6 +47,7 @@ ps1/libc/stdlib.cpp \
 ps1/libc/math.cpp \
 ps1/libc/stdio.cpp \
 ps1/libc/time.cpp \
+ps1/libc/new_guard.cpp \
 ps1/cdrom_fs.cpp \
 ps1/cdrom_stream.cpp \
 ps1/irq_guard.cpp \
@@ -92,11 +93,18 @@ CPPFLAGS += -msoft-float
 LDFLAGS   += -msoft-float
 LDFLAGS   += -lgcc
 # Retail PS1 = 2 MB RAM (EXE at 0x80010000, ~1.94 MB usable). Never raise this for a release.
+# `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
+CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
 MEASURE_RAM ?= 2M
+ifneq ($(MEASURE_RAM),2M)
+CPPFLAGS  += -DPS1_DEBUG_BIGRAM=1 # measuring datasets (RSDKv5/RSDK/Storage/Storage.cpp); never a release setting
+endif
 LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
+# operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).
+LDFLAGS   += -Wl,-wrap,_Znwj -Wl,-wrap,_Znaj
 # Drop the unreferenced functions of the objects that are linked (function sections).
 CPPFLAGS += -ffunction-sections -fdata-sections
 LDFLAGS  += -Wl,--gc-sections
@@ -118,7 +126,7 @@ $(TARGET).elf: $(STUBS).o
 $(STUBS).c: $(OBJS) tools/gen_stubs.py
 	@/usr/bin/python3 tools/gen_stubs.py $@ $(OBJS)
 $(STUBS).o: $(STUBS).c
-	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -c -o $@ $<
+	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<
 
 # Trig tables computed at build time on the host (tools/trig/gen_trig.c), included by Math.cpp on PS1.
 build/gen/trig_tables.inc: tools/trig/gen_trig.c

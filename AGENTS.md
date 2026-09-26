@@ -25,7 +25,8 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   `RSDKv3-ps1` (`8d7c1cd`, with the real-hardware fixes).
 - References: the Dreamcast port (`../../Dreamcast/RSDKv5-Decompilation`, `Sonic-Mania-Decompilation`,
   michael-fadely forks) and our own PS1 ports. Not the Xbox v5 port.
-- Scope (base Mania vs Plus: Mighty, Ray, Encore) decided after phase 1's numbers.
+- **Scope: base Mania** (decided after phase 1): Mania mode, Sonic/Tails/Knuckles; no Encore, Mighty, Ray,
+  Competition, replays, Puyo (reversible build/data switches).
 - Icons: `../Memcard icons/sonic-mania-loading.gif` (loading, quantised to 15 colours), `mania-mc-icon.png`
   (save); credit to be given by the user before the public README.
 - Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
@@ -37,6 +38,8 @@ make objects STAGES=Logos,Title,GHZ  # which objects link (tools/gen_objects.py 
 make -j8 MEASURE_RAM=8M         # engine + game (phase 2): 8 MB measuring/debug link until 2.3 fits 2 MB; rsdkv5.map
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
+tools/data_disc.sh              # phase 2 data disc: Data/ without source media, raw scene/tile blocks, tileset .pal
+TIMEOUT=120 tools/boot_test_ds.sh [OUT] [END_FRAME]  # headless boot in DuckStation: scene loads, datasets, guards
 tools/smoke_disc.sh             # phase 0 test disc (GHZ subset + Jump.vag) + make disc
 tools/smoke_test_ds.sh [OUT]    # phase 0 smoke test in DuckStation (file CRCs, SPU, loading icon, fps)
 tools/smoke_test.sh [OUT]       # the same in PCSX-Redux (+ VRAM icon pixels, pad), when it is free

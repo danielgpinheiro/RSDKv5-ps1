@@ -175,14 +175,16 @@ def main():
                         files.append((name, el, sz))
                 o += ln
     walk(struct.unpack_from('<I', pvd, 158)[0], struct.unpack_from('<I', pvd, 166)[0], '')
-    src_files = {f.lower(): f for f in build_disc.disc_files(iso_root)}
+    # disc path (lowercase, short names past build_disc.NAME_MAX) -> source file (its real path = the index key)
+    src_files = {build_disc.disc_name(f).replace(os.sep, '/').lower(): f for f in build_disc.disc_files(iso_root)}
     compared = 0
     for name, el, sz in files:
         if build_disc.excluded(name):
             err('source-only file on the disc: %s' % name)
         if name.upper() == build_disc.IDX_NAME:
             table = b''.join(user(el + k) for k in range((sz + 2047) // 2048))[:sz]
-            want = build_disc.index_bytes([x for x in files if '/' in x[0]])
+            real = lambda n: src_files[n.lower()].replace(os.sep, '/') if n.lower() in src_files else n
+            want = build_disc.index_bytes([(real(n), lba, s_) for n, lba, s_ in files if '/' in n])
             if table != want:
                 err('%s does not match the directory tree' % name)
             compared += 1
@@ -214,8 +216,8 @@ def main():
             err('%s differs from %s' % (name, os.path.relpath(src, REPO)))
         if name.upper() == 'PSX.EXE' and data[:8] != b'PS-X EXE':
             err('PSX.EXE is not a PS-X EXE')
-    missing = [f for f in src_files.values() if not build_disc.excluded(f) and
-               f.replace(os.sep, '/').upper() not in {x[0].upper() for x in files}]
+    on_disc = {x[0].lower() for x in files}
+    missing = [f for d, f in src_files.items() if not build_disc.excluded(f) and d not in on_disc]
     for f in missing:
         err('%s is not on the disc' % f)
     print('%s: %d sectors (%.1f MB) | Form 1 %d (EDC + ECC, %d checked) | Form 2 %d with EDC, %d without' % (

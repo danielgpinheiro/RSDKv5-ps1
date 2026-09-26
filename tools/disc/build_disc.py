@@ -42,7 +42,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
 MKPSXISO = os.environ.get('MKPSXISO') or os.path.join(REPO, '..', 'mkpsxiso-2.30-Darwin', 'bin', 'mkpsxiso')
 
-SYSTEM_CNF = 'BOOT = cdrom:\\PSX.EXE;1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = 801FFFF0\r\n'
+SYSTEM_CNF = 'BOOT = cdrom:\\PSX.EXE;1\r\nTCB = 4\r\nEVENT = 10\r\nSTACK = %08X\r\n'
+
+
+def exe_stack(exe):
+    """The stack top for SYSTEM.CNF from the PS-EXE header's initial SP (offset 0x30; nugget's ps-exe.ld puts it at
+    the top of RAM_SIZE - 0x100): top of RAM - 0x10, so a debug link (RAM_SIZE=8M) boots with its stack above its
+    data. A 2 MB link gives 801FFFF0 as before."""
+    sp = struct.unpack_from('<I', open(exe, 'rb').read(0x34), 0x30)[0]
+    return sp + 0xF0 if sp else 0x801FFFF0
 
 
 def file_type(path):
@@ -152,8 +160,22 @@ def master(xml_path, binp, lic):
                 f.write(bytes(2352 - 24))
 
 
+NAME_MAX = 31  # mkpsxiso / ISO 9660 level 2 file-name limit
+
+
+def disc_name(rel):
+    """The name a file gets on the disc. RSDKv5's static-variable files are MD5-named (36 characters): past the
+    limit the stem is cut to fit; ps1/cdrom_fs.cpp finds files through PS1FILES.IDX, which keeps the full path's
+    hash, so the engine opens them by their real names."""
+    d, f = os.path.split(rel)
+    if len(f) <= NAME_MAX:
+        return rel
+    stem, ext = os.path.splitext(f)
+    return os.path.join(d, stem[:NAME_MAX - len(ext)] + ext)
+
+
 def emit_file(rel, iso_root, out, counts):
-    parts = rel.split(os.sep)
+    parts = disc_name(rel).split(os.sep)
     full = os.path.join(iso_root, rel)
     t = file_type(full)
     counts[t] = counts.get(t, 0) + 1
@@ -173,7 +195,7 @@ def main():
     work = os.path.join(os.path.dirname(out), 'disc')
     os.makedirs(work, exist_ok=True)
     cnf = os.path.join(work, 'SYSTEM.CNF')
-    open(cnf, 'w', newline='').write(SYSTEM_CNF)
+    open(cnf, 'w', newline='').write(SYSTEM_CNF % exe_stack(exe))
     if lic and not os.path.exists(lic):
         sys.exit('ERROR: license file %s not found' % lic)
 
@@ -187,14 +209,19 @@ def main():
     tree.append('\t\t\t<file name="%s" source=%s date="%s"/>' % (IDX_NAME, quoteattr(idx), DISC_DATE))
     left_out = [f for f in disc_files(iso_root) if excluded(f)]
     left_bytes = sum(os.path.getsize(os.path.join(iso_root, f)) for f in left_out)
+    real = {}  # lowercase disc path -> the path the engine asks for (index key)
     for rel in files:
+        dn = disc_name(rel).replace(os.sep, '/').lower()
+        if dn in real:
+            sys.exit('ERROR: two files share the disc name %s' % dn)
+        real[dn] = rel.replace(os.sep, '/')
         emit_file(rel, iso_root, tree, counts)
     xml = '\n'.join([
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<iso_project image_name=%s cue_sheet=%s>' % (quoteattr(out + '.bin'), quoteattr(out + '.cue')),
         '\t<track type="data">',
-        '\t\t<identifiers system="PLAYSTATION" application="PLAYSTATION" volume="RSDKV3PS1" volume_set="RSDKV3PS1"'
-        ' publisher="RSDKV3PS1" data_preparer="MKPSXISO" creation_date="%s00" modification_date="%s00"/>' % (
+        '\t\t<identifiers system="PLAYSTATION" application="PLAYSTATION" volume="RSDKV5PS1" volume_set="RSDKV5PS1"'
+        ' publisher="RSDKV5PS1" data_preparer="MKPSXISO" creation_date="%s00" modification_date="%s00"/>' % (
             DISC_DATE, DISC_DATE),
     ] + (['\t\t<license file=%s/>' % quoteattr(lic)] if lic else []) + [
         '\t\t<directory_tree>',
@@ -210,7 +237,7 @@ def main():
     entries = [e for e in iso_walk(out + '.bin')[0] if '/' in e[0]]
     if len(entries) != len(files):
         sys.exit('ERROR: %d files in the image, %d laid out' % (len(entries), len(files)))
-    table = index_bytes(entries)
+    table = index_bytes([(real.get(n.lower(), n), lba, sz) for n, lba, sz in entries])
     open(idx, 'wb').write(table)
     master(xml_path, out + '.bin', lic)
     again, user = iso_walk(out + '.bin')

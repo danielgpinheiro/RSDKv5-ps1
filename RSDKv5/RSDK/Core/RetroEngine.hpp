@@ -724,10 +724,17 @@ inline void RegisterGlobalVariables(void **globals, int32 size, void (*initCB)(v
     globalVarsInitCB = initCB;
 }
 #else
+#if RETRO_PLATFORM == RETRO_PS1
+extern int32 g_ps1GlobalVarsSize; // bytes (LoadGameConfig bounds-checks the GameConfig blocks against it)
+extern volatile uint32 g_ps1GlobalVarsDropped;
+#endif
 inline void RegisterGlobalVariables(void **globals, int32 size)
 {
     AllocateStorage(globals, size, DATASET_STG, true);
     globalVarsPtr = (int32 *)*globals;
+#if RETRO_PLATFORM == RETRO_PS1
+    g_ps1GlobalVarsSize = globalVarsPtr ? size : 0;
+#endif
 }
 #endif
 
