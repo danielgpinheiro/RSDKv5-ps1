@@ -62,6 +62,7 @@ ps1/sprite_atlas.cpp \
 ps1/tileset.cpp \
 ps1/memcard.cpp \
 ps1/overlay.cpp \
+ps1/vram.cpp \
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 
@@ -164,12 +165,21 @@ STAGES ?= Logos,Title,GHZ
 objects:
 	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 
+# Build-time graphics (docs/32 3.1): each scene's tile images of the STAGES folders -> build/gfx/<Folder>/Scene<N>.ptl
+GAME_DATA ?= ../SonicMania_Extracted/Data
+gfx:
+	for f in $(subst $(comma), ,$(STAGES)); do \
+	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
+	  /usr/bin/python3 tools/gfx/build_tiles.py $(GAME_DATA) build/gfx $$f $$ids || exit 1; \
+	done
+
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
 	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
+	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl build/iso/Data/Stages/$$f/; done
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 
-.PHONY: disc objects overlays
+.PHONY: disc objects overlays gfx

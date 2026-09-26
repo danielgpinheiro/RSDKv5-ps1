@@ -16,6 +16,7 @@
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
 #include "../ps1/video.hh" // PS1Hblanks
+#include "../ps1/vram.hh"  // PS1VramServiceDump (GDB VRAM dumps)
 
 #include "RSDK/Core/RetroEngine.hpp"
 
@@ -191,6 +192,7 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void frame() override {
+        PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
 
         if (g_ps1InitDone == 1 && RenderDevice::isRunning) {

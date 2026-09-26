@@ -1,0 +1,38 @@
+#pragma once
+// PS1 port (docs/32 3.1a): the scene's tile images in VRAM, from Data/Stages/<Folder>/Scene<N>.ptl
+// (tools/gfx/build_tiles.py). Replaces tilesetPixels (1024 tiles x 4 flips in RAM on the PC): each tile the scene's
+// layers use is an image in a texture column (4-bit on a shared CLUT, or 8-bit on the palette bank's CLUT; flips are
+// drawn with backwards UVs). DrawAniTile re-points tiles to the animated-tile sheet's cell images. Included by Scene.hpp
+// inside namespace RSDK.
+
+struct PS1TileImage {
+    uint8 u, v;
+    uint16 tpage; // GPU texpage attribute (page, depth)
+    uint16 clut;  // GPU CLUT attribute; 0xFFFF = the palette bank's 256-entry CLUT (8-bit)
+};
+
+struct PS1TileClut {
+    uint16 x, y;
+    uint8 map[16]; // palette index per 4-bit value (entry 0 = transparent)
+};
+
+#define PS1_TILE_NONE (0xFFFF)
+
+// Loads the scene's tiles (LoadSceneAssets, while DATASET_TMP is empty: its memory stages the pixels). False: no file.
+bool PS1TilesLoad(const char *folder, const char *sceneID);
+// DrawAniTile on the PS1: 16-aligned copies re-point the tiles; others are counted (g_ps1AniTileMisses)
+void PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 srcY, uint16 width, uint16 height);
+
+// The tables (one STG block; reached through its storage pointer, so a compaction can move it)
+uint16 PS1TileImageOf(uint16 tile);          // image of a tile (PS1_TILE_NONE: none)
+const PS1TileImage *PS1TileImages();
+const PS1TileClut *PS1TileCluts();
+uint16 PS1TileClutCount();
+
+extern "C" {
+extern volatile uint32 g_ps1TileLoads;     // .ptl files loaded
+extern volatile uint32 g_ps1TileVramBytes; // pixel bytes uploaded by the last load
+extern volatile uint32 g_ps1TileErrors;    // a bad or unreadable file (must stay 0)
+extern volatile uint32 g_ps1AniTileCalls;  // DrawAniTile calls re-pointed
+extern volatile uint32 g_ps1AniTileMisses; // DrawAniTile calls the PS1 cannot do yet (unaligned / unknown sheet)
+}

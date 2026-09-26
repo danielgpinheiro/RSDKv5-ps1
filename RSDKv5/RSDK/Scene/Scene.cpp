@@ -10,6 +10,10 @@ using namespace RSDK;
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
+#include "PS1/PS1Tiles.cpp" // the scene's tile images in VRAM (docs/32 3.1a)
+#endif
+
+#if RETRO_PLATFORM == RETRO_PS1
 uint8 RSDK::tilesetPixels[TILE_DATASIZE];
 #else
 uint8 RSDK::tilesetPixels[TILESET_SIZE * 4];
@@ -422,6 +426,9 @@ void RSDK::LoadSceneAssets()
     sprintf_s(fullFilePath, sizeof(fullFilePath), "Data/Stages/%s/Scene%s.bin", currentSceneFolder, sceneEntry->id);
 
     dataStorage[DATASET_TMP].usedStorage = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TilesLoad(currentSceneFolder, sceneEntry->id); // tilesetPixels' job: the tile images go to VRAM (docs/32 3.1a)
+#endif
 
     for (int32 s = 0; s < SCREEN_COUNT; ++s) screens[s].waterDrawPos = screens[s].size.y;
 

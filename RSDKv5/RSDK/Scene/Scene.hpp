@@ -188,6 +188,7 @@ void PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile);
 extern CollisionMask collisionMasks[1][TILE_COUNT];
 extern TileInfo tileInfo[1][TILE_COUNT];
 #include "PS1/PS1Collision.hpp"
+#include "PS1/PS1Tiles.hpp"
 #define PS1_TILE_ANGLE(plane, tile, mode, field) PS1TileAngle(plane, (tile) & 0xFFF, mode)
 #else
 extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT * 4]; // 1024 * 1 per direction

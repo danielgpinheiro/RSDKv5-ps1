@@ -35,6 +35,7 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 ## Build / run / debug
 ```bash
 make objects STAGES=Logos,Title,GHZ  # resident objects + one code overlay per stage folder (tools/gen_overlays.py plan)
+make gfx [STAGES=...]           # build-time graphics (phase 3): each scene's tile images -> build/gfx/<Folder>/Scene<N>.ptl
 make -j8 [MEASURE_RAM=8M] [BOOT=1,0]  # engine + game at 2 MB; 8M = measuring link (rsdkv5.map); BOOT = start at GameConfig category,scene
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
@@ -55,6 +56,7 @@ DuckStation: `file` the ELF before `target remote localhost:2345`, `set architec
 | `dependencies/RSDKv5/RSDKv5/` | the engine (upstream submodule, read-only): `RSDK/{Core,Scene,Graphics,Audio,Storage,Input,User}` |
 | `RSDKv5/RSDK/` | **the engine the port builds**: vendored from the submodule at `bd59396`, PS1 changes behind `RETRO_PLATFORM == RETRO_PS1` (diff against the submodule to see them); PS1 backends in `{Graphics,Audio,Input}/PS1` |
 | `ps1/rsdk5_main.cpp`, `ps1/ps1_limits.h` | the psyqo app (RunRetroEngine's init + loop); limits shared by engine and game (entity slots) |
+| `tools/gfx/` (`vram_plan.py`, `build_tiles.py`), `RSDK/Scene/PS1/PS1Tiles.*`, `ps1/vram.*` | phase 3 graphics: the VRAM plan, scene tile images (`.ptl`, self-checked), their loader and DrawAniTile re-pointing; VRAM upload + GDB-driven readback (`g_ps1VramDumpReq`, 8 MB link) |
 | `tools/gen_overlays.py`, `ps1/overlay.cpp`, `tools/trig/` | code overlays: resident set, per-folder overlays (`build/ovl/<folder>.bin` on the disc as `Data/PS1Ovl/`), object pointers + jump stubs in the resident; the loader; build-time trig tables |
 | `ps1/` | PS1 platform layer (see `ps1/README.md`), from Sonic CD: CD stream + file index, XA music, SPU, MDEC/STR (CPU-driven), IRQ guard, loading icon, memory card, chained GPU renderer (joins in phase 3) |
 | `tools/extract_rsdk.py`, `tools/rsdkv5_filelist.txt` | RSDKv5 datapack extractor (md5 names + the Dreamcast port's file list) |

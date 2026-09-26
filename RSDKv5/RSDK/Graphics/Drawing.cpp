@@ -4297,8 +4297,9 @@ void RSDK::DrawTile(uint16 *tiles, int32 countX, int32 countY, Vector2 *position
 }
 void RSDK::DrawAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 srcY, uint16 width, uint16 height)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1TilesAniTile(sheetID, tileIndex, srcX, srcY, width, height); // re-points the tiles to the cells (docs/32 3.1a)
+    return;
 #endif
 
     if (sheetID < SURFACE_COUNT && tileIndex < TILE_COUNT) {

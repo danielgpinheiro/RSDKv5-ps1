@@ -289,7 +289,7 @@ def link(argv):
         s = int(re.search(r'([0-9a-f]+) . __ps1_ovl_start', nmout).group(1), 16)
         e = int(re.search(r'([0-9a-f]+) . __ps1_ovl_end', nmout).group(1), 16)
         return out, e - s
-    _, size = do_link(0x80100000)
+    _, size = do_link(top)  # size probe: above the resident image on every link (an 8 MB build's BSS may pass 0x80100000)
     at = (top - size) & ~15
     out, size2 = do_link(at)
     assert size2 == size, (size, size2)
