@@ -125,7 +125,11 @@ struct TileLayer {
     int32 deformationDataW[0x400];
     void (*scanlineCallback)(ScanlineInfo *scanlines);
     uint16 scrollInfoCount;
+#if RETRO_PLATFORM == RETRO_PS1
+    ScrollInfo scrollInfo[0x80]; // PS1 (docs/32 2.3q): 109 in the scenes in scope (GHZ1); SonicMania/GameLink.h matches
+#else
     ScrollInfo scrollInfo[0x100];
+#endif
     RETRO_HASH_MD5(name);
     uint16 *layout;
     uint8 *lineScroll;
@@ -151,6 +155,10 @@ struct TileInfo {
 
 extern ScanlineInfo *scanlines;
 extern TileLayer tileLayers[LAYER_COUNT];
+#if RETRO_PLATFORM == RETRO_PS1
+extern volatile uint32 g_ps1StageObjectsMissing;
+extern volatile uint32 g_ps1ScrollInfoDropped;
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 (docs/32 2.3g, choice 29): a layer's `layout` is an index of 4x4-tile chunks (the stock power-of-two padded size in

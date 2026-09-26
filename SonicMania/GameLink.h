@@ -550,7 +550,11 @@ typedef struct {
     int32 deformationDataW[0x400];
     void (*scanlineCallback)(ScanlineInfo *);
     uint16 scrollInfoCount;
+#if defined RETRO_PS1_BUILD
+    ScrollInfo scrollInfo[0x80]; // PS1: the engine's TileLayer (RSDK/Scene/Scene.hpp)
+#else
     ScrollInfo scrollInfo[0x100];
+#endif
     uint32 name[4];
     uint16 *layout;
     uint8 *lineScroll;

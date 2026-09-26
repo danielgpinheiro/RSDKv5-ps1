@@ -103,8 +103,11 @@ void RSDK::PS1EntityCheckGhosts()
 // ---- type groups ----
 namespace
 {
-uint16 s_tgSlot[ENTITY_COUNT], s_tgClass[ENTITY_COUNT], s_tgGroup[ENTITY_COUNT];
-uint16 s_tgPool[ENTITY_COUNT * 3];
+// 2.3q: the entities one frame updates (GHZ1 play: at most 20, GHZ2 39); an entity past the cap is left out of the
+// frame's groups and counted (g_ps1TypeGroupOverflow)
+#define PS1_TYPEGROUP_ENTITIES (0x200)
+uint16 s_tgSlot[PS1_TYPEGROUP_ENTITIES], s_tgClass[PS1_TYPEGROUP_ENTITIES], s_tgGroup[PS1_TYPEGROUP_ENTITIES];
+uint16 s_tgPool[PS1_TYPEGROUP_ENTITIES * 3];
 int32 s_tgCount = 0;
 } // namespace
 
@@ -114,8 +117,14 @@ void RSDK::PS1TypeGroupsBegin()
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
 }
 
+volatile uint32 g_ps1TypeGroupOverflow = 0;
+
 void RSDK::PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group)
 {
+    if (s_tgCount >= PS1_TYPEGROUP_ENTITIES) {
+        g_ps1TypeGroupOverflow = g_ps1TypeGroupOverflow + 1;
+        return;
+    }
     s_tgSlot[s_tgCount]  = slot;
     s_tgClass[s_tgCount] = classID;
     s_tgGroup[s_tgCount] = group;
@@ -124,8 +133,12 @@ void RSDK::PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group)
 
 // The stock loop appends each entity to GROUP_ALL, its class's group and (group >= TYPE_COUNT) its extra group, in slot
 // order: the same lists, each one contiguous in the pool.
+volatile uint32 g_ps1TypeGroupPeak = 0; // most entities captured in one frame (GDB)
+
 void RSDK::PS1TypeGroupsBuild()
 {
+    if ((uint32)s_tgCount > g_ps1TypeGroupPeak)
+        g_ps1TypeGroupPeak = s_tgCount;
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
     for (int32 n = 0; n < s_tgCount; ++n) {
         typeGroups[GROUP_ALL].entryCount++;

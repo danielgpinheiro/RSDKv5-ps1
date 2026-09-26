@@ -8,8 +8,10 @@ SCRIPT="$1"
 OUT="${2:-/tmp/ps1_play}"
 DS=/Applications/DuckStation.app/Contents/MacOS/DuckStation
 SET="$HOME/Library/Application Support/DuckStation/settings.ini"
+RUN="$OUT.run.gdb" # never the input script: cat into itself grows without end
+[ "$(cd "$(dirname "$SCRIPT")" && pwd)/$(basename "$SCRIPT")" = "$(cd "$(dirname "$RUN")" && pwd)/$(basename "$RUN")" ] && { echo "OUT would overwrite SCRIPT"; exit 1; }
 { echo "set pagination off"; echo "set confirm off"; echo "file rsdkv5.elf"; echo "set architecture mips:3000"
-  echo "target remote localhost:2345"; cat "$SCRIPT"; } > "$OUT.gdb"
+  echo "target remote localhost:2345"; cat "$SCRIPT"; } > "$RUN"
 SP=$(python3 -c "import struct;print(hex(struct.unpack_from('<I',open('rsdkv5.ps-exe','rb').read(0x34),0x30)[0]))")
 cp "$SET" "$OUT.settings.bak"
 restore() { cp "$OUT.settings.bak" "$SET"; }
@@ -22,7 +24,7 @@ pkill -f "DuckStation.app/Contents/MacOS" 2>/dev/null; sleep 1
 "$DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
 EMU=$!
 sleep 6
-timeout -s INT ${TIMEOUT:-500} /opt/homebrew/bin/gdb --batch -x "$OUT.gdb" > "$OUT.log" 2>&1
+timeout -s INT ${TIMEOUT:-500} /opt/homebrew/bin/gdb --batch -x "$RUN" > "$OUT.log" 2>&1
 kill $EMU 2>/dev/null; wait $EMU 2>/dev/null
 grep -E "^(F |GUARDS)" "$OUT.log" | tee "$OUT.txt"
 echo "(log: $OUT.log)"

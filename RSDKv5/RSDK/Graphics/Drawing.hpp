@@ -101,7 +101,7 @@ struct CameraInfo {
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 port (docs/32 2.3): a draw group lists the entities drawn in it this frame (visible and in range, plus
 // AddDrawListRef), far fewer than ENTITY_COUNT (0x940): 16 x 4.7 KB stock. Appends past the cap are dropped, counted.
-#define PS1_DRAWLIST_MAX (0x200)
+#define PS1_DRAWLIST_MAX (0x100) // 2.3q: GHZ1 play at most 7 in a group, GHZ2 19
 extern volatile uint32 g_ps1DrawListOverflow;
 #define PS1_DRAWLIST_APPEND(list, slot)                                                                                                    \
     do {                                                                                                                                     \

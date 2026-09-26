@@ -30,7 +30,7 @@ if g_ps1PerfFrames % 15 == 0
   printf "F %u state=%d x=%d y=%d gv=%d vx=%d vy=%d ground=%d rings=%d time=%u:%02u.%02u hbl=%u temp=%d peakTemp=%d pad=%x\n", g_ps1PerfFrames, RSDK::sceneInfo.state, $p->position.x >> 16, $p->position.y >> 16, $p->groundVel, $p->velocity.x, $p->velocity.y, $p->onGround, $p->rings, RSDK::sceneInfo.minutes, RSDK::sceneInfo.seconds, RSDK::sceneInfo.milliseconds, g_ps1PerfLastHbl, $t, $peakTemp, g_ps1PadTestMask
 end
 if g_ps1PerfFrames >= 900
-  printf "GUARDS stubs=%u createSkips=%u relocations=%u spareFail=%u ghostWrites=%u chunkOverflow=%u chunkPrivate=%u forcedDefrag=%u atl=%d\n", g_ps1UnlinkedCalls, RSDK::g_ps1EntityCreateSkips, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntitySpareFail, RSDK::g_ps1EntityGhostWrites, RSDK::g_ps1ChunkOverflow, RSDK::g_ps1ChunkPrivatePeak, g_ps1StorageForcedDefrags[0], ps1AtlDropped
+  printf "GUARDS stageObjectsMissing=%u stubs=%u createSkips=%u relocations=%u spareFail=%u ghostWrites=%u chunkOverflow=%u chunkPrivate=%u forcedDefrag=%u atl=%d\n", RSDK::g_ps1StageObjectsMissing, g_ps1UnlinkedCalls, RSDK::g_ps1EntityCreateSkips, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntitySpareFail, RSDK::g_ps1EntityGhostWrites, RSDK::g_ps1ChunkOverflow, RSDK::g_ps1ChunkPrivatePeak, g_ps1StorageForcedDefrags[0], ps1AtlDropped
   quit
 end
 continue

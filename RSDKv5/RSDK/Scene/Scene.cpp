@@ -50,6 +50,10 @@ char RSDK::currentSceneFolder[0x10];
 char RSDK::currentSceneID[0x10];
 
 SceneInfo RSDK::sceneInfo;
+#if RETRO_PLATFORM == RETRO_PS1
+volatile uint32 RSDK::g_ps1StageObjectsMissing = 0; // this scene's StageConfig objects not registered (GDB; must be 0)
+volatile uint32 RSDK::g_ps1ScrollInfoDropped   = 0; // scroll infos past the PS1's 0x80 per layer (GDB; must be 0)
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 (docs/32 2.3g, choice 29): the scene's layout chunks (Scene.hpp).
@@ -291,6 +295,9 @@ void RSDK::LoadSceneFolder()
         }
 
         uint8 objectCount = ReadInt8(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+        g_ps1StageObjectsMissing = 0;
+#endif
         for (int32 o = 0; o < objectCount; ++o) {
             ReadString(&info, textBuffer);
 
@@ -298,12 +305,21 @@ void RSDK::LoadSceneFolder()
             GEN_HASH_MD5_BUFFER(textBuffer, hash);
 
             stageObjectIDs[sceneInfo.classCount] = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+            int32 before = sceneInfo.classCount;
+#endif
             for (int32 id = 0; id < objectClassCount; ++id) {
                 if (HASH_MATCH_MD5(hash, objectClassList[id].hash)) {
                     stageObjectIDs[sceneInfo.classCount] = id;
                     sceneInfo.classCount++;
                 }
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            // a StageConfig object this build does not register (`make objects STAGES=` without this stage): its
+            // entities load as blank ones, the scene half-works (2.5: GHZ1 without its Bridge)
+            if (sceneInfo.classCount == before)
+                g_ps1StageObjectsMissing = g_ps1StageObjectsMissing + 1;
+#endif
         }
 
         for (int32 o = 0; o < sceneInfo.classCount; ++o) {
@@ -532,6 +548,14 @@ void RSDK::LoadSceneAssets()
 #endif
 
             layer->scrollInfoCount = ReadInt16(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+            // scrollInfo holds 0x80 on the PS1 (Scene.hpp): entries past it are read over and counted
+            int32 ps1ScrollExtra = layer->scrollInfoCount - (int32)(sizeof(layer->scrollInfo) / sizeof(ScrollInfo));
+            if (ps1ScrollExtra > 0) {
+                g_ps1ScrollInfoDropped = g_ps1ScrollInfoDropped + ps1ScrollExtra;
+                layer->scrollInfoCount = sizeof(layer->scrollInfo) / sizeof(ScrollInfo);
+            }
+#endif
             for (int32 s = 0; s < layer->scrollInfoCount; ++s) {
                 layer->scrollInfo[s].parallaxFactor = ReadInt16(&info);
                 layer->scrollInfo[s].scrollSpeed    = ReadInt16(&info) << 8;
@@ -542,6 +566,10 @@ void RSDK::LoadSceneAssets()
                 // this isn't used anywhere in-engine, and is never set in the files. so as you might expect, no one knows what it is for!
                 layer->scrollInfo[s].unknown = ReadInt8(&info);
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            if (ps1ScrollExtra > 0)
+                Seek_Cur(&info, 6 * ps1ScrollExtra); // int16 parallax, int16 speed, u8 deform, u8 unknown
+#endif
 
             uint8 *scrollIndexes = NULL;
             ReadCompressed(&info, (uint8 **)&scrollIndexes);
