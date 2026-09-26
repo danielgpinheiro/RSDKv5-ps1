@@ -18,11 +18,30 @@ uint8 RSDK::tilesetPixels[TILESET_SIZE * 4];
 ScanlineInfo *RSDK::scanlines = NULL;
 TileLayer RSDK::tileLayers[LAYER_COUNT];
 #if RETRO_PLATFORM == RETRO_PS1
-CollisionMask RSDK::collisionMasks[CPATH_COUNT][TILE_COUNT];
+// PS1 (docs/32 2.3o): plane A; plane B where it differs (PS1/PS1Collision.hpp)
+CollisionMask RSDK::collisionMasks[1][TILE_COUNT];
+TileInfo RSDK::tileInfo[1][TILE_COUNT];
+uint16 RSDK::ps1PlaneB[TILE_COUNT];
+CollisionMask RSDK::ps1MasksB[PS1_PLANEB_MAX];
+TileInfo RSDK::ps1InfoB[PS1_PLANEB_MAX];
+uint16 RSDK::ps1PlaneBCount                = 0;
+volatile uint32 RSDK::g_ps1PlaneBOverflow = 0;
+
+bool32 RSDK::PS1PlaneBSplit(uint16 t)
+{
+    if (ps1PlaneBCount >= PS1_PLANEB_MAX) {
+        g_ps1PlaneBOverflow = g_ps1PlaneBOverflow + 1;
+        return false;
+    }
+    ps1MasksB[ps1PlaneBCount] = collisionMasks[0][t];
+    ps1InfoB[ps1PlaneBCount]  = tileInfo[0][t];
+    ps1PlaneB[t]              = ps1PlaneBCount++;
+    return true;
+}
 #else
 CollisionMask RSDK::collisionMasks[CPATH_COUNT][TILE_COUNT * 4];
-#endif
 TileInfo RSDK::tileInfo[CPATH_COUNT][TILE_COUNT * 4];
+#endif
 
 #if RETRO_REV02
 bool32 RSDK::forceHardReset = false;
@@ -1001,6 +1020,19 @@ void RSDK::LoadTileConfig(char *filepath)
         ReadCompressed(&info, &buffer);
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 2.3o): each tile is computed into ps1Mask / ps1Info, then stored as plane A, or for plane B only
+        // where it differs from plane A (PS1/PS1Collision.hpp); the flipped variants are derived where they are read.
+        CollisionMask ps1Mask;
+        TileInfo ps1Info;
+        memset(ps1PlaneB, 0xFF, sizeof(ps1PlaneB));
+        ps1PlaneBCount = 0;
+#define PS1_TILE_MASK ps1Mask
+#define PS1_TILE_INFO ps1Info
+#else
+#define PS1_TILE_MASK collisionMasks[p][t]
+#define PS1_TILE_INFO tileInfo[p][t]
+#endif
         int32 bufPos = 0;
         for (int32 p = 0; p < CPATH_COUNT; ++p) {
             // No Flip/Stored in file
@@ -1008,6 +1040,7 @@ void RSDK::LoadTileConfig(char *filepath)
 #if RETRO_PLATFORM == RETRO_PS1
                 ReadBytes(&info, tileRecord, sizeof(tileRecord));
                 bufPos = 0;
+                memset(&ps1Mask, 0, sizeof(ps1Mask));
 #endif
                 uint8 maskHeights[0x10];
                 uint8 maskActive[0x10];
@@ -1018,21 +1051,21 @@ void RSDK::LoadTileConfig(char *filepath)
                 bufPos += TILE_SIZE;
 
                 bool32 yFlip              = buffer[bufPos++];
-                tileInfo[p][t].floorAngle = buffer[bufPos++];
-                tileInfo[p][t].lWallAngle = buffer[bufPos++];
-                tileInfo[p][t].rWallAngle = buffer[bufPos++];
-                tileInfo[p][t].roofAngle  = buffer[bufPos++];
-                tileInfo[p][t].flag       = buffer[bufPos++];
+                PS1_TILE_INFO.floorAngle = buffer[bufPos++];
+                PS1_TILE_INFO.lWallAngle = buffer[bufPos++];
+                PS1_TILE_INFO.rWallAngle = buffer[bufPos++];
+                PS1_TILE_INFO.roofAngle  = buffer[bufPos++];
+                PS1_TILE_INFO.flag       = buffer[bufPos++];
 
                 if (yFlip) {
                     for (int32 c = 0; c < TILE_SIZE; c++) {
                         if (maskActive[c]) {
-                            collisionMasks[p][t].floorMasks[c] = 0x00;
-                            collisionMasks[p][t].roofMasks[c]  = maskHeights[c];
+                            PS1_TILE_MASK.floorMasks[c] = 0x00;
+                            PS1_TILE_MASK.roofMasks[c]  = maskHeights[c];
                         }
                         else {
-                            collisionMasks[p][t].floorMasks[c] = 0xFF;
-                            collisionMasks[p][t].roofMasks[c]  = 0xFF;
+                            PS1_TILE_MASK.floorMasks[c] = 0xFF;
+                            PS1_TILE_MASK.roofMasks[c]  = 0xFF;
                         }
                     }
 
@@ -1041,13 +1074,13 @@ void RSDK::LoadTileConfig(char *filepath)
                         int32 h = 0;
                         while (true) {
                             if (h == TILE_SIZE) {
-                                collisionMasks[p][t].lWallMasks[c] = 0xFF;
+                                PS1_TILE_MASK.lWallMasks[c] = 0xFF;
                                 break;
                             }
 
-                            uint8 m = collisionMasks[p][t].roofMasks[h];
+                            uint8 m = PS1_TILE_MASK.roofMasks[h];
                             if (m != 0xFF && c <= m) {
-                                collisionMasks[p][t].lWallMasks[c] = h;
+                                PS1_TILE_MASK.lWallMasks[c] = h;
                                 break;
                             }
                             else {
@@ -1063,13 +1096,13 @@ void RSDK::LoadTileConfig(char *filepath)
                         int32 h = TILE_SIZE - 1;
                         while (true) {
                             if (h == -1) {
-                                collisionMasks[p][t].rWallMasks[c] = 0xFF;
+                                PS1_TILE_MASK.rWallMasks[c] = 0xFF;
                                 break;
                             }
 
-                            uint8 m = collisionMasks[p][t].roofMasks[h];
+                            uint8 m = PS1_TILE_MASK.roofMasks[h];
                             if (m != 0xFF && c <= m) {
-                                collisionMasks[p][t].rWallMasks[c] = h;
+                                PS1_TILE_MASK.rWallMasks[c] = h;
                                 break;
                             }
                             else {
@@ -1085,12 +1118,12 @@ void RSDK::LoadTileConfig(char *filepath)
                     // Collision heights
                     for (int32 c = 0; c < TILE_SIZE; ++c) {
                         if (maskActive[c]) {
-                            collisionMasks[p][t].floorMasks[c] = maskHeights[c];
-                            collisionMasks[p][t].roofMasks[c]  = 0x0F;
+                            PS1_TILE_MASK.floorMasks[c] = maskHeights[c];
+                            PS1_TILE_MASK.roofMasks[c]  = 0x0F;
                         }
                         else {
-                            collisionMasks[p][t].floorMasks[c] = 0xFF;
-                            collisionMasks[p][t].roofMasks[c]  = 0xFF;
+                            PS1_TILE_MASK.floorMasks[c] = 0xFF;
+                            PS1_TILE_MASK.roofMasks[c]  = 0xFF;
                         }
                     }
 
@@ -1099,13 +1132,13 @@ void RSDK::LoadTileConfig(char *filepath)
                         int32 h = 0;
                         while (true) {
                             if (h == TILE_SIZE) {
-                                collisionMasks[p][t].lWallMasks[c] = 0xFF;
+                                PS1_TILE_MASK.lWallMasks[c] = 0xFF;
                                 break;
                             }
 
-                            uint8 m = collisionMasks[p][t].floorMasks[h];
+                            uint8 m = PS1_TILE_MASK.floorMasks[h];
                             if (m != 0xFF && c >= m) {
-                                collisionMasks[p][t].lWallMasks[c] = h;
+                                PS1_TILE_MASK.lWallMasks[c] = h;
                                 break;
                             }
                             else {
@@ -1121,13 +1154,13 @@ void RSDK::LoadTileConfig(char *filepath)
                         int32 h = TILE_SIZE - 1;
                         while (true) {
                             if (h == -1) {
-                                collisionMasks[p][t].rWallMasks[c] = 0xFF;
+                                PS1_TILE_MASK.rWallMasks[c] = 0xFF;
                                 break;
                             }
 
-                            uint8 m = collisionMasks[p][t].floorMasks[h];
+                            uint8 m = PS1_TILE_MASK.floorMasks[h];
                             if (m != 0xFF && c >= m) {
-                                collisionMasks[p][t].rWallMasks[c] = h;
+                                PS1_TILE_MASK.rWallMasks[c] = h;
                                 break;
                             }
                             else {
@@ -1138,8 +1171,25 @@ void RSDK::LoadTileConfig(char *filepath)
                         }
                     }
                 }
+#if RETRO_PLATFORM == RETRO_PS1
+                if (!p) {
+                    collisionMasks[0][t] = ps1Mask;
+                    tileInfo[0][t]       = ps1Info;
+                }
+                else if (memcmp(&ps1Mask, &collisionMasks[0][t], sizeof(CollisionMask)) || memcmp(&ps1Info, &tileInfo[0][t], sizeof(TileInfo))) {
+                    if (ps1PlaneBCount < PS1_PLANEB_MAX) {
+                        ps1MasksB[ps1PlaneBCount] = ps1Mask;
+                        ps1InfoB[ps1PlaneBCount]  = ps1Info;
+                        ps1PlaneB[t]              = ps1PlaneBCount++;
+                    }
+                    else {
+                        g_ps1PlaneBOverflow = g_ps1PlaneBOverflow + 1;
+                    }
+                }
+#endif
             }
 
+#if RETRO_PLATFORM != RETRO_PS1 // PS1: flips derived where read
             // FlipX
             for (int32 t = 0; t < TILE_COUNT; ++t) {
                 int32 off                       = (FLIP_X * TILE_COUNT);
@@ -1227,7 +1277,10 @@ void RSDK::LoadTileConfig(char *filepath)
                 }
 #endif
             }
+#endif
         }
+#undef PS1_TILE_MASK
+#undef PS1_TILE_INFO
 
 #if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_PS1
         RemoveStorageEntry((void **)&buffer);

@@ -175,12 +175,16 @@ void PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile);
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT]; // PS1: unflipped only (PS1/PS1Collision.hpp)
+// PS1: plane A's unflipped masks and angles; plane B only where it differs (PS1/PS1Collision.hpp)
+extern CollisionMask collisionMasks[1][TILE_COUNT];
+extern TileInfo tileInfo[1][TILE_COUNT];
 #include "PS1/PS1Collision.hpp"
+#define PS1_TILE_ANGLE(plane, tile, mode, field) PS1TileAngle(plane, (tile) & 0xFFF, mode)
 #else
 extern CollisionMask collisionMasks[CPATH_COUNT][TILE_COUNT * 4]; // 1024 * 1 per direction
-#endif
 extern TileInfo tileInfo[CPATH_COUNT][TILE_COUNT * 4];            // 1024 * 1 per direction
+#define PS1_TILE_ANGLE(plane, tile, mode, field) tileInfo[plane][(tile) & 0xFFF].field
+#endif
 
 #if RETRO_REV02
 extern bool32 forceHardReset;
@@ -287,6 +291,30 @@ inline void SetTile(uint16 layerID, int32 tileX, int32 tileY, uint16 tile)
     }
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+inline int32 GetTileAngle(uint16 tile, uint8 cPlane, uint8 cMode) { return PS1TileAngle(cPlane, tile & 0xFFF, cMode); }
+inline void SetTileAngle(uint16 tile, uint8 cPlane, uint8 cMode, uint8 angle)
+{
+    // stock writes the unflipped entry only; here the flipped angles follow it (Mania never calls this)
+    TileInfo *info = PS1WritableInfo(cPlane, tile & 0x3FF);
+    if (!info)
+        return;
+    switch (cMode) {
+        default: break;
+        case CMODE_FLOOR: info->floorAngle = angle; break;
+        case CMODE_LWALL: info->lWallAngle = angle; break;
+        case CMODE_ROOF: info->roofAngle = angle; break;
+        case CMODE_RWALL: info->rWallAngle = angle; break;
+    }
+}
+inline uint8 GetTileFlags(uint16 tile, uint8 cPlane) { return PS1BaseInfo(cPlane, tile & 0x3FF)->flag; }
+inline void SetTileFlags(uint16 tile, uint8 cPlane, uint8 flag)
+{
+    TileInfo *info = PS1WritableInfo(cPlane, tile & 0x3FF);
+    if (info)
+        info->flag = flag;
+}
+#else
 inline int32 GetTileAngle(uint16 tile, uint8 cPlane, uint8 cMode)
 {
     switch (cMode) {
@@ -310,6 +338,7 @@ inline void SetTileAngle(uint16 tile, uint8 cPlane, uint8 cMode, uint8 angle)
 
 inline uint8 GetTileFlags(uint16 tile, uint8 cPlane) { return tileInfo[cPlane & 1][tile & 0x3FF].flag; }
 inline void SetTileFlags(uint16 tile, uint8 cPlane, uint8 flag) { tileInfo[cPlane & 1][tile & 0x3FF].flag = flag; }
+#endif
 
 void CopyTileLayer(uint16 dstLayerID, int32 dstStartX, int32 dstStartY, uint16 srcLayerID, int32 srcStartX, int32 srcStartY, int32 countX,
                    int32 countY);

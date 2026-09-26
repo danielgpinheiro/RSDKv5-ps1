@@ -122,10 +122,12 @@ void RSDK::CopyCollisionMask(uint16 dst, uint16 src, uint8 cPlane, uint8 cMode)
 #if RETRO_PLATFORM == RETRO_PS1
     // PS1 (docs/32 2.3b): no stored flips; the unflipped mask of the mode and its angle are copied, the flipped ones
     // follow from them. Mania never calls this (GameLink.h only).
-    CollisionMask *s = &collisionMasks[cPlane][src & 0x3FF];
-    CollisionMask *d = &collisionMasks[cPlane][dst & 0x3FF];
-    TileInfo *si     = &tileInfo[cPlane][src & 0x3FF];
-    TileInfo *di     = &tileInfo[cPlane][dst & 0x3FF];
+    CollisionMask *s = PS1BaseMask(cPlane, src & 0x3FF);
+    TileInfo *si     = PS1BaseInfo(cPlane, src & 0x3FF);
+    CollisionMask *d = PS1WritableMask(cPlane, dst & 0x3FF);
+    TileInfo *di     = PS1BaseInfo(cPlane, dst & 0x3FF);
+    if (!d)
+        return;
     switch (cMode) {
         default: break;
         case CMODE_FLOOR: memcpy(d->floorMasks, s->floorMasks, TILE_SIZE); di->floorAngle = si->floorAngle; break;
@@ -2216,7 +2218,7 @@ void RSDK::FindFloorPosition(CollisionSensor *sensor)
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskFloor, collisionEntity->collisionPlane, tile, colX & 0xF);
                             int32 ty        = cy + mask;
-                            int32 tileAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].floorAngle;
+                            int32 tileAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_FLOOR, floorAngle);
 
                             if (mask < 0xFF) {
                                 if (!sensor->collided || startY >= ty) {
@@ -2277,7 +2279,7 @@ void RSDK::FindLWallPosition(CollisionSensor *sensor)
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskLWall, collisionEntity->collisionPlane, tile, colY & 0xF);
                             int32 tx        = cx + mask;
-                            int32 tileAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].lWallAngle;
+                            int32 tileAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_LWALL, lWallAngle);
 
                             if (mask < 0xFF) {
                                 if (!sensor->collided || startX >= tx) {
@@ -2334,7 +2336,7 @@ void RSDK::FindRoofPosition(CollisionSensor *sensor)
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskRoof, collisionEntity->collisionPlane, tile, colX & 0xF);
                             int32 ty        = cy + mask;
-                            int32 tileAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].roofAngle;
+                            int32 tileAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_ROOF, roofAngle);
 
                             if (mask < 0xFF) {
                                 if (!sensor->collided || startY <= ty) {
@@ -2383,7 +2385,7 @@ void RSDK::FindRWallPosition(CollisionSensor *sensor)
                         if (tile < 0xFFFF && tile & solid) {
                             int32 mask      = PS1_MASK(PS1MaskRWall, collisionEntity->collisionPlane, tile, colY & 0xF);
                             int32 tx        = cx + mask;
-                            int32 tileAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].rWallAngle;
+                            int32 tileAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_RWALL, rWallAngle);
 
                             if (mask < 0xFF) {
                                 if (!sensor->collided || startX <= tx) {
@@ -2458,14 +2460,14 @@ void RSDK::FloorCollision(CollisionSensor *sensor)
 #if RETRO_REV0U
                                 step = -TILE_SIZE;
                                 if (colY < collidePos) {
-                                    collideAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].floorAngle;
+                                    collideAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_FLOOR, floorAngle);
                                     collidePos   = ty;
                                     i            = stepCount;
 #else
                                 if (colY >= ty) {
                                     if (abs(colY - ty) <= collisionMinimumDistance) {
                                         sensor->collided   = true;
-                                        sensor->angle      = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].floorAngle;
+                                        sensor->angle      = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_FLOOR, floorAngle);
                                         sensor->position.y = TO_FIXED(ty + layer->position.y);
                                         i                  = stepCount;
                                     }
@@ -2519,7 +2521,7 @@ void RSDK::LWallCollision(CollisionSensor *sensor)
                             int32 tx   = cx + mask;
                             if (mask < 0xFF && colX >= tx && abs(colX - tx) <= 14) {
                                 sensor->collided   = true;
-                                sensor->angle      = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].lWallAngle;
+                                sensor->angle      = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_LWALL, lWallAngle);
                                 sensor->position.x = TO_FIXED(tx + layer->position.x);
                                 i                  = 3;
                             }
@@ -2587,14 +2589,14 @@ void RSDK::RoofCollision(CollisionSensor *sensor)
 #if RETRO_REV0U
                                 step = TILE_SIZE;
                                 if (colY > collidePos) {
-                                    collideAngle = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].roofAngle;
+                                    collideAngle = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_ROOF, roofAngle);
                                     collidePos   = ty;
                                     i            = stepCount;
 #else
                                 if (colY < ty) {
                                     if (abs(colY - ty) <= collisionMinimumDistance) {
                                         sensor->collided   = true;
-                                        sensor->angle      = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].roofAngle;
+                                        sensor->angle      = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_ROOF, roofAngle);
                                         sensor->position.y = TO_FIXED(ty + layer->position.y);
                                         i                  = stepCount;
                                     }
@@ -2645,7 +2647,7 @@ void RSDK::RWallCollision(CollisionSensor *sensor)
                             int32 tx   = cx + mask;
                             if (mask < 0xFF && colX <= tx && abs(colX - tx) <= 14) {
                                 sensor->collided   = true;
-                                sensor->angle      = tileInfo[collisionEntity->collisionPlane][tile & 0xFFF].rWallAngle;
+                                sensor->angle      = PS1_TILE_ANGLE(collisionEntity->collisionPlane, tile, CMODE_RWALL, rWallAngle);
                                 sensor->position.x = TO_FIXED(tx + layer->position.x);
                                 i                  = 3;
                             }
