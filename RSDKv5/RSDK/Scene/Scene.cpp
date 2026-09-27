@@ -109,6 +109,7 @@ void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
     uint32 in     = ((ty & 3) << 2) + (tx & 3);
     if (ps1ChunkPool[((uint32)*index << 4) + in] == tile)
         return;
+    PS1TileSolidDrop((int32)(layer - tileLayers)); // its one-colour lines were computed from the file's layout
     if (*index < ps1ChunkShared) {
         // a chunk from the file may stand for other places too: this place gets its own copy
         if (ps1ChunkNext >= ps1ChunkCap) {

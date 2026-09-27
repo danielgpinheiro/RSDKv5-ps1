@@ -28,9 +28,11 @@ def ps1_colour(c):
 def tile_images(ptl):
     """Each image of a .ptl as 16x16 palette indices, decoded from its VRAM blocks through its CLUT map."""
     d = open(ptl, 'rb').read()
-    _, ni, nc, ns, ncell, nb, _, doff, _ = struct.unpack_from('<4sHHHHHHII', d, 0)
+    magic, ni, nc, ns, ncell, nb, solid, doff, _, nhf = struct.unpack_from('<4sHHHHHHIIH', d, 0)
+    assert magic == b'PTL2', magic
     vram = np.zeros((512, 1024), np.uint16)
-    boff = 32 + 2048 + ni * 6 + nc * 20 + ns * 38 + ncell * 2
+    # the one-colour tables and the H-flip pairs sit before the blocks
+    boff = 32 + 2048 + ni * 6 + nc * 20 + ns * 38 + ncell * 2 + solid + 4 * nhf
     for i in range(nb):
         x, y, w, h, o = struct.unpack_from('<HHHHI', d, boff + 12 * i)
         vram[y:y + h, x:x + w] = np.frombuffer(d, '<u2', w * h, doff + o).reshape(h, w)

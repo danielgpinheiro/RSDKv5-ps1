@@ -113,16 +113,21 @@ CPPFLAGS  += -DPS1_DEBUG_BIGRAM=1 # measuring datasets (RSDKv5/RSDK/Storage/Stor
 endif
 LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # The switches above are defines: a stamp per switch (rewritten only when its value changes) rebuilds just the
-# objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind.
+# objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind. A change also
+# deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
+PS1_BOOT_OBJS    := ps1/rsdk5_main.o
+PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o
+PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
+                    RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
 define ps1_stamp
-$(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || echo "$(2)" > build/gen/$(1).txt)
+$(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || { echo "$(2)" > build/gen/$(1).txt; rm -f $(3); })
 endef
-$(call ps1_stamp,boot,$(BOOT))
-$(call ps1_stamp,ram,$(MEASURE_RAM))
-$(call ps1_stamp,profile,$(PROFILE))
-ps1/rsdk5_main.o: build/gen/boot.txt build/gen/profile.txt
-ps1/vram.o RSDKv5/RSDK/Storage/Storage.o: build/gen/ram.txt
-RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o: build/gen/profile.txt
+$(call ps1_stamp,boot,$(BOOT),$(PS1_BOOT_OBJS))
+$(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
+$(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
+$(PS1_BOOT_OBJS): build/gen/boot.txt
+$(PS1_RAM_OBJS): build/gen/ram.txt
+$(PS1_PROFILE_OBJS): build/gen/profile.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).

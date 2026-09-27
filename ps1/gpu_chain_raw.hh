@@ -56,6 +56,12 @@ void PS1ChainPrimsRawN(const uint32_t *words, int wpp, int n);
 // + k * (wpp + 1)), nullptr if the arena is full; PS1ChainBulkEnd(used) links the first `used` of them.
 uint32_t *PS1ChainBulkBegin(int n, int wpp);
 void PS1ChainBulkEnd(int used);
+// A span of fragments of any size (<= 14 words each), written by the caller straight into the arena: PS1ChainSpanBegin
+// returns where the first fragment's header goes (nullptr: fewer than maxWords left); the caller writes each fragment
+// as a header word + its words, every header but the last as words << 24 | (next header address & 0xFFFFFF), then
+// PS1ChainSpanEnd(lastHeader, lastWords, end) links the span (end = one past its last word).
+uint32_t *PS1ChainSpanBegin(int maxWords);
+void PS1ChainSpanEnd(uint32_t *lastHeader, int lastWords, uint32_t *end);
 
 // Replay (phase 3c partial tint): PS1ChainMark() closes the open batch and returns the arena
 // position of the next fragment; PS1ChainReplay(from, to) re-chains copies of the fragments

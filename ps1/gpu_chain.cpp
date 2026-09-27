@@ -14,12 +14,19 @@
 #include <psyqo/primitives/control.hh>
 #include <psyqo/primitives/misc.hh>
 
-// Arena per frame parity. A frame's arena is being DMA'd while the next frame builds in the other one.
-// Sonic CD (docs/28 3.6): 64 KB each, on the heap, time-shared with the CD read-ahead windows (user
-// decision 2026-09-24): released at the start of a load (PS1ChainSuspend), allocated again at its end.
-// Mania (docs/32 3.2): 25 KB each: in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
-// stays allocated after the loads)
-#define PS1_CHAIN_ARENA_WORDS (25 * 1024 / 4)
+#include "video.hh" // PS1Hblanks
+
+// The arena. Sonic CD (docs/28 3.6): one per frame parity, 64 KB each, on the heap, time-shared with the CD
+// read-ahead windows (user decision 2026-09-24): released at the start of a load (PS1ChainSuspend), allocated again
+// at its end. Mania (docs/32 3.2): in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
+// stays allocated after the loads): 3.2 split it into 2 x 25 KB; 3.3b makes it ONE arena of 50 KB: psyqo sends frame
+// N's chain at the flip, before frame N+1 starts, and frame N+1 writes its chain only after its logic, by when the GPU
+// has taken frame N's (a few thousand small primitives: ~30 hblanks). The frame's first write waits for that DMA to be
+// over (arenaReady; g_ps1ChainIdleWaits counts the frames that had to wait).
+#ifndef PS1_CHAIN_ARENA_KB
+#define PS1_CHAIN_ARENA_KB 50 // a measuring build may pass more (EXTRA_CPPFLAGS=-DPS1_CHAIN_ARENA_KB=128, 8 MB link)
+#endif
+#define PS1_CHAIN_ARENA_WORDS (PS1_CHAIN_ARENA_KB * 1024 / 4)
 // Every chained fragment is kept <= 14 words (psyqo GPU::c_chainThreshold / 4). psyqo links
 // bigger fragments with bit 23 set so the linked-list DMA stops, then its DMA IRQ reads DMA2
 // MADR to find and send the big node by hand. Real hardware leaves MADR at the failing link,
@@ -35,6 +42,8 @@ volatile uint32_t g_ps1ChainOverflow  = 0;
 volatile uint32_t g_ps1ChainHighWater = 0;
 volatile uint32_t g_ps1ChainLastWords = 0;
 volatile uint32_t g_ps1ChainReplayWords = 0;
+volatile uint32_t g_ps1ChainIdleWaits   = 0; // frames whose first write waited for the last frame's DMA
+volatile uint32_t g_ps1ChainIdleWaitHbl = 0; // hblanks spent in those waits (total)
 
 namespace {
 
@@ -69,8 +78,9 @@ struct VarFragment {
     size_t getActualFragmentSize() const { return words; }
 };
 
-uint32_t *s_arenaMem = nullptr; // 2 x s_arenaWords (heap), nullptr while suspended
-uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // per parity; smaller while an FMV plays (PS1ChainSetArenaWords)
+uint32_t *s_arenaMem = nullptr; // s_arenaWords (heap), nullptr while suspended
+uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // smaller while an FMV plays (PS1ChainSetArenaWords)
+bool s_waitIdle = false; // the frame has not written the arena yet: the last frame's DMA may still read it
 void (*s_hook)() = nullptr;
 
 inline void runHook() {
@@ -84,12 +94,26 @@ uint32_t *s_base    = nullptr;
 uint32_t *s_cur     = nullptr;
 uint32_t *s_end     = nullptr;
 psyqo::GPU *s_gpu   = nullptr;
+
+// Before the frame's first arena write: the last frame's chain must be DMA'd (one arena, see above)
+inline void arenaReady() {
+    if (s_waitIdle) {
+        s_waitIdle = false;
+        if (s_gpu->isChainTransferring()) {
+            uint32_t t0 = PS1Hblanks();
+            s_gpu->waitChainIdle();
+            g_ps1ChainIdleWaits   = g_ps1ChainIdleWaits + 1;
+            g_ps1ChainIdleWaitHbl = g_ps1ChainIdleWaitHbl + PS1HblanksSince(t0);
+        }
+    }
+}
 TileBatch *s_batch  = nullptr; // open tile batch (not yet chained)
 SpriteBatch *s_sbatch = nullptr; // open sprite batch (not yet chained); at most one batch is open
 uint16_t s_lastTPage = 0xFFFF;  // raw TPageAttr of the last chained TPage (0xFFFF = unknown)
 bool s_tpageValid    = false;
 
 VarFragment *allocVar(unsigned n) {
+    arenaReady();
     if (!s_cur || s_cur + 2 + n > s_end) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
@@ -103,6 +127,7 @@ VarFragment *allocVar(unsigned n) {
 template <typename T>
 T *allocRaw() {
     size_t words = (sizeof(T) + 3) / 4;
+    arenaReady();
     if (!s_cur || s_cur + words > s_end) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
@@ -145,7 +170,7 @@ static bool s_suspended = false;
 void PS1ChainBegin(psyqo::GPU &gpu) {
     s_gpu = &gpu;
     if (!s_arenaMem && !s_suspended)
-        s_arenaMem = (uint32_t *)psyqo_malloc(2 * s_arenaWords * 4);
+        s_arenaMem = (uint32_t *)psyqo_malloc(s_arenaWords * 4);
     if (!s_arenaMem) {
         g_ps1ChainArenaFail = g_ps1ChainArenaFail + 1;
         s_base = s_cur = s_end = nullptr;
@@ -153,7 +178,8 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
         s_sbatch = nullptr;
         return;
     }
-    s_base       = s_arenaMem + (gpu.getParity() ? s_arenaWords : 0);
+    s_base       = s_arenaMem;
+    s_waitIdle   = true;
     s_cur        = s_base;
     s_end        = s_base + s_arenaWords;
     s_batch      = nullptr;
@@ -177,7 +203,7 @@ void PS1ChainSuspend() {
     flushBatch();
     if (s_cur != s_base) // this frame already chained something psyqo points at: keep the arenas
         return;
-    PS1GpuImmediate(); // the previous frame's chain may still be DMA'd from the other arena
+    PS1GpuImmediate(); // the previous frame's chain may still be DMA'd from the arena
     psyqo_free(s_arenaMem);
     s_arenaMem  = nullptr;
     s_base = s_cur = s_end = nullptr;
@@ -422,6 +448,41 @@ void PS1ChainRawEnd() {
     s_tpageValid = false;
 }
 
+static uint32_t *s_span = nullptr;
+static int s_spanLastWords = 0;
+// The last fragment of a span as psyqo's chain(first, last) sees it (psyqo writes its header when the next chain comes)
+struct SpanFrag {
+    uintptr_t head;
+    size_t getActualFragmentSize() const { return (size_t)s_spanLastWords; }
+};
+
+uint32_t *PS1ChainSpanBegin(int maxWords) {
+    s_span = nullptr;
+    if (g_ps1ChainSkipPrims || maxWords <= 0)
+        return nullptr;
+    runHook();
+    flushBatch();
+    arenaReady();
+    if (!s_cur || s_cur + maxWords > s_end) {
+        g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
+        return nullptr;
+    }
+    s_span = s_cur;
+    return s_cur;
+}
+
+void PS1ChainSpanEnd(uint32_t *lastHeader, int lastWords, uint32_t *end) {
+    if (!s_span || !lastHeader || lastWords <= 0 || lastWords > PS1_CHAIN_MAX_WORDS || end <= lastHeader) {
+        s_span = nullptr;
+        return;
+    }
+    s_spanLastWords = lastWords;
+    s_gpu->chain(reinterpret_cast<SpanFrag *>(s_span), reinterpret_cast<SpanFrag *>(lastHeader));
+    s_cur        = end;
+    s_span       = nullptr;
+    s_tpageValid = false;
+}
+
 static uint32_t *s_bulk = nullptr;
 static int s_bulkWpp = 0;
 // A bulk primitive as psyqo's chain(first, last) sees it: the DMA header word, then the words.
@@ -436,6 +497,7 @@ uint32_t *PS1ChainBulkBegin(int n, int wpp) {
         return nullptr;
     runHook();
     flushBatch();
+    arenaReady();
     if (!s_cur || s_cur + n * (wpp + 1) > s_end) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;

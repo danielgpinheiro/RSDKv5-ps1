@@ -2,8 +2,8 @@
 // PS1 port (docs/32 3.1a): the scene's tile images in VRAM, from Data/Stages/<Folder>/Scene<N>.ptl
 // (tools/gfx/build_tiles.py). Replaces tilesetPixels (1024 tiles x 4 flips in RAM on the PC): each tile the scene's
 // layers use is an image in a texture column (4-bit on a shared CLUT, or 8-bit on the palette bank's CLUT; flips are
-// drawn with backwards UVs). DrawAniTile re-points tiles to the animated-tile sheet's cell images. Included by Scene.hpp
-// inside namespace RSDK.
+// drawn with backwards UVs). DrawAniTile re-points tiles to the animated-tile sheet's cell images. The file also lists
+// the layers' one-colour lines (3.3b). Included by Scene.hpp inside namespace RSDK.
 
 struct PS1TileImage {
     uint8 u, v;
@@ -28,6 +28,13 @@ uint16 PS1TileImageOf(uint16 tile);          // image of a tile (PS1_TILE_NONE: 
 const PS1TileImage *PS1TileImages();
 const PS1TileClut *PS1TileCluts();
 uint16 PS1TileClutCount();
+// One-colour lines (docs/32 3.3b): the layer's table (palette index per pixel row, 0 = drawn with tiles), NULL when the
+// scene has none for it (or a tile on its lines changed: SetTile on the layer, DrawAniTile on one of those tiles).
+// The pointer is into the STG block: use it within one draw.
+const uint8 *PS1TileSolidLines(int32 layer, int32 heightPx);
+void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer)
+// The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
+uint16 PS1TileHFlipImage(uint16 tile);
 
 extern "C" {
 extern volatile uint32 g_ps1TileLoads;     // .ptl files loaded
@@ -35,4 +42,7 @@ extern volatile uint32 g_ps1TileVramBytes; // pixel bytes uploaded by the last l
 extern volatile uint32 g_ps1TileErrors;    // a bad or unreadable file (must stay 0)
 extern volatile uint32 g_ps1AniTileCalls;  // DrawAniTile calls re-pointed
 extern volatile uint32 g_ps1AniTileMisses; // DrawAniTile calls the PS1 cannot do yet (unaligned / unknown sheet)
+extern volatile uint32 g_ps1SolidLines;    // one-colour lines in the scene's tables (as loaded)
+extern volatile uint32 g_ps1SolidDrops;    // tables switched off by a SetTile / DrawAniTile on their tiles
+extern volatile uint32 g_ps1HFlipDrops;    // H-flipped copies switched off by a DrawAniTile on their tile
 }

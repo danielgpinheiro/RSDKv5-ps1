@@ -8,15 +8,19 @@ volatile uint32 g_ps1TileVramBytes = 0;
 volatile uint32 g_ps1TileErrors    = 0;
 volatile uint32 g_ps1AniTileCalls  = 0;
 volatile uint32 g_ps1AniTileMisses = 0;
+volatile uint32 g_ps1SolidLines    = 0;
+volatile uint32 g_ps1SolidDrops    = 0;
+volatile uint32 g_ps1HFlipDrops    = 0;
 }
 
 namespace
 {
 struct PS1TileHeader {
     char magic[4];
-    uint16 imageCount, clutCount, aniSheetCount, aniCellCount, blockCount, pad;
+    uint16 imageCount, clutCount, aniSheetCount, aniCellCount, blockCount, solidBytes;
     uint32 dataOffset, pixelBytes;
-    uint8 pad2[8];
+    uint16 hflipCount; // (tile, image) pairs: the H-flipped copies of the per-line rows' tiles (3.3b)
+    uint8 pad2[6];
 };
 struct PS1TileSheet {
     char name[32];
@@ -28,9 +32,14 @@ struct PS1TileBlock {
 };
 
 #define PS1_TILE_ANI_SHEETS (4)
-uint8 *s_ps1TileBlob = NULL; // STG: tileImage[1024], images, CLUTs, sheets, cells
+uint8 *s_ps1TileBlob = NULL; // STG: tileImage[1024], images, CLUTs, sheets, cells, one-colour lines
 uint16 s_imageCount = 0, s_clutCount = 0, s_sheetCount = 0, s_cellCount = 0;
 uint32 s_imgOff = 0, s_clutOff = 0, s_sheetOff = 0, s_cellOff = 0;
+// one-colour lines (3.3b): each layer's table (blob offset, 0 = none) and height, the mask of the tiles on them
+uint32 s_solidOff[LAYER_COUNT];
+uint16 s_solidHeight[LAYER_COUNT];
+uint32 s_solidMaskOff = 0;
+uint32 s_hflipOff = 0, s_hflipCount = 0; // (tile, image) pairs, sorted by tile
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
 
 inline uint16 *TileTable() { return (uint16 *)s_ps1TileBlob; }
@@ -43,12 +52,43 @@ const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1T
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
 
+uint16 RSDK::PS1TileHFlipImage(uint16 tile)
+{
+    const uint16 *pair = (const uint16 *)(s_ps1TileBlob + s_hflipOff);
+    for (uint32 i = 0; i < s_hflipCount; ++i, pair += 2) {
+        if (pair[0] >= tile)
+            return pair[0] == tile ? pair[1] : PS1_TILE_NONE;
+    }
+    return PS1_TILE_NONE;
+}
+
+const uint8 *RSDK::PS1TileSolidLines(int32 layer, int32 heightPx)
+{
+    if (!s_ps1TileBlob || (uint32)layer >= LAYER_COUNT || !s_solidOff[layer] || s_solidHeight[layer] != heightPx)
+        return NULL;
+    return s_ps1TileBlob + s_solidOff[layer];
+}
+
+void RSDK::PS1TileSolidDrop(int32 layer)
+{
+    for (int32 l = 0; l < LAYER_COUNT; ++l) {
+        if ((layer < 0 || l == layer) && s_solidOff[l]) {
+            s_solidOff[l]   = 0;
+            g_ps1SolidDrops = g_ps1SolidDrops + 1;
+        }
+    }
+}
+
 bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
 {
     if (s_ps1TileBlob)
         RemoveStorageEntry((void **)&s_ps1TileBlob);
     s_ps1TileBlob = NULL;
     s_imageCount = s_clutCount = s_sheetCount = s_cellCount = 0;
+    memset(s_solidOff, 0, sizeof(s_solidOff));
+    s_solidMaskOff  = 0;
+    g_ps1SolidLines = 0;
+    s_hflipOff = s_hflipCount = 0;
 
     char path[0x40];
     sprintf_s(path, sizeof(path), "Data/Stages/%s/Scene%s.ptl", folder, sceneID);
@@ -60,10 +100,10 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     PS1TileHeader h;
     ReadBytes(&info, &h, sizeof(h));
     uint32 tables = 1024 * 2 + h.imageCount * sizeof(PS1TileImage) + h.clutCount * sizeof(PS1TileClut)
-                    + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2;
+                    + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2 + h.solidBytes + h.hflipCount * 4;
     uint32 blocksBytes = h.blockCount * sizeof(PS1TileBlock);
     DataStorage *tmp   = &dataStorage[DATASET_TMP];
-    if (memcmp(h.magic, "PTL1", 4) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
+    if (memcmp(h.magic, "PTL2", 4) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
         || blocksBytes + 128 * 2 > tmp->storageLimit || sizeof(h) + tables + blocksBytes > h.dataOffset) {
         g_ps1TileErrors = g_ps1TileErrors + 1;
         CloseFile(&info);
@@ -80,6 +120,32 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     for (int32 s = 0; s < s_sheetCount; ++s) {
         GEN_HASH_MD5(Sheets()[s].name, s_sheetHash[s]); // two statements
     }
+    if (h.solidBytes) {
+        // u8 layerCount, u8 0, u16 height[layerCount], the tables (each padded to even), u8 tileMask[128]
+        uint32 base         = s_cellOff + s_cellCount * 2;
+        uint32 count        = s_ps1TileBlob[base];
+        const uint16 *hgt   = (const uint16 *)(s_ps1TileBlob + base + 2);
+        uint32 off = base + 2 + count * 2, lines = 0;
+        for (uint32 l = 0; l < count; ++l) {
+            if (!hgt[l])
+                continue;
+            if (l < LAYER_COUNT) {
+                s_solidOff[l]    = off;
+                s_solidHeight[l] = hgt[l];
+                for (uint32 y = 0; y < hgt[l]; ++y) lines += s_ps1TileBlob[off + y] != 0;
+            }
+            off += (hgt[l] + 1) & ~1u;
+        }
+        s_solidMaskOff = off;
+        if (off + 128 != base + h.solidBytes) { // a table the reader does not understand: tiles everywhere
+            memset(s_solidOff, 0, sizeof(s_solidOff));
+            s_solidMaskOff = 0, lines = 0;
+            g_ps1TileErrors = g_ps1TileErrors + 1;
+        }
+        g_ps1SolidLines = lines;
+    }
+    s_hflipOff   = s_cellOff + s_cellCount * 2 + h.solidBytes;
+    s_hflipCount = h.hflipCount;
 
     // The blocks' table, then their pixels through DATASET_TMP's memory (empty: LoadSceneAssets just reset it)
     uint8 *stage        = (uint8 *)tmp->memoryTable;
@@ -123,8 +189,18 @@ void RSDK::PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16
         int32 cy = (srcY + fy) >> 4;
         for (int32 fx = 0; fx < width; fx += TILE_SIZE, ++t) {
             int32 cx = (srcX + fx) >> 4;
-            if (t < TILE_COUNT)
+            if (t < TILE_COUNT) {
                 TileTable()[t] = (cx < sheet->cellsW && cy < sheet->cellsH) ? Cells()[sheet->firstCell + cy * sheet->cellsW + cx] : PS1_TILE_NONE;
+                if (s_solidMaskOff && (s_ps1TileBlob[s_solidMaskOff + (t >> 3)] >> (t & 7) & 1))
+                    PS1TileSolidDrop(-1); // a tile on a one-colour line changed its picture
+                uint16 *pair = (uint16 *)(s_ps1TileBlob + s_hflipOff);
+                for (uint32 i = 0; i < s_hflipCount; ++i, pair += 2) {
+                    if (pair[0] == t) { // its H-flipped copy shows the old picture: tiles + quads from now on
+                        pair[0]         = 0xFFFF;
+                        g_ps1HFlipDrops = g_ps1HFlipDrops + 1;
+                    }
+                }
+            }
         }
     }
     g_ps1AniTileCalls = g_ps1AniTileCalls + 1;

@@ -193,7 +193,7 @@ extern TileInfo tileInfo[1][TILE_COUNT];
 void PS1LayersFrameBegin();
 void PS1DrawLayerHScroll(TileLayer *layer);
 extern "C" {
-extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl;
+extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;
 }
 #define PS1_TILE_ANGLE(plane, tile, mode, field) PS1TileAngle(plane, (tile) & 0xFFF, mode)
 #else

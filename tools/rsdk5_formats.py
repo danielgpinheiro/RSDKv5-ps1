@@ -136,6 +136,7 @@ def read_scene(path, names=()):
         layout = r.compressed()
         assert len(layout) == 2 * L['xsize'] * L['ysize'], (path, L['name'], len(layout), L['xsize'], L['ysize'])
         L['line_scroll_bytes'] = len(line_scroll)
+        L['line_scroll'] = line_scroll  # scroll-info index per pixel row
         L['tiles'] = struct.unpack('<%dH' % (L['xsize'] * L['ysize']), layout)
         layers.append(L)
     objects = []
