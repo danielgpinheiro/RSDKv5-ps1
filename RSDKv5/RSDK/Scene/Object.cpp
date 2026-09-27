@@ -1569,6 +1569,17 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
         foreachStackPtr->id = 0;
     }
 
+#if RETRO_PLATFORM == RETRO_PS1
+    // The count first: stock reads entries[id] before checking it, and an empty group's entries are NULL here
+    // (PS1TypeGroupsBuild), so that read lands in the BIOS kernel's RAM (PCSX-Redux's kernel checker stops on it).
+    for (; foreachStackPtr->id < typeGroups[group].entryCount; ++foreachStackPtr->id) {
+        Entity *nextEntity = OBJECT_ENTITY(typeGroups[group].entries[foreachStackPtr->id]);
+        if (nextEntity->classID == group) {
+            *entity = nextEntity;
+            return true;
+        }
+    }
+#else
     for (Entity *nextEntity = OBJECT_ENTITY(typeGroups[group].entries[foreachStackPtr->id]); foreachStackPtr->id < typeGroups[group].entryCount;
          ++foreachStackPtr->id, nextEntity = OBJECT_ENTITY(typeGroups[group].entries[foreachStackPtr->id])) {
         if (nextEntity->classID == group) {
@@ -1576,6 +1587,7 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
             return true;
         }
     }
+#endif
 
     foreachStackPtr--;
 

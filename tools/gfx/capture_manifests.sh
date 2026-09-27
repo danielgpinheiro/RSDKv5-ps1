@@ -8,7 +8,7 @@ END="${1:-600}"
 LABEL="${2:-$(date +%F)}"
 OUT=${TMPDIR:-/tmp}/ps1_manifest
 { echo "set \$end_frame = $END"; cat tools/gfx/capture_manifest.gdb; } > "$OUT.in.gdb"
-TIMEOUT=${TIMEOUT:-300} tools/play_test_ds.sh "$OUT.in.gdb" "$OUT" > /dev/null 2>&1 || true
+TIMEOUT=${TIMEOUT:-300} tools/play_test.sh "$OUT.in.gdb" "$OUT" > /dev/null 2>&1 || true
 /usr/bin/python3 - "$OUT.log" "$LABEL" <<'PYEOF'
 import sys, os
 log, label = sys.argv[1], sys.argv[2]

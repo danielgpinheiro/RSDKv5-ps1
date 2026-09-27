@@ -17,9 +17,10 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 - Game data: `../SonicMania_Extracted/` (the user's Mania **Plus** `Data.rsdk`, 208 MB, SHA-256 `77a90438…`,
   extracted `Data/`). Never commit game data.
 - `../nugget` and `dependencies/RSDKv5` stay plain upstream.
-- Emulators: other sessions use PCSX-Redux and DuckStation too: the harness refuses to start one that runs
-  (`pgrep`) and kills only its own PID; never `pkill`. DuckStation with the user's SCPH-101 BIOS is the accurate check
-  (`../docs/31` §6); `-bios` / settings edits get backed up and restored.
+- Emulators: **PCSX-Redux** (user, 2026-09-28: DuckStation belongs to another session). The harness (`tools/emu.sh`)
+  uses PCSX-Redux by default, refuses to start an emulator that already runs (`pgrep`), kills only its own PID and
+  restores the settings it changes (`pcsx.json`: `-8mb`); never `pkill`. DuckStation with the user's SCPH-101 BIOS
+  (`EMU=ds`, `*_ds.sh`, `../docs/31` §6) only when the user allows it again.
 
 ## User decisions (2026-09-26)
 - Fresh upstream clone (`9dc6994`, submodule `bd59396`) + private fork; the `ps1/` layer and tools come from
@@ -48,14 +49,16 @@ make -j8 [MEASURE_RAM=8M] [BOOT=1,0]  # engine + game at 2 MB; 8M = measuring li
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
 tools/data_disc.sh              # phase 2 data disc: Data/ without source media, raw scene/tile blocks, tileset .pal
-TIMEOUT=120 tools/boot_test_ds.sh [OUT] [END_FRAME]  # headless boot in DuckStation: scene loads, datasets, guards
+TIMEOUT=120 tools/boot_test.sh [OUT] [END_FRAME]  # headless boot (PCSX-Redux; EMU=ds DuckStation): scene loads, datasets, guards
+TIMEOUT=900 tools/play_test.sh tools/play/ghz1_run.gdb OUT   # GHZ1 scripted run (BOOT=1,0): compare OUT.txt with
+                                # tools/play/ghz1_run.ref.txt (the F lines without hbl=)
 tools/smoke_disc.sh             # phase 0 test disc (GHZ subset + Jump.vag) + make disc
 tools/smoke_test_ds.sh [OUT]    # phase 0 smoke test in DuckStation (file CRCs, SPU, loading icon, fps)
 tools/smoke_test.sh [OUT]       # the same in PCSX-Redux (+ VRAM icon pixels, pad), when it is free
 python3 tools/loading/build_icon.py "../Memcard icons/sonic-mania-loading.gif" ps1/loading_icon.h --quantize 15
 ```
-Emulator runs in the background with a timeout. GDB for evidence (`../docs/21`, `../docs/31` §6 for
-DuckStation: `file` the ELF before `target remote localhost:2345`, `set architecture mips:3000`).
+Emulator runs in the background with a timeout. GDB for evidence (`../docs/21`; PCSX-Redux's stub on port 3333,
+DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, `set architecture mips:3000`).
 
 ## Layout
 | Path | Role |
@@ -86,6 +89,6 @@ DuckStation: `file` the ELF before `target remote localhost:2345`, `set architec
   first, then bytes; one asset pipeline for the port and the builder; `RSDK_AUTOBUILD=1` (the engine's license).
 
 ## Definition of done for a step
-Builds cleanly · fits 2 MB · verified in DuckStation / PCSX-Redux with evidence · `../docs/32` status
+Builds cleanly · fits 2 MB · verified in PCSX-Redux with evidence · `../docs/32` status
 updated · commit (prefixes `feature:` `fix:` `chore:` `housekeeping:`) and push to `fork ps1` when the user
 asks (or per verified step while the user is away).
