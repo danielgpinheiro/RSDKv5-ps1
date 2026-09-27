@@ -17,7 +17,7 @@ end
 break perfTick if g_ps1PerfFrames == REF_FRAME
 commands
 silent
-printf "FRAME bufferY=%u layers=%d bands=%u pieces=%u misses=%u sprites=%u spriteMissing=%u culled=%u inkTodo=%u fxTodo=%u unbound=%u rotated=%u tiles=%u tileMissing=%u drawLog=%u\n", RSDK::g_ps1FrameBufferY, $n, RSDK::g_ps1LayerBands, RSDK::g_ps1LayerPieces, RSDK::g_ps1LayerMisses, *(unsigned *)&g_ps1SpriteDraws, *(unsigned *)&g_ps1SpriteMissing, *(unsigned *)&g_ps1SpriteCulled, *(unsigned *)&g_ps1SpriteInkTodo, *(unsigned *)&g_ps1SpriteFxTodo, *(unsigned *)&g_ps1SpriteUnbound, *(unsigned *)&g_ps1SpriteRotated, *(unsigned *)&g_ps1TileDraws, *(unsigned *)&g_ps1TileMissing, *(unsigned *)&g_ps1DrawLogCount
+printf "FRAME bufferY=%u layers=%d bands=%u pieces=%u misses=%u sprites=%u spriteMissing=%u culled=%u inkTodo=%u fxTodo=%u unbound=%u rotated=%u tiles=%u tileMissing=%u flats=%u primTodo=%u primApprox=%u drawLog=%u\n", RSDK::g_ps1FrameBufferY, $n, RSDK::g_ps1LayerBands, RSDK::g_ps1LayerPieces, RSDK::g_ps1LayerMisses, *(unsigned *)&g_ps1SpriteDraws, *(unsigned *)&g_ps1SpriteMissing, *(unsigned *)&g_ps1SpriteCulled, *(unsigned *)&g_ps1SpriteInkTodo, *(unsigned *)&g_ps1SpriteFxTodo, *(unsigned *)&g_ps1SpriteUnbound, *(unsigned *)&g_ps1SpriteRotated, *(unsigned *)&g_ps1TileDraws, *(unsigned *)&g_ps1TileMissing, *(unsigned *)&g_ps1FlatDraws, *(unsigned *)&g_ps1PrimTodo, *(unsigned *)&g_ps1PrimApprox, *(unsigned *)&g_ps1DrawLogCount
 set $dl = (char *)&g_ps1DrawLog
 eval "dump binary memory REF_DIR/drawlog.bin $dl $dl+%u", *(unsigned *)&g_ps1DrawLogCount * 16
 set g_ps1VramDumpX = 0

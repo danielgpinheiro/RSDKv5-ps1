@@ -33,7 +33,8 @@ volatile uint32 g_ps1TileMissing    = 0; // DrawTile pieces whose tile has no im
 // The frame's draw calls in order (8 MB link only; tools/gfx/layer_reference.gdb dumps them): type 0 = a tile layer
 // (x = its PS1DrawLayerHScroll call number), 1 = an atlas rectangle (binding, size, position, flip, ink), 2 = a tile
 // (attr = tile index, direction = flips), 3 = a rotated / scaled atlas rectangle (x, y = corner A) followed by 4
-// (x, y = corner B, w, h = corner C) and 5 (x, y = corner D), 6 = a rotated tile (the same three entries, attr = tile)
+// (x, y = corner B, w, h = corner C) and 5 (x, y = corner D), 6 = a rotated tile (the same three entries, attr = tile),
+// 7 = a flat rectangle (u, v, attr = R, G, B as sent; direction = semi-transparency mode + 1, ink = passes)
 struct PS1DrawLogEntry {
     uint8 type, direction, ink, alpha;
     uint8 u, v;
@@ -41,7 +42,7 @@ struct PS1DrawLogEntry {
     int16 x, y;
     uint16 w, h;
 };
-PS1DrawLogEntry g_ps1DrawLog[512];
+PS1DrawLogEntry g_ps1DrawLog[2048]; // 32 KB (8 MB link only): faces log a rectangle per run of rows
 volatile uint32 g_ps1DrawLogCount = 0;
 #endif
 }
@@ -51,6 +52,10 @@ namespace RSDK
 // PS1LayersFrameBegin: this frame's counters (and the draw log) start over
 void PS1SpritesFrameBegin()
 {
+    // every counter read once: the linker keeps them (one only reachable from code the compiler folded away would go,
+    // and the GDB scripts that print it would stop)
+    (void)g_ps1SpriteMissing, (void)g_ps1SpriteInkTodo, (void)g_ps1SpriteFxTodo, (void)g_ps1SpriteUnbound;
+    (void)g_ps1SpriteClipTodo, (void)g_ps1TileMissing;
     g_ps1SpriteDraws = g_ps1SpriteCulled = g_ps1SpriteRotated = g_ps1TileDraws = 0;
 #if PS1_DEBUG_BIGRAM
     g_ps1DrawLogCount = 0;
@@ -113,6 +118,74 @@ bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
 }
 
 inline uint8 PS1LogAlpha(int32 alpha) { return (uint8)(alpha > 0xFF ? 0xFF : alpha < 0 ? 0 : alpha); }
+
+// The PC's own early returns (DrawSpriteFlipped / DrawSpriteRotozoom): nothing is drawn, validDraw stays as it is
+inline bool PS1PcDraws(int32 inkEffect, int32 alpha)
+{
+    if ((inkEffect == INK_ALPHA || inkEffect == INK_ADD || inkEffect == INK_SUB) && alpha <= 0)
+        return false;
+    return inkEffect != INK_TINT || tintLookupTable;
+}
+
+// DrawSpriteFlipped's clip against the screen's clip bounds: a rectangle left non-empty sets validDraw (the draw pass
+// ORs it into entity->onScreen, which game code reads: Splats, Spikes, Platform...). The PS1 then may still not draw
+// it (no binding, an ink the GPU lacks), but the game logic sees what the PC's would.
+inline bool PS1PcClip(int32 x, int32 y, int32 w, int32 h)
+{
+    int32 x0 = x > currentScreen->clipBound_X1 ? x : currentScreen->clipBound_X1;
+    int32 x1 = x + w < currentScreen->clipBound_X2 ? x + w : currentScreen->clipBound_X2;
+    int32 y0 = y > currentScreen->clipBound_Y1 ? y : currentScreen->clipBound_Y1;
+    int32 y1 = y + h < currentScreen->clipBound_Y2 ? y + h : currentScreen->clipBound_Y2;
+    if (x1 <= x0 || y1 <= y0)
+        return false;
+    validDraw = true;
+    return true;
+}
+
+// DrawSpriteRotozoom's clip: its corners with a 2-pixel margin, the bounds starting from (pitch, 0, size.y, 0) as it
+// does; a box of at least 1 x 1 sets validDraw
+bool PS1PcClipRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32 h, int32 scaleX, int32 scaleY, int32 direction,
+                       int32 rotation)
+{
+    int32 angle = 0x200 - (rotation & 0x1FF);
+    if (!(rotation & 0x1FF))
+        angle = rotation & 0x1FF;
+    int32 sine = sin512LookupTable[angle], cosine = cos512LookupTable[angle];
+    int32 fullScaleXS = scaleX * sine >> 9, fullScaleXC = scaleX * cosine >> 9;
+    int32 fullScaleYS = scaleY * sine >> 9, fullScaleYC = scaleY * cosine >> 9;
+    int32 posX[4], posY[4], xMax, scaledX1, scaledX2, scaledY1, scaledY2;
+    if (direction == FLIP_X) {
+        scaledX1 = fullScaleXS * (2 - pivotX), scaledX2 = fullScaleXC * (2 - pivotX);
+        xMax     = -2 - pivotX - w;
+    }
+    else {
+        scaledX1 = fullScaleXS * (pivotX - 2), scaledX2 = fullScaleXC * (pivotX - 2);
+        xMax     = pivotX + 2 + w;
+    }
+    scaledY1 = fullScaleYS * (pivotY - 2), scaledY2 = fullScaleYC * (pivotY - 2);
+    posX[0]  = x + ((scaledX2 + scaledY1) >> 9);
+    posY[0]  = y + ((fullScaleYC * (pivotY - 2) - scaledX1) >> 9);
+    int32 scaledXMaxS = fullScaleXS * xMax, scaledXMaxC = fullScaleXC * xMax;
+    int32 scaledYMaxC = fullScaleYC * (pivotY + 2 + h), scaledYMaxS = fullScaleYS * (pivotY + 2 + h);
+    posX[1] = x + ((scaledXMaxC + scaledY1) >> 9), posY[1] = y + ((scaledY2 - scaledXMaxS) >> 9);
+    posX[2] = x + ((scaledYMaxS + scaledX2) >> 9), posY[2] = y + ((scaledYMaxC - scaledX1) >> 9);
+    posX[3] = x + ((scaledXMaxC + scaledYMaxS) >> 9), posY[3] = y + ((scaledYMaxC - scaledXMaxS) >> 9);
+    int32 left = currentScreen->pitch, right = 0, top = currentScreen->size.y, bottom = 0;
+    for (int32 i = 0; i < 4; ++i) {
+        left   = posX[i] < left ? posX[i] : left;
+        right  = posX[i] > right ? posX[i] : right;
+        top    = posY[i] < top ? posY[i] : top;
+        bottom = posY[i] > bottom ? posY[i] : bottom;
+    }
+    left   = left < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : left;
+    right  = right > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : right;
+    top    = top < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : top;
+    bottom = bottom > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : bottom;
+    if (right - left < 1 || bottom - top < 1)
+        return false;
+    validDraw = true;
+    return true;
+}
 
 // A textured quad (GP0 2Ch | semi-transparency | modulation) with its four corners (A B C D = top-left, top-right,
 // bottom-left, bottom-right of the texture) and their texels
@@ -310,7 +383,9 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
     uint32 tpage, clut;
     bool half;
     PS1Ink ink;
-    if (w <= 0 || h <= 0 || !PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
+    if (w <= 0 || h <= 0 || !PS1PcDraws(inkEffect, alpha) || !PS1PcClip(x, y, w, h))
+        return;
+    if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
         return;
     if (!PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink))
         return;
@@ -329,7 +404,10 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
     bool half;
     PS1Ink ink;
     int32 cx[4], cy[4];
-    if (w <= 0 || h <= 0 || scaleX <= 0 || scaleY <= 0 || !PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
+    if (w <= 0 || h <= 0 || scaleX <= 0 || scaleY <= 0 || !PS1PcDraws(inkEffect, alpha)
+        || !PS1PcClipRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, scaleX, scaleY, direction, rotation))
+        return;
+    if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
         return;
     if (!PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, half, scaleX, scaleY, direction,
                         rotation, ink, cx, cy))
@@ -349,6 +427,8 @@ void RSDK::PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alp
     int32 u, v;
     uint32 tpage, clut;
     PS1Ink ink;
+    if (!PS1PcDraws(inkEffect, alpha) || !PS1PcClip(x, y, TILE_SIZE, TILE_SIZE))
+        return;
     if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
     int32 direction = (tile >> 10) & 3;
@@ -370,7 +450,10 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
     uint32 tpage, clut;
     PS1Ink ink;
     int32 cx[4], cy[4];
-    if (scaleX <= 0 || scaleY <= 0 || !PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
+    if (scaleX <= 0 || scaleY <= 0 || !PS1PcDraws(inkEffect, alpha)
+        || !PS1PcClipRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, scaleX, scaleY, direction, rotation))
+        return;
+    if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
     if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, false, scaleX, scaleY, direction, rotation, ink, cx,
                         cy))
@@ -383,4 +466,277 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
     PS1DrawLogAdd(4, 0, 0, 0, 0, 0, 0, cx[1], cy[1], (uint16)cx[2], (uint16)cy[2]);
     PS1DrawLogAdd(5, 0, 0, 0, 0, 0, 0, cx[3], cy[3], 0, 0);
 #endif
+}
+
+// --- 3.6: flat primitives ------------------------------------------------------------------------------------------
+// DrawRectangle, DrawFace and DrawCircle fill rows of the framebuffer on the PC; here each run of identical rows is one
+// flat rectangle (GP0 60h: not dithered), from the same arithmetic (faces and circles through a port of their edge
+// buffer, kept in the scratchpad as int16 pairs: the layer drawer only uses it inside its own calls), so the pixels are
+// the PC's; the colour is the 24-bit one (the GPU keeps its top 5 bits per channel). Lines and gouraud faces are GPU
+// lines / polygons (approximate). Flat inks: as sprites, add / sub with the colour scaled by alpha on the CPU (a flat
+// colour can't be modulated).
+extern "C" {
+volatile uint32 g_ps1FlatDraws = 0;  // flat rectangles chained (this frame)
+volatile uint32 g_ps1PrimTodo  = 0;  // primitives not drawn yet: circle outlines, tint / masked flat inks (total)
+volatile uint32 g_ps1PrimApprox = 0; // lines and gouraud faces drawn by the GPU's own rules (total)
+}
+
+namespace
+{
+struct PS1Edge {
+    int16 start, end;
+};
+#define PS1_EDGE_ROWS 241 // rows 0..240: the PC's loops touch the row at clipBound_Y2
+#define PS1_EDGES     ((PS1Edge *)0x1F800000)
+static_assert(PS1_EDGE_ROWS * sizeof(PS1Edge) <= 1024, "the edge buffer must fit the scratchpad");
+
+// A flat colour (0xRRGGBB) and ink as GP0 colour bits (0xBBGGRR) + semi-transparency; false: nothing drawn / not done
+bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink &ink)
+{
+    uint32 r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80;
+    switch (inkEffect) {
+        case INK_NONE: break;
+        case INK_BLEND: ink.mode = 0; break;
+        case INK_ALPHA: {
+            if (alpha > 0xFF)
+                break;
+            int32 level = alpha < 64 ? 0 : alpha < 160 ? 1 : alpha < 224 ? 2 : 3;
+            if (!level)
+                return false;
+            if (level < 3)
+                ink.mode = 0, ink.passes = level;
+            break;
+        }
+        case INK_ADD:
+        case INK_SUB: {
+            if (alpha <= 0)
+                return false;
+            uint32 a = alpha > 0xFF ? 0xFF : (uint32)alpha;
+            r = r * a >> 8, g = g * a >> 8, b = b * a >> 8;
+            ink.mode = inkEffect == INK_ADD ? 1 : 2;
+            break;
+        }
+        default: g_ps1PrimTodo = g_ps1PrimTodo + 1; return false;
+    }
+    bgr = b << 16 | g << 8 | r;
+    return true;
+}
+
+// One flat rectangle (already clipped)
+void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
+{
+    if (w <= 0 || h <= 0)
+        return;
+    uint32 cmd = 0x60000000 | bgr | (ink.mode >= 0 ? 0x02000000 : 0);
+    for (int32 p = 0; p < ink.passes; ++p) {
+        uint32_t *wr = PS1ChainSpanBegin(ink.mode >= 0 ? 5 : 4);
+        if (!wr)
+            return;
+        int32 n = 0;
+        if (ink.mode >= 0)
+            wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5; // the semi-transparency mode lives in the texpage state
+        wr[1 + n++] = cmd;
+        wr[1 + n++] = (uint32)(uint16)y << 16 | (uint16)x;
+        wr[1 + n++] = (uint32)h << 16 | (uint32)w;
+        PS1ChainSpanEnd(wr, n, wr + 1 + n);
+    }
+    g_ps1FlatDraws = g_ps1FlatDraws + 1;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, 0, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF), (uint16)(bgr >> 16), x, y, w,
+                  h);
+#endif
+}
+
+// The edge buffer's rows [top, bottom) (clamped to the clip bounds as the PC does) as flat rectangles, identical rows merged
+void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
+{
+    int32 runY = 0, runH = 0, runS = 0, runE = 0;
+    for (int32 s = top; s < bottom; ++s) {
+        PS1Edge *edge = &PS1_EDGES[s];
+        int32 start = edge->start, end = edge->end;
+        start = start < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : start;
+        start = start > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : start;
+        end   = end < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : end;
+        end   = end > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : end;
+        if (end <= start) {
+            PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+            runH = 0;
+            continue;
+        }
+        if (runH && start == runS && end == runE && s == runY + runH) {
+            ++runH;
+            continue;
+        }
+        PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+        runY = s, runH = 1, runS = start, runE = end;
+    }
+    PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+}
+
+// ProcessScanEdge (Scene3D.cpp) on the PS1 edge buffer
+void PS1ScanEdge(int32 x1, int32 y1, int32 x2, int32 y2)
+{
+    int32 ix1 = FROM_FIXED(x1), iy1 = FROM_FIXED(y1), ix2 = FROM_FIXED(x2), iy2 = FROM_FIXED(y2);
+    int32 top = FROM_FIXED(y1);
+    if (iy1 == iy2)
+        return;
+    if (iy1 > iy2) {
+        top = FROM_FIXED(y2);
+        ix1 = FROM_FIXED(x2), ix2 = FROM_FIXED(x1);
+        iy1 = FROM_FIXED(y2), iy2 = FROM_FIXED(y1);
+    }
+    int32 bottom = iy2 + 1;
+    if (top < currentScreen->clipBound_Y2 && bottom >= currentScreen->clipBound_Y1) {
+        if (bottom > currentScreen->clipBound_Y2)
+            bottom = currentScreen->clipBound_Y2;
+        int32 scanPos = TO_FIXED(ix1);
+        int32 delta   = TO_FIXED(ix2 - ix1) / (iy2 - iy1);
+        if (top < 0) {
+            scanPos -= top * delta;
+            top = 0;
+        }
+        PS1Edge *edge = &PS1_EDGES[top];
+        for (int32 i = top; i < bottom && i < PS1_EDGE_ROWS; ++i) {
+            int32 scanX = scanPos >> 16;
+            if (scanX < edge->start)
+                edge->start = (int16)(scanX < -0x7FFF ? -0x7FFF : scanX > 0x7FFF ? 0x7FFF : scanX);
+            if (scanX > edge->end)
+                edge->end = (int16)(scanX < -0x7FFF ? -0x7FFF : scanX > 0x7FFF ? 0x7FFF : scanX);
+            scanPos += delta;
+            ++edge;
+        }
+    }
+}
+} // namespace
+
+// DrawRectangle after its clip (the PC's validDraw is already set)
+void RSDK::PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect)
+{
+    uint32 bgr;
+    PS1Ink ink;
+    if (PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        PS1FlatRect(x, y, w, h, bgr, ink);
+}
+
+// DrawFace after its ink checks: its rows from its edges (vertices in 16.16 screen coordinates)
+void RSDK::PS1DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 b, int32 alpha, int32 inkEffect)
+{
+    int32 top = 0x7FFFFFFF, bottom = -0x10000;
+    for (int32 v = 0; v < vertCount; ++v) {
+        top    = vertices[v].y < top ? vertices[v].y : top;
+        bottom = vertices[v].y > bottom ? vertices[v].y : bottom;
+    }
+    int32 topScreen = FROM_FIXED(top), bottomScreen = FROM_FIXED(bottom);
+    topScreen    = topScreen < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : topScreen;
+    topScreen    = topScreen > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : topScreen;
+    bottomScreen = bottomScreen < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : bottomScreen;
+    bottomScreen = bottomScreen > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : bottomScreen;
+    if (topScreen == bottomScreen || bottomScreen >= PS1_EDGE_ROWS)
+        return;
+    for (int32 s = topScreen; s <= bottomScreen; ++s) PS1_EDGES[s].start = 0x7FFF, PS1_EDGES[s].end = -1;
+    for (int32 v = 0; v < vertCount - 1; ++v) PS1ScanEdge(vertices[v].x, vertices[v].y, vertices[v + 1].x, vertices[v + 1].y);
+    PS1ScanEdge(vertices[0].x, vertices[0].y, vertices[vertCount - 1].x, vertices[vertCount - 1].y);
+    uint32 bgr;
+    PS1Ink ink;
+    if (PS1FlatInk((uint32)(r & 0xFF) << 16 | (uint32)(g & 0xFF) << 8 | (uint32)(b & 0xFF), inkEffect, alpha, bgr, ink))
+        PS1EdgeSpans(topScreen, bottomScreen + 1, bgr, ink); // the PC's rows run to bottomScreen inclusive
+}
+
+// DrawCircle after its ink checks (x, y already on the screen): its rows from its edges (the PC's midpoint loop)
+void RSDK::PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect)
+{
+    int32 yRadiusBottom = y + radius, bottom = yRadiusBottom + 1, yRadiusTop = y - radius, top = yRadiusTop;
+    top    = top < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : top > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : top;
+    bottom = bottom < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1
+                                                   : bottom > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : bottom;
+    if (top == bottom || bottom >= PS1_EDGE_ROWS)
+        return;
+    for (int32 i = top; i < bottom; ++i) PS1_EDGES[i].start = 0x7FFF, PS1_EDGES[i].end = -1;
+#define PS1_EDGE_MAX(ROW, V) if ((ROW) >= top && (ROW) <= bottom && (V) > PS1_EDGES[ROW].end) PS1_EDGES[ROW].end = (int16)(V)
+#define PS1_EDGE_MIN(ROW, V) if ((ROW) >= top && (ROW) <= bottom && (V) < PS1_EDGES[ROW].start) PS1_EDGES[ROW].start = (int16)(V)
+    int32 r = 3 - 2 * radius, xRad = x - radius, curY = y, curX = x, dist = x - y;
+    for (int32 i = 0; i <= radius; ++i) {
+        int32 scanX = i + curX;
+        PS1_EDGE_MAX(yRadiusBottom, scanX);
+        PS1_EDGE_MAX(yRadiusTop, scanX);
+        int32 scanY = i + y;
+        PS1_EDGE_MAX(scanY, yRadiusBottom + dist);
+        PS1_EDGE_MAX(curY, yRadiusBottom + dist);
+        PS1_EDGE_MIN(yRadiusBottom, x);
+        PS1_EDGE_MIN(yRadiusTop, x);
+        PS1_EDGE_MIN(scanY, xRad);
+        PS1_EDGE_MIN(curY, xRad);
+        if (r >= 0) {
+            --yRadiusBottom;
+            ++yRadiusTop;
+            r += 4 * (i - radius) + 10;
+            --radius;
+            ++xRad;
+        }
+        else {
+            r += 4 * i + 6;
+        }
+        --curY;
+        --x;
+    }
+#undef PS1_EDGE_MAX
+#undef PS1_EDGE_MIN
+    uint32 bgr;
+    PS1Ink ink;
+    if (PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        PS1EdgeSpans(top, bottom, bgr, ink);
+}
+
+// DrawLine after its ink checks (screen coordinates): a GPU line (GP0 40h; the GPU's own pixels, approximate)
+void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect)
+{
+    uint32 bgr;
+    PS1Ink ink;
+    if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023
+        || !PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        return;
+    for (int32 p = 0; p < ink.passes; ++p) {
+        uint32_t *wr = PS1ChainSpanBegin(5);
+        if (!wr)
+            return;
+        int32 n = 0;
+        if (ink.mode >= 0)
+            wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5;
+        wr[1 + n++] = 0x40000000 | bgr | (ink.mode >= 0 ? 0x02000000 : 0);
+        wr[1 + n++] = (uint32)(uint16)y1 << 16 | (uint16)x1;
+        wr[1 + n++] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+        PS1ChainSpanEnd(wr, n, wr + 1 + n);
+    }
+    g_ps1PrimApprox = g_ps1PrimApprox + 1;
+}
+
+// DrawBlendedFace after its ink checks: a gouraud fan (GP0 30h triangles; approximate)
+void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect)
+{
+    PS1Ink ink;
+    uint32 dummy;
+    if (vertCount < 3 || !PS1FlatInk(0, inkEffect, alpha, dummy, ink))
+        return;
+    uint32 semi = ink.mode >= 0 ? 0x02000000 : 0;
+    for (int32 v = 1; v + 1 < vertCount; ++v) {
+        const int32 idx[3] = { 0, v, v + 1 };
+        for (int32 p = 0; p < ink.passes; ++p) {
+            uint32_t *wr = PS1ChainSpanBegin(8);
+            if (!wr)
+                return;
+            int32 n = 0;
+            if (ink.mode >= 0)
+                wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5;
+            for (int32 k = 0; k < 3; ++k) {
+                uint32 c = colors[idx[k]];
+                uint32 bgr = (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF);
+                wr[1 + n++] = (k == 0 ? 0x30000000 | semi : 0) | bgr;
+                int32 px = FROM_FIXED(vertices[idx[k]].x), py = FROM_FIXED(vertices[idx[k]].y);
+                wr[1 + n++] = (uint32)(uint16)py << 16 | (uint16)px;
+            }
+            PS1ChainSpanEnd(wr, n, wr + 1 + n);
+        }
+    }
+    g_ps1PrimApprox = g_ps1PrimApprox + 1;
 }

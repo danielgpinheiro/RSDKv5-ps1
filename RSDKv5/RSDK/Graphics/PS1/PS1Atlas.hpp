@@ -34,6 +34,12 @@ uint16 PS1AtlasClutCount();
 
 // 3.4 (PS1Sprites.cpp): a frame at screen (x, y) (its top-left, as DrawSpriteFlipped gets it) through the GPU chain
 void PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha);
+// 3.6: DrawRectangle (clipped), DrawFace, DrawCircle (screen x, y), DrawLine (screen), DrawBlendedFace through the GPU
+void PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect);
+void PS1DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 b, int32 alpha, int32 inkEffect);
+void PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect);
+void PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect);
+void PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect);
 // 3.4c-d: rotated / scaled frames (DrawSpriteRotozoom's geometry), DrawTile's pieces from the scene's tile images
 void PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int32 scaleX, int32 scaleY, int32 direction, int32 rotation,
                           int32 inkEffect, int32 alpha);

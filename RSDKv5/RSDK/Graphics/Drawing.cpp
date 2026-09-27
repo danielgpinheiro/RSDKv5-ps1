@@ -645,9 +645,7 @@ void RSDK::FillScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 
 void RSDK::DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect, bool32 screenRelative)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+
     switch (inkEffect) {
         default: break;
 
@@ -671,6 +669,14 @@ void RSDK::DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 
                 return;
             break;
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    if (!screenRelative) { // docs/32 3.6: a GPU line (approximate)
+        x1 = FROM_FIXED(x1) - currentScreen->position.x, y1 = FROM_FIXED(y1) - currentScreen->position.y;
+        x2 = FROM_FIXED(x2) - currentScreen->position.x, y2 = FROM_FIXED(y2) - currentScreen->position.y;
+    }
+    PS1DrawLine(x1, y1, x2, y2, color, alpha, inkEffect);
+    return;
+#endif
 
     int32 drawY1 = y1;
     int32 drawX1 = x1;
@@ -1177,9 +1183,7 @@ void RSDK::DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 
 }
 void RSDK::DrawRectangle(int32 x, int32 y, int32 width, int32 height, uint32 color, int32 alpha, int32 inkEffect, bool32 screenRelative)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+
     switch (inkEffect) {
         default: break;
         case INK_ALPHA:
@@ -1229,8 +1233,12 @@ void RSDK::DrawRectangle(int32 x, int32 y, int32 width, int32 height, uint32 col
     if (width <= 0 || height <= 0)
         return;
 
+    validDraw = true;
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawRect(x, y, width, height, color, alpha, inkEffect); // docs/32 3.6
+    return;
+#endif
     int32 pitch         = currentScreen->pitch - width;
-    validDraw           = true;
     uint16 *frameBuffer = &currentScreen->frameBuffer[x + (y * currentScreen->pitch)];
     uint16 color16      = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
 
@@ -1350,9 +1358,7 @@ void RSDK::DrawRectangle(int32 x, int32 y, int32 width, int32 height, uint32 col
 }
 void RSDK::DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect, bool32 screenRelative)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+
     if (radius > 0) {
         switch (inkEffect) {
             default: break;
@@ -1381,6 +1387,10 @@ void RSDK::DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha,
             x = FROM_FIXED(x) - currentScreen->position.x;
             y = FROM_FIXED(y) - currentScreen->position.y;
         }
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1DrawCircle(x, y, radius, color, alpha, inkEffect); // docs/32 3.6: the same rows, on the GPU
+        return;
+#endif
 
         int32 yRadiusBottom = y + radius;
         int32 bottom        = yRadiusBottom + 1;
@@ -1688,7 +1698,8 @@ void RSDK::DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRad
                              bool32 screenRelative)
 {
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    g_ps1PrimTodo = g_ps1PrimTodo + 1; // not drawn yet (docs/32 3.6)
+    return;
 #endif
     switch (inkEffect) {
         default: break;
@@ -1970,9 +1981,7 @@ void RSDK::DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRad
 
 void RSDK::DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 b, int32 alpha, int32 inkEffect)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+
     switch (inkEffect) {
         default: break;
         case INK_ALPHA:
@@ -1995,6 +2004,10 @@ void RSDK::DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 
                 return;
             break;
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawFace(vertices, vertCount, r, g, b, alpha, inkEffect); // docs/32 3.6: the same rows, on the GPU
+    return;
+#endif
 
     int32 top    = 0x7FFFFFFF;
     int32 bottom = -0x10000;
@@ -2226,9 +2239,7 @@ void RSDK::DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 
 }
 void RSDK::DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
+
     switch (inkEffect) {
         default: break;
         case INK_ALPHA:
@@ -2251,6 +2262,10 @@ void RSDK::DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, i
                 return;
             break;
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawBlendedFace(vertices, colors, vertCount, alpha, inkEffect); // docs/32 3.6: GPU gouraud (approximate)
+    return;
+#endif
 
     int32 top    = 0x7FFFFFFF;
     int32 bottom = -0x10000;
@@ -4425,6 +4440,10 @@ void RSDK::DrawAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 src
     }
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 (docs/32 3.4d): DrawString's characters are frames: they go to the GPU through their atlas bindings
+#define DrawSpriteFlipped(X, Y, W, H, SX, SY, DIR, INK, ALPHA, SHEET) PS1DrawFrame(frame, X, Y, DIR, INK, ALPHA)
+#endif
 void RSDK::DrawString(Animator *animator, Vector2 *position, String *string, int32 startFrame, int32 endFrame, int32 align, int32 spacing,
                       void *unused, Vector2 *charOffsets, bool32 screenRelative)
 {
@@ -4505,6 +4524,9 @@ void RSDK::DrawString(Animator *animator, Vector2 *position, String *string, int
         }
     }
 }
+#if RETRO_PLATFORM == RETRO_PS1
+#undef DrawSpriteFlipped
+#endif
 void RSDK::DrawDevString(const char *string, int32 x, int32 y, int32 align, uint32 color)
 {
 #if RETRO_PLATFORM == RETRO_PS1

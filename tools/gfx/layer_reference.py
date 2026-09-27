@@ -122,6 +122,8 @@ def draw_sprite(out, mask, e, vram, cluts, colour):
         return
     mode, passes, mod = im
     col, row, bit8, half, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, (attr >> 6) & 1, attr >> 7
+    if half:  # the GPU's 2x sampling decides which edge pixels a halved frame covers: its whole rectangle is approximate
+        mask[max(0, y):max(0, min(240, y + h)), max(0, x):max(0, min(320, x + w))] = 2
     px0, py0 = col * 64, row * 256
     fx, fy = direction & 1, direction & 2
     tw, th = ((w + 1) >> 1, (h + 1) >> 1) if half else (w, h)
@@ -203,6 +205,7 @@ def draw_quad(out, mask, corners, uvs, fetch, im, colour):
                 l2 = 1 - l0 - l1
                 if l0 < 0 or l1 < 0 or l2 < 0:
                     continue
+                mask[sy, sx] = 2  # the whole quad is approximate (the GPU's edges and sampling)
                 tu = int(l0 * uvs[a][0] + l1 * uvs[b][0] + l2 * uvs[c][0] + 0.5)
                 tv = int(l0 * uvs[a][1] + l1 * uvs[b][1] + l2 * uvs[c][1] + 0.5)
                 idx = fetch(tu, tv)
@@ -210,6 +213,8 @@ def draw_quad(out, mask, corners, uvs, fetch, im, colour):
                     f = modulate(int(colour[idx]), mod)
                     out[sy, sx] = f if mode < 0 else blend(int(out[sy, sx]), f, mode)
                     mask[sy, sx] = 2
+    xs0, ys0 = [c[0] for c in corners], [c[1] for c in corners]
+    mask[max(0, min(ys0)):max(0, min(240, max(ys0) + 1)), max(0, min(xs0)):max(0, min(320, max(xs0) + 1))] = 2
     tri(0, 1, 2)
     tri(1, 2, 3)
 
@@ -246,6 +251,9 @@ def render(cap, folder, scene_id):
             elif e[0] in (1, 2):
                 order.append(('sprite' if e[0] == 1 else 'tile', e))
                 nsprites += 1
+            elif e[0] == 7:
+                order.append(('flat', e))
+                nsprites += 1
             n += 1
         vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
     for kind, path in order:
@@ -254,6 +262,18 @@ def render(cap, folder, scene_id):
             continue
         if kind == 'tile':
             draw_tile(out, mask, path, imgs, table, colour)
+            continue
+        if kind == 'flat':  # a flat rectangle as sent (the GPU keeps each channel's top 5 bits; mask bit 0)
+            _, mode1, passes, _, r8, g8, b8, x, y, w, h = path
+            f = (r8 >> 3) | (g8 >> 3) << 5 | (b8 >> 3) << 10
+            for sy in range(max(0, y), min(240, y + h)):
+                for sx in range(max(0, x), min(320, x + w)):
+                    if mode1 == 0:
+                        out[sy, sx] = f
+                    else:
+                        for _ in range(passes):
+                            out[sy, sx] = blend(int(out[sy, sx]), f, mode1 - 1) & 0x7FFF  # a flat pixel's mask bit is 0
+                    mask[sy, sx] = 1
             continue
         if kind == 'quad':
             a, b, d = path
@@ -317,7 +337,7 @@ def main():
     got = np.frombuffer(open(os.path.join(cap, 'fb.bin'), 'rb').read(), '<u2').reshape(240, 320)
     diff_all = got != exp
     diff = diff_all & (mask != 2)
-    print('%d layer draws, %d sprites; %d of 76800 pixels differ (%d where half-resolution sprites draw, not counted); '
+    print('%d layer draws, %d sprites; %d of 76800 pixels differ (%d where half-resolution or rotated sprites draw: approximate, not counted); '
           'lines on a bank other than 0: %d' % (ncalls, nsprites, int(diff.sum()), int((diff_all & (mask == 2)).sum()), other_bank))
     if diff.any():
         ys, xs = np.nonzero(diff)
