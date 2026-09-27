@@ -221,7 +221,9 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
             ++misses;
             continue;
         }
-        const uint8 *ti = images + img * 6;
+        uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
+        __asm__("" : "+r"(img2), "+r"(img4)); // 6-byte records: 2i + 4i (GCC folds shifts into a ~12-cycle mult)
+        const uint8 *ti = images + img2 + img4;
         uint32 uv       = *(const uint16 *)ti;
         uint32 tpage    = *(const uint16 *)(ti + 2);
         uint32 clut     = *(const uint16 *)(ti + 4);
@@ -337,7 +339,9 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
             if (flipped != PS1_TILE_NONE)
                 img = flipped, t &= ~0x400;
         }
-        const uint8 *ti = images + img * 6;
+        uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
+        __asm__("" : "+r"(img2), "+r"(img4)); // 6-byte records: 2i + 4i (GCC folds shifts into a ~12-cycle mult)
+        const uint8 *ti = images + img2 + img4;
         uint32 tpage    = *(const uint16 *)(ti + 2);
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)

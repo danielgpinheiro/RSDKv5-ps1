@@ -183,7 +183,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     clut_maps = [[0] + sorted(g) + [0] * (15 - len(g)) for g in groups]
 
     # packing in halfword space: each column is 16 rows of 16 lines x 64 halfwords; an 8-bit image takes 8 halfwords
-    # (u < 128 inside its column's page), a 4-bit one 4; 8-bit first so they stay on 8-halfword boundaries
+    # (u < 128 inside its column's page), a 4-bit one 4; 8-bit first so they stay on 8-halfword boundaries (packing the
+    # per-line rows' images first was tried in 3.3b: it spread the FG tiles over more pages, a net loss)
     place = [None] * len(images)    # (col, row, depth, u, v)
     cur = [0, 0, 0]                 # column index, image row, halfword
     for want in (8, 4):
