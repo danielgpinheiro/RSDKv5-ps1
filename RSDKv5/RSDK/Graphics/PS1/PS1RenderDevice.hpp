@@ -1,7 +1,8 @@
 // PS1 port (docs/32): the RenderDevice on psyqo. Phase 2 = headless: the engine's software framebuffer
 // (Drawing.cpp) is kept for the game logic that reads it, nothing is presented; phase 3 replaces the Draw*
-// calls with the chained GPU renderer (ps1/render.cpp, from Sonic CD). Events, FPS cap and the window are
-// psyqo's frame loop (ps1/rsdk5_main.cpp calls the engine once per vblank).
+// calls with the chained GPU renderer (RSDK/Scene/PS1, RSDK/Graphics/PS1; Sonic 2's ps1/render.cpp is the
+// reference). Events, FPS cap and the window are psyqo's frame loop (ps1/rsdk5_main.cpp calls the engine once per
+// vblank).
 #pragma once
 
 // Included inside namespace RSDK by Drawing.hpp, like the other backends.

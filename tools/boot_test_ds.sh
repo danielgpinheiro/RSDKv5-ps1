@@ -92,7 +92,8 @@ bt 12
 snap "stop"
 GDBEOF
 
-pkill -f "DuckStation.app/Contents/MacOS" 2>/dev/null; sleep 1
+# Other sessions share this emulator: never kill theirs, only our own PID.
+pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
 "$DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
 EMU=$!
 sleep 6

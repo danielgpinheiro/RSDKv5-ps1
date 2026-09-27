@@ -63,7 +63,7 @@ void PS1ChainBulkEnd(int used);
 uint32_t *PS1ChainMark();
 int PS1ChainReplay(uint32_t *from, uint32_t *to);
 // Same, keeping only fragments whose primitives touch screen lines [y0, y1) (state-only fragments
-// always): per-line palette-bank regions (ps1/render.cpp) replay just what they need.
+// always): per-line palette-bank regions (Sonic 2's ps1/render.cpp; here 3.5) replay just what they need.
 int PS1ChainReplayLines(uint32_t *from, uint32_t *to, int y0, int y1);
 // Drawing area (GP0 E3h/E4h) in screen coordinates of the buffer this frame draws into;
 // Reset restores the whole 320x240 buffer. Mask control = GP0 E6h (psx-spx "Mask Bit Setting").

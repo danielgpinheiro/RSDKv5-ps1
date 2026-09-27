@@ -19,9 +19,9 @@
 extern psyqo::GPU *g_ps1GPU;
 extern psyqo::AdvancedPad *g_ps1Pad;
 
-void PS1RenderFmvFrame(int mode);           // ps1/render.cpp: 0 = black, 1 = new picture (bars only), 2 = repeat
-void PS1RenderFmvFade(int step);            // ps1/render.cpp: darken the whole frame by step / 255
-void PS1RenderFmvKeepRows(int y0, int y1, int y2, int y3); // ps1/render.cpp: two bands the FMV frame leaves alone
+void PS1RenderFmvFrame(int mode);           // render device, phase 6 (Sonic CD: ps1/render.cpp): 0 = black, 1 = new picture (bars only), 2 = repeat
+void PS1RenderFmvFade(int step);            // render device, phase 6 (Sonic CD: ps1/render.cpp): darken the whole frame by step / 255
+void PS1RenderFmvKeepRows(int y0, int y1, int y2, int y3); // render device, phase 6 (Sonic CD: ps1/render.cpp): two bands the FMV frame leaves alone
 
 // Video / stream counters (ps1/video.cpp) shown by the diagnostics strip.
 extern volatile uint32_t g_ps1VideoFrames, g_ps1VideoPictures, g_ps1VideoResync, g_ps1VideoDropped;

@@ -58,7 +58,6 @@ ps1/mdec.cpp \
 ps1/video.cpp \
 ps1/fmv.cpp \
 ps1/loading.cpp \
-ps1/tileset.cpp \
 ps1/memcard.cpp \
 ps1/overlay.cpp \
 ps1/vram.cpp \
@@ -72,9 +71,11 @@ endif
 
 # ps1/libc comes FIRST: its C/C++ shim headers (<string>, <cmath>, <stdio.h>, ...) shadow any
 # system headers the freestanding toolchain might otherwise surface.
+# RSDK_AUTOBUILD=1: the engine's license (dependencies/RSDKv5/LICENSE.md) wants every pre-built executable with the
+# DLC off (DummyCore: Mania Plus off), which is also the port's scope, base Mania (docs/32, 2026-09-28 review).
 CPPFLAGS = -I ps1/libc -I RSDKv5 -I SonicMania -I SonicMania/Objects -I dependencies/RSDKv5/dependencies/all \
   -DRETRO_PS1_BUILD -DRETRO_REVISION=2 -DRETRO_USE_MOD_LOADER=0 -DRETRO_STANDALONE=0 -DGAME_INCLUDE_EDITOR=0 \
-  -DMANIA_PREPLUS=0 -DMANIA_FIRST_RELEASE=0
+  -DMANIA_PREPLUS=0 -DMANIA_FIRST_RELEASE=0 -DRSDK_AUTOBUILD=1
 
 # `make MEMCARD_TEST=1`: memory card self-test (ps1/memcard_test.cpp; tools/memcard/save_test.sh).
 ifeq ($(MEMCARD_TEST),1)

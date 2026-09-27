@@ -2,7 +2,7 @@
 
 Operating manual for this repo. Workspace rules: `../AGENTS.md`. Knowledge base: `../docs/` (start at
 `../docs/README.md`). **Plan and phase table: `../docs/32-rsdkv5-mania-port-plan.md`. Lessons from the
-earlier ports: `../docs/29` (Sonic CD) and `../docs/31` (real hardware).**
+earlier ports: `../docs/29` (Sonic CD; §9 Sonic 2) and `../docs/31` (real hardware).**
 
 ## What this is
 `RSDKModding/Sonic-Mania-Decompilation` (the game, C, `SonicMania/`) with its `RSDKv5-Decompilation`
@@ -17,8 +17,9 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 - Game data: `../SonicMania_Extracted/` (the user's Mania **Plus** `Data.rsdk`, 208 MB, SHA-256 `77a90438…`,
   extracted `Data/`). Never commit game data.
 - `../nugget` and `dependencies/RSDKv5` stay plain upstream.
-- Emulators: another session may hold PCSX-Redux (`pgrep -fl PCSX-Redux` first). DuckStation with the
-  user's SCPH-101 BIOS is the accurate check (`../docs/31` §6).
+- Emulators: other sessions use PCSX-Redux and DuckStation too: the harness refuses to start one that runs
+  (`pgrep`) and kills only its own PID; never `pkill`. DuckStation with the user's SCPH-101 BIOS is the accurate check
+  (`../docs/31` §6); `-bios` / settings edits get backed up and restored.
 
 ## User decisions (2026-09-26)
 - Fresh upstream clone (`9dc6994`, submodule `bd59396`) + private fork; the `ps1/` layer and tools come from
@@ -34,7 +35,8 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 - Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
   before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
 
-**Paused 2026-09-26** (the user works on Sonic 2): resume from `../docs/32` "Where we stopped".
+**Resumed 2026-09-28** (Sonic 2 is done): `../docs/32` "Resumed 2026-09-28" (the review, Sonic 2's lessons per phase),
+then "Where we stopped" for the next steps.
 
 ## Build / run / debug
 ```bash
@@ -78,6 +80,10 @@ DuckStation: `file` the ELF before `target remote localhost:2345`, `set architec
 - **Pads = `psyqo::AdvancedPad`**. **One CD action at a time**. CLUT index 0 = transparent; visible black
   = 0x8000. Hardware access in `start()` / `frame()`, not `prepare()`.
 - Real hardware (`../docs/31`): keep `ps1/irq_guard`, the CPU-driven MDEC, bounded CD waits.
+- From Sonic 2 (`../docs/29` §9): sprite texel edges (a mirrored / rotated quad never starts an axis at its far edge);
+  every drawing path clips to the GPU limits and culls off-screen primitives; fades reach direct-colour primitives;
+  optional big arrays allocated only for the scenes that use them, first inside the load bracket; load time = seeks
+  first, then bytes; one asset pipeline for the port and the builder; `RSDK_AUTOBUILD=1` (the engine's license).
 
 ## Definition of done for a step
 Builds cleanly · fits 2 MB · verified in DuckStation / PCSX-Redux with evidence · `../docs/32` status

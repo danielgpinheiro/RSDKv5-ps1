@@ -38,8 +38,10 @@ while \$i < 6
 end
 detach
 GDBEOF
-pkill -f "DuckStation.app/Contents/MacOS" 2>/dev/null; sleep 1
+# Other sessions share this emulator: never kill theirs, only our own PID.
+pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
 "$DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
+EMU=$!
 sleep 6
 timeout ${TIMEOUT:-180} /opt/homebrew/bin/gdb --batch -x "$OUT.gdb" 2>&1 | grep -E "^(ICON|LOAD|RESULT|FILE) " | tee "$OUT.txt"
 python3 - "$OUT.txt" <<'PYEOF'
@@ -56,4 +58,4 @@ for l in open(sys.argv[1]):
         print('%-38s %s' % (files[int(m[1])], 'CRC OK' if good else 'MISMATCH'))
 print('%d/6 files match the host' % ok)
 PYEOF
-echo "(DuckStation left running for a screenshot; stop it with: pkill -f DuckStation.app/Contents/MacOS)"
+echo "(DuckStation left running for a screenshot; stop it with: kill $EMU)"
