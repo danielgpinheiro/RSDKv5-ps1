@@ -433,6 +433,7 @@ void RSDK::PS1LayersFrameBegin()
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = 0;
+    PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
     const PS1TileClut *cl = PS1TileCluts();
     uint16 row[16];
@@ -445,6 +446,14 @@ void RSDK::PS1LayersFrameBegin()
     s_bank[0] = 0;
     for (int32 i = 1; i < 256; ++i) s_bank[i] = PS1Colour(fullPalette[0][i]);
     PS1ChainUploadRow(s_bank, 256, 0, 240);
+    // the sprite atlas's 4-bit CLUTs, the same way (3.4)
+    const PS1AtlasClut *ac = PS1AtlasCluts();
+    for (int32 c = 0; ac && c < PS1AtlasClutCount(); ++c) {
+        row[0] = 0;
+        for (int32 i = 1; i < 16; ++i) row[i] = ac[c].map[i] ? PS1Colour(fullPalette[0][ac[c].map[i]]) : 0;
+        PS1ChainUploadRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
+    }
+
     PS1ChainFlushCache(); // the GPU's CLUT cache may hold the last frame's colours
 }
 
@@ -453,6 +462,9 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     if (!layer->xsize || !layer->ysize)
         return;
     PS1LayerDebugHook((uint32)(layer - tileLayers));
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
+#endif
     uint32 t0     = PS1Hblanks();
     uint16 tl     = PS1T();
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;

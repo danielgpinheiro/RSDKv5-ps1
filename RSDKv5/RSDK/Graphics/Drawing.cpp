@@ -5,6 +5,9 @@ using namespace RSDK;
 #if RETRO_REV0U
 #include "Legacy/DrawingLegacy.cpp"
 #endif
+#if RETRO_PLATFORM == RETRO_PS1
+#include "PS1/PS1Sprites.cpp" // sprites from the atlas bindings (docs/32 3.4)
+#endif
 
 // all render devices need to access the initial vertex buffer :skull:
 
@@ -2826,6 +2829,48 @@ void RSDK::DrawSprite(Animator *animator, Vector2 *position, bool32 screenRelati
             }
         }
 
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 3.4): the frame itself goes to the GPU (its atlas binding); the positions are DrawSpriteFlipped's
+        switch (drawFX) {
+            case FX_NONE:
+                PS1DrawFrame(frame, pos.x + frame->pivotX, pos.y + frame->pivotY, FLIP_NONE, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            case FX_FLIP: {
+                int32 dir = sceneInfo.entity->direction;
+                int32 fx  = (dir & FLIP_X) ? pos.x - frame->width - frame->pivotX : pos.x + frame->pivotX;
+                int32 fy  = (dir & FLIP_Y) ? pos.y - frame->height - frame->pivotY : pos.y + frame->pivotY;
+                if (dir <= FLIP_XY)
+                    PS1DrawFrame(frame, fx, fy, dir, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            }
+            // rotate / scale (3.4c): DrawSpriteRotozoom's arguments below, on the GPU
+            case FX_ROTATE:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, 0x200, 0x200, FLIP_NONE, rotation, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            case FX_ROTATE | FX_FLIP:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, 0x200, 0x200, sceneInfo.entity->direction & FLIP_X, rotation, sceneInfo.entity->inkEffect,
+                                     sceneInfo.entity->alpha);
+                break;
+            case FX_SCALE:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, sceneInfo.entity->scale.x, sceneInfo.entity->scale.y, FLIP_NONE, 0,
+                                     sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            case FX_SCALE | FX_FLIP:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, sceneInfo.entity->scale.x, sceneInfo.entity->scale.y, sceneInfo.entity->direction & FLIP_X,
+                                     0, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            case FX_SCALE | FX_ROTATE:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, sceneInfo.entity->scale.x, sceneInfo.entity->scale.y, FLIP_NONE, rotation,
+                                     sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            case FX_SCALE | FX_ROTATE | FX_FLIP:
+                PS1DrawFrameRotozoom(frame, pos.x, pos.y, sceneInfo.entity->scale.x, sceneInfo.entity->scale.y, sceneInfo.entity->direction & FLIP_X,
+                                     rotation, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
+                break;
+            default: break;
+        }
+        return;
+#endif
         switch (drawFX) {
             case FX_NONE:
                 DrawSpriteFlipped(pos.x + frame->pivotX, pos.y + frame->pivotY, frame->width, frame->height, frame->sprX, frame->sprY, FLIP_NONE,
@@ -2901,7 +2946,13 @@ void RSDK::DrawSpriteFlipped(int32 x, int32 y, int32 width, int32 height, int32 
                              int32 sheetID)
 {
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    // DrawSprite draws its frames itself (PS1DrawFrame); what comes here has sheet coordinates. Sheet 0, 16x16 at
+    // sprX 0 is DrawTile's piece: sprY / 16 = the tile with its flip bits (the PC tileset stores the flipped copies)
+    if (sheetID == 0 && sprX == 0 && width == TILE_SIZE && height == TILE_SIZE && direction == FLIP_NONE)
+        PS1DrawTile((uint16)((sprY >> 4) & 0xFFF), x, y, inkEffect, alpha);
+    else
+        g_ps1SpriteUnbound = g_ps1SpriteUnbound + 1;
+    return;
 #endif
     switch (inkEffect) {
         default: break;
@@ -3565,7 +3616,13 @@ void RSDK::DrawSpriteRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int3
                               int32 scaleY, int32 direction, int16 rotation, int32 inkEffect, int32 alpha, int32 sheetID)
 {
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    // DrawSprite's frames never come here (PS1DrawFrameRotozoom); DrawTile's rotated pieces do (sheet 0, 16x16, sprY / 16 =
+    // the tile, its Y flip already turned into rotation + 0x100)
+    if (sheetID == 0 && sprX == 0 && width == TILE_SIZE && height == TILE_SIZE)
+        PS1DrawTileRotozoom((uint16)((sprY >> 4) & 0x3FF), x, y, pivotX, pivotY, scaleX, scaleY, direction, rotation, inkEffect, alpha);
+    else
+        g_ps1SpriteUnbound = g_ps1SpriteUnbound + 1;
+    return;
 #endif
     switch (inkEffect) {
         default: break;

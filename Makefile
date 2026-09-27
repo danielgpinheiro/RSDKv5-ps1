@@ -116,7 +116,7 @@ LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind. A change also
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
 PS1_BOOT_OBJS    := ps1/rsdk5_main.o
-PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o
+PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
 define ps1_stamp

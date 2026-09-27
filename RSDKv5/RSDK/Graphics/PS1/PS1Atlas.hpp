@@ -32,6 +32,21 @@ void PS1AtlasServiceRequests();                              // frame() start: a
 const PS1AtlasClut *PS1AtlasCluts();
 uint16 PS1AtlasClutCount();
 
+// 3.4 (PS1Sprites.cpp): a frame at screen (x, y) (its top-left, as DrawSpriteFlipped gets it) through the GPU chain
+void PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha);
+// 3.4c-d: rotated / scaled frames (DrawSpriteRotozoom's geometry), DrawTile's pieces from the scene's tile images
+void PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int32 scaleX, int32 scaleY, int32 direction, int32 rotation,
+                          int32 inkEffect, int32 alpha);
+void PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alpha);
+void PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int32 pivotY, int32 scaleX, int32 scaleY, int32 direction,
+                         int32 rotation, int32 inkEffect, int32 alpha);
+void PS1SpritesFrameBegin(); // PS1LayersFrameBegin: the frame's sprite counters and draw log start over
+#if PS1_DEBUG_BIGRAM
+// the frame's draw calls in order, for the host reference (8 MB link): type 0 = a tile layer (x = its call number)
+void PS1DrawLogAdd(uint8 type, uint8 direction, uint8 ink, uint8 alpha, uint8 u, uint8 v, uint16 attr, int32 x, int32 y, int32 w,
+                   int32 h);
+#endif
+
 extern "C" {
 extern volatile uint32 g_ps1AtlasLoads;        // .atl files loaded
 extern volatile uint32 g_ps1AtlasVramBytes;    // default pixels uploaded by the last load

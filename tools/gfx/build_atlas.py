@@ -384,8 +384,11 @@ def render(clusters, work, clut_maps):
         span = (hx + words.shape[1] - X0 + V.COL_HW - 1) // V.COL_HW
         for k in range(span):
             key = (b.col + k, b.row)
-            lines[key] = max(lines.get(key, 0), c['v'] + h)
-    blocks = [(col * V.COL_HW, row * PAGE, V.COL_HW, n) for (col, row), n in sorted(lines.items())]
+            lo, hi = lines.get(key, (PAGE, 0))
+            lines[key] = (min(lo, c['v']), max(hi, c['v'] + h))
+    # a block covers only the lines its clusters use: a group packed below the resident's lines of a column (bands) must
+    # not upload over them (3.4a: the event groups' blocks started at line 0 and would have blanked the HUD's texels)
+    blocks = [(col * V.COL_HW, row * PAGE + lo, V.COL_HW, hi - lo) for (col, row), (lo, hi) in sorted(lines.items())]
     return vram, blocks
 
 

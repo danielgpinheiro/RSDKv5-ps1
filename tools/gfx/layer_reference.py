@@ -9,6 +9,12 @@ into (fb.bin, 320 x 240 BGR555). The layouts come from the scene file, the tile 
 line from its scanline position, index 0 transparent, colours as the CLUT upload makes them (BGR555 | STP).
 Bank 0 only (per-line banks are 3.5): lines on another bank are reported.
 
+Sprites (3.4): with drawlog.bin (the frame's draw calls in order, 8 MB link: PS1Sprites.cpp g_ps1DrawLog), layers and
+sprites are composited in that order; each sprite's texels come from the scene's .atl (the default blocks: the state
+at the scene start, before any group swap; CLUT maps), fetched as the GPU is told to (binding u / v / attr, flips as the port's mirror rule:
+texel u + w - 1 - i). Half-resolution frames depend on the GPU's UV interpolation at 2x: their pixels are rendered
+approximately and their differences reported apart.
+
 Usage: layer_reference.py CAPTURE_DIR FOLDER SCENE_ID [--png OUT_PREFIX]
 """
 import glob, os, re, struct, sys
@@ -55,6 +61,159 @@ def tile_images(ptl):
     return imgs
 
 
+def atlas_vram(path):
+    """The .atl's default VRAM image (the state at the scene start) and its CLUT maps (tools/gfx/build_atlas.py)."""
+    d = open(path, 'rb').read()
+    magic, nf, nc, nb, ng, bind_off, bind_bytes, data_off, pix_bytes = struct.unpack_from('<4sHHHHIIII', d, 0)
+    assert magic == b'ATL5', magic
+    off = 32 + 24 * nf
+    cluts = []
+    for i in range(nc):
+        cluts.append(list(d[off + 4:off + 20]))
+        off += 20
+    vram = np.zeros((512, 1024), np.uint16)
+    for i in range(nb):
+        x, y, w, h, o = struct.unpack_from('<HHHHI', d, off)
+        off += 12
+        vram[y:y + h, x:x + w] = np.frombuffer(d, '<u2', w * h, data_off + o).reshape(h, w)
+    # the default blocks already hold the groups loaded at the start (their own blocks are for later swaps)
+    return vram, cluts
+
+
+def ink_mode(ink, alpha):
+    """PS1Sprites.cpp's ink rules: (semi-transparency mode or -1, passes, modulation) or None (not drawn / not done)."""
+    if ink == 0:
+        return -1, 1, 0x80
+    if ink == 1:
+        return 0, 1, 0x80
+    if ink == 2:
+        level = 0 if alpha < 64 else 1 if alpha < 160 else 2 if alpha < 224 else 3
+        return None if level == 0 else (-1, 1, 0x80) if level == 3 else (0, level, 0x80)
+    if ink in (3, 4):
+        return None if alpha <= 0 else (1 if ink == 3 else 2, 1, (min(alpha, 255) + 1) >> 1)
+    return None
+
+
+def blend(b, f, mode):
+    """psx-spx semi-transparency on 5-bit channels (BGR555 words, bit 15 kept)."""
+    out = 0x8000
+    for s in (0, 5, 10):
+        bc, fc = (b >> s) & 31, (f >> s) & 31
+        c = (bc + fc) >> 1 if mode == 0 else min(31, bc + fc) if mode == 1 else max(0, bc - fc) if mode == 2 else min(31, bc + (fc >> 2))
+        out |= c << s
+    return out
+
+
+def modulate(f, m):
+    """Texture modulation (psx-spx): texel * colour / 0x80 per channel, saturated, dither off."""
+    if m == 0x80:
+        return f
+    out = f & 0x8000
+    for s in (0, 5, 10):
+        out |= min(31, (((f >> s) & 31) * m) >> 7) << s
+    return out
+
+
+def draw_sprite(out, mask, e, vram, cluts, colour):
+    """One draw-log sprite onto out (BGR555 | STP); mask marks its pixels (half-resolution frames: 2)."""
+    _, direction, ink, alpha, u, v, attr, x, y, w, h = e
+    im = ink_mode(ink, alpha)
+    if im is None:
+        return
+    mode, passes, mod = im
+    col, row, bit8, half, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, (attr >> 6) & 1, attr >> 7
+    px0, py0 = col * 64, row * 256
+    fx, fy = direction & 1, direction & 2
+    tw, th = ((w + 1) >> 1, (h + 1) >> 1) if half else (w, h)
+    for j in range(h):
+        sy = y + j
+        if sy < 0 or sy >= 240:
+            continue
+        if half:  # the quad's linear map, sampled at the pixel's centre (approximate)
+            tv = (v + th - 1 - int((j + 0.5) * th / h)) if fy else (v + int((j + 0.5) * th / h))
+        else:
+            tv = v + (h - 1 - j if fy else j)
+        for i in range(w):
+            sx = x + i
+            if sx < 0 or sx >= 320:
+                continue
+            if half:
+                tu = (u + tw - 1 - int((i + 0.5) * tw / w)) if fx else (u + int((i + 0.5) * tw / w))
+            else:
+                tu = u + (w - 1 - i if fx else i)
+            if bit8:
+                idx = (int(vram[py0 + tv, px0 + (tu >> 1)]) >> (8 * (tu & 1))) & 0xFF
+            else:
+                nib = (int(vram[py0 + tv, px0 + (tu >> 2)]) >> (4 * (tu & 3))) & 15
+                idx = cluts[slot][nib] if nib else 0
+            if idx:
+                f = modulate(int(colour[idx]), mod)
+                if mode < 0:
+                    out[sy, sx] = f
+                else:
+                    for _ in range(passes):
+                        out[sy, sx] = blend(int(out[sy, sx]), f, mode)
+                mask[sy, sx] = 2 if half else 1
+
+
+def texel_atlas(vram, cluts, attr, tu, tv):
+    col, row, bit8, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, attr >> 7
+    if bit8:
+        return (int(vram[row * 256 + tv, col * 64 + (tu >> 1)]) >> (8 * (tu & 1))) & 0xFF
+    nib = (int(vram[row * 256 + tv, col * 64 + (tu >> 2)]) >> (4 * (tu & 3))) & 15
+    return cluts[slot][nib] if nib else 0
+
+
+def draw_tile(out, mask, e, imgs, table, colour):
+    """A DrawTile piece (type 2): the 16x16 tile image with its flips, as the layers draw tiles (exact)."""
+    _, direction, ink, alpha, _, _, tile, x, y, w, h = e
+    im = ink_mode(ink, alpha)
+    img = table[tile & 0x3FF]
+    if im is None or img == 0xFFFF:
+        return
+    mode, passes, mod = im
+    for j in range(16):
+        for i in range(16):
+            sx, sy = x + i, y + j
+            if not (0 <= sx < 320 and 0 <= sy < 240):
+                continue
+            p = int(imgs[img][15 - j if direction & 2 else j, 15 - i if direction & 1 else i])
+            if p:
+                f = modulate(int(colour[p]), mod)
+                out[sy, sx] = f if mode < 0 else blend(int(out[sy, sx]), f, mode)
+                if mode >= 0 and passes == 2:
+                    out[sy, sx] = blend(int(out[sy, sx]), f, mode)
+                mask[sy, sx] = 1
+
+
+def draw_quad(out, mask, corners, uvs, fetch, im, colour):
+    """A rotated / scaled rectangle (approximate): the GPU's two triangles (A B C, B C D) with affine UVs; mask 2."""
+    mode, passes, mod = im
+    xs = [c[0] for c in corners]; ys = [c[1] for c in corners]
+    def tri(a, b, c):
+        (x0, y0), (x1, y1), (x2, y2) = corners[a], corners[b], corners[c]
+        den = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2)
+        if den == 0:
+            return
+        for sy in range(max(0, min(y0, y1, y2)), min(240, max(y0, y1, y2))):
+            for sx in range(max(0, min(x0, x1, x2)), min(320, max(x0, x1, x2))):
+                px, py = sx + 0.5, sy + 0.5
+                l0 = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) / den
+                l1 = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) / den
+                l2 = 1 - l0 - l1
+                if l0 < 0 or l1 < 0 or l2 < 0:
+                    continue
+                tu = int(l0 * uvs[a][0] + l1 * uvs[b][0] + l2 * uvs[c][0] + 0.5)
+                tv = int(l0 * uvs[a][1] + l1 * uvs[b][1] + l2 * uvs[c][1] + 0.5)
+                idx = fetch(tu, tv)
+                if idx:
+                    f = modulate(int(colour[idx]), mod)
+                    out[sy, sx] = f if mode < 0 else blend(int(out[sy, sx]), f, mode)
+                    mask[sy, sx] = 2
+    tri(0, 1, 2)
+    tri(1, 2, 3)
+
+
 def render(cap, folder, scene_id):
     g = F.read_gameconfig(os.path.join(DATA, 'Game', 'GameConfig.bin'))
     sc = F.read_stageconfig(os.path.join(DATA, 'Stages', folder, 'StageConfig.bin'))
@@ -66,7 +225,59 @@ def render(cap, folder, scene_id):
     out = np.zeros((240, 320), np.uint16)
     other_bank = 0
     calls = sorted(glob.glob(os.path.join(cap, 'sl_*_*.bin')), key=lambda p: int(re.findall(r'sl_(\d+)_', p)[0]))
-    for path in calls:
+    mask = np.zeros((240, 320), np.uint8)  # 1 = a sprite pixel, 2 = a half-resolution sprite pixel
+    log_path = os.path.join(cap, 'drawlog.bin')
+    order = [('layer', p) for p in calls]
+    nsprites = 0
+    if os.path.exists(log_path):
+        d = open(log_path, 'rb').read()
+        entries = [struct.unpack_from('<BBBBBBHhhHH', d, k) for k in range(0, len(d) - 15, 16)]
+        order, k, n = [], 0, 0
+        while n < len(entries):
+            e = entries[n]
+            if e[0] == 0:
+                if k < len(calls):
+                    order.append(('layer', calls[k]))
+                k += 1
+            elif e[0] in (3, 6) and n + 2 < len(entries):
+                order.append(('quad', (e, entries[n + 1], entries[n + 2])))
+                nsprites += 1
+                n += 2
+            elif e[0] in (1, 2):
+                order.append(('sprite' if e[0] == 1 else 'tile', e))
+                nsprites += 1
+            n += 1
+        vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
+    for kind, path in order:
+        if kind == 'sprite':
+            draw_sprite(out, mask, path, vram, cluts, colour)
+            continue
+        if kind == 'tile':
+            draw_tile(out, mask, path, imgs, table, colour)
+            continue
+        if kind == 'quad':
+            a, b, d = path
+            im = ink_mode(a[2], a[3])
+            if im is None:
+                continue
+            corners = [(a[7], a[8]), (b[7], b[8]), (struct.unpack('<h', struct.pack('<H', b[9]))[0],
+                       struct.unpack('<h', struct.pack('<H', b[10]))[0]), (d[7], d[8])]
+            w, h, direction = a[9], a[10], a[1]
+            if a[0] == 3:
+                attr, u, v = a[6], a[4], a[5]
+                half = (attr >> 6) & 1
+                tw, th = ((w + 1) >> 1, (h + 1) >> 1) if half else (w, h)
+                fetch = lambda tu, tv, attr=attr: texel_atlas(vram, cluts, attr, tu, tv)
+            else:
+                img = table[a[6] & 0x3FF]
+                if img == 0xFFFF:
+                    continue
+                u, v, tw, th = 0, 0, 16, 16
+                fetch = lambda tu, tv, img=img: int(imgs[img][min(15, max(0, tv)), min(15, max(0, tu))])
+            u0, u1 = (u + tw - 1, u) if direction & 1 else (u, u + tw - 1)
+            uvs = [(u0, v), (u1, v), (u0, v + th - 1), (u1, v + th - 1)]
+            draw_quad(out, mask, corners, uvs, fetch, im, colour)
+            continue
         c, li = map(int, re.findall(r'sl_(\d+)_(\d+)', path)[0])
         L = layers[li]
         xs, ys = L['xsize'], L['ysize']
@@ -95,16 +306,19 @@ def render(cap, folder, scene_id):
                 p = int(imgs[img][tyy, tx])
                 if p:
                     out[y, sx] = colour[p]
-    return out, len(calls), other_bank
+                    mask[y, sx] = 0
+    return out, len(calls), other_bank, mask, nsprites
 
 
 def main():
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     cap, folder, sid = a[0], a[1], a[2]
-    exp, ncalls, other_bank = render(cap, folder, sid)
+    exp, ncalls, other_bank, mask, nsprites = render(cap, folder, sid)
     got = np.frombuffer(open(os.path.join(cap, 'fb.bin'), 'rb').read(), '<u2').reshape(240, 320)
-    diff = got != exp
-    print('%d layer draws; %d of 76800 pixels differ; lines on a bank other than 0: %d' % (ncalls, int(diff.sum()), other_bank))
+    diff_all = got != exp
+    diff = diff_all & (mask != 2)
+    print('%d layer draws, %d sprites; %d of 76800 pixels differ (%d where half-resolution sprites draw, not counted); '
+          'lines on a bank other than 0: %d' % (ncalls, nsprites, int(diff.sum()), int((diff_all & (mask == 2)).sum()), other_bank))
     if diff.any():
         ys, xs = np.nonzero(diff)
         print('  first differences (y, x, got, expected):', [(int(y), int(x), hex(int(got[y, x])), hex(int(exp[y, x]))) for y, x in zip(ys[:6], xs[:6])])
