@@ -160,10 +160,12 @@ class Bin:
         self.sky = [0] * width
 
     def peek(self, w, h, split=False):
-        """split: the item may not cross a column boundary (a 4-bit item in a two-column bin)."""
+        """split: the item may not cross a texture page boundary: True / COL_HW = a column (4-bit), 2 * COL_HW = two
+        (an 8-bit page, from the bin's left edge; 4.2b: bins of several pages)."""
         best = None
+        pg = V.COL_HW if split is True else split
         for u in range(0, self.width - w + 1):
-            if split and u // V.COL_HW != (u + w - 1) // V.COL_HW:
+            if pg and u // pg != (u + w - 1) // pg:
                 continue
             v = max(self.sky[u:u + w])
             if v + h <= PAGE and (best is None or v < best[1] or (v == best[1] and u < best[0])):
@@ -203,31 +205,81 @@ HALF_EFFECT = {'Global/Explosions.bin', 'Global/Shields.bin', 'Global/Water.bin'
                'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin'}
 HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison.bin', 'UI/TextEN.bin', 'UI/SaveSelect.bin',
                 'UI/UIElements.bin', 'UI/SmallFont.bin', 'Title/Logo.bin', 'Title/PlusLogo.bin', 'Title/Background.bin',
-                'Title/Electricity.bin', 'Logos/Logos.bin'}
+                'Title/Electricity.bin', 'Logos/Logos.bin',
+                # 4.2b: the menu's art (the text fonts stay: SmallFont / TextEN only from their plan side up)
+                'UI/Diorama.bin', 'UI/Picture.bin', 'UI/MainIcons.bin', 'UI/HeadingsEN.bin', 'UI/Buttons.bin',
+                'UI/ButtonLabel.bin', 'UI/MedallionPanel.bin'}
 HALF_HUD = {'Global/HUD.bin'}
-HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (HALF_EFFECT, 64), (HALF_PRESENT, 96), (HALF_EFFECT, 48),
+# 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
+# before any presentation file, whose big frames are text (headings, buttons)
+HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
+HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96),
+             (HALF_EFFECT, 48),
              (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_HUD, 48), (HALF_HUD, 32)]
-HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD
+HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE  # files, and (HALF_PICTURE) sheets
 # reviewed by hand (the literal analysis can't follow a handle stored in an entity): in a stage, UIButton_Create sets
 # list 0 before PauseMenu (10) / UIDialog (9) set theirs; 7 = a disabled button
 ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10}}
-SCOPE_DROP = {'Global/SignPost.bin': {3, 4}}  # Mighty, Ray (base Mania)
+# base Mania (user decision 2026-09-26: no Encore, Mighty, Ray, Competition): animations never placed (None: the whole file)
+SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
+              'Players/Mighty.bin': None, 'Players/Ray.bin': None,
+              'AIZ/SchrodingersCapsule.bin': None,           # the Encore capsule (Mighty and Ray inside)
+              'UI/Diorama.bin': {3, 4, 6, 10, 11}}           # the Plus upsell, Encore, Competition (+ its FBZ platform)
+SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}}}  # the Competition diorama's Knuckles
 
 
-def literal_anims(path, names, active, handles_of):
+def presentation_folders(data):
+    """4.2b: folders only the GameConfig's Presentation category lists (Logos, Title, Menu, ...): no player on screen,
+    so player files are placed like any other file (the animations the code names), not as a character's region."""
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    light, heavy = set(), set()
+    for c in g['categories']:
+        for sc in c['scenes']:
+            (light if c['name'] == 'Presentation' else heavy).add(sc['folder'])
+    return light - heavy
+
+
+def player_ani_ids():
+    """4.2b: the player animation names (Player.h's first enum: ANI_IDLE = 0, ...) -> their IDs"""
+    import re
+    src = open(os.path.join(HERE, '..', '..', 'SonicMania', 'Objects', 'Global', 'Player.h')).read()
+    body = src[src.index('typedef enum {'):]
+    body = body[len('typedef enum {'):body.index('}')]
+    body = re.sub(r'//[^\n]*', '', body)
+    body = re.sub(r'^\s*#.*$', '', body, flags=re.M)  # `#if MANIA_USE_PLUS` (the build's GAME_VERSION has Plus): kept
+    out, nxt = {}, 0
+    for t in (t.strip() for t in body.split(',')):
+        if not t:
+            continue
+        m = re.match(r'^(ANI_\w+)(?:\s*=\s*(\w+))?$', t)
+        assert m, t
+        val = nxt if m.group(2) is None else (int(m.group(2), 0) if m.group(2)[0].isdigit() else out[m.group(2)])
+        out[m.group(1)] = val
+        nxt = val + 1
+    return out
+
+
+def literal_anims(path, names, active, handles_of, never=()):
     """Animation IDs the active code passes with this file's handles; None = all (a non-literal ID, or the handle is
     used some other way than SetSpriteAnimation / its load)."""
     import re
     import scene_usage as U
-    code = U.active_code(names, active)
+    src = U.sources()
+    files = U.code_closure(active, set(names), src)
     out = set()
     for h in sorted(handles_of.get(path, ())):
+        # 4.2b: `never`: objects whose code runs in no entity here (select(): Player in a Presentation scene, the replay
+        # recorder anywhere); their files' uses of the handle draw nothing. (Not every entity-less owner: UIWidgets'
+        # StageLoad sets static animators that other objects' draws use.)
+        skip = {src.get(o) for o in never}
+        code = ''.join(U.code_of(f) for f in sorted(files) if f not in skip)
         uses = len(re.findall(r'\b' + re.escape(h) + r'\b', code))
         loads = len(re.findall(re.escape(h) + r'\s*=\s*RSDK\.LoadSpriteAnimation', code))
         calls = re.findall(r'SetSpriteAnimation\(\s*' + re.escape(h) + r'\s*,\s*([^,]+?)\s*,', code)
-        if uses - loads - len(calls) or any(not c.isdigit() for c in calls):
+        ani = player_ani_ids() if path.startswith('Players/') else {}
+        if uses - loads - len(calls) or any(not c.isdigit() and c not in ani for c in calls):
             return None
-        out |= {int(c) for c in calls}
+        out |= {int(c) if c.isdigit() else ani[c] for c in calls}
     return out if handles_of.get(path) else None
 
 
@@ -241,9 +293,14 @@ def select(folder, scene_id, character, files):
     groups = EVENT_GROUPS.get(folder, {})
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
     sel, why = {}, {}
+    present = folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))
     for path, spr, _ in files:
         n = len(spr['anims'])
-        if path in all_players:
+        drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
+        if drop is None:
+            sel[path], why[path] = [None] * n, 'out of scope (base Mania)'
+            continue
+        if path in all_players and not present:
             if path not in PLAYER_FILES[character]:
                 sel[path], why[path] = [None] * n, 'another character'
                 continue
@@ -254,8 +311,13 @@ def select(folder, scene_id, character, files):
         if need.get(path) is None:
             sel[path], why[path] = [None] * n, 'no active object uses it'
             continue
-        anims = ANIM_OVERRIDES.get(path, literal_anims(path, names, active, handles_of))
-        drop = SCOPE_DROP.get(path, set())
+        # 4.2b: no Player entity exists in a Presentation scene (the code closure counts it active through gameplay
+        # helpers): its own uses of the player files draw nothing there; the replay recorder is out of scope (compiled
+        # off on the PS1, ReplayRecorder.c REPLAYRECORDER_ENABLED)
+        inactive = {'ReplayRecorder'} | ({'Player'} if present else set())
+        # ANIM_OVERRIDES were reviewed for stages; a Presentation scene's buttons take their text lists from the scene data
+        over = None if present else ANIM_OVERRIDES.get(path)
+        anims = over if over is not None else literal_anims(path, names, active, handles_of, inactive)
         place = []
         for ai in range(n):
             if (anims is not None and ai not in anims) or ai in drop:
@@ -293,46 +355,58 @@ def pack(clusters, columns, what, bands=None):
         w = c['px'].shape[1]
         return (w + 3) // 4 if c['depth'] == 4 else (w + 1) // 2
 
-    def new_bin(wide):
-        if wide:
+    def new_bin(wide, ncols=2):
+        if wide:  # ncols adjacent columns of one row (an 8-bit page: 2; 4.2b: a multi-page item: its pages' columns)
             for a in free:
-                b = (a[0] + 1, a[1])
-                if b in free:
-                    free.remove(a); free.remove(b)
-                    return Bin(a[0], a[1], 0, 2 * V.COL_HW)
+                run = [(a[0] + k, a[1]) for k in range(ncols)]
+                if all(r in free for r in run):
+                    for r in run:
+                        free.remove(r)
+                    return Bin(a[0], a[1], 0, ncols * V.COL_HW)
             return None
         if free:
             a = free.pop(0)
             return Bin(a[0], a[1], 0, V.COL_HW)
         return None
 
-    for c in sorted(clusters, key=lambda c: (-c['px'].shape[0], -hw_of(c), c['sheet'], c['rect'], str(c['where']))):
+    # 4.2b: multi-page items (wider than 256 texels) first, each in its own run of columns from a page's left edge (u 0)
+    def multi(c):
+        return hw_of(c) > (V.COL_HW if c['depth'] == 4 else 2 * V.COL_HW)
+
+    for c in sorted(clusters, key=lambda c: (not multi(c), -c['px'].shape[0], -hw_of(c), c['sheet'], c['rect'], str(c['where']))):
         h, hw = c['px'].shape[0], hw_of(c)
-        wide = hw > V.COL_HW
-        # best fit: the open bin where the item's top ends lowest (ties: the earlier bin)
+        pg = V.COL_HW if c['depth'] == 4 else 2 * V.COL_HW  # halfwords per texture page at the item's depth
         spot, best = None, None
-        split = c['depth'] == 4
-        for b in bins:
-            if hw <= b.width:
-                cand = b.peek(hw, h, split and b.width > V.COL_HW)
-                if cand and (best is None or cand[1] < best[1][1]):
-                    best = (b, cand)
-        if best:
-            b = best[0]
-            spot = b.place(hw, h, split and b.width > V.COL_HW)
-        if not spot:
-            b = new_bin(wide)
+        if multi(c):
+            b = new_bin(True, -(-hw // pg) * pg // V.COL_HW)
             if b is None:
                 over.append(c)
                 continue
             bins.append(b)
             spot = b.place(hw, h)
+        else:
+            wide = hw > V.COL_HW
+            # best fit: the open bin where the item's top ends lowest (ties: the earlier bin); never across a page
+            for b in bins:
+                if hw <= b.width:
+                    cand = b.peek(hw, h, pg if b.width > pg else False)
+                    if cand and (best is None or cand[1] < best[1][1]):
+                        best = (b, cand)
+            if best:
+                b = best[0]
+                spot = b.place(hw, h, pg if b.width > pg else False)
+            if not spot:
+                b = new_bin(wide)
+                if b is None:
+                    over.append(c)
+                    continue
+                bins.append(b)
+                spot = b.place(hw, h)
         c['bin'] = b
         c['hw0'] = spot[0]  # halfwords from the bin's left edge
-        # texels in the item's page: a 4-bit page is one column (the half of a two-column bin the item is in), an
-        # 8-bit page starts at the bin
-        c['page_col'] = b.col + (spot[0] // V.COL_HW if c['depth'] == 4 else 0)
-        c['u'] = (spot[0] % V.COL_HW) * 4 if c['depth'] == 4 else spot[0] * 2
+        # texels in the item's (first) page: pages start at the bin's left edge, every COL_HW (4-bit) / 2 * COL_HW (8-bit)
+        c['page_col'] = b.col + (spot[0] // pg) * (pg // V.COL_HW)
+        c['u'] = (spot[0] % pg) * (4 if c['depth'] == 4 else 2)
         c['v'] = spot[1]
     if over:
         kb = sum(c['px'].size // (4 if c['depth'] == 4 else 2) for c in over) * 2 // 1024
@@ -433,6 +507,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     # only if every frame using it comes from a HALVABLE file, character art if any does from a PLAYER_LIKE one
     rects = {}                                  # (placement, sheet) -> set(rect)
     halvable, charart = {}, set()
+    always_halvable = {}                        # every frame using the rect comes from a HALVABLE file (any plan step)
     for path, _, keys in files:
         for ai, (sh, x, y, w, h) in keys:
             where = sel[path][ai]
@@ -442,9 +517,10 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
                 if x1 > x0 and y1 > y0:
                     k = (where, sh, (x0, y0, x1 - x0, y1 - y0))
-                    t = HALF_RULES.get(path)
+                    t = HALF_RULES.get(path, HALF_RULES.get(sh))
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)
+                    always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
                     if path in PLAYER_LIKE or path.startswith('Players/'):
                         charart.add(sh)
             if where is None or sh is None or w <= 0 or h <= 0:
@@ -491,9 +567,15 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                      and k[2][0] + k[2][2] <= r[0] + r[2] and k[2][1] + k[2][3] <= r[1] + r[3]]
             ts = [halvable[k] for k in inner]
             half = bool(ts) and all(t is not None for t in ts) and max(w, h) >= max(ts)
+            # 4.2b: wider or taller than a texture page (the menu's 294 x 162 diorama backdrop): halved whatever the plan
+            # step, when every frame using it may be (else the error below)
+            if max(w, h) > PAGE and inner and all(always_halvable[k] for k in inner):
+                half = True
             px = halve(im[y:y + h, x:x + w]) if half else im[y:y + h, x:x + w]
-            if px.shape[0] > PAGE or px.shape[1] > PAGE:
+            if px.shape[0] > PAGE or px.shape[1] > 4 * PAGE:
                 raise AtlasError('%s %s is larger than a texture page' % (sh, r))
+            # 4.2b: wider than a page (the menu dioramas' 512 / 1024-texel strips): pack() gives it adjacent pages from
+            # a page's left edge and the drawer takes one 256-texel piece per page
             cols = set(np.unique(px).tolist()) - {0}
             clusters.append(dict(where=where, sheet=sh, rect=r, px=px, half=half, colors=cols, depth=4 if len(cols) <= 15 else 8))
 
@@ -595,6 +677,11 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 bind += MISSING
                 counts['unplaced'] += 1
                 continue
+            H_, W_ = sheets.get(sh).shape
+            if x >= W_ or y >= H_ or x + w <= 0 or y + h <= 0:  # 4.2b: wholly outside its sheet (PhantomRuby.bin anim 2)
+                bind += MISSING
+                counts['unplaced'] += 1
+                continue
             bd = binding(where, sh, max(0, x), max(0, y), w, h)
             if bd is None:
                 raise AtlasError('%s: no cluster for %s %s' % (name, path, (sh, x, y, w, h)))
@@ -673,7 +760,8 @@ def build_fit(data, disc_data, folder, scene_id, character='sonic'):
         if res[0] is not None:
             desc = 'none' if n == 0 else '; '.join(
                 '%s >= %d px' % (lab, min((t for f, t in HALF_RULES.items() if f in grp), default=0))
-                for lab, grp in (('bosses', HALF_BOSS), ('effects', HALF_EFFECT), ('presentation', HALF_PRESENT), ('HUD', HALF_HUD))
+                for lab, grp in (('bosses', HALF_BOSS), ('effects', HALF_EFFECT), ('pictures', HALF_PICTURE),
+                                 ('presentation', HALF_PRESENT), ('HUD', HALF_HUD))
                 if any(f in HALF_RULES for f in grp))
             return res[0], res[1] + '\n  big sprites at half resolution: %s' % desc, *res[2:]
         last = res

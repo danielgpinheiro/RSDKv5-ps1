@@ -156,6 +156,8 @@ def draw_sprite(out, mask, e, vram, cluts, colour):
                 idx = cluts[slot][nib] if nib else 0
             if idx:
                 f = modulate(int(colour[idx]), mod)
+                # 4.2b: a masked draw over an approximate pixel (a half-resolution mask frame's edge) is approximate
+                under = mode == -2 and mask[sy, sx] == 2
                 if mode == -2:
                     if int(out[sy, sx]) == MASK_PS1:
                         out[sy, sx] = f
@@ -164,7 +166,7 @@ def draw_sprite(out, mask, e, vram, cluts, colour):
                 else:
                     for _ in range(passes):
                         out[sy, sx] = blend(int(out[sy, sx]), f, mode)
-                mask[sy, sx] = 2 if half else 1
+                mask[sy, sx] = 2 if (half or under) else 1
 
 
 def texel_atlas(vram, cluts, attr, tu, tv):
@@ -244,7 +246,8 @@ def render(cap, folder, scene_id):
     colour = np.array([0] + [clut_colour(int(c)) for c in pal[1:]], np.uint16)
     global MASK_PS1
     MASK_PS1 = (ps1_colour(mask_c) & 0x7FFF) if mask_c else None
-    out = np.zeros((240, 320), np.uint16)
+    # the frame's clear: black; while a mask colour is set the port forces bit 15 over it (4.1b)
+    out = np.full((240, 320), 0x8000 if mask_c else 0, np.uint16)
     other_bank = 0
     calls = sorted(glob.glob(os.path.join(cap, 'sl_*_*.bin')), key=lambda p: int(re.findall(r'sl_(\d+)_', p)[0]))
     mask = np.zeros((240, 320), np.uint8)  # 1 = a sprite pixel, 2 = approximate (half-res / rotated sprite, GPU line / face)
@@ -305,16 +308,23 @@ def render(cap, folder, scene_id):
                 mask[max(0, y):max(0, min(240, y + a10)), max(0, x):max(0, min(320, x + a9))] = 2
             continue
         if kind == 'flat':  # a flat rectangle as sent (the GPU keeps each channel's top 5 bits; mask bit 0)
-            _, mode1, passes, _, r8, g8, b8, x, y, w, h = path
+            _, mode1, passes, masked, r8, g8, b8, x, y, w, h = path
             f = (r8 >> 3) | (g8 >> 3) << 5 | (b8 >> 3) << 10
+            # 4.2b: with a mask colour set, bit 15 is forced unless the PC would store the mask colour (RGB565) there;
+            # `masked` (INK_MASKED): only over the mask colour's pixels
+            c565 = (r8 >> 3) << 11 | (g8 >> 2) << 5 | (b8 >> 3)
+            bit = 0x8000 if (MASK_PS1 is not None and c565 != mask_c) else 0
             for sy in range(max(0, y), min(240, y + h)):
                 for sx in range(max(0, x), min(320, x + w)):
+                    under = masked and mask[sy, sx] == 2  # over an approximate pixel: approximate (as masked sprites)
+                    if masked and int(out[sy, sx]) != MASK_PS1:
+                        continue
                     if mode1 == 0:
-                        out[sy, sx] = f
+                        out[sy, sx] = f | bit
                     else:
                         for _ in range(passes):
-                            out[sy, sx] = blend(int(out[sy, sx]), f, mode1 - 1) & 0x7FFF  # a flat pixel's mask bit is 0
-                    mask[sy, sx] = 1
+                            out[sy, sx] = (blend(int(out[sy, sx]), f, mode1 - 1) & 0x7FFF) | bit
+                    mask[sy, sx] = 2 if under else 1
             continue
         if kind == 'quad':
             a, b, d = path

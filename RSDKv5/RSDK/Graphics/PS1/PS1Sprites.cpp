@@ -55,6 +55,8 @@ volatile uint32 g_ps1DrawLogCount = 0;
 namespace RSDK
 {
 // PS1LayersFrameBegin: this frame's counters (and the draw log) start over
+volatile uint32 g_ps1SpriteWidePieces = 0; // 4.2b: frames drawn as pieces of several texture pages (GDB)
+
 void PS1SpritesFrameBegin()
 {
     // every counter read once: the linker keeps them (one only reachable from code the compiler folded away would go,
@@ -92,6 +94,7 @@ struct PS1Ink {
     int32 mode, passes;
     uint32 mod;
     bool maskTest; // 4.1b: INK_MASKED, drawn with the GPU's mask test on
+    bool forceMask; // 4.2b: a flat colour other than the mask colour while one is set: bit 15 forced (masked sprites skip it)
 };
 
 // A palette colour as a CLUT entry (PS1Layers.cpp's PS1Colour: the mask colour keeps STP clear, 4.1b)
@@ -107,7 +110,7 @@ inline uint16 PS1ClutColour(uint16 c)
 // False: nothing to draw (or an ink not done: counted)
 bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
 {
-    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false, ink.forceMask = false;
     switch (inkEffect) {
         case INK_NONE: return true;
         case INK_MASKED: // only where the framebuffer holds the mask colour (bit 15 clear: its CLUT entries' STP is 0)
@@ -465,7 +468,26 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
     }
     if (ink.maskTest) // 4.1b: INK_MASKED: only over bit-15-clear pixels (the mask colour's)
         PS1ChainMaskControl(false, true);
-    bool drawn = PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink);
+    bool drawn;
+    int32 tw = half ? (w + 1) >> 1 : w;
+    if (frame->ps1U + tw <= 256) {
+        drawn = PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink);
+    }
+    else {
+        // 4.2b: wider than a texture page (the menu diorama's 1024-pixel terrain): the atlas stored it from u 0 over
+        // adjacent pages (tools/gfx/build_atlas.py pack): one piece of 256 texels per page, the next page 1 column
+        // (4-bit) or 2 (8-bit) to the right
+        int32 d = half ? 2 : 1, step = (tpage & 0x80) ? 2 : 1;
+        drawn = false;
+        for (int32 k = 0, t0 = 0; t0 < tw; ++k, t0 += 256) {
+            int32 sx0 = t0 * d, sw = (tw - t0 < 256 ? tw - t0 : 256) * d;
+            if (sx0 + sw > w)
+                sw = w - sx0;
+            int32 sx = (direction & FLIP_X) ? x + w - sx0 - sw : x + sx0;
+            drawn |= PS1TexRect(sx, y, sw, h, 0, frame->ps1V, tpage + (uint32)(k * step), clut, direction, half, ink);
+        }
+        g_ps1SpriteWidePieces = g_ps1SpriteWidePieces + 1;
+    }
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
     if (!drawn)
@@ -595,7 +617,10 @@ static_assert(PS1_EDGE_ROWS * sizeof(PS1Edge) <= 1024, "the edge buffer must fit
 bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink &ink)
 {
     uint32 r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
-    ink.mode = -1, ink.passes = 1, ink.mod = 0x80;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false;
+    // 4.2b: as lines (4.1b): with a mask colour set, a flat pixel keeps bit 15 clear only if the PC would store the mask
+    // colour there (RGB565 as rgb32To16), so INK_MASKED sprites draw over exactly the PC's pixels
+    ink.forceMask = maskColor && (uint16)(rgb32To16_R[r] | rgb32To16_G[g] | rgb32To16_B[b]) != (uint16)maskColor;
     switch (inkEffect) {
         case INK_NONE: break;
         case INK_BLEND: ink.mode = 0; break;
@@ -618,6 +643,13 @@ bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink 
             ink.mode = inkEffect == INK_ADD ? 1 : 2;
             break;
         }
+        case INK_MASKED: // 4.2b: only over the mask colour's pixels (bit 15 clear), as masked sprites (4.1b)
+            if (!maskColor) {
+                g_ps1PrimTodo = g_ps1PrimTodo + 1;
+                return false;
+            }
+            ink.maskTest = true;
+            break;
         default: g_ps1PrimTodo = g_ps1PrimTodo + 1; return false;
     }
     bgr = b << 16 | g << 8 | r;
@@ -630,6 +662,8 @@ void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &i
     if (w <= 0 || h <= 0)
         return;
     uint32 cmd = 0x60000000 | bgr | (ink.mode >= 0 ? 0x02000000 : 0);
+    if (ink.forceMask || ink.maskTest)
+        PS1ChainMaskControl(ink.forceMask, ink.maskTest);
     for (int32 p = 0; p < ink.passes; ++p) {
         uint32_t *wr = PS1ChainSpanBegin(ink.mode >= 0 ? 5 : 4);
         if (!wr)
@@ -643,9 +677,11 @@ void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &i
         wr[1 + n++] = (uint32)h << 16 | (uint32)w;
         PS1ChainSpanEnd(wr, n, wr + 1 + n);
     }
+    if (ink.forceMask || ink.maskTest)
+        PS1ChainMaskControl(false, false);
     g_ps1FlatDraws = g_ps1FlatDraws + 1;
 #if PS1_DEBUG_BIGRAM
-    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, 0, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF), (uint16)(bgr >> 16), x, y, w,
+    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, (uint8)ink.maskTest, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF), (uint16)(bgr >> 16), x, y, w,
                   h);
 #endif
 }
@@ -663,6 +699,8 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
     bool semi  = ink.mode >= 0;
     uint32 cmd = 0x60000000 | bgr | (semi ? 0x02000000 : 0);
     int32 frags = (b.n + 3) >> 2;
+    if (ink.forceMask || ink.maskTest)
+        PS1ChainMaskControl(ink.forceMask, ink.maskTest);
     for (int32 p = 0; p < ink.passes; ++p) {
         uint32_t *w = PS1ChainSpanBegin(frags * 14);
         if (!w)
@@ -684,7 +722,7 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
                 w += 3, fw += 3;
 #if PS1_DEBUG_BIGRAM
                 if (!p)
-                    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, 0, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF),
+                    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, (uint8)ink.maskTest, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF),
                                   (uint16)(bgr >> 16), b.r[k][0], b.r[k][1], b.r[k][2], b.r[k][3]);
 #endif
             }
@@ -692,6 +730,8 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
         PS1ChainSpanEnd(hdr, fw, w);
         PS1FadeRecordSpan(first, b.n, semi); // 3.6b: one record for the span's colours
     }
+    if (ink.forceMask || ink.maskTest)
+        PS1ChainMaskControl(false, false);
     g_ps1FlatDraws = g_ps1FlatDraws + b.n;
     b.n            = 0;
 }
