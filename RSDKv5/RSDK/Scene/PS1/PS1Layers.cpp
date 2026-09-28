@@ -27,6 +27,7 @@ volatile uint32 g_ps1LayerHbl    = 0; // hblanks spent drawing layers (this fram
 volatile uint32 g_ps1LayerSolidRuns = 0; // one-colour line runs drawn as rectangles (this frame)
 volatile uint32 g_ps1LayerRowTables = 0; // tile rows drawn from a column table (this frame)
 volatile uint32 g_ps1LayerUniform   = 0; // layers drawn from their uniform scroll, no scanlines (this frame)
+volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
 volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles a frame): scan, gather, sprites, quads
@@ -43,41 +44,84 @@ inline uint16 PS1T() { return 0; }
 #define PS1_LT_ADD(i, v) ((void)0)
 #endif
 #define PS1_SCREEN_PX   320
-#define PS1_LAYER_PAGES 8
 #define PS1_BAND_MAX    24 // pieces of one band: 320 / 16 + 1
-// One band's sprite pieces in screen order, staged in the scratchpad (1 KB of 1-cycle RAM at 1F800000h, psx-spx
-// "Memory Map"; nothing else in Mania uses it): the sprite's xy and tex words and its texture page's slot. DrawBand then
-// writes them per page into one arena span (a texpage word + up to 4 16x16 or 3 sized sprites per fragment).
 #define PS1_COL_MAX     96 // columns of a tile row's table (320 px + the bands' spread)
-struct PS1BandStage {
-    uint32_t xy[PS1_BAND_MAX];
-    uint32_t tex[PS1_BAND_MAX];
-    uint8 page[PS1_BAND_MAX];
-    uint16 tpage[PS1_LAYER_PAGES];
-    // the column table of a tile row (DrawRowBands): texture word (u | v << 8 | CLUT << 16) and flags
-    uint32_t colTex[PS1_COL_MAX];
-    uint8 colFlags[PS1_COL_MAX]; // bits 0-2 page slot, 4 H-flip, 5 V-flip, 6 empty, 7 no image
+// The column table of a tile row (DrawRowBands), in the scratchpad (1 KB of 1-cycle RAM at 1F800000h, psx-spx "Memory
+// Map"; free outside the layer drawer's and the flat primitives' own calls): per column the texture word
+// (u | v << 8 | CLUT << 16), its texture page and flags
+struct PS1ColTable {
+    uint32_t tex[PS1_COL_MAX];
+    uint16 page[PS1_COL_MAX];
+    uint8 flags[PS1_COL_MAX]; // 4 H-flip, 5 V-flip, 6 empty, 7 no image
 };
-static_assert(sizeof(PS1BandStage) <= 1024, "the band stage must fit the scratchpad");
+static_assert(sizeof(PS1ColTable) <= 1024, "the column table must fit the scratchpad");
 #define PS1_COL_HFLIP 0x10
 #define PS1_COL_VFLIP 0x20
 #define PS1_COL_EMPTY 0x40
 #define PS1_COL_MISS  0x80
-#define PS1_BAND_STAGE ((PS1BandStage *)0x1F800000)
-uint32_t s_quads[24 * 18];
-int32 s_quadWords = 0;
+#define PS1_COL_TABLE ((PS1ColTable *)0x1F800000)
 
 // RGB565 (fullPalette) -> PS1 BGR555, STP set on every visible entry (0x0000 is the GPU's transparent texel: an opaque
 // black must read 0x8000; STP also makes semi-transparent primitives blend every texel, as Sonic CD's CLUTs)
 inline uint16 PS1Colour(uint16 c) { return (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10)); }
 
+// A band's primitives written straight into an arena span as they are gathered (3.3d): each primitive whole in a
+// fragment of <= 14 words; a texpage word only where the page changes (a textured quad carries its own page, which
+// then is the GPU's texpage: psx-spx "Texpage Attribute"); pieces of a band never overlap, so their order is free.
+struct PS1Out {
+    uint32_t *base, *end, *hdr, *w;
+    int32 fw;    // words in the open fragment
+    uint32 page; // the GPU's texpage after the last primitive written (0xFFFFFFFF: unknown)
+};
+#define PS1_OUT_RESERVE (PS1_BAND_MAX * 15) // a fragment per piece, texpage included; flipped pieces may split into more
+
+inline bool PS1OutBegin(PS1Out &o)
+{
+    o.base = PS1ChainSpanBegin(PS1_OUT_RESERVE);
+    if (!o.base)
+        return false;
+    o.end = o.base + PS1_OUT_RESERVE, o.hdr = o.base, o.w = o.base + 1, o.fw = 0;
+    return true;
+}
+
+inline void PS1OutEnd(PS1Out &o)
+{
+    if (o.base && o.fw)
+        PS1ChainSpanEnd(o.hdr, o.fw, o.w);
+    o.base = NULL;
+}
+
+// Room for a primitive of n words: a new fragment when the open one would pass 14 words, a new span when the
+// reservation would end (rare: flipped pieces split at page edges). False: the arena is full (counted by the chain)
+__attribute__((always_inline)) inline bool PS1OutRoom(PS1Out &o, int32 n)
+{
+    if (!o.base)
+        return false;
+    bool close = o.fw + n > 14;
+    if (o.w + n + close > o.end) {
+        uint32 page = o.page;
+        PS1OutEnd(o);
+        if (!PS1OutBegin(o))
+            return false;
+        o.page = page;
+        close  = false;
+    }
+    if (close) {
+        *o.hdr = (uint32_t)o.fw << 24 | ((uintptr_t)o.w & 0xFFFFFF);
+        o.hdr  = o.w++;
+        o.fw   = 0;
+    }
+    return true;
+}
+
 // A textured quad (GP0 2Ch, colour 0x80: texel colours unchanged) over texels [uL, uR) x [vT, vB), which may run
 // backwards; corners A B C D = top-left, top-right, bottom-left, bottom-right.
-__attribute__((always_inline)) inline void Quad(int32 x, int32 y, int32 w, int32 h, uint32 clut, uint32 tpage, int32 uL, int32 uR,
-                                                int32 vT, int32 vB)
+__attribute__((always_inline)) inline void Quad(PS1Out &o, int32 x, int32 y, int32 w, int32 h, uint32 clut, uint32 tpage, int32 uL,
+                                                int32 uR, int32 vT, int32 vB)
 {
-    uint32_t *q = &s_quads[s_quadWords];
-    s_quadWords += 9;
+    if (!PS1OutRoom(o, 9))
+        return;
+    uint32_t *q = o.w;
     uint32 xl = (uint16)x, xr = (uint16)(x + w);
     uint32 yt = (uint32)(uint16)y << 16, yb = (uint32)(uint16)(y + h) << 16;
     q[0] = 0x2C808080;
@@ -89,10 +133,12 @@ __attribute__((always_inline)) inline void Quad(int32 x, int32 y, int32 w, int32
     q[6] = (uint32)(uint8)vB << 8 | (uint8)uL;
     q[7] = yb | xr;
     q[8] = (uint32)(uint8)vB << 8 | (uint8)uR;
+    o.w += 9, o.fw += 9, o.page = tpage;
 }
 
 // Rows [ty0, ty0 + h) of a flipped tile (rows counted before flipping) at screen (sx, sy)
-__attribute__((optimize("O2"))) void FlippedPiece(int32 sx, int32 sy, int32 u, int32 v, int32 ty0, int32 h, bool fx, bool fy, uint32 clut, uint32 tpage)
+__attribute__((always_inline)) inline void FlippedPiece(PS1Out &o, int32 sx, int32 sy, int32 u, int32 v, int32 ty0, int32 h, bool fx,
+                                                        bool fy, uint32 clut, uint32 tpage)
 {
     int32 uL = fx ? u + 15 : u, uR = fx ? u - 1 : u + 16;
     int32 vT = fy ? v + 15 - ty0 : v + ty0, dv = fy ? -1 : 1;
@@ -105,88 +151,38 @@ __attribute__((optimize("O2"))) void FlippedPiece(int32 sx, int32 sy, int32 u, i
     if (vB < 0 || vB > 255)
         hh = h - 1, vEdge = vB < 0 ? 0 : 255, vB = vB < 0 ? 0 : 255;
     if (hh > 0) {
-        Quad(sx, sy, w, hh, clut, tpage, uL, uR, vT, vB);
+        Quad(o, sx, sy, w, hh, clut, tpage, uL, uR, vT, vB);
         if (uEdge >= 0)
-            Quad(sx + w, sy, 1, hh, clut, tpage, uEdge, uEdge, vT, vB);
+            Quad(o, sx + w, sy, 1, hh, clut, tpage, uEdge, uEdge, vT, vB);
     }
     if (vEdge >= 0) {
         int32 vLast = vT + (h - 1) * dv;
-        Quad(sx, sy + hh, w, 1, clut, tpage, uL, uR, vLast, vLast);
+        Quad(o, sx, sy + hh, w, 1, clut, tpage, uL, uR, vLast, vLast);
         if (uEdge >= 0)
-            Quad(sx + w, sy + hh, 1, 1, clut, tpage, uEdge, uEdge, vLast, vLast);
+            Quad(o, sx + w, sy + hh, 1, 1, clut, tpage, uEdge, uEdge, vLast, vLast);
     }
 }
 
-// The staged sprites of one band (PS1_BAND_STAGE: n of them, `pages` texture pages) and its quads (s_quads) into the
-// arena: per page, fragments of a texpage word + up to 4 16x16 or 3 sized sprites, all in one span; the quads in another
-__attribute__((optimize("O2"))) void FlushBand(int32 n, int32 pages, int32 h)
+// A sprite piece (16x16: 3 words; a partial band's sized sprite: 4), after a texpage word if the page changed
+__attribute__((always_inline)) inline void SpritePiece(PS1Out &o, uint32 cmd, uint32 xy, uint32 tex, uint32 wh, bool full,
+                                                       uint32 tpage)
 {
-    PS1BandStage *st = PS1_BAND_STAGE;
-    uint16 ts        = PS1T();
-    if (n) {
-        // per fragment: header, texpage, then `per` sprites of `wps` words (16x16: cmd, xy, tex; sized: + wh)
-        bool full  = h == TILE_SIZE;
-        int32 per  = full ? 4 : 3, wps = full ? 3 : 4;
-        uint32 cmd = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
-        int32 maxWords = (n / per + pages) * (2 + per * wps);
-        uint32_t *w    = PS1ChainSpanBegin(maxWords);
-        if (w) {
-            uint32_t *hdr = NULL;
-            int32 fw      = 0;
-            for (int32 k = 0; k < pages; ++k) {
-                int32 inFrag = per; // start a fragment at the page's first sprite
-                for (int32 i = 0; i < n; ++i) {
-                    if (st->page[i] != k)
-                        continue;
-                    if (inFrag == per) {
-                        if (hdr)
-                            *hdr = (uint32_t)fw << 24 | ((uintptr_t)w & 0xFFFFFF);
-                        hdr  = w;
-                        *++w = 0xE1000000 | st->tpage[k];
-                        ++w;
-                        fw     = 1;
-                        inFrag = 0;
-                    }
-                    w[0] = cmd;
-                    w[1] = st->xy[i];
-                    w[2] = st->tex[i];
-                    if (!full)
-                        w[3] = wh;
-                    w += wps;
-                    fw += wps;
-                    ++inFrag;
-                }
-            }
-            PS1ChainSpanEnd(hdr, fw, w);
-        }
-    }
-    uint16 tq = PS1T();
-    PS1_LT_ADD(2, tq - ts);
-    if (s_quadWords) {
-        // the band's quads into one span: a fragment per quad (9 words), one chain call
-        int32 nq    = s_quadWords / 9;
-        uint32_t *w = PS1ChainSpanBegin(nq * 10);
-        if (w) {
-            const uint32_t *q = s_quads;
-            uint32_t *hdr     = w;
-            for (int32 i = 0; i < nq; ++i, q += 9) {
-                if (i)
-                    *hdr = 9u << 24 | ((uintptr_t)w & 0xFFFFFF);
-                hdr  = w;
-                w[1] = q[0], w[2] = q[1], w[3] = q[2], w[4] = q[3], w[5] = q[4];
-                w[6] = q[5], w[7] = q[6], w[8] = q[7], w[9] = q[8];
-                w += 10;
-            }
-            PS1ChainSpanEnd(hdr, 9, w);
-        }
-        s_quadWords = 0;
-    }
-    PS1_LT_ADD(3, PS1T() - tq);
+    bool newPage = tpage != o.page;
+    int32 n      = (full ? 3 : 4) + newPage;
+    if (!PS1OutRoom(o, n))
+        return;
+    uint32_t *w = o.w;
+    if (newPage)
+        *w++ = 0xE1000000 | tpage, o.page = tpage;
+    w[0] = cmd, w[1] = xy, w[2] = tex;
+    if (!full)
+        w[3] = wh;
+    o.w += n, o.fw += n;
 }
 
 // Screen lines [sy, sy + h) showing layer rows [ly, ly + h) (inside one tile row), the line's left edge at layer x.
 // Hot (hundreds of pieces a frame): -O2, the tiles fetched walking the 4x4 chunks (one chunk index per 4 tiles), the
-// tile image read as three halfwords (u | v << 8, texpage, CLUT), the last texture page's slot cached.
+// tile image read as three halfwords (u | v << 8, texpage, CLUT), every piece written straight into the arena.
 __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
     uint16 tg              = PS1T();
@@ -200,11 +196,15 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
     const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
     const uint16 *chunk    = pool + ((uint32)chunkRow[tx >> 2] << 4);
     int32 sub              = tx & 3;
-    PS1BandStage *st       = PS1_BAND_STAGE;
-    s_quadWords            = 0;
-    int32 n = 0, pages = 0, pieces = 0, misses = 0, slot = 0;
-    uint32 lastTPage = 0xFFFFFFFF, yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
+    int32 pieces = 0, misses = 0;
+    bool full   = h == TILE_SIZE;
+    uint32 cmd  = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
+    uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
     uint32 vFlipRow = (uint32)(15 - v0) << 8; // one line of a V-flipped tile: its mirrored row
+    PS1Out o;
+    o.page = 0xFFFFFFFF;
+    if (!PS1OutBegin(o))
+        return;
     for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
@@ -233,7 +233,7 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         ++pieces;
         if (t & 0xC00) {
             if ((t & 0xC00) != 0x800 || h != 1) {
-                FlippedPiece(sx, sy, uv & 0xFF, uv >> 8, v0, h, (t >> 10) & 1, (t >> 11) & 1, clut, tpage);
+                FlippedPiece(o, sx, sy, uv & 0xFF, uv >> 8, v0, h, (t >> 10) & 1, (t >> 11) & 1, clut, tpage);
                 continue;
             }
             uv += vFlipRow;
@@ -241,28 +241,12 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         else {
             uv += vRow;
         }
-        if (tpage != lastTPage) {
-            slot = 0;
-            while (slot < pages && st->tpage[slot] != tpage) ++slot;
-            if (slot == pages) {
-                if (pages == PS1_LAYER_PAGES) {
-                    ++misses;
-                    continue;
-                }
-                st->tpage[pages++] = (uint16)tpage;
-            }
-            lastTPage = tpage;
-        }
-        st->xy[n]   = (uint32)(uint16)sx | yWord;
-        st->tex[n]  = uv | clut << 16;
-        st->page[n] = (uint8)slot;
-        ++n;
+        SpritePiece(o, cmd, (uint32)(uint16)sx | yWord, uv | clut << 16, wh, full, tpage);
     }
+    PS1OutEnd(o);
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
-    uint16 ts = PS1T();
-    PS1_LT_ADD(1, ts - tg);
-    FlushBand(n, pages, h);
+    PS1_LT_ADD(1, PS1T() - tg);
     g_ps1LayerBands  = g_ps1LayerBands + 1;
     g_ps1LayerPieces = g_ps1LayerPieces + pieces;
 }
@@ -304,7 +288,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     const uint16 *tileImage = TileTable();
     const uint8 *images     = s_ps1TileBlob + s_imgOff;
     uint32 bankClut         = (uint32)(0 | (240 + bands[0].bank) << 6);
-    PS1BandStage *st        = PS1_BAND_STAGE;
+    PS1ColTable *ct         = PS1_COL_TABLE;
     int32 tx                = c0 + dmin;
     if (tx < 0)
         tx += xsize;
@@ -314,8 +298,6 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
     const uint16 *chunk    = pool + ((uint32)chunkRow[tx >> 2] << 4);
     int32 sub              = tx & 3;
-    int32 pages = 0, slot = 0;
-    uint32 lastTPage = 0xFFFFFFFF;
     for (int32 k = 0; k < cols; ++k) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) {
@@ -327,12 +309,12 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
             chunk = pool + ((uint32)chunkRow[tx >> 2] << 4);
         }
         if (t == 0xFFFF) {
-            st->colFlags[k] = PS1_COL_EMPTY;
+            ct->flags[k] = PS1_COL_EMPTY;
             continue;
         }
         uint16 img = tileImage[t & 0x3FF];
         if (img == PS1_TILE_NONE) {
-            st->colFlags[k] = PS1_COL_MISS;
+            ct->flags[k] = PS1_COL_MISS;
             continue;
         }
         if (t & 0x400) { // an H-flipped copy (the .ptl's pairs, 3.3b) makes the piece a sprite
@@ -343,51 +325,43 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
         __asm__("" : "+r"(img2), "+r"(img4)); // 6-byte records: 2i + 4i (GCC folds shifts into a ~12-cycle mult)
         const uint8 *ti = images + img2 + img4;
-        uint32 tpage    = *(const uint16 *)(ti + 2);
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)
             clut = bankClut;
-        if (tpage != lastTPage) {
-            slot = 0;
-            while (slot < pages && st->tpage[slot] != tpage) ++slot;
-            if (slot == pages) {
-                if (pages == PS1_LAYER_PAGES) {
-                    st->colFlags[k] = PS1_COL_MISS;
-                    continue;
-                }
-                st->tpage[pages++] = (uint16)tpage;
-            }
-            lastTPage = tpage;
-        }
-        st->colTex[k]   = *(const uint16 *)ti | clut << 16;
-        st->colFlags[k] = (uint8)(slot | (t & 0xC00) >> 6); // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V)
+        ct->tex[k]   = *(const uint16 *)ti | clut << 16;
+        ct->page[k]  = *(const uint16 *)(ti + 2);
+        ct->flags[k] = (uint8)((t & 0xC00) >> 6); // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V)
     }
     PS1_LT_ADD(1, PS1T() - tg);
-    // each band from the table
+    // each band from the table, straight into the arena
     int32 misses = 0, pieces = 0;
     for (int32 b = 0; b < count; ++b) {
-        uint16 tb      = PS1T();
-        PS1Band *band  = &bands[b];
+        uint16 tb     = PS1T();
+        PS1Band *band = &bands[b];
         int32 h = band->h, v0 = band->ly & 15;
-        int32 sx       = -(band->x & 15);
-        int32 k        = band->d - dmin;
-        uint32 yWord   = (uint32)(uint16)band->sy << 16;
+        int32 sx      = -(band->x & 15);
+        int32 k       = band->d - dmin;
+        bool full     = h == TILE_SIZE;
+        uint32 cmd    = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
+        uint32 yWord  = (uint32)(uint16)band->sy << 16;
         uint32 vRow = (uint32)v0 << 8, vFlipRow = (uint32)(15 - v0) << 8;
-        int32 n        = 0;
-        s_quadWords    = 0;
+        PS1Out o;
+        o.page = 0xFFFFFFFF;
+        if (!PS1OutBegin(o))
+            break;
         for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE, ++k) {
-            uint32 f = st->colFlags[k];
+            uint32 f = ct->flags[k];
             if (f & (PS1_COL_EMPTY | PS1_COL_MISS)) {
                 if (f & PS1_COL_MISS)
                     ++misses;
                 continue;
             }
-            uint32 tex = st->colTex[k];
+            uint32 tex = ct->tex[k], tpage = ct->page[k];
             ++pieces;
             if (f & (PS1_COL_HFLIP | PS1_COL_VFLIP)) {
                 if ((f & PS1_COL_HFLIP) || h != 1) {
-                    FlippedPiece(sx, band->sy, tex & 0xFF, (tex >> 8) & 0xFF, v0, h, f & PS1_COL_HFLIP, f & PS1_COL_VFLIP,
-                                 tex >> 16, st->tpage[f & 7]);
+                    FlippedPiece(o, sx, band->sy, tex & 0xFF, (tex >> 8) & 0xFF, v0, h, f & PS1_COL_HFLIP, f & PS1_COL_VFLIP, tex >> 16,
+                                 tpage);
                     continue;
                 }
                 tex += vFlipRow;
@@ -395,18 +369,15 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
             else {
                 tex += vRow;
             }
-            st->xy[n]   = (uint32)(uint16)sx | yWord;
-            st->tex[n]  = tex;
-            st->page[n] = (uint8)(f & 7);
-            ++n;
+            SpritePiece(o, cmd, (uint32)(uint16)sx | yWord, tex, wh, full, tpage);
         }
+        PS1OutEnd(o);
         PS1_LT_ADD(1, PS1T() - tb);
-        FlushBand(n, pages, h);
     }
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
-    g_ps1LayerBands  = g_ps1LayerBands + count;
-    g_ps1LayerPieces = g_ps1LayerPieces + pieces;
+    g_ps1LayerBands     = g_ps1LayerBands + count;
+    g_ps1LayerPieces    = g_ps1LayerPieces + pieces;
     g_ps1LayerRowTables = g_ps1LayerRowTables + 1;
 }
 
@@ -494,6 +465,7 @@ void RSDK::PS1LayersFrameBegin()
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
+    for (int32 l = 0; l < 8; ++l) g_ps1LayerHblBy[l] = 0;
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
     s_clutRecCount = s_colourRecCount = 0;
@@ -603,7 +575,9 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
             cy += h;
         }
         PS1_LT_ADD(0, PS1T() - tl);
-        g_ps1LayerHbl     = g_ps1LayerHbl + PS1HblanksSince(t0);
+        uint32 dt         = PS1HblanksSince(t0);
+        g_ps1LayerHbl     = g_ps1LayerHbl + dt;
+        g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
         g_ps1LayerUniform = g_ps1LayerUniform + 1;
         return;
     }
@@ -689,5 +663,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     }
 #undef PS1_FLUSH_GROUP
     PS1_LT_ADD(0, PS1T() - tl);
-    g_ps1LayerHbl = g_ps1LayerHbl + PS1HblanksSince(t0);
+    uint32 dt     = PS1HblanksSince(t0);
+    g_ps1LayerHbl = g_ps1LayerHbl + dt;
+    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
 }
