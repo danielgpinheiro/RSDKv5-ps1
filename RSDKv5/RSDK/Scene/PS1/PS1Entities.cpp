@@ -413,8 +413,13 @@ void RSDK::PS1SceneEntitiesPlace()
 
 // Stock copies sizeof(EntityBase) bytes. Here: the source's class (its whole block for a slot-less pointer), into a
 // destination slot block made big enough, the rest of that block cleared.
+extern "C" {
+volatile uint32 g_ps1EntityCopies = 0; // CopyEntity calls (total): they copy inRange / onScreen (3.0f: the passes scan all)
+}
+
 void RSDK::CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
 {
+    g_ps1EntityCopies = g_ps1EntityCopies + 1;
     if (!destEntity || !srcEntity)
         return;
     EntityBase *src = (EntityBase *)srcEntity;

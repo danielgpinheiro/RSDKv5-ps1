@@ -423,6 +423,58 @@ void PS1CameraUnion()
     s_camW = (uint32)maxX - (uint32)minX, s_camH = (uint32)maxY - (uint32)minY;
 }
 
+// 3.0f: a bit per slot that may have inRange or onScreen set. The update pass marks each slot it leaves in range, the
+// draw lists mark each entity whose onScreen they set; every other slot has inRange false and onScreen 0 (its update
+// visit cleared inRange, the late pass cleared onScreen; creating or resetting an entity clears both). Only CopyEntity
+// copies them: after a copy the type-group and late passes visit every slot until the bits are whole again (a late
+// pass with no copy during it). The late pass clears a slot's bit where it clears that slot's own onScreen (a callback
+// that leaves sceneInfo.entity on another entity clears that one's instead, as stock: the slot keeps its bit).
+extern "C" {
+extern volatile uint32 g_ps1EntityCopies; // PS1Entities.cpp
+volatile uint32 g_ps1SlotBitsFull = 0;    // type-group / late passes that visited every slot (total)
+}
+uint32 ps1SlotBits[(ENTITY_COUNT + 31) / 32];
+uint32 s_ps1BitsFrom = 0xFFFFFFFF; // g_ps1EntityCopies when the bits were last whole (never, at first: full passes)
+inline void PS1SlotMark(int32 s) { ps1SlotBits[s >> 5] |= 1u << (s & 31); }
+inline void PS1SlotUnmark(int32 s) { ps1SlotBits[s >> 5] &= ~(1u << (s & 31)); }
+
+// The next marked slot in [s, end), or end (a De Bruijn table finds a word's lowest bit: no CLZ on the R3000)
+const uint8 s_ps1DeBruijn[32] = { 0,  1,  28, 2,  29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4,  8,
+                                  31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6,  11, 5,  10, 9 };
+inline int32 PS1SlotNext(int32 s, int32 end)
+{
+    while (s < end) {
+        uint32 w = ps1SlotBits[s >> 5] >> (s & 31);
+        if (w) {
+            uint32 low = w & (0u - w);
+            s += s_ps1DeBruijn[(low * 0x077CB531u) >> 27];
+            return s < end ? s : end;
+        }
+        s = (s | 31) + 1;
+    }
+    return end;
+}
+
+#if PS1_CHECK_SLOTBITS // evidence build: audits of the bits (GDB reads the counters; must stay 0)
+extern "C" {
+volatile uint32 g_ps1SlotBitsWrong = 0, g_ps1SlotBitsChecks = 0;
+}
+inline bool PS1SlotMarked(int32 s) { return (ps1SlotBits[s >> 5] >> (s & 31)) & 1; }
+// every slot of the ranges with inRange (when `range`) or onScreen set must be marked
+void PS1SlotAudit(bool range)
+{
+    g_ps1SlotBitsChecks = g_ps1SlotBitsChecks + 1;
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s0 = phase ? TEMPENTITY_START : 0, s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+        for (int32 s = s0; s < s1; ++s) {
+            EntityBase *e = objectEntityPtr[s];
+            if (((range && e->inRange) || e->onScreen) && !PS1SlotMarked(s))
+                g_ps1SlotBitsWrong = g_ps1SlotBitsWrong + 1;
+        }
+    }
+}
+#endif
+
 // The three per-frame passes over the slots (ProcessObjects), with the stock semantics: the same slots in the same
 // order (the scene range up to ps1SceneSlotEnd, then the temp range up to ps1TempSlotEnd: the other slots are ghosts
 // with class 0), the same writes, sceneInfo set as stock whenever a callback runs (and, after the pass, to the last
@@ -555,6 +607,7 @@ PS1_HOT void PS1UpdatePass()
         if (inRange) {
             sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
             sceneInfo.entity     = ent;
+            PS1SlotMark(sceneInfo.entitySlot);
             void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
             if (update) {
                 PS1_PROF(0, stageObjectIDs[ent->classID], update());
@@ -576,13 +629,28 @@ PS1_HOT void PS1UpdatePass()
 PS1_HOT void PS1TypeGroupPass()
 {
     EntityBase *ent = NULL;
-    if (ps1SceneSlotEnd > 0) {
-        PS1TypeGroupsCollect(objectEntityPtr, objectEntityPtr + ps1SceneSlotEnd);
-        ent = objectEntityPtr[ps1SceneSlotEnd - 1];
-    }
-    if (ps1TempSlotEnd > TEMPENTITY_START) {
-        PS1TypeGroupsCollect(objectEntityPtr + TEMPENTITY_START, objectEntityPtr + ps1TempSlotEnd);
-        ent = objectEntityPtr[ps1TempSlotEnd - 1];
+    bool whole      = g_ps1EntityCopies == s_ps1BitsFrom;
+    if (!whole)
+        g_ps1SlotBitsFull = g_ps1SlotBitsFull + 1;
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s0 = phase ? TEMPENTITY_START : 0, s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+        if (s1 <= s0)
+            continue;
+        if (whole) { // 3.0f: only the marked slots can be in range
+#if PS1_CHECK_SLOTBITS
+            if (phase == 0)
+                PS1SlotAudit(true);
+#endif
+            for (int32 s = PS1SlotNext(s0, s1); s < s1; s = PS1SlotNext(s + 1, s1)) {
+                EntityBase *e = objectEntityPtr[s];
+                if (e->inRange && e->interaction)
+                    PS1TypeGroupsAdd((uint16)s, e->classID, e->group);
+            }
+        }
+        else {
+            PS1TypeGroupsCollect(objectEntityPtr + s0, objectEntityPtr + s1);
+        }
+        ent = objectEntityPtr[s1 - 1];
     }
     if (ent)
         sceneInfo.entity = ent;
@@ -601,33 +669,73 @@ PS1_HOT EntityBase **PS1LateScan(EntityBase **p, EntityBase **pend)
     return p;
 }
 
+// 3.0f: with whole bits, only the marked slots (the others have inRange false and onScreen 0 already: no callback, the
+// clear a no-op); a CopyEntity during the pass makes the rest of it visit every slot, and the next frame's passes too
 PS1_HOT void PS1LateUpdatePass()
 {
-    EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
-    int32 phase     = 0;
+    uint32 copies   = g_ps1EntityCopies;
+    bool whole      = copies == s_ps1BitsFrom;
+    bool wholeStart = whole;
+#if PS1_CHECK_SLOTBITS
+    if (whole)
+        PS1SlotAudit(true);
+#endif
     EntityBase *ent = NULL; // the last slot visited (after its callback: stock's sceneInfo.entity)
-    for (;;) {
-        if (p >= pend) {
-            if (phase)
+    int32 last      = -1;   // its slot
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s0 = phase ? TEMPENTITY_START : 0;
+        int32 s  = s0;
+        for (;;) {
+            int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd; // a callback may add slots
+            if (whole)
+                s = PS1SlotNext(s, s1);
+            else if (s < s1) { // every slot: the scan settles the ones with no callback
+                EntityBase **q = PS1LateScan(objectEntityPtr + s, objectEntityPtr + s1);
+                int32 qs       = (int32)(q - objectEntityPtr);
+                for (int32 k = s; k < qs; ++k) PS1SlotUnmark(k); // cleared their own onScreen
+                if (qs != s)
+                    ent = q[-1], last = qs - 1;
+                s = qs;
+            }
+            if (s >= s1)
                 break;
-            phase = 1, p = objectEntityPtr + TEMPENTITY_START, pend = objectEntityPtr + ps1TempSlotEnd;
-            continue;
+            EntityBase *e = objectEntityPtr[s];
+            if (e->inRange && objectClassList[stageObjectIDs[e->classID]].lateUpdate) {
+                sceneInfo.entitySlot = s;
+                sceneInfo.entity     = e;
+                PS1_PROF(0, stageObjectIDs[e->classID], objectClassList[stageObjectIDs[e->classID]].lateUpdate());
+                ent           = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
+                ent->onScreen = 0;
+                if (ent == objectEntityPtr[s])
+                    PS1SlotUnmark(s);
+                else
+                    PS1SlotMark(s); // its own onScreen stays: cleared by a later pass
+                if (g_ps1EntityCopies != copies)
+                    whole = false; // a copy: every slot from here on
+            }
+            else {
+                e->onScreen = 0;
+                PS1SlotUnmark(s);
+                ent = e;
+            }
+            last = s;
+            ++s;
         }
-        EntityBase **q = PS1LateScan(p, pend);
-        if (q != p) {
-            ent = q[-1], p = q;
+        if (!wholeStart)
             continue;
-        }
-
-        ent                  = *p;
-        sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
-        sceneInfo.entity     = ent;
-        PS1_PROF(0, stageObjectIDs[ent->classID], objectClassList[stageObjectIDs[ent->classID]].lateUpdate());
-        ent           = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
-        ent->onScreen = 0;
-        pend          = objectEntityPtr + (phase ? ps1TempSlotEnd : ps1SceneSlotEnd);
-        ++p;
+        // stock's last visited slot is the range's last: settled without a callback unless the walk ended on it
+        int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+        if (s1 > s0 && last != s1 - 1)
+            ent = objectEntityPtr[s1 - 1], last = s1 - 1;
     }
+    if (g_ps1EntityCopies == copies)
+        s_ps1BitsFrom = copies; // no copy since the bits were made whole again: whole from here
+#if PS1_CHECK_SLOTBITS
+    if (g_ps1EntityCopies == copies)
+        PS1SlotAudit(false); // after the pass: every unmarked slot's onScreen is 0
+#endif
+    if (!wholeStart)
+        g_ps1SlotBitsFull = g_ps1SlotBitsFull + 1;
     if (ent)
         sceneInfo.entity = ent;
     sceneInfo.entitySlot = ENTITY_COUNT;
@@ -1137,6 +1245,14 @@ void RSDK::ProcessObjectDrawLists()
 #endif
 
                             sceneInfo.entity->onScreen |= validDraw << sceneInfo.currentScreenID;
+#if RETRO_PLATFORM == RETRO_PS1
+                            if (validDraw) { // 3.0f: this entity's onScreen may be set now
+                                int32 ds = sceneInfo.entity == objectEntityPtr[list->entries[i]] ? list->entries[i]
+                                                                                                  : PS1EntitySlotOf(sceneInfo.entity);
+                                if (ds >= 0)
+                                    PS1SlotMark(ds);
+                            }
+#endif
                         }
                     }
 
