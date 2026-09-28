@@ -490,27 +490,33 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         int32 n            = full ? 3 : 4;
         uint32 yWord       = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
         uint32 xyEnd       = yWord + PS1_SCREEN_PX;
+        uint32 vFlip1      = (uint32)(15 - 2 * v0) * 256u; // row v0 -> the mirrored row 15 - v0 (mod 2^32)
         // the first piece may start left of the screen (x -15..0); the others at x >= 1, so their position word is
         // yWord + x and steps by 16 (3.3j)
 #define PS1_LAKE_PIECE(sxW, xyW)                                                                                       \
     do {                                                                                                               \
-        uint32 pf_ = c->pf, tex_ = c->tex;                                                                             \
-        if (pf_ >> 16) {                                                                                               \
+        uint32 pf_ = c->pf, tex_ = c->tex + vRow;                                                                      \
+        if (__builtin_expect(pf_ >> 16, 0)) {                                                                          \
             uint32 f_ = pf_ >> 16;                                                                                     \
-            if (f_ & (PS1_COL_EMPTY | PS1_COL_MISS))                                                                   \
-                misses += f_ >> 7;                                                                                     \
+            if (f_ == PS1_COL_VFLIP && h == 1) { /* one line of a V-flipped tile: its mirrored row (3.3k) */           \
+                tex_ += vFlip1;                                                                                        \
+                pf_ &= 0xFFFF;                                                                                         \
+            }                                                                                                          \
             else {                                                                                                     \
-                ++pieces;                                                                                              \
-                if ((f_ & PS1_COL_HFLIP) || h > 4)                                                                     \
-                    PS1_EMIT_FLIPPED((sxW), sy, tex_, v0, h, f_, pf_ & 0xFFFF);                                        \
-                else                                                                                                   \
-                    PS1_EMIT_VFLIP_LINES((sxW), sy, tex_, v0, h, pf_ & 0xFFFF);                                        \
+                if (f_ & (PS1_COL_EMPTY | PS1_COL_MISS))                                                               \
+                    misses += f_ >> 7;                                                                                 \
+                else {                                                                                                 \
+                    ++pieces;                                                                                          \
+                    if ((f_ & PS1_COL_HFLIP) || h > 4)                                                                 \
+                        PS1_EMIT_FLIPPED((sxW), sy, c->tex, v0, h, f_, pf_ & 0xFFFF);                                  \
+                    else                                                                                               \
+                        PS1_EMIT_VFLIP_LINES((sxW), sy, c->tex, v0, h, pf_ & 0xFFFF);                                  \
+                }                                                                                                      \
+                break;                                                                                                 \
             }                                                                                                          \
         }                                                                                                              \
-        else {                                                                                                         \
-            ++pieces;                                                                                                  \
-            PS1_EMIT_PIECE(cmd, (xyW), tex_ + vRow, wh, n, pf_);                                                       \
-        }                                                                                                              \
+        ++pieces;                                                                                                      \
+        PS1_EMIT_PIECE(cmd, (xyW), tex_, wh, n, pf_);                                                                  \
     } while (0)
         PS1_LAKE_PIECE(sx0, yWord | (uint16)sx0);
         ++c;
@@ -956,13 +962,21 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     ScanlineInfo *sl    = &scanlines[y1];
-    // 3.3i: every line of [y1, y2) on one palette bank (GHZ: no water): the bands skip the per-line bank checks
-    bool oneBank = true;
-    for (int32 y = y1 + 1; y < y2; ++y)
-        if (gfxLineBuffer[y] != gfxLineBuffer[y1]) {
-            oneBank = false;
-            break;
-        }
+    // 3.3i: every line of [y1, y2) on one palette bank (GHZ: no water): the bands skip the per-line bank checks. 3.3k:
+    // the answer is kept until gfxLineBuffer is written again (SetActivePalette, the scene load: ps1LineBankGen)
+    static uint32 s_oneBankGen = 0xFFFFFFFF;
+    static int32 s_oneBankY1 = -1, s_oneBankY2 = -1;
+    static bool s_oneBank = false;
+    if (ps1LineBankGen != s_oneBankGen || y1 != s_oneBankY1 || y2 != s_oneBankY2) {
+        s_oneBank = true;
+        for (int32 y = y1 + 1; y < y2; ++y)
+            if (gfxLineBuffer[y] != gfxLineBuffer[y1]) {
+                s_oneBank = false;
+                break;
+            }
+        s_oneBankGen = ps1LineBankGen, s_oneBankY1 = y1, s_oneBankY2 = y2;
+    }
+    bool oneBank = s_oneBank;
     if (layer->ps1Uniform) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
         // palette bank changes), as the scan below would find them

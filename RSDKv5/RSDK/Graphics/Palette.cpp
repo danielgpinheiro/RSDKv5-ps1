@@ -18,6 +18,9 @@ uint16 RSDK::stagePalette[PALETTE_BANK_COUNT][PALETTE_BANK_SIZE];
 uint16 RSDK::fullPalette[PALETTE_BANK_COUNT][PALETTE_BANK_SIZE];
 
 uint8 RSDK::gfxLineBuffer[SCREEN_YSIZE];
+#if RETRO_PLATFORM == RETRO_PS1
+uint32 RSDK::ps1LineBankGen = 0;
+#endif
 
 int32 RSDK::maskColor = 0;
 #if RETRO_REV02

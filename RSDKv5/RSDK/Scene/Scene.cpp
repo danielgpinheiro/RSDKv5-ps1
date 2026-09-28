@@ -437,6 +437,9 @@ void RSDK::LoadSceneAssets()
 
     if (screens[0].size.y > 0)
         memset(gfxLineBuffer, 0, screens[0].size.y * sizeof(uint8));
+#if RETRO_PLATFORM == RETRO_PS1
+    ++ps1LineBankGen;
+#endif
 
     memset(tileLayers, 0, LAYER_COUNT * sizeof(TileLayer));
 

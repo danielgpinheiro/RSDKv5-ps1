@@ -24,6 +24,9 @@ extern uint16 stagePalette[PALETTE_BANK_COUNT][PALETTE_BANK_SIZE];
 extern uint16 fullPalette[PALETTE_BANK_COUNT][PALETTE_BANK_SIZE];
 
 extern uint8 gfxLineBuffer[SCREEN_YSIZE]; // Pointers to active palette
+#if RETRO_PLATFORM == RETRO_PS1
+extern uint32 ps1LineBankGen; // 3.3k: counts the writes to gfxLineBuffer (the layer drawer caches its one-bank test)
+#endif
 
 extern int32 maskColor;
 
@@ -45,6 +48,9 @@ inline void SetActivePalette(uint8 newActiveBank, int32 startLine, int32 endLine
 {
     if (newActiveBank < PALETTE_BANK_COUNT)
         for (int32 l = startLine; l < endLine && l < SCREEN_YSIZE; l++) gfxLineBuffer[l] = newActiveBank;
+#if RETRO_PLATFORM == RETRO_PS1
+    ++ps1LineBankGen;
+#endif
 }
 
 inline uint32 GetPaletteEntry(uint8 bankID, uint8 index)
