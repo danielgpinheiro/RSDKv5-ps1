@@ -432,21 +432,33 @@ void PS1CameraUnion()
 // one; the pass runs that slot as stock and scans on. GCC's -Os spilled the locals of the inlined loops to the stack.
 #define PS1_HOT __attribute__((noinline, optimize("O2")))
 
-// Update: blank slots, ACTIVE_NEVER / ACTIVE_PAUSED, and ACTIVE_BOUNDS outside the camera box are out of range
+// Update: blank slots, ACTIVE_NEVER / ACTIVE_PAUSED, and ACTIVE_BOUNDS outside the camera box are out of range.
+// 3.0d: a slot's six fields are loaded before any test (most slots are ACTIVE_BOUNDS entities, which need them all), so
+// the loads fill each other's delay slots instead of a nop after each (each load's result is ready one instruction on)
 PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
 {
-    const bool ok     = s_camUnionOk;
+    if (!s_camUnionOk) { // the stock loop decides every live slot
+        for (; p < pend; ++p) {
+            EntityBase *ent = *p;
+            if (ent->classID && ent->active != ACTIVE_NEVER && ent->active != ACTIVE_PAUSED)
+                return p;
+            ent->inRange = false;
+        }
+        return p;
+    }
     const uint32 minX = (uint32)s_camMinX, minY = (uint32)s_camMinY, w = s_camW, h = s_camH;
     for (; p < pend; ++p) {
         EntityBase *ent = *p;
-        if (ent->classID) {
-            uint8 active = ent->active;
+        uint32 cls    = ent->classID;
+        uint32 active = ent->active;
+        uint32 x = (uint32)ent->position.x, y = (uint32)ent->position.y;
+        uint32 rx = (uint32)ent->updateRange.x, ry = (uint32)ent->updateRange.y;
+        __asm__("" : "+r"(cls), "+r"(active), "+r"(x), "+r"(y), "+r"(rx), "+r"(ry)); // all loaded here (GCC won't hoist loads over a branch)
+        if (cls) {
             if (active == ACTIVE_BOUNDS) {
-                uint32 x = (uint32)ent->position.x, y = (uint32)ent->position.y;
-                uint32 rx = (uint32)ent->updateRange.x, ry = (uint32)ent->updateRange.y;
                 // x in [minX - rx, maxX + rx] <=> (uint32)(x - (minX - rx)) <= (uint32)(w + 2 * rx) when the interval is
                 // not empty; an empty one (negative offsets or ranges) answers "inside", which leaves it to the stock loop
-                if (!ok || (int32)((x + 0x40000000u) | (y + 0x40000000u)) < 0 || ((rx + 0x10000000u) | (ry + 0x10000000u)) >= 0x20000000u
+                if ((int32)((x + 0x40000000u) | (y + 0x40000000u)) < 0 || ((rx + 0x10000000u) | (ry + 0x10000000u)) >= 0x20000000u
                     || (x - minX + rx <= w + 2 * rx && y - minY + ry <= h + 2 * ry))
                     return p;
             }
