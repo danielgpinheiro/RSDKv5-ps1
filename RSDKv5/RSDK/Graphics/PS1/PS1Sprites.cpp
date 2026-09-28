@@ -91,15 +91,30 @@ using namespace RSDK;
 struct PS1Ink {
     int32 mode, passes;
     uint32 mod;
+    bool maskTest; // 4.1b: INK_MASKED, drawn with the GPU's mask test on
 };
+
+// A palette colour as a CLUT entry (PS1Layers.cpp's PS1Colour: the mask colour keeps STP clear, 4.1b)
+inline uint16 PS1ClutColour(uint16 c)
+{
+    uint16 p = (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10));
+    if (maskColor && c == (uint16)maskColor && (p & 0x7FFF))
+        p &= 0x7FFF;
+    return p;
+}
 
 // DrawSpriteFlipped's ink rules (alpha: > 0xFF opaque, <= 0 nothing; add / sub: clamped to 0xFF), then the GPU's.
 // False: nothing to draw (or an ink not done: counted)
 bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
 {
-    ink.mode = -1, ink.passes = 1, ink.mod = 0x80;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false;
     switch (inkEffect) {
         case INK_NONE: return true;
+        case INK_MASKED: // only where the framebuffer holds the mask colour (bit 15 clear: its CLUT entries' STP is 0)
+            if (!maskColor)
+                break; // a black mask colour can't be told from transparent: not done (counted below)
+            ink.maskTest = true;
+            return true;
         case INK_BLEND: ink.mode = 0; return true;
         case INK_ALPHA: {
             if (alpha > 0xFF)
@@ -118,11 +133,11 @@ bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
             ink.mode = inkEffect == INK_ADD ? 1 : 2;
             ink.mod  = (uint32)((alpha > 0xFF ? 0xFF : alpha) + 1) >> 1;
             return true;
-        default:
-            g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
-            g_ps1InkTodoBy[inkEffect & 7] = g_ps1InkTodoBy[inkEffect & 7] + 1;
-            return false;
+        default: break;
     }
+    g_ps1SpriteInkTodo            = g_ps1SpriteInkTodo + 1;
+    g_ps1InkTodoBy[inkEffect & 7] = g_ps1InkTodoBy[inkEffect & 7] + 1;
+    return false;
 }
 
 inline uint8 PS1LogAlpha(int32 alpha) { return (uint8)(alpha > 0xFF ? 0xFF : alpha < 0 ? 0 : alpha); }
@@ -366,8 +381,7 @@ uint32 PS1BankClut(uint16 attr, int32 bank)
     uint32 slot = PS1_ATLAS_CLUT(attr);
     if (slot == PS1_ATLAS_BANK_CLUT) {
         s_row[0] = 0;
-        for (int32 i = 1; i < 256; ++i) s_row[i] = (uint16)(0x8000 | ((fullPalette[bank][i] >> 11) & 31) | (((fullPalette[bank][i] >> 6) & 31) << 5)
-                                                        | ((fullPalette[bank][i] & 31) << 10));
+        for (int32 i = 1; i < 256; ++i) s_row[i] = PS1ClutColour(fullPalette[bank][i]);
         PS1UploadClut(s_row, 256, 0, (int16)(240 + bank));
         return (uint32)(240 + bank) << 6;
     }
@@ -377,7 +391,7 @@ uint32 PS1BankClut(uint16 attr, int32 bank)
     s_row[0] = 0;
     for (int32 i = 1; i < 16; ++i) {
         uint16 c = ac[slot].map[i] ? fullPalette[bank][ac[slot].map[i]] : 0;
-        s_row[i] = ac[slot].map[i] ? (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10)) : 0;
+        s_row[i] = ac[slot].map[i] ? PS1ClutColour(c) : 0;
     }
     uint32 scratch = PS1_SPRITE_CLUT_SCRATCH + (s_flip ^= 1);
     int16 x = (int16)((scratch % PS1_SPRITE_CLUTS_PER_ROW) * 16), y = (int16)(496 + scratch / PS1_SPRITE_CLUTS_PER_ROW);
@@ -449,7 +463,12 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         if (!clut)
             return;
     }
-    if (!PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink))
+    if (ink.maskTest) // 4.1b: INK_MASKED: only over bit-15-clear pixels (the mask colour's)
+        PS1ChainMaskControl(false, true);
+    bool drawn = PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink);
+    if (ink.maskTest)
+        PS1ChainMaskControl(false, false);
+    if (!drawn)
         return;
     g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
 #if PS1_DEBUG_BIGRAM
@@ -476,8 +495,13 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         if (!clut)
             return;
     }
-    if (!PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, half, scaleX, scaleY, direction,
-                        rotation, ink, cx, cy))
+    if (ink.maskTest)
+        PS1ChainMaskControl(false, true);
+    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, half, scaleX, scaleY,
+                                direction, rotation, ink, cx, cy);
+    if (ink.maskTest)
+        PS1ChainMaskControl(false, false);
+    if (!drawn)
         return;
     g_ps1SpriteDraws   = g_ps1SpriteDraws + 1;
     g_ps1SpriteRotated = g_ps1SpriteRotated + 1;
@@ -498,6 +522,10 @@ void RSDK::PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alp
         return;
     if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (ink.maskTest) { // masked tiles: not done (counted)
+        g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
+        return;
+    }
     if (PS1LineBank(y))
         g_ps1BankTodo = g_ps1BankTodo + 1;
     int32 direction = (tile >> 10) & 3;
@@ -524,6 +552,10 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
         return;
     if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (ink.maskTest) { // masked tiles: not done (counted)
+        g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
+        return;
+    }
     if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, false, scaleX, scaleY, direction, rotation, ink, cx,
                         cy))
         return;
@@ -839,10 +871,12 @@ void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int
     if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023
         || !PS1FlatInk(color, inkEffect, alpha, bgr, ink))
         return;
+    if (maskColor) // 4.1b: while a mask colour is set, every pixel but the mask colour's has bit 15 set
+        PS1ChainMaskControl(true, false);
     for (int32 p = 0; p < ink.passes; ++p) {
         uint32_t *wr = PS1ChainSpanBegin(5);
         if (!wr)
-            return;
+            break;
         int32 n = 0;
         if (ink.mode >= 0)
             wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5;
@@ -851,6 +885,8 @@ void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int
         wr[1 + n++] = (uint32)(uint16)y2 << 16 | (uint16)x2;
         PS1ChainSpanEnd(wr, n, wr + 1 + n);
     }
+    if (maskColor)
+        PS1ChainMaskControl(false, false);
     g_ps1PrimApprox = g_ps1PrimApprox + 1;
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
@@ -865,12 +901,14 @@ void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount
     if (vertCount < 3 || !PS1FlatInk(0, inkEffect, alpha, dummy, ink))
         return;
     uint32 semi = ink.mode >= 0 ? 0x02000000 : 0;
+    if (maskColor) // 4.1b: as lines
+        PS1ChainMaskControl(true, false);
     for (int32 v = 1; v + 1 < vertCount; ++v) {
         const int32 idx[3] = { 0, v, v + 1 };
         for (int32 p = 0; p < ink.passes; ++p) {
             uint32_t *wr = PS1ChainSpanBegin(8);
             if (!wr)
-                return;
+                break;
             int32 n = 0;
             if (ink.mode >= 0)
                 wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5;
@@ -884,6 +922,8 @@ void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount
             PS1ChainSpanEnd(wr, n, wr + 1 + n);
         }
     }
+    if (maskColor)
+        PS1ChainMaskControl(false, false);
     g_ps1PrimApprox = g_ps1PrimApprox + 1;
 #if PS1_DEBUG_BIGRAM
     { // the host marks the face's bounding box approximate

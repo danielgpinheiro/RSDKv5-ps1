@@ -27,6 +27,9 @@ import rsdk5_formats as F  # noqa: E402
 DATA = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data')
 
 
+MASK_PS1 = None  # the mask colour as a PS1 pixel (bit 15 clear), set per capture
+
+
 def ps1_colour(c):
     return 0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10)
 
@@ -91,6 +94,8 @@ def ink_mode(ink, alpha):
         return None if level == 0 else (-1, 1, 0x80) if level == 3 else (0, level, 0x80)
     if ink in (3, 4):
         return None if alpha <= 0 else (1 if ink == 3 else 2, 1, (min(alpha, 255) + 1) >> 1)
+    if ink == 6:  # INK_MASKED: only where the framebuffer holds the mask colour (the PC's test)
+        return None if MASK_PS1 is None else (-2, 1, 0x80)
     return None
 
 
@@ -122,7 +127,8 @@ def draw_sprite(out, mask, e, vram, cluts, colour):
         return
     mode, passes, mod = im
     col, row, bit8, half, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, (attr >> 6) & 1, attr >> 7
-    if half:  # the GPU's 2x sampling decides which edge pixels a halved frame covers: its whole rectangle is approximate
+    if half and mode != -2:  # the GPU's 2x sampling decides which edge pixels a halved frame covers: its whole rectangle
+        # is approximate (a masked frame: only the pixels it draws, so a draw outside the mask colour's pixels counts)
         mask[max(0, y):max(0, min(240, y + h)), max(0, x):max(0, min(320, x + w))] = 2
     px0, py0 = col * 64, row * 256
     fx, fy = direction & 1, direction & 2
@@ -150,7 +156,10 @@ def draw_sprite(out, mask, e, vram, cluts, colour):
                 idx = cluts[slot][nib] if nib else 0
             if idx:
                 f = modulate(int(colour[idx]), mod)
-                if mode < 0:
+                if mode == -2:
+                    if int(out[sy, sx]) == MASK_PS1:
+                        out[sy, sx] = f
+                elif mode < 0:
                     out[sy, sx] = f
                 else:
                     for _ in range(passes):
@@ -227,7 +236,14 @@ def render(cap, folder, scene_id):
     tt = os.path.join(cap, 'tiletable.bin')  # none when the scene has no tile images loaded
     table = struct.unpack('<1024H', open(tt, 'rb').read()) if os.path.exists(tt) else (0xFFFF,) * 1024
     pal = np.frombuffer(open(os.path.join(cap, 'pal.bin'), 'rb').read(), '<u2')
-    colour = np.array([0] + [ps1_colour(int(c)) for c in pal[1:]], np.uint16)
+    mk = os.path.join(cap, 'mask.bin')  # maskColor (RGB565): its CLUT entries keep STP clear (4.1b)
+    mask_c = struct.unpack('<i', open(mk, 'rb').read())[0] & 0xFFFF if os.path.exists(mk) else 0
+    def clut_colour(c):
+        p = ps1_colour(c)
+        return p & 0x7FFF if mask_c and c == mask_c and (p & 0x7FFF) else p
+    colour = np.array([0] + [clut_colour(int(c)) for c in pal[1:]], np.uint16)
+    global MASK_PS1
+    MASK_PS1 = (ps1_colour(mask_c) & 0x7FFF) if mask_c else None
     out = np.zeros((240, 320), np.uint16)
     other_bank = 0
     calls = sorted(glob.glob(os.path.join(cap, 'sl_*_*.bin')), key=lambda p: int(re.findall(r'sl_(\d+)_', p)[0]))
@@ -329,11 +345,20 @@ def render(cap, folder, scene_id):
         tiles = np.array(L['tiles'], np.uint32).reshape(ys, xs)
         sl = np.frombuffer(open(path, 'rb').read(), '<i4').reshape(240, 4)
         lb = open(os.path.join(cap, 'lb_%d.bin' % c), 'rb').read()
+        cp = os.path.join(cap, 'clip_%d.bin' % c)  # the call's clip bounds (X1, Y1, X2, Y2): lines outside aren't drawn
+        cx1, cy1, cx2, cy2 = struct.unpack('<4i', open(cp, 'rb').read()) if os.path.exists(cp) else (0, 0, 320, 240)
+        basic = L.get('type') == 3  # LAYER_BASIC: the first line's scroll position for every line, bank 0
         for y in range(240):
-            if lb[y]:
+            if y < cy1 or y >= cy2:
+                continue
+            if lb[y] and not basic:
                 other_bank += 1
-            x0 = (sl[y, 0] >> 16) % (xs * 16)
-            ly = (sl[y, 1] >> 16) % (ys * 16)
+            if basic:
+                x0 = (sl[cy1, 0] >> 16) % (xs * 16)
+                ly = ((sl[cy1, 1] >> 16) + y - cy1) % (ys * 16)
+            else:
+                x0 = (sl[y, 0] >> 16) % (xs * 16)
+                ly = (sl[y, 1] >> 16) % (ys * 16)
             lx = (x0 + np.arange(320)) % (xs * 16)
             t = tiles[ly >> 4, lx >> 4]
             for sx in range(320):

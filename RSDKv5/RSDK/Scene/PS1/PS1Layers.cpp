@@ -66,7 +66,15 @@ static_assert(sizeof(PS1ColTable) <= 1024, "the column table must fit the scratc
 
 // RGB565 (fullPalette) -> PS1 BGR555, STP set on every visible entry (0x0000 is the GPU's transparent texel: an opaque
 // black must read 0x8000; STP also makes semi-transparent primitives blend every texel, as Sonic CD's CLUTs)
-inline uint16 PS1Colour(uint16 c) { return (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10)); }
+// 4.1b: the mask colour (SetPaletteMask) keeps STP clear, so its pixels keep framebuffer bit 15 clear: INK_MASKED sprites,
+// drawn with the GPU's mask test (GP0 E6h bit 1), land only on them (every other pixel has bit 15 set)
+inline uint16 PS1Colour(uint16 c)
+{
+    uint16 p = (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10));
+    if (maskColor && c == (uint16)maskColor && (p & 0x7FFF))
+        p &= 0x7FFF;
+    return p;
+}
 
 // A band's primitives written straight into an arena span as they are gathered (3.3d): each primitive whole in a
 // fragment of <= 14 words; a texpage word only where the page changes (a textured quad carries its own page, which
@@ -631,6 +639,7 @@ uint32 s_clutBuckets[PS1_CLUT_MASKS][2]; // per CLUT (tiles, then atlas): bit b 
 const void *s_clutSetTiles = NULL, *s_clutSetAtlas = NULL;
 int32 s_clutSetCounts   = -1;
 uint32 s_clutGen        = 0;
+int32 s_clutMask        = 0; // maskColor the CLUTs were built with (4.1b: a change uploads everything)
 bool s_clutFullNext     = true; // the next frame uploads every CLUT
 bool s_clutHeadFull     = false; // this frame's head uploads every CLUT
 extern "C" {
@@ -663,10 +672,10 @@ void PS1ClutUploadChanged()
     const PS1AtlasClut *ac = PS1AtlasCluts();
     int32 nt = cl ? PS1TileClutCount() : 0, na = ac ? PS1AtlasClutCount() : 0;
     uint16 row[16];
-    if ((s_clutFullNext && !g_ps1ClutTestSplice) || g_ps1VramGen != s_clutGen || cl != s_clutSetTiles || ac != s_clutSetAtlas || (nt | na << 16) != s_clutSetCounts) {
+    if ((s_clutFullNext && !g_ps1ClutTestSplice) || g_ps1VramGen != s_clutGen || maskColor != s_clutMask || cl != s_clutSetTiles || ac != s_clutSetAtlas || (nt | na << 16) != s_clutSetCounts) {
         for (int32 i = 0; i < 256; ++i) s_palRaw[i] = fullPalette[0][i], s_pal16[i] = i ? PS1Colour(s_palRaw[i]) : 0;
         for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map, s_clutBuckets[c]);
-        s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen;
+        s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen, s_clutMask = maskColor;
         s_clutFullNext = false;
         for (int32 c = 0; c < nt; ++c) PS1ClutRowFrom(row, cl[c].map), PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
         PS1ClutRow(s_pal16, 256, 0, 240);
@@ -757,14 +766,14 @@ void PS1ClutSpliceFull()
 // The frame start of the draw lists: this frame's clear, the CLUTs whose palette entries changed (3.3e)
 void RSDK::PS1LayersFrameBegin()
 {
+    s_clutRecCount = s_colourRecCount = 0; // before the frame start: its clear may record a colour word (4.1b)
+    s_ps1Faded = s_fadeRecsLost = false;
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
     for (int32 l = 0; l < 8; ++l) g_ps1LayerHblBy[l] = 0;
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
-    s_clutRecCount = s_colourRecCount = 0;
-    s_ps1Faded = s_fadeRecsLost = false;
     PS1ChainSlot();
     PS1ClutUploadChanged();
     PS1ChainFlushCache(); // the GPU's CLUT cache may hold older colours; also keeps the slot from being the chain's tail
@@ -1000,6 +1009,40 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
 #endif
     }
 #undef PS1_FLUSH_GROUP
+}
+
+// 4.1c: DrawLayerBasic: the clip rectangle's lines from the first line's scroll position (the rows consecutive from it),
+// every line with palette bank 0 (the PC draws with fullPalette[0] whatever gfxLineBuffer holds)
+__attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
+{
+    int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
+    if (!layer->xsize || !layer->ysize || currentScreen->clipBound_X1 >= currentScreen->clipBound_X2 || y1 >= y2)
+        return;
+    PS1LayerDebugHook((uint32)(layer - tileLayers));
+    PS1FadeRestore();
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
+#endif
+    uint32 t0     = PS1Hblanks();
+    int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
+    int32 x       = FROM_FIXED(scanlines[y1].position.x) % widthPx, y0 = FROM_FIXED(scanlines[y1].position.y);
+    x             = x < 0 ? x + widthPx : x;
+    PS1Emit e;
+    EmitOpen(e);
+    e.page = 0xFFFFFFFF;
+    for (int32 cy = y1; cy < y2;) {
+        int32 ly = (y0 + cy - y1) % heightPx;
+        ly       = ly < 0 ? ly + heightPx : ly;
+        int32 h  = TILE_SIZE - (ly & 15);
+        if (h > y2 - cy)
+            h = y2 - cy;
+        DrawBandInto(e, layer, cy, h, x, ly, 0);
+        cy += h;
+    }
+    EmitClose(e);
+    uint32 dt     = PS1HblanksSince(t0);
+    g_ps1LayerHbl = g_ps1LayerHbl + dt;
+    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
 }
 
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)

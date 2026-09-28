@@ -2089,6 +2089,10 @@ void RSDK::DrawLayerRotozoom(TileLayer *layer)
 }
 void RSDK::DrawLayerBasic(TileLayer *layer)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawLayerBasic(layer); // bands of tile pieces through the GPU chain (docs/32 4.1c)
+    return;
+#endif
 #if RETRO_PS1_HEADLESS
     return; // PS1 phase 2: headless (docs/32)
 #endif

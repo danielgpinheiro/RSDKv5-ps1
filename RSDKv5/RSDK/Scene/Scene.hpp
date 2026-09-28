@@ -208,6 +208,7 @@ void PS1FadeRestore();                     // before a CLUT-using draw: the unfa
 // 3.5b: a CLUT row uploaded in the chain now (recorded for a later FillScreen), then the GPU's CLUT cache flushed
 void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);
 void PS1DrawLayerHScroll(TileLayer *layer);
+void PS1DrawLayerBasic(TileLayer *layer); // 4.1c: DrawLayerBasic (one scroll position for every line, palette bank 0)
 extern "C" {
 extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;
 }

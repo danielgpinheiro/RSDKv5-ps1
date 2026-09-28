@@ -13,6 +13,7 @@ volatile uint32 g_ps1ClearColour   = 0; // clear colour, r | g << 8 | b << 16 (G
 }
 namespace
 {
+#define PS1_SCREEN_W_CLEAR 320
 bool s_ps1FrameOpen = false;
 void *s_ps1FrameClear = NULL; // this frame's clear (FastFill in the arena) and its colour: a FillScreen blends it too (3.5)
 uint32 s_ps1FrameClearColour = 0;
@@ -31,6 +32,21 @@ void RSDK::PS1FrameStart(bool clear)
         uint32 c              = g_ps1ClearColour;
         s_ps1FrameClear       = PS1ChainClearRGB(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF);
         s_ps1FrameClearColour = c;
+        if (maskColor) {
+            // 4.1b: the fill leaves bit 15 clear (psx-spx "Quick Rectangle Fill"), which INK_MASKED's mask test would
+            // take for the mask colour: while a mask colour is set, the cleared screen is also a flat rectangle of the
+            // clear colour drawn with the mask bit forced (its colour recorded for a FillScreen, like the clear's)
+            uint32_t *w = PS1ChainSpanBegin(6);
+            if (w) {
+                w[1] = 0xE6000001;
+                w[2] = 0x60000000 | (c & 0xFFFFFF);
+                PS1FadeRecordColour(&w[2]);
+                w[3] = 0;
+                w[4] = (uint32)PS1_SCREEN_W_CLEAR | (uint32)SCREEN_YSIZE << 16;
+                w[5] = 0xE6000000;
+                PS1ChainSpanEnd(w, 5, w + 6);
+            }
+        }
         g_ps1RenderFrames = g_ps1RenderFrames + 1;
     }
     else {
