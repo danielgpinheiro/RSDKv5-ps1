@@ -201,6 +201,9 @@ void PS1LayersFrameBegin();
 // per-channel formula; the next CLUT-using draw uploads the unfaded CLUTs again (PS1FadeRestore)
 void PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB);
 void PS1FadeRecordColour(uint32_t *word); // a primitive's colour word (bits 0-23: 0xBBGGRR) drawn this frame
+// 3.6b: a span of flat rectangles as PS1FlatBatchFlush writes it (from its first fragment header: header, the texpage
+// word when semi, then up to four 3-word rectangles, the next fragment right after): one record for all their colours
+void PS1FadeRecordSpan(uint32_t *firstHeader, int32 rects, bool semi);
 void PS1FadeRestore();                     // before a CLUT-using draw: the unfaded CLUTs, once after a fade
 // 3.5b: a CLUT row uploaded in the chain now (recorded for a later FillScreen), then the GPU's CLUT cache flushed
 void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);

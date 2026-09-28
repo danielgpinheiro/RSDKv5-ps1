@@ -609,7 +609,7 @@ struct PS1FlatBatch {
     int16 r[16][4]; // x, y, w, h
 };
 
-void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
+__attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
 {
     if (!b.n)
         return;
@@ -620,6 +620,7 @@ void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
         uint32_t *w = PS1ChainSpanBegin(frags * 14);
         if (!w)
             break;
+        uint32_t *first = w;
         uint32_t *hdr = NULL;
         int32 fw = 0, k = 0;
         while (k < b.n) {
@@ -630,7 +631,6 @@ void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
             if (semi)
                 *w++ = 0xE1000000 | (uint32)ink.mode << 5, ++fw;
             for (int32 j = 0; j < 4 && k < b.n; ++j, ++k) {
-                PS1FadeRecordColour(w);
                 w[0] = cmd;
                 w[1] = (uint32)(uint16)b.r[k][1] << 16 | (uint16)b.r[k][0];
                 w[2] = (uint32)(uint16)b.r[k][3] << 16 | (uint16)b.r[k][2];
@@ -643,6 +643,7 @@ void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
             }
         }
         PS1ChainSpanEnd(hdr, fw, w);
+        PS1FadeRecordSpan(first, b.n, semi); // 3.6b: one record for the span's colours
     }
     g_ps1FlatDraws = g_ps1FlatDraws + b.n;
     b.n            = 0;
@@ -658,18 +659,19 @@ inline void PS1FlatBatchAdd(PS1FlatBatch &b, int32 x, int32 y, int32 w, int32 h,
 }
 
 // The edge buffer's rows [top, bottom) (clamped to the clip bounds as the PC does) as flat rectangles, identical rows merged
-void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
+__attribute__((optimize("O2"))) void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
 {
     PS1FlatBatch batch;
     batch.n = 0;
     int32 runY = 0, runH = 0, runS = 0, runE = 0;
+    const int32 cx1 = currentScreen->clipBound_X1, cx2 = currentScreen->clipBound_X2; // 3.6b: once, not per row
     for (int32 s = top; s < bottom; ++s) {
         PS1Edge *edge = &PS1_EDGES[s];
         int32 start = edge->start, end = edge->end;
-        start = start < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : start;
-        start = start > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : start;
-        end   = end < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : end;
-        end   = end > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : end;
+        start = start < cx1 ? cx1 : start;
+        start = start > cx2 ? cx2 : start;
+        end   = end < cx1 ? cx1 : end;
+        end   = end > cx2 ? cx2 : end;
         if (end <= start) {
             PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
             runH = 0;
@@ -687,7 +689,7 @@ void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
 }
 
 // ProcessScanEdge (Scene3D.cpp) on the PS1 edge buffer
-void PS1ScanEdge(int32 x1, int32 y1, int32 x2, int32 y2)
+__attribute__((optimize("O2"))) void PS1ScanEdge(int32 x1, int32 y1, int32 x2, int32 y2)
 {
     int32 ix1 = FROM_FIXED(x1), iy1 = FROM_FIXED(y1), ix2 = FROM_FIXED(x2), iy2 = FROM_FIXED(y2);
     int32 top = FROM_FIXED(y1);
@@ -709,7 +711,21 @@ void PS1ScanEdge(int32 x1, int32 y1, int32 x2, int32 y2)
             top = 0;
         }
         PS1Edge *edge = &PS1_EDGES[top];
-        for (int32 i = top; i < bottom && i < PS1_EDGE_ROWS; ++i) {
+        if (bottom > PS1_EDGE_ROWS)
+            bottom = PS1_EDGE_ROWS;
+        // 3.6b: scanX runs from ix1 to ix2 (within a pixel per row of rounding): inside int16 there is nothing to clamp
+        if (ix1 > -0x7000 && ix1 < 0x7000 && ix2 > -0x7000 && ix2 < 0x7000) {
+            for (int32 i = top; i < bottom; ++i, ++edge) {
+                int32 scanX = scanPos >> 16;
+                if (scanX < edge->start)
+                    edge->start = (int16)scanX;
+                if (scanX > edge->end)
+                    edge->end = (int16)scanX;
+                scanPos += delta;
+            }
+            return;
+        }
+        for (int32 i = top; i < bottom; ++i) {
             int32 scanX = scanPos >> 16;
             if (scanX < edge->start)
                 edge->start = (int16)(scanX < -0x7FFF ? -0x7FFF : scanX > 0x7FFF ? 0x7FFF : scanX);

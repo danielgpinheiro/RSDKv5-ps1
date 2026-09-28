@@ -564,7 +564,12 @@ struct PS1ClutRec {
 };
 PS1ClutRec s_clutRecs[PS1_CLUT_RECS];
 int32 s_clutRecCount = 0;
-uint32_t *s_colourRecs[PS1_COLOUR_RECS];
+struct PS1ColourRec {
+    uint32_t *w; // a colour word, or (n > 0) the first fragment header of a span of n flat rectangles (3.6b)
+    uint16 n;
+    uint8 semi;
+};
+PS1ColourRec s_colourRecs[PS1_COLOUR_RECS];
 int32 s_colourRecCount = 0;
 bool s_ps1Faded        = false;
 extern "C" {
@@ -776,10 +781,42 @@ extern "C" {
 volatile uint32 g_ps1BankTodo = 0;
 }
 
+#if PS1_DEBUG_BIGRAM
+extern "C" {
+volatile uint32 g_ps1FadeSpanChecked = 0, g_ps1FadeSpanBad = 0; // 3.6b evidence: spans walked as the fade would, wrong words
+}
+#endif
+void RSDK::PS1FadeRecordSpan(uint32_t *firstHeader, int32 rects, bool semi)
+{
+#if PS1_DEBUG_BIGRAM // the fade's walk must meet exactly the rectangles' command words (GP0 60h / 62h)
+    {
+        uint32_t *f = firstHeader;
+        for (int32 left = rects; left > 0;) {
+            uint32_t *p = f + 1 + semi;
+            int32 k     = left < 4 ? left : 4;
+            for (int32 j = 0; j < k; ++j)
+                if ((p[3 * j] >> 24) != (semi ? 0x62u : 0x60u))
+                    g_ps1FadeSpanBad = g_ps1FadeSpanBad + 1;
+            left -= k;
+            f = p + 3 * k;
+        }
+        g_ps1FadeSpanChecked = g_ps1FadeSpanChecked + 1;
+    }
+#endif
+    if (s_colourRecCount < PS1_COLOUR_RECS) {
+        PS1ColourRec &r = s_colourRecs[s_colourRecCount++];
+        r.w = firstHeader, r.n = (uint16)rects, r.semi = semi;
+    }
+    else
+        s_fadeRecsLost = true;
+}
+
 void RSDK::PS1FadeRecordColour(uint32_t *word)
 {
-    if (s_colourRecCount < PS1_COLOUR_RECS)
-        s_colourRecs[s_colourRecCount++] = word;
+    if (s_colourRecCount < PS1_COLOUR_RECS) {
+        PS1ColourRec &r = s_colourRecs[s_colourRecCount++];
+        r.w = word, r.n = 0, r.semi = 0;
+    }
     else
         s_fadeRecsLost = true;
 }
@@ -814,10 +851,27 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
         }
     }
     for (int32 r = 0; r < s_colourRecCount; ++r) { // direct colours: 8-bit fields, the GPU keeps their top 5 bits
-        uint32 w = *s_colourRecs[r];
+        PS1ColourRec &rec = s_colourRecs[r];
+        if (rec.n) { // a span of flat rectangles: each fragment's rectangles after its header (and texpage word)
+            uint32_t *f = rec.w;
+            for (int32 left = rec.n; left > 0;) {
+                uint32_t *p = f + 1 + rec.semi;
+                int32 k     = left < 4 ? left : 4;
+                for (int32 j = 0; j < k; ++j) {
+                    uint32 w = p[3 * j];
+                    uint32 R = (((w & 0xFF) >> 3) * kr >> 8) + cr, G = ((((w >> 8) & 0xFF) >> 3) * kg >> 8) + cg;
+                    uint32 B = ((((w >> 16) & 0xFF) >> 3) * kb >> 8) + cb;
+                    p[3 * j] = (w & 0xFF000000) | R << 3 | G << 11 | B << 19;
+                }
+                left -= k;
+                f = p + 3 * k;
+            }
+            continue;
+        }
+        uint32 w = *rec.w;
         uint32 R = (((w & 0xFF) >> 3) * kr >> 8) + cr, G = ((((w >> 8) & 0xFF) >> 3) * kg >> 8) + cg;
         uint32 B = ((((w >> 16) & 0xFF) >> 3) * kb >> 8) + cb;
-        *s_colourRecs[r] = (w & 0xFF000000) | R << 3 | G << 11 | B << 19;
+        *rec.w = (w & 0xFF000000) | R << 3 | G << 11 | B << 19;
     }
     uint32 clear = PS1FrameClearColour();
     if (clear != 0xFFFFFFFF) {
