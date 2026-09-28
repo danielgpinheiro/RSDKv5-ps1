@@ -12,6 +12,7 @@ using namespace RSDK;
 #if RETRO_PLATFORM == RETRO_PS1
 #include "PS1/PS1Tiles.cpp"  // the scene's tile images in VRAM (docs/32 3.1a)
 #include "PS1/PS1Layers.cpp" // tile layers drawn by the GPU (3.3)
+#include "PS1/PS1Roto.cpp"   // rotozoom layers (4.1d)
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
@@ -2043,6 +2044,10 @@ void RSDK::DrawLayerVScroll(TileLayer *layer)
 }
 void RSDK::DrawLayerRotozoom(TileLayer *layer)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1DrawLayerRotozoom(layer); // tile quads through the GPU chain (docs/32 4.1d)
+    return;
+#endif
 #if RETRO_PS1_HEADLESS
     return; // PS1 phase 2: headless (docs/32)
 #endif

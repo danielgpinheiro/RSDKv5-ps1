@@ -28,6 +28,10 @@ volatile uint32 g_ps1LayerSolidRuns = 0; // one-colour line runs drawn as rectan
 volatile uint32 g_ps1LayerRowTables = 0; // tile rows drawn from a column table (this frame)
 volatile uint32 g_ps1LayerUniform   = 0; // layers drawn from their uniform scroll, no scanlines (this frame)
 volatile uint32 g_ps1LayerDirect    = 0; // layers drawn from lineScroll and their scroll infos, no scanlines (3.3h, total)
+volatile uint32 g_ps1RotoLayers     = 0; // rotozoom layers drawn (4.1d, PS1Roto.cpp; total)
+volatile uint32 g_ps1RotoQuads      = 0; // their tile quads (this frame)
+volatile uint32 g_ps1RotoTodo       = 0; // rotozoom draws not done: lines on several palette banks, a region too big (total)
+volatile uint32 g_ps1RotoHbl        = 0; // hblanks spent in them (this frame)
 volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
@@ -771,6 +775,7 @@ void RSDK::PS1LayersFrameBegin()
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
+    g_ps1RotoQuads = g_ps1RotoHbl = 0;
     for (int32 l = 0; l < 8; ++l) g_ps1LayerHblBy[l] = 0;
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;

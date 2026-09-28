@@ -209,6 +209,7 @@ void PS1FadeRestore();                     // before a CLUT-using draw: the unfa
 void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);
 void PS1DrawLayerHScroll(TileLayer *layer);
 void PS1DrawLayerBasic(TileLayer *layer); // 4.1c: DrawLayerBasic (one scroll position for every line, palette bank 0)
+void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)
 extern "C" {
 extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;
 }

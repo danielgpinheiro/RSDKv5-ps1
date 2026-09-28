@@ -347,6 +347,41 @@ def render(cap, folder, scene_id):
         lb = open(os.path.join(cap, 'lb_%d.bin' % c), 'rb').read()
         cp = os.path.join(cap, 'clip_%d.bin' % c)  # the call's clip bounds (X1, Y1, X2, Y2): lines outside aren't drawn
         cx1, cy1, cx2, cy2 = struct.unpack('<4i', open(cp, 'rb').read()) if os.path.exists(cp) else (0, 0, 320, 240)
+        if L.get('type') == 2:  # LAYER_ROTOZOOM (the PC's per-pixel loop; the GPU's tile quads: approximate)
+            wsh, hsh = max(0, (xs - 1).bit_length()), max(0, (ys - 1).bit_length())
+            wm, hm = (1 << wsh) - 1, (1 << hsh) - 1
+            s32 = lambda v: ((v + (1 << 31)) & 0xFFFFFFFF) - (1 << 31)
+            drawn = np.zeros((240, 320), bool)
+            for y in range(max(0, cy1), min(240, cy2)):
+                px, py, dx, dy = (int(v) for v in sl[y])
+                for sx in range(max(0, cx1), min(320, cx2)):
+                    X, Y = s32(px + (sx - cx1) * dx), s32(py + (sx - cx1) * dy)
+                    tt = int(tiles[(Y >> 20) & hm, (X >> 20) & wm]) if ((Y >> 20) & hm) < ys and ((X >> 20) & wm) < xs else 0xFFFF
+                    if tt == 0xFFFF:
+                        continue
+                    img = table[tt & 0x3FF]
+                    if img == 0xFFFF:
+                        continue
+                    tx, tyy = (X >> 16) & 15, (Y >> 16) & 15
+                    if tt & 0x400:
+                        tx = 15 - tx
+                    if tt & 0x800:
+                        tyy = 15 - tyy
+                    p = int(imgs[img][tyy, tx])
+                    if p:
+                        out[y, sx] = colour[p]
+                        mask[y, sx] = 2
+                        drawn[y, sx] = True
+            # the GPU's affine tiles move the layer's silhouette by a pixel or two: its neighbourhood is approximate too
+            near = drawn.copy()
+            for dy in (-2, -1, 1, 2):
+                near |= np.roll(drawn, dy, axis=0)
+            for dx in (-2, -1, 1, 2):
+                near |= np.roll(drawn, dx, axis=1)
+            clip = np.zeros_like(drawn)
+            clip[max(0, cy1):min(240, cy2), max(0, cx1):min(320, cx2)] = True
+            mask[near & clip] = 2
+            continue
         basic = L.get('type') == 3  # LAYER_BASIC: the first line's scroll position for every line, bank 0
         for y in range(240):
             if y < cy1 or y >= cy2:
