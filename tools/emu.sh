@@ -12,6 +12,7 @@ EMU_PCSX=/Applications/PCSX-Redux.app/Contents/MacOS/PCSX-Redux
 EMU_PCSX_CFG="$HOME/.config/pcsx-redux/pcsx.json"
 EMU_DS=/Applications/DuckStation.app/Contents/MacOS/DuckStation
 EMU_DS_SET="$HOME/Library/Application Support/DuckStation/settings.ini"
+EMU_RAM=${EMU_RAM:-}   # 8mb: run any EXE with 8 MB (the PC sampler's counters live above 2 MB)
 EMU_SP=$(python3 -c "import struct;print(hex(struct.unpack_from('<I',open('rsdkv5.ps-exe','rb').read(0x34),0x30)[0]))")
 EMU_PID=
 EMU_CFG=
@@ -42,6 +43,7 @@ emu_start() {
     EMU_CFG=$EMU_PCSX_CFG; EMU_BAK="$1.pcsx.json.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
     local ram=-2mb
     if [ "$EMU_SP" != "0x801fff00" ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
+    [ "$EMU_RAM" = 8mb ] && ram=-8mb
     "$EMU_PCSX" -fastboot -interpreter -debugger -gdb -gdb-port 3333 $ram -iso build/game.cue -exe rsdkv5.ps-exe \
       >/dev/null 2>&1 &
     EMU_PID=$!

@@ -21,6 +21,7 @@
 #include "RSDK/Core/RetroEngine.hpp"
 
 extern "C" void LinkGameLogicDLL(RSDK::EngineInfo *info); // SonicMania/Game.c (RETRO_STANDALONE 0)
+void PS1SamplerInstall(); // ps1/pc_sampler.cpp (make SAMPLE=1)
 
 using namespace RSDK;
 
@@ -92,6 +93,9 @@ class ManiaPS1App final : public psyqo::Application {
         g_ps1CDRom = &m_cdrom;
 #if !PS1_NO_IRQ_GUARD // bisect switch (docs/32 2.2)
         PS1IrqGuardInstall(); // real-hardware IRQ fixes (docs/31)
+#endif
+#if PS1_SAMPLE
+        PS1SamplerInstall(); // PC sampler (ps1/pc_sampler.cpp)
 #endif
         m_pad.initialize(psyqo::AdvancedPad::PollingMode::Fast);
         g_ps1Pad = &m_pad;

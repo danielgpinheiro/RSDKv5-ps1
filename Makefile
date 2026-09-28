@@ -51,6 +51,7 @@ ps1/libc/new_guard.cpp \
 ps1/cdrom_fs.cpp \
 ps1/cdrom_stream.cpp \
 ps1/irq_guard.cpp \
+ps1/pc_sampler.cpp \
 ps1/gpu_chain.cpp \
 ps1/spu.cpp \
 ps1/xa_music.cpp \
@@ -101,6 +102,10 @@ comma := ,
 ifneq ($(PROFILE),)
 CPPFLAGS += -DPS1_PROFILE=1
 endif
+# `make SAMPLE=1`: PC sampler (ps1/pc_sampler.cpp, docs/32 3.3e): run with EMU_RAM=8mb, tools/play/ghz1_sample.gdb.
+ifneq ($(SAMPLE),)
+CPPFLAGS += -DPS1_SAMPLE=1
+endif
 ifneq ($(BOOT),)
 CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
 endif
@@ -116,6 +121,7 @@ LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind. A change also
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
 PS1_BOOT_OBJS    := ps1/rsdk5_main.o
+PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
@@ -125,9 +131,11 @@ endef
 $(call ps1_stamp,boot,$(BOOT),$(PS1_BOOT_OBJS))
 $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
+$(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(PS1_BOOT_OBJS): build/gen/boot.txt
 $(PS1_RAM_OBJS): build/gen/ram.txt
 $(PS1_PROFILE_OBJS): build/gen/profile.txt
+$(PS1_SAMPLE_OBJS): build/gen/sample.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).
