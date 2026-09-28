@@ -487,6 +487,11 @@ void PS1SlotAudit(bool range)
 // Update: blank slots, ACTIVE_NEVER / ACTIVE_PAUSED, and ACTIVE_BOUNDS outside the camera box are out of range.
 // 3.0d: a slot's six fields are loaded before any test (most slots are ACTIVE_BOUNDS entities, which need them all), so
 // the loads fill each other's delay slots instead of a nop after each (each load's result is ready one instruction on)
+#if PS1_CHECK_UPDATESCAN
+extern "C" {
+volatile uint32 g_ps1ScanSettled = 0, g_ps1ScanWrong = 0; // bounds slots settled out of range; of them, in range for stock
+}
+#endif
 PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
 {
     if (!s_camUnionOk) { // the stock loop decides every live slot
@@ -503,20 +508,36 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
         EntityBase *ent = *p;
         uint32 cls    = ent->classID;
         uint32 active = ent->active;
-        uint32 x = (uint32)ent->position.x, y = (uint32)ent->position.y;
-        uint32 rx = (uint32)ent->updateRange.x, ry = (uint32)ent->updateRange.y;
-        __asm__("" : "+r"(cls), "+r"(active), "+r"(x), "+r"(y), "+r"(rx), "+r"(ry)); // all loaded here (GCC won't hoist loads over a branch)
+        uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
+        __asm__("" : "+r"(cls), "+r"(active), "+r"(x), "+r"(rx)); // all loaded here (GCC won't hoist loads over a branch)
         if (cls) {
             if (active == ACTIVE_BOUNDS) {
                 // x in [minX - rx, maxX + rx] <=> (uint32)(x - (minX - rx)) <= (uint32)(w + 2 * rx) when the interval is
-                // not empty; an empty one (negative offsets or ranges) answers "inside", which leaves it to the stock loop
-                if ((int32)((x + 0x40000000u) | (y + 0x40000000u)) < 0 || ((rx + 0x10000000u) | (ry + 0x10000000u)) >= 0x20000000u
-                    || (x - minX + rx <= w + 2 * rx && y - minY + ry <= h + 2 * ry))
+                // not empty; an empty one (negative offsets or ranges) answers "inside", which leaves it to the stock loop.
+                // 3.0g: outside on x (x and rx valid) is out of range for every camera whatever y is (stock needs both
+                // axes inside for one camera), so y and its range are loaded only for the slots inside on x
+                if ((int32)(x + 0x40000000u) < 0 || (rx + 0x10000000u) >= 0x20000000u)
                     return p;
+                if (x - minX + rx <= w + 2 * rx) {
+                    uint32 y = (uint32)ent->position.y, ry = (uint32)ent->updateRange.y;
+                    if ((int32)(y + 0x40000000u) < 0 || (ry + 0x10000000u) >= 0x20000000u || y - minY + ry <= h + 2 * ry)
+                        return p;
+                }
             }
             else if (active != ACTIVE_NEVER && active != ACTIVE_PAUSED)
                 return p;
         }
+#if PS1_CHECK_UPDATESCAN // evidence build: stock's test on every slot settled here (GDB reads the counters)
+        if (cls && active == ACTIVE_BOUNDS) {
+            g_ps1ScanSettled = g_ps1ScanSettled + 1;
+            for (int32 s = 0; s < cameraCount; ++s)
+                if (abs(ent->position.x - cameras[s].position.x) <= ent->updateRange.x + cameras[s].offset.x
+                    && abs(ent->position.y - cameras[s].position.y) <= ent->updateRange.y + cameras[s].offset.y) {
+                    g_ps1ScanWrong = g_ps1ScanWrong + 1;
+                    break;
+                }
+        }
+#endif
         ent->inRange = false;
     }
     return p;
