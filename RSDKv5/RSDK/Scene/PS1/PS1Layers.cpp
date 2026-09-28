@@ -286,6 +286,34 @@ __attribute__((noinline)) void EmitFlipped(PS1Emit &e, int32 sx, int32 sy, uint3
             PS1_EMIT_PIECE(0x64808080, xyl_, texl_, TILE_SIZE | 1u << 16, 4, (tpW));                                   \
     } while (0)
 
+// A flipped piece (3.3i): one textured quad written inline (FlippedPiece's quad, the same words) unless an edge texel
+// would leave the page (u / v -1 or 256), which FlippedPiece splits (EmitFlipped, out of line). A quad is 9 words: it
+// fits when w <= header + 6 = lim - 4; it carries its own texpage. tex = u | v << 8 | CLUT << 16, f = PS1_COL_ flips
+#define PS1_EMIT_FLIPPED(sxW, syW, texW, v0W, hW, fW, tpW)                                                             \
+    do {                                                                                                               \
+        int32 u_ = (texW) & 0xFF, v_ = ((texW) >> 8) & 0xFF;                                                           \
+        int32 uL_ = ((fW) & PS1_COL_HFLIP) ? u_ + 15 : u_, uR_ = ((fW) & PS1_COL_HFLIP) ? u_ - 1 : u_ + TILE_SIZE;      \
+        int32 vT_ = ((fW) & PS1_COL_VFLIP) ? v_ + 15 - (v0W) : v_ + (v0W);                                              \
+        int32 vB_ = ((fW) & PS1_COL_VFLIP) ? vT_ - (hW) : vT_ + (hW);                                                   \
+        if ((uint32)uR_ > 255 || (uint32)vB_ > 255) {                                                                  \
+            PS1Emit q_ = { w, lim - 10, end, page };                                                                   \
+            EmitFlipped(q_, (sxW), (syW), (texW), (v0W), (hW), (fW), (tpW));                                           \
+            w = q_.w, lim = q_.hdr + 10, end = q_.end, page = q_.page;                                                 \
+        }                                                                                                              \
+        else {                                                                                                         \
+            if (__builtin_expect(w > lim - 4, 0))                                                                      \
+                EmitFrag(w, lim, end, page);                                                                           \
+            uint32 xl_ = (uint16)(sxW), xr_ = (uint16)((sxW) + TILE_SIZE);                                             \
+            uint32 yt_ = (uint32)(uint16)(syW) << 16, yb_ = (uint32)(uint16)((syW) + (hW)) << 16;                      \
+            w[0] = 0x2C808080, w[1] = yt_ | xl_;                                                                       \
+            w[2] = ((texW) & 0xFFFF0000) | (uint32)vT_ << 8 | (uint32)uL_;                                             \
+            w[3] = yt_ | xr_, w[4] = (uint32)(tpW) << 16 | (uint32)vT_ << 8 | (uint32)uR_;                             \
+            w[5] = yb_ | xl_, w[6] = (uint32)vB_ << 8 | (uint32)uL_;                                                    \
+            w[7] = yb_ | xr_, w[8] = (uint32)vB_ << 8 | (uint32)uR_;                                                    \
+            w += 9, page = (tpW);                                                                                      \
+        }                                                                                                              \
+    } while (0)
+
 // Screen lines [sy, sy + h) showing layer rows [ly, ly + h) (inside one tile row), the line's left edge at layer x.
 // Hot (hundreds of pieces a frame): -O2, the tiles fetched walking the 4x4 chunks (one chunk index per 4 tiles), the
 // tile image read as three halfwords (u | v << 8, texpage, CLUT), every piece written straight into the arena.
@@ -340,9 +368,7 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         ++pieces;
         if (t & 0xC00) {
             if ((t & 0x400) || h > 4) {
-                PS1Emit q = { w, lim - 10, end, page };
-                EmitFlipped(q, sx, sy, tex, v0, h, (t & 0xC00) >> 6, tpage);
-                w = q.w, lim = q.hdr + 10, end = q.end, page = q.page;
+                PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, (uint32)(t & 0xC00) >> 6, tpage);
             }
             else {
                 PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
@@ -468,9 +494,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
                 }
                 ++pieces;
                 if ((f & PS1_COL_HFLIP) || h > 4) {
-                    PS1Emit q = { w, lim - 10, end, page };
-                    EmitFlipped(q, sx, sy, tex, v0, h, f, c->page);
-                    w = q.w, lim = q.hdr + 10, end = q.end, page = q.page;
+                    PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, f, c->page);
                 }
                 else {
                     PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, c->page);
@@ -796,7 +820,8 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 // (Direct, 3.3h) from the layer's lineScroll and each scroll info's X (xOf), the rows consecutive from scrollY on line 0
 template <bool Direct>
 __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 y1, int32 y2, int32 widthPx, int32 heightPx,
-                                                        const uint8 *solid, ScanlineInfo *sl, const int16 *xOf, int32 scrollY)
+                                                        const uint8 *solid, ScanlineInfo *sl, const int16 *xOf, int32 scrollY,
+                                                        bool oneBank)
 {
     PS1Band group[TILE_SIZE]; // the bands of the current tile row (one palette bank)
     int32 groupCount = 0;
@@ -836,7 +861,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
         int32 rowEnd = TILE_SIZE - (ly & 15);
         while (h < rowEnd && cy + h < y2) {
             if constexpr (Direct) { // rows ly + h stay in this tile row: no wrap, always consecutive
-                if (xOf[layer->lineScroll[ly + h]] != x || gfxLineBuffer[cy + h] != bank)
+                if (xOf[layer->lineScroll[ly + h]] != x || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
             else {
@@ -845,7 +870,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
                     nx -= widthPx;
                 else if (nx < 0)
                     nx += widthPx;
-                if (nx != x || FROM_FIXED(sl[h].position.y) != ly + h || gfxLineBuffer[cy + h] != bank)
+                if (nx != x || FROM_FIXED(sl[h].position.y) != ly + h || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
             ++h;
@@ -855,7 +880,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
             // lines (so no band is split); inside a band they are drawn with its tiles
             uint8 c = solid[ly];
             int32 r = 1;
-            while (cy + r < y2 && gfxLineBuffer[cy + r] == bank) {
+            while (cy + r < y2 && (oneBank || gfxLineBuffer[cy + r] == bank)) {
                 int32 nly;
                 if constexpr (Direct) {
                     nly = ly + r;
@@ -919,6 +944,13 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     ScanlineInfo *sl    = &scanlines[y1];
+    // 3.3i: every line of [y1, y2) on one palette bank (GHZ: no water): the bands skip the per-line bank checks
+    bool oneBank = true;
+    for (int32 y = y1 + 1; y < y2; ++y)
+        if (gfxLineBuffer[y] != gfxLineBuffer[y1]) {
+            oneBank = false;
+            break;
+        }
     if (layer->ps1Uniform) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
         // palette bank changes), as the scan below would find them
@@ -932,7 +964,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
             int32 h = TILE_SIZE - (ly & 15);
             if (h > y2 - cy)
                 h = y2 - cy;
-            for (int32 k = 1; k < h; ++k)
+            for (int32 k = 1; !oneBank && k < h; ++k)
                 if (gfxLineBuffer[cy + k] != bank) {
                     h = k;
                     break;
@@ -955,11 +987,11 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
             int32 x = FROM_FIXED(layer->scrollInfo[i].tilePos);
             xOf[i]  = (int16)(x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x);
         }
-        PS1ScanBands<true>(layer, y1, y2, widthPx, heightPx, solid, NULL, xOf, layer->ps1UniformY);
+        PS1ScanBands<true>(layer, y1, y2, widthPx, heightPx, solid, NULL, xOf, layer->ps1UniformY, oneBank);
         g_ps1LayerDirect = g_ps1LayerDirect + 1;
     }
     else {
-        PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, sl, NULL, 0);
+        PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, sl, NULL, 0, oneBank);
     }
     PS1_LT_ADD(0, PS1T() - tl);
     uint32 dt     = PS1HblanksSince(t0);
