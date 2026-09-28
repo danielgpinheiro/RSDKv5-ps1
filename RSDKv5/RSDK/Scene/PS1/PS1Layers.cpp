@@ -47,12 +47,16 @@ inline uint16 PS1T() { return 0; }
 #define PS1_BAND_MAX    24 // pieces of one band: 320 / 16 + 1
 #define PS1_COL_MAX     96 // columns of a tile row's table (320 px + the bands' spread)
 // The column table of a tile row (DrawRowBands), in the scratchpad (1 KB of 1-cycle RAM at 1F800000h, psx-spx "Memory
-// Map"; free outside the layer drawer's and the flat primitives' own calls): per column the texture word
-// (u | v << 8 | CLUT << 16), its texture page and flags
+// Map"; free outside the layer drawer's and the flat primitives' own calls): per column one record, the texture word
+// (u | v << 8 | CLUT << 16), its texture page and flags (3.3f: one pointer walks it)
+struct PS1Col {
+    uint32_t tex;
+    uint16 page;
+    uint8 flags; // 4 H-flip (no copy), 5 V-flip, 6 empty, 7 no image
+    uint8 pad;
+};
 struct PS1ColTable {
-    uint32_t tex[PS1_COL_MAX];
-    uint16 page[PS1_COL_MAX];
-    uint8 flags[PS1_COL_MAX]; // 4 H-flip, 5 V-flip, 6 empty, 7 no image
+    PS1Col col[PS1_COL_MAX];
 };
 static_assert(sizeof(PS1ColTable) <= 1024, "the column table must fit the scratchpad");
 #define PS1_COL_HFLIP 0x10
@@ -180,6 +184,106 @@ __attribute__((always_inline)) inline void SpritePiece(PS1Out &o, uint32 cmd, ui
     o.w += n, o.fw += n;
 }
 
+// --- 3.3f: the span writer as scalars ----------------------------------------------------------------------------------
+// The hot loops keep the writer in three registers: w (the next word), hdr (the open fragment's header), end (the span's
+// reservation end); a fragment is opened only with 15 words left before end, so a piece (<= 14 words) never checks end.
+// The rare paths (a new span, a flipped quad) go through PS1Emit, out of line, so nothing in the loops is spilled.
+// Arena full: the writer points at a sink, where every fragment asks for a new span again (each failure counted).
+struct PS1Emit {
+    uint32_t *w, *hdr, *end;
+    uint32 page;
+};
+#define PS1_EMIT_RESERVE 512
+uint32_t s_ps1EmitSink[16];
+
+__attribute__((always_inline)) inline void EmitSink(PS1Emit &e) { e.hdr = s_ps1EmitSink, e.w = s_ps1EmitSink + 1, e.end = s_ps1EmitSink + 1; }
+
+__attribute__((always_inline)) inline void EmitOpen(PS1Emit &e)
+{
+    uint32_t *b = PS1ChainSpanBegin(PS1_EMIT_RESERVE);
+    if (!b) {
+        EmitSink(e);
+        return;
+    }
+    e.hdr = b, e.w = b + 1, e.end = b + PS1_EMIT_RESERVE;
+}
+
+__attribute__((always_inline)) inline void EmitClose(PS1Emit &e)
+{
+    if (e.hdr != s_ps1EmitSink && e.w > e.hdr + 1)
+        PS1ChainSpanEnd(e.hdr, (int32)(e.w - e.hdr - 1), e.w);
+    else
+        PS1ChainSpanEnd(NULL, 0, NULL);
+}
+
+// The span is used up: link it, reserve another
+__attribute__((noinline)) void EmitNewSpan(PS1Emit &e)
+{
+    EmitClose(e);
+    EmitOpen(e);
+}
+
+// Room for a piece of `need` words in the open fragment, else a new fragment (or span)
+__attribute__((always_inline)) inline void EmitRoom(uint32_t *&w, uint32_t *&hdr, uint32_t *&end, uint32 page, int32 need)
+{
+    if (__builtin_expect(w + need > hdr + 15, 0)) {
+        if (w + 15 > end) {
+            PS1Emit e = { w, hdr, end, page };
+            EmitNewSpan(e);
+            w = e.w, hdr = e.hdr, end = e.end;
+        }
+        else {
+            *hdr = (uint32_t)(w - hdr - 1) << 24 | ((uintptr_t)w & 0xFFFFFF);
+            hdr  = w++;
+        }
+    }
+}
+
+// A flipped piece as textured quads (FlippedPiece), out of line: H-flipped tiles without a copy, V-flipped bands of
+// more than 4 lines
+__attribute__((noinline)) void EmitFlipped(PS1Emit &e, int32 sx, int32 sy, uint32 tex, int32 v0, int32 h, uint32 f, uint32 tpage)
+{
+    if (e.hdr == s_ps1EmitSink) {
+        EmitNewSpan(e);
+        if (e.hdr == s_ps1EmitSink)
+            return;
+    }
+    PS1Out o;
+    o.base = e.hdr, o.end = e.end, o.hdr = e.hdr, o.w = e.w, o.fw = (int32)(e.w - e.hdr - 1), o.page = e.page;
+    FlippedPiece(o, sx, sy, tex & 0xFF, (tex >> 8) & 0xFF, v0, h, f & PS1_COL_HFLIP, f & PS1_COL_VFLIP, tex >> 16, tpage);
+    if (!o.base) { // PS1OutBegin found the arena full
+        EmitSink(e);
+        return;
+    }
+    e.w = o.w, e.hdr = o.hdr, e.end = o.end, e.page = o.page;
+    if (e.hdr + 15 > e.end) // PS1OutRoom fills a reservation to its end: the loops need 15 words per fragment
+        EmitNewSpan(e);
+}
+
+// One sprite piece: a texpage word first if the page changed; n = 3 (16x16, GP0 7Ch) or 4 (sized, GP0 64h)
+#define PS1_EMIT_PIECE(cmdW, xyW, texW, whW, nW, tpW)                                                                   \
+    do {                                                                                                               \
+        uint32 tp_ = (tpW);                                                                                            \
+        int32 np_  = tp_ != page;                                                                                      \
+        EmitRoom(w, hdr, end, page, (nW) + np_);                                                                       \
+        if (np_)                                                                                                       \
+            *w++ = 0xE1000000 | tp_, page = tp_;                                                                       \
+        w[0] = (cmdW), w[1] = (xyW), w[2] = (texW);                                                                    \
+        if ((nW) == 4)                                                                                                 \
+            w[3] = (whW);                                                                                              \
+        w += (nW);                                                                                                     \
+    } while (0)
+
+// A V-flipped piece of h <= 4 lines: one sized sprite per line, each the mirrored row (the same pixels as the quad;
+// cheaper for the CPU and the GPU). tex = the tile's u | v << 8 | CLUT << 16
+#define PS1_EMIT_VFLIP_LINES(sxW, syW, texW, v0W, hW, tpW)                                                             \
+    do {                                                                                                               \
+        uint32 xyl_  = (uint32)(uint16)(syW) << 16 | (uint16)(sxW);                                                    \
+        uint32 texl_ = (texW) + ((uint32)(15 - (v0W)) << 8);                                                           \
+        for (int32 r_ = 0; r_ < (hW); ++r_, xyl_ += 0x10000, texl_ -= 0x100)                                           \
+            PS1_EMIT_PIECE(0x64808080, xyl_, texl_, TILE_SIZE | 1u << 16, 4, (tpW));                                   \
+    } while (0)
+
 // Screen lines [sy, sy + h) showing layer rows [ly, ly + h) (inside one tile row), the line's left edge at layer x.
 // Hot (hundreds of pieces a frame): -O2, the tiles fetched walking the 4x4 chunks (one chunk index per 4 tiles), the
 // tile image read as three halfwords (u | v << 8, texpage, CLUT), every piece written straight into the arena.
@@ -200,11 +304,10 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
     bool full   = h == TILE_SIZE;
     uint32 cmd  = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
-    uint32 vFlipRow = (uint32)(15 - v0) << 8; // one line of a V-flipped tile: its mirrored row
-    PS1Out o;
-    o.page = 0xFFFFFFFF;
-    if (!PS1OutBegin(o))
-        return;
+    PS1Emit e;
+    EmitOpen(e);
+    uint32_t *w = e.w, *hdr = e.hdr, *end = e.end;
+    uint32 page = 0xFFFFFFFF;
     for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
@@ -225,25 +328,28 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
         __asm__("" : "+r"(img2), "+r"(img4)); // 6-byte records: 2i + 4i (GCC folds shifts into a ~12-cycle mult)
         const uint8 *ti = images + img2 + img4;
-        uint32 uv       = *(const uint16 *)ti;
+        uint32 tex      = *(const uint16 *)ti;
         uint32 tpage    = *(const uint16 *)(ti + 2);
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)
             clut = bankClut;
+        tex |= clut << 16;
         ++pieces;
         if (t & 0xC00) {
-            if ((t & 0xC00) != 0x800 || h != 1) {
-                FlippedPiece(o, sx, sy, uv & 0xFF, uv >> 8, v0, h, (t >> 10) & 1, (t >> 11) & 1, clut, tpage);
-                continue;
+            if ((t & 0x400) || h > 4) {
+                PS1Emit q = { w, hdr, end, page };
+                EmitFlipped(q, sx, sy, tex, v0, h, (t & 0xC00) >> 6, tpage);
+                w = q.w, hdr = q.hdr, end = q.end, page = q.page;
             }
-            uv += vFlipRow;
+            else {
+                PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
+            }
+            continue;
         }
-        else {
-            uv += vRow;
-        }
-        SpritePiece(o, cmd, (uint32)(uint16)sx | yWord, uv | clut << 16, wh, full, tpage);
+        PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, full ? 3 : 4, tpage);
     }
-    PS1OutEnd(o);
+    e.w = w, e.hdr = hdr;
+    EmitClose(e);
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
     PS1_LT_ADD(1, PS1T() - tg);
@@ -308,13 +414,14 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
             sub   = 0;
             chunk = pool + ((uint32)chunkRow[tx >> 2] << 4);
         }
+        PS1Col *col = &ct->col[k];
         if (t == 0xFFFF) {
-            ct->flags[k] = PS1_COL_EMPTY;
+            col->flags = PS1_COL_EMPTY;
             continue;
         }
         uint16 img = tileImage[t & 0x3FF];
         if (img == PS1_TILE_NONE) {
-            ct->flags[k] = PS1_COL_MISS;
+            col->flags = PS1_COL_MISS;
             continue;
         }
         if (t & 0x400) { // an H-flipped copy (the .ptl's pairs, 3.3b) makes the piece a sprite
@@ -328,52 +435,51 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)
             clut = bankClut;
-        ct->tex[k]   = *(const uint16 *)ti | clut << 16;
-        ct->page[k]  = *(const uint16 *)(ti + 2);
-        ct->flags[k] = (uint8)((t & 0xC00) >> 6); // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V)
+        col->tex   = *(const uint16 *)ti | clut << 16;
+        col->page  = *(const uint16 *)(ti + 2);
+        col->flags = (uint8)((t & 0xC00) >> 6); // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V)
     }
     PS1_LT_ADD(1, PS1T() - tg);
-    // each band from the table, straight into the arena
+    // each band from the table, straight into the arena (one span for the row: 3.3f)
     int32 misses = 0, pieces = 0;
+    uint16 tb = PS1T();
+    PS1Emit e;
+    EmitOpen(e);
+    uint32_t *w = e.w, *hdr = e.hdr, *end = e.end;
+    uint32 page = 0xFFFFFFFF;
     for (int32 b = 0; b < count; ++b) {
-        uint16 tb     = PS1T();
-        PS1Band *band = &bands[b];
-        int32 h = band->h, v0 = band->ly & 15;
-        int32 sx      = -(band->x & 15);
-        int32 k       = band->d - dmin;
-        bool full     = h == TILE_SIZE;
-        uint32 cmd    = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
-        uint32 yWord  = (uint32)(uint16)band->sy << 16;
-        uint32 vRow = (uint32)v0 << 8, vFlipRow = (uint32)(15 - v0) << 8;
-        PS1Out o;
-        o.page = 0xFFFFFFFF;
-        if (!PS1OutBegin(o))
-            break;
-        for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE, ++k) {
-            uint32 f = ct->flags[k];
-            if (f & (PS1_COL_EMPTY | PS1_COL_MISS)) {
-                if (f & PS1_COL_MISS)
-                    ++misses;
-                continue;
-            }
-            uint32 tex = ct->tex[k], tpage = ct->page[k];
-            ++pieces;
-            if (f & (PS1_COL_HFLIP | PS1_COL_VFLIP)) {
-                if ((f & PS1_COL_HFLIP) || h != 1) {
-                    FlippedPiece(o, sx, band->sy, tex & 0xFF, (tex >> 8) & 0xFF, v0, h, f & PS1_COL_HFLIP, f & PS1_COL_VFLIP, tex >> 16,
-                                 tpage);
+        const PS1Band *band = &bands[b];
+        int32 h = band->h, v0 = band->ly & 15, sy = band->sy;
+        int32 sx           = -(band->x & 15);
+        const PS1Col *c    = &ct->col[band->d - dmin];
+        bool full          = h == TILE_SIZE;
+        uint32 cmd         = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
+        uint32 yWord       = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
+        for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE, ++c) {
+            uint32 f = c->flags, tex = c->tex;
+            if (f) {
+                if (f & (PS1_COL_EMPTY | PS1_COL_MISS)) {
+                    misses += f >> 7;
                     continue;
                 }
-                tex += vFlipRow;
+                ++pieces;
+                if ((f & PS1_COL_HFLIP) || h > 4) {
+                    PS1Emit q = { w, hdr, end, page };
+                    EmitFlipped(q, sx, sy, tex, v0, h, f, c->page);
+                    w = q.w, hdr = q.hdr, end = q.end, page = q.page;
+                }
+                else {
+                    PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, c->page);
+                }
+                continue;
             }
-            else {
-                tex += vRow;
-            }
-            SpritePiece(o, cmd, (uint32)(uint16)sx | yWord, tex, wh, full, tpage);
+            ++pieces;
+            PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, full ? 3 : 4, c->page);
         }
-        PS1OutEnd(o);
-        PS1_LT_ADD(1, PS1T() - tb);
     }
+    e.w = w, e.hdr = hdr;
+    EmitClose(e);
+    PS1_LT_ADD(1, PS1T() - tb);
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
     g_ps1LayerBands     = g_ps1LayerBands + count;

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Ranks the functions of a PC-sampler dump (`make SAMPLE=1`, ps1/pc_sampler.cpp, tools/play/ghz1_sample.gdb).
-Usage: sample_report.py HIST.bin FRAMES [PERIOD] [--top N] [--lines FUNC_SUBSTRING ...]
+Usage: sample_report.py HIST.bin FRAMES [PERIOD] [--top N] [--ovl FOLDER] [--lines FUNC_SUBSTRING ...]
 HIST.bin: one little-endian word per instruction of 0x80000000..0x80200000 (GDB dump of 0x80400000). FRAMES: the frames
 the sampler ran. PERIOD: cycles between samples (ps1/pc_sampler.cpp). Symbols: rsdkv5.elf and the overlays' ELFs
-(build/gen/ovl/*/*.elf, their .ovl range only). --lines: per source line of the matching functions (addr2line)."""
+(build/gen/ovl/<FOLDER>/<FOLDER>.elf, its .ovl range only: every overlay is linked at the top of STG, so only the
+scene's own overlay may be given; default GHZ). --lines: per source line of the matching functions (addr2line)."""
 import bisect, glob, os, re, struct, subprocess, sys
 from collections import defaultdict
 
@@ -11,6 +12,7 @@ HBL = 2152  # cycles per NTSC hblank (33.8688 MHz / 15,734 Hz)
 args = sys.argv[1:]
 lines_for = []
 top = 40
+ovl_name = 'GHZ'
 if '--lines' in args:
     i = args.index('--lines')
     lines_for = args[i + 1:]
@@ -18,6 +20,10 @@ if '--lines' in args:
 if '--top' in args:
     i = args.index('--top')
     top = int(args[i + 1])
+    del args[i:i + 2]
+if '--ovl' in args:
+    i = args.index('--ovl')
+    ovl_name = args[i + 1]
     del args[i:i + 2]
 hist, frames = args[0], int(args[1])
 period = int(args[2]) if len(args) > 2 else 9973
@@ -37,7 +43,7 @@ def symbols(elf, lo=0, hi=1 << 32):
 
 
 syms = symbols(os.path.join(repo, 'rsdkv5.elf'))
-for ovl in glob.glob(os.path.join(repo, 'build', 'gen', 'ovl', '*', '*.elf')):
+for ovl in glob.glob(os.path.join(repo, 'build', 'gen', 'ovl', ovl_name, ovl_name + '.elf')):
     nm = subprocess.run(['mipsel-none-elf-nm', ovl], capture_output=True, text=True).stdout
     s = re.search(r'([0-9a-f]+) . __ps1_ovl_start', nm)
     e = re.search(r'([0-9a-f]+) . __ps1_ovl_end', nm)
