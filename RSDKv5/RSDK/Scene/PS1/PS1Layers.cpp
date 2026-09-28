@@ -185,8 +185,9 @@ __attribute__((always_inline)) inline void SpritePiece(PS1Out &o, uint32 cmd, ui
 }
 
 // --- 3.3f: the span writer as scalars ----------------------------------------------------------------------------------
-// The hot loops keep the writer in three registers: w (the next word), hdr (the open fragment's header), end (the span's
-// reservation end); a fragment is opened only with 15 words left before end, so a piece (<= 14 words) never checks end.
+// The hot loops keep the writer in three registers: w (the next word), lim (the open fragment's header + 10: past it a
+// piece of <= 5 words might not fit in 14, 3.3g), end (the span's reservation end); a fragment is opened only with 15
+// words left before end, so a piece never checks end.
 // The rare paths (a new span, a flipped quad) go through PS1Emit, out of line, so nothing in the loops is spilled.
 // Arena full: the writer points at a sink, where every fragment asks for a new span again (each failure counted).
 struct PS1Emit {
@@ -223,19 +224,20 @@ __attribute__((noinline)) void EmitNewSpan(PS1Emit &e)
     EmitOpen(e);
 }
 
-// Room for a piece of `need` words in the open fragment, else a new fragment (or span)
-__attribute__((always_inline)) inline void EmitRoom(uint32_t *&w, uint32_t *&hdr, uint32_t *&end, uint32 page, int32 need)
+// The open fragment is full (3.3g: the loops test w > lim, lim = header + 10, so a piece of <= 5 words always fits):
+// close it and open the next, or a new span when fewer than 15 words are left
+__attribute__((always_inline)) inline void EmitFrag(uint32_t *&w, uint32_t *&lim, uint32_t *&end, uint32 page)
 {
-    if (__builtin_expect(w + need > hdr + 15, 0)) {
-        if (w + 15 > end) {
-            PS1Emit e = { w, hdr, end, page };
-            EmitNewSpan(e);
-            w = e.w, hdr = e.hdr, end = e.end;
-        }
-        else {
-            *hdr = (uint32_t)(w - hdr - 1) << 24 | ((uintptr_t)w & 0xFFFFFF);
-            hdr  = w++;
-        }
+    if (w + 15 > end) {
+        PS1Emit e = { w, lim - 10, end, page };
+        EmitNewSpan(e);
+        w = e.w, lim = e.hdr + 10, end = e.end;
+    }
+    else {
+        uint32_t *hdr = lim - 10;
+        *hdr          = (uint32_t)(w - hdr - 1) << 24 | ((uintptr_t)w & 0xFFFFFF);
+        lim           = w + 10;
+        ++w;
     }
 }
 
@@ -260,17 +262,16 @@ __attribute__((noinline)) void EmitFlipped(PS1Emit &e, int32 sx, int32 sy, uint3
         EmitNewSpan(e);
 }
 
-// One sprite piece: a texpage word first if the page changed; n = 3 (16x16, GP0 7Ch) or 4 (sized, GP0 64h)
+// One sprite piece: a texpage word first if the page changed; n = 3 (16x16, GP0 7Ch) or 4 (sized, GP0 64h). The
+// size word is written either way (a 16x16 sprite's lands on the next piece's first word, inside the fragment's 14)
 #define PS1_EMIT_PIECE(cmdW, xyW, texW, whW, nW, tpW)                                                                   \
     do {                                                                                                               \
         uint32 tp_ = (tpW);                                                                                            \
-        int32 np_  = tp_ != page;                                                                                      \
-        EmitRoom(w, hdr, end, page, (nW) + np_);                                                                       \
-        if (np_)                                                                                                       \
+        if (__builtin_expect(w > lim, 0))                                                                              \
+            EmitFrag(w, lim, end, page);                                                                               \
+        if (tp_ != page)                                                                                               \
             *w++ = 0xE1000000 | tp_, page = tp_;                                                                       \
-        w[0] = (cmdW), w[1] = (xyW), w[2] = (texW);                                                                    \
-        if ((nW) == 4)                                                                                                 \
-            w[3] = (whW);                                                                                              \
+        w[0] = (cmdW), w[1] = (xyW), w[2] = (texW), w[3] = (whW);                                                      \
         w += (nW);                                                                                                     \
     } while (0)
 
@@ -303,10 +304,11 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
     int32 pieces = 0, misses = 0;
     bool full   = h == TILE_SIZE;
     uint32 cmd  = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
+    int32 n     = full ? 3 : 4;
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
     PS1Emit e;
     EmitOpen(e);
-    uint32_t *w = e.w, *hdr = e.hdr, *end = e.end;
+    uint32_t *w = e.w, *lim = e.hdr + 10, *end = e.end;
     uint32 page = 0xFFFFFFFF;
     for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
         uint16 t = chunk[sub];
@@ -337,18 +339,18 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         ++pieces;
         if (t & 0xC00) {
             if ((t & 0x400) || h > 4) {
-                PS1Emit q = { w, hdr, end, page };
+                PS1Emit q = { w, lim - 10, end, page };
                 EmitFlipped(q, sx, sy, tex, v0, h, (t & 0xC00) >> 6, tpage);
-                w = q.w, hdr = q.hdr, end = q.end, page = q.page;
+                w = q.w, lim = q.hdr + 10, end = q.end, page = q.page;
             }
             else {
                 PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
             }
             continue;
         }
-        PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, full ? 3 : 4, tpage);
+        PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, tpage);
     }
-    e.w = w, e.hdr = hdr;
+    e.w = w, e.hdr = lim - 10;
     EmitClose(e);
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
@@ -445,7 +447,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     uint16 tb = PS1T();
     PS1Emit e;
     EmitOpen(e);
-    uint32_t *w = e.w, *hdr = e.hdr, *end = e.end;
+    uint32_t *w = e.w, *lim = e.hdr + 10, *end = e.end;
     uint32 page = 0xFFFFFFFF;
     for (int32 b = 0; b < count; ++b) {
         const PS1Band *band = &bands[b];
@@ -454,6 +456,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         const PS1Col *c    = &ct->col[band->d - dmin];
         bool full          = h == TILE_SIZE;
         uint32 cmd         = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
+        int32 n            = full ? 3 : 4;
         uint32 yWord       = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
         for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE, ++c) {
             uint32 f = c->flags, tex = c->tex;
@@ -464,9 +467,9 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
                 }
                 ++pieces;
                 if ((f & PS1_COL_HFLIP) || h > 4) {
-                    PS1Emit q = { w, hdr, end, page };
+                    PS1Emit q = { w, lim - 10, end, page };
                     EmitFlipped(q, sx, sy, tex, v0, h, f, c->page);
-                    w = q.w, hdr = q.hdr, end = q.end, page = q.page;
+                    w = q.w, lim = q.hdr + 10, end = q.end, page = q.page;
                 }
                 else {
                     PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, c->page);
@@ -474,10 +477,10 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
                 continue;
             }
             ++pieces;
-            PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, full ? 3 : 4, c->page);
+            PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, c->page);
         }
     }
-    e.w = w, e.hdr = hdr;
+    e.w = w, e.hdr = lim - 10;
     EmitClose(e);
     PS1_LT_ADD(1, PS1T() - tb);
     if (misses)

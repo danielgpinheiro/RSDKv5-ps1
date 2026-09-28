@@ -52,14 +52,30 @@ const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1T
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
 
+// The pairs' answers cached per tile (3.3g: the column tables ask for every H-flipped column; per-line rows show a few
+// tiles): tile << 16 | image, direct-mapped on the tile's low 5 bits; cleared when the pairs load or change
+uint32 s_hflipCache[32];
+void PS1HFlipCacheClear()
+{
+    for (int32 i = 0; i < 32; ++i) s_hflipCache[i] = 0xFFFFFFFF;
+}
+
 uint16 RSDK::PS1TileHFlipImage(uint16 tile)
 {
+    uint32 &c = s_hflipCache[tile & 31];
+    if ((c >> 16) == tile)
+        return (uint16)c;
+    uint16 img         = PS1_TILE_NONE;
     const uint16 *pair = (const uint16 *)(s_ps1TileBlob + s_hflipOff);
     for (uint32 i = 0; i < s_hflipCount; ++i, pair += 2) {
-        if (pair[0] >= tile)
-            return pair[0] == tile ? pair[1] : PS1_TILE_NONE;
+        if (pair[0] >= tile) {
+            if (pair[0] == tile)
+                img = pair[1];
+            break;
+        }
     }
-    return PS1_TILE_NONE;
+    c = (uint32)tile << 16 | img;
+    return img;
 }
 
 const uint8 *RSDK::PS1TileSolidLines(int32 layer, int32 heightPx)
@@ -89,6 +105,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     s_solidMaskOff  = 0;
     g_ps1SolidLines = 0;
     s_hflipOff = s_hflipCount = 0;
+    PS1HFlipCacheClear();
 
     char path[0x40];
     sprintf_s(path, sizeof(path), "Data/Stages/%s/Scene%s.ptl", folder, sceneID);
@@ -146,6 +163,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     }
     s_hflipOff   = s_cellOff + s_cellCount * 2 + h.solidBytes;
     s_hflipCount = h.hflipCount;
+    PS1HFlipCacheClear();
 
     // The blocks' table, then their pixels through DATASET_TMP's memory (empty: LoadSceneAssets just reset it)
     uint8 *stage        = (uint8 *)tmp->memoryTable;
@@ -198,6 +216,7 @@ void RSDK::PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16
                     if (pair[0] == t) { // its H-flipped copy shows the old picture: tiles + quads from now on
                         pair[0]         = 0xFFFF;
                         g_ps1HFlipDrops = g_ps1HFlipDrops + 1;
+                        PS1HFlipCacheClear();
                     }
                 }
             }
