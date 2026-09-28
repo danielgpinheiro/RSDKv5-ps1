@@ -101,6 +101,18 @@ def code_closure(objs, known, src):
     return files
 
 
+def function_body(code, fname):
+    """The text of `void fname(...) { ... }` in code (brace-matched), or ''."""
+    m = re.search(r'\b' + re.escape(fname) + r'\s*\([^)]*\)\s*\{', code)
+    if not m:
+        return ''
+    depth, i = 1, m.end()
+    while i < len(code) and depth:
+        depth += {'{': 1, '}': -1}.get(code[i], 0)
+        i += 1
+    return code[m.end():i]
+
+
 def active_objects(folder, scene_id, data=DATA):
     names, placed, scene = scene_objects(folder, scene_id, data)
     src = sources()
@@ -109,6 +121,12 @@ def active_objects(folder, scene_id, data=DATA):
     pat_classid = re.compile(r'(?:CreateEntity|ResetEntity|ResetEntitySlot)\([^;]*?\b(\w+)->classID')
     pat_assign = re.compile(r'classID\s*=\s*(\w+)->classID')
     active = set(placed) & known
+    # every scene object's StageLoad runs at the load, entities or not: what it creates is active (TitleSetup creates
+    # its own entity: RSDK.ResetEntitySlot(0, TitleSetup->classID, NULL))
+    for n in names:
+        p = src.get(n)
+        body = function_body(code_of(p), n + '_StageLoad') if p else ''
+        active |= (set(pat_create.findall(body)) | set(pat_classid.findall(body)) | set(pat_assign.findall(body))) & known
     while True:
         code = ''.join(code_of(f) for f in code_closure(active, known, src))
         made = (set(pat_create.findall(code)) | set(pat_classid.findall(code)) | set(pat_assign.findall(code))) & known

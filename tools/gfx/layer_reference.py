@@ -224,7 +224,8 @@ def render(cap, folder, scene_id):
     sc = F.read_stageconfig(os.path.join(DATA, 'Stages', folder, 'StageConfig.bin'))
     layers = F.read_scene(os.path.join(DATA, 'Stages', folder, 'Scene%s.bin' % scene_id), g['objects'] + sc['objects'])['layers']
     imgs = tile_images(os.path.join(HERE, '..', '..', 'build', 'gfx', folder, 'Scene%s.ptl' % scene_id))
-    table = struct.unpack('<1024H', open(os.path.join(cap, 'tiletable.bin'), 'rb').read())
+    tt = os.path.join(cap, 'tiletable.bin')  # none when the scene has no tile images loaded
+    table = struct.unpack('<1024H', open(tt, 'rb').read()) if os.path.exists(tt) else (0xFFFF,) * 1024
     pal = np.frombuffer(open(os.path.join(cap, 'pal.bin'), 'rb').read(), '<u2')
     colour = np.array([0] + [ps1_colour(int(c)) for c in pal[1:]], np.uint16)
     out = np.zeros((240, 320), np.uint16)

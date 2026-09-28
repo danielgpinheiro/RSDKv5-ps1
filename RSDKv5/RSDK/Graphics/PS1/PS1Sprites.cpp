@@ -24,6 +24,9 @@ volatile uint32 g_ps1SpriteMissing  = 0; // frames without a binding (not in the
 volatile uint32 g_ps1SpriteCulled   = 0; // rectangles off the screen (this frame)
 volatile uint32 g_ps1SpriteInkTodo  = 0; // draws with an ink the GPU does not do yet: tint, masked, unmasked (total)
 volatile uint32 g_ps1SpriteFxTodo   = 0; // rotated / scaled draws not done (too big for the GPU; total)
+volatile uint32 g_ps1InkTodoBy[8]    = {}; // those per ink (5 tint, 6 masked, 7 unmasked; total)
+volatile uint32 g_ps1MissingSheet[8] = {}; // the first sheets with frames not bound (sheet + 1 | frames missing << 8)
+volatile uint32 g_ps1MissingRect[8]  = {}; // their first missing frame's sheet position (x | y << 16)
 volatile uint32 g_ps1SpriteUnbound  = 0; // DrawSpriteFlipped / DrawSpriteRotozoom calls with sheet coordinates only (total)
 volatile uint32 g_ps1SpriteClipTodo = 0; // draws while the screen's clip bounds are not the whole screen (total)
 volatile uint32 g_ps1SpriteRotated  = 0; // rotated / scaled rectangles drawn (this frame)
@@ -115,7 +118,10 @@ bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
             ink.mode = inkEffect == INK_ADD ? 1 : 2;
             ink.mod  = (uint32)((alpha > 0xFF ? 0xFF : alpha) + 1) >> 1;
             return true;
-        default: g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1; return false;
+        default:
+            g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
+            g_ps1InkTodoBy[inkEffect & 7] = g_ps1InkTodoBy[inkEffect & 7] + 1;
+            return false;
     }
 }
 
@@ -393,6 +399,15 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &ha
     uint16 attr = frame->ps1Attr;
     if (attr == PS1_ATLAS_MISSING) {
         g_ps1SpriteMissing = g_ps1SpriteMissing + 1;
+        for (int32 i = 0; i < 8; ++i) { // which sheets (GDB)
+            uint32 e = g_ps1MissingSheet[i];
+            if (!e || (e & 0xFF) == (uint32)(frame->sheetID + 1)) {
+                if (!e)
+                    g_ps1MissingRect[i] = (uint32)(uint16)frame->sprX | (uint32)(uint16)frame->sprY << 16;
+                g_ps1MissingSheet[i] = (uint32)(frame->sheetID + 1) | ((e >> 8) + 1) << 8;
+                break;
+            }
+        }
         return false;
     }
     tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7;

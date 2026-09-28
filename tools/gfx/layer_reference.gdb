@@ -1,4 +1,16 @@
 set $n = 0
+# the palette and tile table at the frame's start too: scenes with no tile layer (the Title) have no layer call to dump
+# them (a layer call overwrites them with its own, as before)
+break RSDK::PS1LayersFrameBegin if g_ps1PerfFrames == REF_FRAME
+commands
+silent
+dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[0][256]
+set $tb = (char*)'(anonymous namespace)::s_ps1TileBlob'
+if $tb != 0
+  dump binary memory REF_DIR/tiletable.bin $tb $tb+2048
+end
+continue
+end
 break PS1LayerDebugHook if g_ps1PerfFrames == REF_FRAME
 commands
 silent
