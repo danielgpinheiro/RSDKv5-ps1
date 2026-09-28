@@ -402,7 +402,8 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
 
 // The frame start of the draw lists: this frame's clear, the tile CLUTs and the bank CLUT from the palette
 // --- 3.5: the frame's CLUT uploads, recorded for FillScreen -------------------------------------------------------------
-#define PS1_CLUT_RECS   128 // upload chunks a frame: tile CLUTs + the bank (12 chunks) + sprite CLUTs, and restores
+#define PS1_CLUT_CHUNK_HW 22 // halfwords per CLUT upload fragment (3 + 11 words = 14), as PS1ChainReserveRow's
+#define PS1_CLUT_RECS   192 // upload chunks a frame: tile CLUTs + the bank (12 chunks) + sprite CLUTs, and restores
 #define PS1_COLOUR_RECS 256 // direct colour words a frame (flat rectangles, one-colour runs)
 struct PS1ClutRec {
     uint16_t *data;
@@ -459,7 +460,144 @@ void PS1ClutUploadAll()
     PS1ChainFlushCache(); // the GPU's CLUT cache may hold older colours
 }
 
-// The frame start of the draw lists: this frame's clear, the tile CLUTs and the bank CLUT from the palette
+// --- 3.3e: CLUTs uploaded where the palette changed ---------------------------------------------------------------------
+// The CLUTs in VRAM stay from frame to frame: a frame uploads only those whose palette entries changed since the last
+// upload (bank 0 compared with the copy the uploads came from; GHZ changes 8 entries a frame). Everything is uploaded
+// after VRAM changed outside the chains (g_ps1VramGen: loads, immediate uploads), after a new CLUT set, and after a frame
+// that faded them. A FillScreen needs every CLUT at the frame's head, before the draws that used them (3.5a): a slot
+// chained at the frame start takes the full set then, built from the same copy and faded with the rest.
+#define PS1_CLUT_MASKS 128 // CLUTs whose palette buckets are known (more: always uploaded)
+uint16 s_palRaw[256];      // bank 0 as the CLUTs in VRAM show it (RGB565)
+uint16 s_pal16[256];       // the same as PS1 colours; [0] = 0 (transparent)
+uint32 s_clutBuckets[PS1_CLUT_MASKS]; // per CLUT (tiles, then atlas): bit b = uses a palette index in [8b, 8b + 8)
+const void *s_clutSetTiles = NULL, *s_clutSetAtlas = NULL;
+int32 s_clutSetCounts   = -1;
+uint32 s_clutGen        = 0;
+bool s_clutFullNext     = true; // the next frame uploads every CLUT
+bool s_clutHeadFull     = false; // this frame's head uploads every CLUT
+extern "C" {
+volatile uint32 g_ps1ClutFullUploads = 0; // frames that uploaded every CLUT (total)
+volatile uint32 g_ps1ClutRowUploads  = 0; // CLUT rows uploaded because their entries changed (total)
+volatile uint32 g_ps1ClutSplices     = 0; // full sets spliced in at the frame's head for a FillScreen (total)
+volatile uint32 g_ps1ClutTestSplice  = 0; // GDB test: 1 = a fade doesn't make the next frame upload everything, so
+                                          // every fading frame takes the splice (exact only while every frame fades)
+}
+
+inline uint32 PS1ClutBucketsOf(const uint8 *map)
+{
+    uint32 m = 0;
+    for (int32 i = 1; i < 16; ++i)
+        if (map[i])
+            m |= 1u << (map[i] >> 3);
+    return m;
+}
+
+// A 4-bit CLUT's 16 entries from the copy
+inline void PS1ClutRowFrom(uint16 *row, const uint8 *map)
+{
+    row[0] = 0;
+    for (int32 i = 1; i < 16; ++i) row[i] = map[i] ? s_pal16[map[i]] : 0;
+}
+
+// The frame start's CLUTs: every one (full) or those whose entries changed
+void PS1ClutUploadChanged()
+{
+    const PS1TileClut *cl  = PS1TileCluts();
+    const PS1AtlasClut *ac = PS1AtlasCluts();
+    int32 nt = cl ? PS1TileClutCount() : 0, na = ac ? PS1AtlasClutCount() : 0;
+    uint16 row[16];
+    if ((s_clutFullNext && !g_ps1ClutTestSplice) || g_ps1VramGen != s_clutGen || cl != s_clutSetTiles || ac != s_clutSetAtlas || (nt | na << 16) != s_clutSetCounts) {
+        for (int32 i = 0; i < 256; ++i) s_palRaw[i] = fullPalette[0][i], s_pal16[i] = i ? PS1Colour(s_palRaw[i]) : 0;
+        for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) s_clutBuckets[c] = PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map);
+        s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen;
+        s_clutFullNext = false;
+        for (int32 c = 0; c < nt; ++c) PS1ClutRowFrom(row, cl[c].map), PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
+        PS1ClutRow(s_pal16, 256, 0, 240);
+        for (int32 c = 0; c < na; ++c) PS1ClutRowFrom(row, ac[c].map), PS1ClutRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
+        s_clutHeadFull       = true;
+        g_ps1ClutFullUploads = g_ps1ClutFullUploads + 1;
+        return;
+    }
+    s_clutHeadFull = false;
+    uint32 changed = 0;
+    int32 lo = 256, hi = -1;
+    for (int32 i = 1; i < 256; ++i) {
+        uint16 c = fullPalette[0][i];
+        if (c != s_palRaw[i]) {
+            s_palRaw[i] = c, s_pal16[i] = PS1Colour(c);
+            changed |= 1u << (i >> 3);
+            if (i < lo)
+                lo = i;
+            hi = i;
+        }
+    }
+    if (!changed)
+        return;
+    int32 rows = 1;
+    for (int32 c = 0; c < nt + na; ++c) {
+        if (c < PS1_CLUT_MASKS && !(s_clutBuckets[c] & changed))
+            continue;
+        const PS1TileClut *t = c < nt ? &cl[c] : NULL;
+        const PS1AtlasClut *a = c < nt ? NULL : &ac[c - nt];
+        PS1ClutRowFrom(row, t ? t->map : a->map);
+        PS1ClutRow(row, 16, (int16_t)(t ? t->x : a->x), (int16_t)(t ? t->y : a->y));
+        ++rows;
+    }
+    lo &= ~1, hi |= 1; // an even count of halfwords (two per word)
+    PS1ClutRow(s_pal16 + lo, hi - lo + 1, (int16_t)lo, 240);
+    g_ps1ClutRowUploads = g_ps1ClutRowUploads + rows;
+}
+
+// A FillScreen in a frame whose head uploaded only the changed CLUTs: every CLUT, from the same copy, linked in at the
+// frame's slot (before the draws) and recorded, so the fade rewrites them with the rest
+void PS1ClutSpliceFull()
+{
+    const PS1TileClut *cl  = PS1TileCluts();
+    const PS1AtlasClut *ac = PS1AtlasCluts();
+    int32 nt = cl ? PS1TileClutCount() : 0, na = ac ? PS1AtlasClutCount() : 0;
+    int32 words = (nt + na) * 12 + (256 / PS1_CLUT_CHUNK_HW + 1) * (4 + PS1_CLUT_CHUNK_HW / 2);
+    uint32_t *first = PS1ChainHasSlot() ? PS1ChainDetachedBegin(words) : NULL;
+    if (!first) {
+        s_fadeRecsLost = true;
+        return;
+    }
+    uint32_t *w = first, *hdr = NULL;
+    int32 hdrWords = 0;
+    for (int32 c = -1; c < nt + na; ++c) { // -1: the bank's 256 entries
+        uint16 row[16];
+        const uint16 *src = s_pal16;
+        int32 n = 256, x = 0, y = 240;
+        if (c >= 0) {
+            const uint8 *map = c < nt ? cl[c].map : ac[c - nt].map;
+            PS1ClutRowFrom(row, map);
+            src = row, n = 16, x = c < nt ? cl[c].x : ac[c - nt].x, y = c < nt ? cl[c].y : ac[c - nt].y;
+        }
+        for (int32 off = 0; off < n; off += PS1_CLUT_CHUNK_HW) {
+            int32 k = n - off < PS1_CLUT_CHUNK_HW ? n - off : PS1_CLUT_CHUNK_HW;
+            if (hdr)
+                *hdr = (uint32_t)hdrWords << 24 | ((uintptr_t)w & 0xFFFFFF);
+            hdr      = w;
+            w[1]     = 0xA0000000; // GP0 A0h: CPU to VRAM (psx-spx "GPU Memory Transfer Commands")
+            w[2]     = (uint32_t)(uint16)(x + off) | (uint32_t)(uint16)y << 16;
+            w[3]     = (uint32_t)k | 1u << 16;
+            memcpy(&w[4], src + off, k * 2);
+            if (s_clutRecCount < PS1_CLUT_RECS)
+                s_clutRecs[s_clutRecCount].data = (uint16_t *)&w[4], s_clutRecs[s_clutRecCount++].n = (uint16)k;
+            else
+                s_fadeRecsLost = true;
+            hdrWords = 3 + k / 2;
+            w += 1 + hdrWords;
+        }
+    }
+    if (!PS1ChainSplice(first, hdr, hdrWords, w)) {
+        s_fadeRecsLost = true;
+        return;
+    }
+    s_clutHeadFull   = true;
+    g_ps1ClutSplices = g_ps1ClutSplices + 1;
+}
+
+// The frame start of the draw lists: this frame's clear, the CLUTs whose palette entries changed (3.3e)
 void RSDK::PS1LayersFrameBegin()
 {
     PS1FrameStart(true);
@@ -470,7 +608,9 @@ void RSDK::PS1LayersFrameBegin()
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
     s_clutRecCount = s_colourRecCount = 0;
     s_ps1Faded = s_fadeRecsLost = false;
-    PS1ClutUploadAll();
+    PS1ChainSlot();
+    PS1ClutUploadChanged();
+    PS1ChainFlushCache(); // the GPU's CLUT cache may hold older colours; also keeps the slot from being the chain's tail
 }
 
 void RSDK::PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y)
@@ -508,6 +648,9 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
     int32 fr = (int32)((color >> 16) & 0xFF) >> 3, fg = (int32)((color >> 8) & 0xFF) >> 3, fb = (int32)(color & 0xFF) >> 3;
     int32 cr = fr * alphaR >> 8, cg = fg * alphaG >> 8, cb = fb * alphaB >> 8;
     int32 kr = 0xFF - alphaR, kg = 0xFF - alphaG, kb = 0xFF - alphaB;
+    if (!s_clutHeadFull)
+        PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them fade (3.3e)
+    s_clutFullNext = true;   // VRAM keeps faded CLUTs after this frame
     for (int32 r = 0; r < s_clutRecCount; ++r) { // CLUT entries: BGR555 | STP (0: transparent, stays)
         uint16_t *e = s_clutRecs[r].data;
         for (int32 i = 0; i < s_clutRecs[r].n; ++i) {

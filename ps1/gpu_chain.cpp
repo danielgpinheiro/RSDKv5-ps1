@@ -82,6 +82,7 @@ uint32_t *s_arenaMem = nullptr; // s_arenaWords (heap), nullptr while suspended
 uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // smaller while an FMV plays (PS1ChainSetArenaWords)
 bool s_waitIdle = false; // the frame has not written the arena yet: the last frame's DMA may still read it
 void (*s_hook)() = nullptr;
+extern uint32_t *s_slot;
 
 inline void runHook() {
     if (s_hook) {
@@ -186,6 +187,7 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
     s_sbatch     = nullptr;
     s_tpageValid = false;
     s_hook       = nullptr;
+    s_slot       = nullptr;
     g_ps1ChainReplayWords = 0;
 }
 
@@ -236,7 +238,10 @@ void PS1ChainTPageRaw(uint16_t attr) {
     PS1ChainTPage(a);
 }
 
+volatile uint32_t g_ps1VramGen = 0; // immediate GPU operations and loads (VRAM may have changed outside the chains)
+
 void PS1GpuImmediate() {
+    g_ps1VramGen = g_ps1VramGen + 1;
     if (s_gpu)
         s_gpu->waitChainIdle();
 }
@@ -455,6 +460,54 @@ struct SpanFrag {
     uintptr_t head;
     size_t getActualFragmentSize() const { return (size_t)s_spanLastWords; }
 };
+
+namespace {
+// An empty fragment (a DMA node of 0 words, as an ordering table's): a place in the chain to splice into later
+struct SlotFrag {
+    uintptr_t head;
+    size_t getActualFragmentSize() const { return 0; }
+};
+
+uint32_t *s_slot = nullptr; // this frame's slot (PS1ChainBegin clears it)
+} // namespace
+
+bool PS1ChainSlot() {
+    runHook();
+    flushBatch();
+    auto *frag = allocRaw<SlotFrag>();
+    s_slot     = nullptr;
+    if (!frag)
+        return false;
+    s_gpu->chain(*frag);
+    s_slot = reinterpret_cast<uint32_t *>(&frag->head);
+    return true;
+}
+
+bool PS1ChainHasSlot() { return s_slot != nullptr; }
+
+uint32_t *PS1ChainDetachedBegin(int maxWords) {
+    if (maxWords <= 0)
+        return nullptr;
+    flushBatch();
+    arenaReady();
+    if (!s_cur || s_cur + maxWords > s_end) {
+        g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
+        return nullptr;
+    }
+    return s_cur;
+}
+
+bool PS1ChainSplice(uint32_t *first, uint32_t *lastHeader, int lastWords, uint32_t *end) {
+    uint32_t *slot = s_slot;
+    if (!slot || !first || !lastHeader || lastWords <= 0 || lastWords > PS1_CHAIN_MAX_WORDS || end <= lastHeader)
+        return false;
+    // the slot's header was written when the next fragment was chained (psyqo: its size, 0, and that address)
+    *lastHeader = (uint32_t)lastWords << 24 | (*slot & 0xFFFFFF);
+    *slot       = (uint32_t)((uintptr_t)first & 0xFFFFFF);
+    s_cur       = end;
+    s_slot      = nullptr; // one splice a slot
+    return true;
+}
 
 uint32_t *PS1ChainSpanBegin(int maxWords) {
     s_span = nullptr;

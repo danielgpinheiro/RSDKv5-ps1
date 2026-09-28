@@ -62,6 +62,15 @@ void PS1ChainBulkEnd(int used);
 // PS1ChainSpanEnd(lastHeader, lastWords, end) links the span (end = one past its last word).
 uint32_t *PS1ChainSpanBegin(int maxWords);
 void PS1ChainSpanEnd(uint32_t *lastHeader, int lastWords, uint32_t *end);
+// A slot (3.3e): an empty fragment chained now, where fragments written later in the frame can be linked in (e.g. the
+// CLUT uploads a FillScreen needs before the draws that already used them). Something must be chained after the slot
+// before a splice (psyqo writes the slot's header then). PS1ChainDetachedBegin(maxWords): arena words for fragments
+// written as for a span (headers linking each to the next); PS1ChainSplice links them in after the slot.
+bool PS1ChainSlot();     // false: no arena
+bool PS1ChainHasSlot();  // this frame has a slot not spliced into yet
+uint32_t *PS1ChainDetachedBegin(int maxWords);
+bool PS1ChainSplice(uint32_t *first, uint32_t *lastHeader, int lastWords, uint32_t *end);
+extern volatile uint32_t g_ps1VramGen; // counts immediate GPU operations (VRAM changed outside the chains)
 
 // Replay (phase 3c partial tint): PS1ChainMark() closes the open batch and returns the arena
 // position of the next fragment; PS1ChainReplay(from, to) re-chains copies of the fragments

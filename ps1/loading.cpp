@@ -145,6 +145,7 @@ void PS1LoadingBegin() {
         return;
     g_ps1LoadingLoads = g_ps1LoadingLoads + 1;
     PS1ChainSuspend(); // the chain arenas give their heap to the CD read-ahead windows (ps1/gpu_chain)
+    g_ps1VramGen = g_ps1VramGen + 1; // a load may change VRAM (tiles, atlas, the icon): the next frame uploads every CLUT
     s_start = g_ps1GPU->now();
     s_shown = false;
     s_frame = 0;
