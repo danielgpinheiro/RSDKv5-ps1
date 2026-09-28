@@ -34,7 +34,8 @@ volatile uint32 g_ps1TileMissing    = 0; // DrawTile pieces whose tile has no im
 // (x = its PS1DrawLayerHScroll call number), 1 = an atlas rectangle (binding, size, position, flip, ink), 2 = a tile
 // (attr = tile index, direction = flips), 3 = a rotated / scaled atlas rectangle (x, y = corner A) followed by 4
 // (x, y = corner B, w, h = corner C) and 5 (x, y = corner D), 6 = a rotated tile (the same three entries, attr = tile),
-// 7 = a flat rectangle (u, v, attr = R, G, B as sent; direction = semi-transparency mode + 1, ink = passes)
+// 7 = a flat rectangle (u, v, attr = R, G, B as sent; direction = semi-transparency mode + 1, ink = passes),
+// 8 = FillScreen (u, v, attr = R, G, B; x, y, w = the alphas)
 struct PS1DrawLogEntry {
     uint8 type, direction, ink, alpha;
     uint8 u, v;
@@ -349,6 +350,7 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
 bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &half)
 {
+    PS1FadeRestore(); // a FillScreen earlier this frame faded the CLUTs
     uint16 attr = frame->ps1Attr;
     if (attr == PS1_ATLAS_MISSING) {
         g_ps1SpriteMissing = g_ps1SpriteMissing + 1;
@@ -364,6 +366,7 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &ha
 // A tile's image (the scene's .ptl, as the layers draw it). False: no image (counted)
 bool PS1TileTex(uint16 tile, int32 &u, int32 &v, uint32 &tpage, uint32 &clut)
 {
+    PS1FadeRestore();
     uint16 img = PS1TileImageOf(tile & 0x3FF);
     if (img == PS1_TILE_NONE) {
         g_ps1TileMissing = g_ps1TileMissing + 1;
@@ -536,6 +539,7 @@ void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &i
         int32 n = 0;
         if (ink.mode >= 0)
             wr[1 + n++] = 0xE1000000 | (uint32)ink.mode << 5; // the semi-transparency mode lives in the texpage state
+        PS1FadeRecordColour(&wr[1 + n]);
         wr[1 + n++] = cmd;
         wr[1 + n++] = (uint32)(uint16)y << 16 | (uint16)x;
         wr[1 + n++] = (uint32)h << 16 | (uint32)w;

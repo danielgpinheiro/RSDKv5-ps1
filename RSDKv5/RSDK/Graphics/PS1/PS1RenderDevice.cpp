@@ -14,6 +14,8 @@ volatile uint32 g_ps1ClearColour   = 0; // clear colour, r | g << 8 | b << 16 (G
 namespace
 {
 bool s_ps1FrameOpen = false;
+void *s_ps1FrameClear = NULL; // this frame's clear (FastFill in the arena) and its colour: a FillScreen blends it too (3.5)
+uint32 s_ps1FrameClearColour = 0;
 }
 void RSDK::PS1RenderBeginFrame()
 {
@@ -26,11 +28,13 @@ void RSDK::PS1FrameStart(bool clear)
         return;
     s_ps1FrameOpen = true;
     if (clear) {
-        uint32 c = g_ps1ClearColour;
-        PS1ChainClearRGB(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF);
+        uint32 c              = g_ps1ClearColour;
+        s_ps1FrameClear       = PS1ChainClearRGB(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF);
+        s_ps1FrameClearColour = c;
         g_ps1RenderFrames = g_ps1RenderFrames + 1;
     }
     else {
+        s_ps1FrameClear = NULL;
         PS1ChainRepeatLastFrame();
         g_ps1RenderRepeats = g_ps1RenderRepeats + 1;
     }
@@ -129,3 +133,13 @@ bool RenderDevice::CheckFPSCap() { return true; }
 void RenderDevice::UpdateFPSCap() {}
 bool RenderDevice::InitShaders() { return true; }
 void RenderDevice::LoadShader(const char *fileName, bool32 linear) {}
+
+// 3.5: the frame's clear, re-coloured by a FillScreen (0x00BBGGRR as g_ps1ClearColour)
+uint32 RSDK::PS1FrameClearColour() { return s_ps1FrameClear ? s_ps1FrameClearColour : 0xFFFFFFFF; }
+void RSDK::PS1FrameClearSet(uint32 bgr)
+{
+    if (s_ps1FrameClear) {
+        s_ps1FrameClearColour = bgr;
+        PS1ChainClearSetRGB(s_ps1FrameClear, bgr & 0xFF, (bgr >> 8) & 0xFF, (bgr >> 16) & 0xFF);
+    }
+}

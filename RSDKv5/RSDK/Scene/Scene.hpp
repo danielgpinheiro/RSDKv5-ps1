@@ -191,6 +191,12 @@ extern TileInfo tileInfo[1][TILE_COUNT];
 #include "PS1/PS1Tiles.hpp"
 // 3.3 (PS1/PS1Layers.cpp): the draw lists' frame start (clear + CLUTs), tile layers through the GPU chain
 void PS1LayersFrameBegin();
+// 3.5 (PS1Layers.cpp): FillScreen on the PS1 blends what the frame drew so far: the CLUT uploads chained this frame and
+// the direct colours recorded (flat rectangles, one-colour runs, the clear) are rewritten in the arena with the PC's
+// per-channel formula; the next CLUT-using draw uploads the unfaded CLUTs again (PS1FadeRestore)
+void PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB);
+void PS1FadeRecordColour(uint32_t *word); // a primitive's colour word (bits 0-23: 0xBBGGRR) drawn this frame
+void PS1FadeRestore();                     // before a CLUT-using draw: the unfaded CLUTs, once after a fade
 void PS1DrawLayerHScroll(TileLayer *layer);
 extern "C" {
 extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;

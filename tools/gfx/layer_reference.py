@@ -254,6 +254,8 @@ def render(cap, folder, scene_id):
             elif e[0] == 7:
                 order.append(('flat', e))
                 nsprites += 1
+            elif e[0] == 8:
+                order.append(('fill', e))
             n += 1
         vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
     for kind, path in order:
@@ -262,6 +264,15 @@ def render(cap, folder, scene_id):
             continue
         if kind == 'tile':
             draw_tile(out, mask, path, imgs, table, colour)
+            continue
+        if kind == 'fill':  # FillScreen: every pixel so far, per 5-bit channel c' = (c * (255 - a) >> 8) + (f * a >> 8)
+            _, _, _, _, r8, g8, b8, ar, ag, ab, _ = path
+            cr, cg, cb = (r8 >> 3) * ar >> 8, (g8 >> 3) * ag >> 8, (b8 >> 3) * ab >> 8
+            o = out.astype(np.int32)
+            R = ((o & 31) * (255 - ar) >> 8) + cr
+            G = (((o >> 5) & 31) * (255 - ag) >> 8) + cg
+            B = (((o >> 10) & 31) * (255 - ab) >> 8) + cb
+            out[:, :] = ((o & 0x8000) | R | G << 5 | B << 10).astype(np.uint16)
             continue
         if kind == 'flat':  # a flat rectangle as sent (the GPU keeps each channel's top 5 bits; mask bit 0)
             _, mode1, passes, _, r8, g8, b8, x, y, w, h = path

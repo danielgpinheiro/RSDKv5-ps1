@@ -613,12 +613,16 @@ void RSDK::SwapDrawListEntries(uint8 drawGroup, uint16 slot1, uint16 slot2, uint
 
 void RSDK::FillScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 {
-#if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
-#endif
     alphaR = CLAMP(alphaR, 0x00, 0xFF);
     alphaG = CLAMP(alphaG, 0x00, 0xFF);
     alphaB = CLAMP(alphaB, 0x00, 0xFF);
+#if RETRO_PLATFORM == RETRO_PS1
+    if (alphaR + alphaG + alphaB) { // docs/32 3.5: what the frame drew so far, blended in the chain
+        validDraw = true;
+        PS1FadeScreen(color, alphaR, alphaG, alphaB);
+    }
+    return;
+#endif
 
     if (alphaR + alphaG + alphaB) {
         validDraw        = true;

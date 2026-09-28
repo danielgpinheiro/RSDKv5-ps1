@@ -419,6 +419,7 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
         return;
     w[1] = 0xE6000001;
     w[2] = 0x60000000 | colour;
+    PS1FadeRecordColour(&w[2]);
     w[3] = (uint32)(uint16)sy << 16;
     w[4] = PS1_SCREEN_PX | (uint32)h << 16;
     w[5] = 0xE6000000;
@@ -428,6 +429,65 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
 } // namespace
 
 // The frame start of the draw lists: this frame's clear, the tile CLUTs and the bank CLUT from the palette
+// --- 3.5: the frame's CLUT uploads, recorded for FillScreen -------------------------------------------------------------
+#define PS1_CLUT_RECS   128 // upload chunks a frame: tile CLUTs + the bank (12 chunks) + sprite CLUTs, and restores
+#define PS1_COLOUR_RECS 256 // direct colour words a frame (flat rectangles, one-colour runs)
+struct PS1ClutRec {
+    uint16_t *data;
+    uint16 n;
+};
+PS1ClutRec s_clutRecs[PS1_CLUT_RECS];
+int32 s_clutRecCount = 0;
+uint32_t *s_colourRecs[PS1_COLOUR_RECS];
+int32 s_colourRecCount = 0;
+bool s_ps1Faded        = false;
+extern "C" {
+volatile uint32 g_ps1FadeCalls    = 0; // FillScreens that blended something (total)
+volatile uint32 g_ps1FadeRestores = 0; // unfaded CLUT uploads after a fade (total)
+volatile uint32 g_ps1FadeOverflow = 0; // FillScreens that met more CLUT / colour words than the tables hold (must stay 0)
+}
+bool s_fadeRecsLost = false; // this frame recorded fewer words than it drew (a FillScreen would miss some)
+
+// A CLUT row through reserved upload chunks (PS1ChainReserveRow) whose data is recorded
+void PS1ClutRow(const uint16 *row, int32 n, int16 x, int16 y)
+{
+    uint16_t *data[16];
+    uint16_t len[16];
+    int32 k = PS1ChainReserveRow(n, x, y, data, len, 16), off = 0;
+    for (int32 i = 0; i < k; ++i) {
+        memcpy(data[i], row + off, len[i] * 2);
+        off += len[i];
+        if (s_clutRecCount < PS1_CLUT_RECS)
+            s_clutRecs[s_clutRecCount].data = data[i], s_clutRecs[s_clutRecCount++].n = len[i];
+        else
+            s_fadeRecsLost = true;
+    }
+}
+
+// Every CLUT from the live palette: the tiles' 4-bit ones, bank 0's 256 entries (8-bit tiles / sprites), the atlas's
+void PS1ClutUploadAll()
+{
+    const PS1TileClut *cl = PS1TileCluts();
+    uint16 row[16];
+    for (int32 c = 0; cl && c < PS1TileClutCount(); ++c) {
+        row[0] = 0; // index 0: transparent
+        for (int32 i = 1; i < 16; ++i) row[i] = cl[c].map[i] ? PS1Colour(fullPalette[0][cl[c].map[i]]) : 0; // padding: transparent
+        PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
+    }
+    static uint16 s_bank[256];
+    s_bank[0] = 0;
+    for (int32 i = 1; i < 256; ++i) s_bank[i] = PS1Colour(fullPalette[0][i]);
+    PS1ClutRow(s_bank, 256, 0, 240);
+    const PS1AtlasClut *ac = PS1AtlasCluts(); // the sprite atlas's 4-bit CLUTs, the same way (3.4)
+    for (int32 c = 0; ac && c < PS1AtlasClutCount(); ++c) {
+        row[0] = 0;
+        for (int32 i = 1; i < 16; ++i) row[i] = ac[c].map[i] ? PS1Colour(fullPalette[0][ac[c].map[i]]) : 0;
+        PS1ClutRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
+    }
+    PS1ChainFlushCache(); // the GPU's CLUT cache may hold older colours
+}
+
+// The frame start of the draw lists: this frame's clear, the tile CLUTs and the bank CLUT from the palette
 void RSDK::PS1LayersFrameBegin()
 {
     PS1FrameStart(true);
@@ -435,26 +495,64 @@ void RSDK::PS1LayersFrameBegin()
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = 0;
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
-    const PS1TileClut *cl = PS1TileCluts();
-    uint16 row[16];
-    for (int32 c = 0; cl && c < PS1TileClutCount(); ++c) {
-        row[0] = 0; // index 0: transparent
-        for (int32 i = 1; i < 16; ++i) row[i] = cl[c].map[i] ? PS1Colour(fullPalette[0][cl[c].map[i]]) : 0; // padding: transparent
-        PS1ChainUploadRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
-    }
-    static uint16 s_bank[256];
-    s_bank[0] = 0;
-    for (int32 i = 1; i < 256; ++i) s_bank[i] = PS1Colour(fullPalette[0][i]);
-    PS1ChainUploadRow(s_bank, 256, 0, 240);
-    // the sprite atlas's 4-bit CLUTs, the same way (3.4)
-    const PS1AtlasClut *ac = PS1AtlasCluts();
-    for (int32 c = 0; ac && c < PS1AtlasClutCount(); ++c) {
-        row[0] = 0;
-        for (int32 i = 1; i < 16; ++i) row[i] = ac[c].map[i] ? PS1Colour(fullPalette[0][ac[c].map[i]]) : 0;
-        PS1ChainUploadRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
-    }
+    s_clutRecCount = s_colourRecCount = 0;
+    s_ps1Faded = s_fadeRecsLost = false;
+    PS1ClutUploadAll();
+}
 
-    PS1ChainFlushCache(); // the GPU's CLUT cache may hold the last frame's colours
+void RSDK::PS1FadeRecordColour(uint32_t *word)
+{
+    if (s_colourRecCount < PS1_COLOUR_RECS)
+        s_colourRecs[s_colourRecCount++] = word;
+    else
+        s_fadeRecsLost = true;
+}
+
+void RSDK::PS1FadeRestore()
+{
+    if (s_ps1Faded) {
+        s_ps1Faded = false;
+        PS1ClutUploadAll();
+        g_ps1FadeRestores = g_ps1FadeRestores + 1;
+    }
+}
+
+// FillScreen's arithmetic per 5-bit channel (the PC: blendLookupTable[0x20 * a + c] = a * c >> 8; the fill colour's
+// channels c8 >> 3; green is the 565 value's top 5 bits, as the PS1 colours are): c' = (c * (255 - a) >> 8) + (f * a >> 8)
+void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
+{
+    int32 fr = (int32)((color >> 16) & 0xFF) >> 3, fg = (int32)((color >> 8) & 0xFF) >> 3, fb = (int32)(color & 0xFF) >> 3;
+    int32 cr = fr * alphaR >> 8, cg = fg * alphaG >> 8, cb = fb * alphaB >> 8;
+    int32 kr = 0xFF - alphaR, kg = 0xFF - alphaG, kb = 0xFF - alphaB;
+    for (int32 r = 0; r < s_clutRecCount; ++r) { // CLUT entries: BGR555 | STP (0: transparent, stays)
+        uint16_t *e = s_clutRecs[r].data;
+        for (int32 i = 0; i < s_clutRecs[r].n; ++i) {
+            uint32 c = e[i];
+            if (!c)
+                continue;
+            uint32 R = ((c & 31) * kr >> 8) + cr, G = (((c >> 5) & 31) * kg >> 8) + cg, B = (((c >> 10) & 31) * kb >> 8) + cb;
+            e[i]     = (uint16_t)(0x8000 | R | G << 5 | B << 10);
+        }
+    }
+    for (int32 r = 0; r < s_colourRecCount; ++r) { // direct colours: 8-bit fields, the GPU keeps their top 5 bits
+        uint32 w = *s_colourRecs[r];
+        uint32 R = (((w & 0xFF) >> 3) * kr >> 8) + cr, G = ((((w >> 8) & 0xFF) >> 3) * kg >> 8) + cg;
+        uint32 B = ((((w >> 16) & 0xFF) >> 3) * kb >> 8) + cb;
+        *s_colourRecs[r] = (w & 0xFF000000) | R << 3 | G << 11 | B << 19;
+    }
+    uint32 clear = PS1FrameClearColour();
+    if (clear != 0xFFFFFFFF) {
+        uint32 R = (((clear & 0xFF) >> 3) * kr >> 8) + cr, G = ((((clear >> 8) & 0xFF) >> 3) * kg >> 8) + cg;
+        uint32 B = ((((clear >> 16) & 0xFF) >> 3) * kb >> 8) + cb;
+        PS1FrameClearSet(R << 3 | G << 11 | B << 19);
+    }
+    s_ps1Faded     = true;
+    g_ps1FadeCalls = g_ps1FadeCalls + 1;
+    if (s_fadeRecsLost)
+        g_ps1FadeOverflow = g_ps1FadeOverflow + 1;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(8, 0, 0, 0, (uint8)((color >> 16) & 0xFF), (uint8)((color >> 8) & 0xFF), (uint16)(color & 0xFF), alphaR, alphaG, alphaB, 0);
+#endif
 }
 
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
@@ -462,6 +560,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     if (!layer->xsize || !layer->ysize)
         return;
     PS1LayerDebugHook((uint32)(layer - tileLayers));
+    PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
 #endif
