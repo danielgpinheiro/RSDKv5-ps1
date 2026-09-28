@@ -135,6 +135,10 @@ struct TileLayer {
     uint8 *lineScroll;
 #if RETRO_PLATFORM == RETRO_PS1
     uint8 ps1ChunkShift; // PS1 (docs/32 2.3g): layout is a chunk index, 1 << ps1ChunkShift chunks per row (engine-only field)
+    // PS1 (3.3c): the scroll info every line uses when lineScroll is one value (0xFF: several; set at the scene load:
+    // nothing writes lineScroll later), and this frame's uniform scroll when ProcessParallax found no per-line work
+    uint8 ps1LineScrollOne, ps1Uniform;
+    int16 ps1UniformX, ps1UniformY;
 #endif
 };
 

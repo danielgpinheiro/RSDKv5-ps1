@@ -1,5 +1,5 @@
 # GHZ1 scripted run with the CPU profile (docs/32 phase 4 preview): build with
-# `make MEASURE_RAM=8M BOOT=1,0 PROFILE=1`, run tools/play_test_ds.sh tools/play/ghz1_profile.gdb OUT, then
+# `make MEASURE_RAM=8M BOOT=1,0 PROFILE=1`, run tools/play_test.sh tools/play/ghz1_profile.gdb OUT, then
 # tools/play/prof_report.py OUT.log. PROF: hblanks per engine phase over frames 240-900; PC: per objectClassList index,
 # update and draw ticks of root counter 2 (8 cycles, summed since boot), calls, the class hash.
 # GHZ1 scripted run (docs/32 2.5): `make MEASURE_RAM=8M BOOT=1,0`, then tools/play_test_ds.sh tools/play/ghz1_run.gdb OUT.

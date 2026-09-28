@@ -603,9 +603,65 @@ void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &i
 #endif
 }
 
+// Flat rectangles of one colour and ink, batched: one span, four to a fragment (after the texpage word when blended)
+struct PS1FlatBatch {
+    int32 n;
+    int16 r[16][4]; // x, y, w, h
+};
+
+void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 bgr, const PS1Ink &ink)
+{
+    if (!b.n)
+        return;
+    bool semi  = ink.mode >= 0;
+    uint32 cmd = 0x60000000 | bgr | (semi ? 0x02000000 : 0);
+    int32 frags = (b.n + 3) >> 2;
+    for (int32 p = 0; p < ink.passes; ++p) {
+        uint32_t *w = PS1ChainSpanBegin(frags * 14);
+        if (!w)
+            break;
+        uint32_t *hdr = NULL;
+        int32 fw = 0, k = 0;
+        while (k < b.n) {
+            if (hdr)
+                *hdr = (uint32_t)fw << 24 | ((uintptr_t)w & 0xFFFFFF);
+            hdr = w++;
+            fw  = 0;
+            if (semi)
+                *w++ = 0xE1000000 | (uint32)ink.mode << 5, ++fw;
+            for (int32 j = 0; j < 4 && k < b.n; ++j, ++k) {
+                PS1FadeRecordColour(w);
+                w[0] = cmd;
+                w[1] = (uint32)(uint16)b.r[k][1] << 16 | (uint16)b.r[k][0];
+                w[2] = (uint32)(uint16)b.r[k][3] << 16 | (uint16)b.r[k][2];
+                w += 3, fw += 3;
+#if PS1_DEBUG_BIGRAM
+                if (!p)
+                    PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, 0, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF),
+                                  (uint16)(bgr >> 16), b.r[k][0], b.r[k][1], b.r[k][2], b.r[k][3]);
+#endif
+            }
+        }
+        PS1ChainSpanEnd(hdr, fw, w);
+    }
+    g_ps1FlatDraws = g_ps1FlatDraws + b.n;
+    b.n            = 0;
+}
+
+inline void PS1FlatBatchAdd(PS1FlatBatch &b, int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
+{
+    if (w <= 0 || h <= 0)
+        return;
+    b.r[b.n][0] = (int16)x, b.r[b.n][1] = (int16)y, b.r[b.n][2] = (int16)w, b.r[b.n][3] = (int16)h;
+    if (++b.n == 16)
+        PS1FlatBatchFlush(b, bgr, ink);
+}
+
 // The edge buffer's rows [top, bottom) (clamped to the clip bounds as the PC does) as flat rectangles, identical rows merged
 void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
 {
+    PS1FlatBatch batch;
+    batch.n = 0;
     int32 runY = 0, runH = 0, runS = 0, runE = 0;
     for (int32 s = top; s < bottom; ++s) {
         PS1Edge *edge = &PS1_EDGES[s];
@@ -615,7 +671,7 @@ void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
         end   = end < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : end;
         end   = end > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : end;
         if (end <= start) {
-            PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+            PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
             runH = 0;
             continue;
         }
@@ -623,10 +679,11 @@ void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
             ++runH;
             continue;
         }
-        PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+        PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
         runY = s, runH = 1, runS = start, runE = end;
     }
-    PS1FlatRect(runS, runY, runE - runS, runH, bgr, ink);
+    PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
+    PS1FlatBatchFlush(batch, bgr, ink);
 }
 
 // ProcessScanEdge (Scene3D.cpp) on the PS1 edge buffer

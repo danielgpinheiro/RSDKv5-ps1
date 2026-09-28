@@ -26,6 +26,7 @@ volatile uint32 g_ps1LayerMisses = 0; // tiles with no image in VRAM (must stay 
 volatile uint32 g_ps1LayerHbl    = 0; // hblanks spent drawing layers (this frame)
 volatile uint32 g_ps1LayerSolidRuns = 0; // one-colour line runs drawn as rectangles (this frame)
 volatile uint32 g_ps1LayerRowTables = 0; // tile rows drawn from a column table (this frame)
+volatile uint32 g_ps1LayerUniform   = 0; // layers drawn from their uniform scroll, no scanlines (this frame)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
 volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles a frame): scan, gather, sprites, quads
@@ -492,7 +493,7 @@ void RSDK::PS1LayersFrameBegin()
 {
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
-    g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = 0;
+    g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
     s_clutRecCount = s_colourRecCount = 0;
@@ -580,6 +581,32 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     ScanlineInfo *sl    = &scanlines[y1];
+    if (layer->ps1Uniform) {
+        // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
+        // palette bank changes), as the scan below would find them
+        int32 x = layer->ps1UniformX;
+        x       = x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x;
+        for (int32 cy = y1; cy < y2;) {
+            int32 ly   = (layer->ps1UniformY + cy) % heightPx;
+            uint8 bank = gfxLineBuffer[cy];
+            if (bank)
+                g_ps1BankTodo = g_ps1BankTodo + 1;
+            int32 h = TILE_SIZE - (ly & 15);
+            if (h > y2 - cy)
+                h = y2 - cy;
+            for (int32 k = 1; k < h; ++k)
+                if (gfxLineBuffer[cy + k] != bank) {
+                    h = k;
+                    break;
+                }
+            DrawBand(layer, cy, h, x, ly, bank);
+            cy += h;
+        }
+        PS1_LT_ADD(0, PS1T() - tl);
+        g_ps1LayerHbl     = g_ps1LayerHbl + PS1HblanksSince(t0);
+        g_ps1LayerUniform = g_ps1LayerUniform + 1;
+        return;
+    }
     const uint8 *solid = PS1TileSolidLines((int32)(layer - tileLayers), heightPx);
     PS1Band group[TILE_SIZE]; // the bands of the current tile row (one palette bank)
     int32 groupCount = 0;

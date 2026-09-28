@@ -589,6 +589,11 @@ void RSDK::LoadSceneAssets()
             ReadCompressed(&info, (uint8 **)&scrollIndexes);
 #if RETRO_PLATFORM == RETRO_PS1
             memcpy(layer->lineScroll, scrollIndexes, lineScrollSize);
+            layer->ps1LineScrollOne = lineScrollSize ? scrollIndexes[0] : 0xFF; // 3.3c: one scroll info for every line?
+            for (int32 i = 1; i < lineScrollSize && layer->ps1LineScrollOne != 0xFF; ++i)
+                if (scrollIndexes[i] != layer->ps1LineScrollOne)
+                    layer->ps1LineScrollOne = 0xFF;
+            layer->ps1Uniform = 0;
 #else
             memcpy(layer->lineScroll, scrollIndexes, TILE_SIZE * size * sizeof(uint8));
 #endif
@@ -1464,6 +1469,21 @@ void RSDK::ProcessParallax(TileLayer *layer)
             if (scrollPos < 0)
                 scrollPos += pixelHeight;
 
+            #if RETRO_PLATFORM == RETRO_PS1
+            // 3.3c: every line on one scroll info without deformation (and no one-colour table for the scan) is one X and
+            // consecutive rows: the PS1 drawer builds its 16-line bands from these two numbers, the per-line fill below is
+            // skipped (kept on the 8 MB evidence link: layer_reference dumps the scanlines)
+            layer->ps1Uniform = 0;
+            if (layer->ps1LineScrollOne < layer->scrollInfoCount && !layer->scrollInfo[layer->ps1LineScrollOne].deform
+                && !PS1TileSolidLines((int32)(layer - tileLayers), pixelHeight)) {
+                layer->ps1Uniform  = 1;
+                layer->ps1UniformX = (int16)FROM_FIXED(layer->scrollInfo[layer->ps1LineScrollOne].tilePos);
+                layer->ps1UniformY = scrollPos;
+#if !PS1_DEBUG_BIGRAM
+                break;
+#endif
+            }
+#endif
             uint8 *lineScrollPtr = &layer->lineScroll[scrollPos];
 
             // Above water
