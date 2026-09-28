@@ -134,6 +134,29 @@ void MainMenu_Initialize(void)
     buttonExit->transition     = false;
     buttonExit->stopMusic      = false;
 #endif
+
+#if defined RETRO_PS1_BUILD
+    // docs/32 4.2c: base Mania on the PS1 (user decision 2026-09-26): Mania Mode (frame 0), Time Attack (1), Options (3)
+    // and Extras (4) stay in the list, in their order; Competition (2), Encore (5), the Plus store (6) and Exit (7: no
+    // system to return to) leave it. The UIShifter lays the list out every frame (the selected button at its start):
+    // 24 px to the left for the 320-pixel screen.
+    int32 kept = 0;
+    for (int32 i = 0; i < menuControl->buttonCount; ++i) {
+        EntityUIButton *button = menuControl->buttons[i];
+        if (button->frameID == 0 || button->frameID == 1 || button->frameID == 3 || button->frameID == 4) {
+            menuControl->buttons[kept++] = button;
+        }
+        else {
+            button->visible = false;
+            button->active  = ACTIVE_NEVER;
+        }
+    }
+    for (int32 i = kept; i < menuControl->buttonCount; ++i) menuControl->buttons[i] = NULL;
+    menuControl->buttonCount = kept;
+    menuControl->rowCount    = kept;
+    if (menuControl->shifter)
+        menuControl->shifter->startPos.x -= TO_FIXED(24);
+#endif
 }
 
 bool32 MainMenu_BackPressCB_ReturnToTitle(void)
@@ -276,11 +299,19 @@ void MainMenu_HandleUnlocks(void)
 {
     EntityUIControl *control = MainMenu->menuControl;
 
+#if defined RETRO_PS1_BUILD
+    // docs/32 4.2c: the list without Competition (MainMenu_Initialize): Time Attack by its frame
+    for (int32 i = 0; i < control->buttonCount; ++i) {
+        if (control->buttons[i]->frameID == 1)
+            control->buttons[i]->disabled = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_TIMEATTACK);
+    }
+#else
     EntityUIButton *taButton = API.CheckDLC(DLC_PLUS) ? control->buttons[2] : control->buttons[1];
     taButton->disabled       = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_TIMEATTACK);
 
     EntityUIButton *compButton = API.CheckDLC(DLC_PLUS) ? control->buttons[3] : control->buttons[2];
     compButton->disabled       = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_COMPETITION);
+#endif
 }
 
 void MainMenu_SetupActions(void)

@@ -28,6 +28,11 @@ int32 DummyUserStorage::TryInitStorage()
 }
 bool32 DummyUserStorage::GetUsername(String *name)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    // docs/32 4.2c: no platform user on the PS1: no user name (the menus' name badge, UIUsernamePopup, stays hidden)
+    (void)name;
+    return false;
+#endif
 #if !RETRO_USE_ORIGINAL_CODE
     if (strlen(customSettings.username) > 0)
         InitString(name, customSettings.username, 0);

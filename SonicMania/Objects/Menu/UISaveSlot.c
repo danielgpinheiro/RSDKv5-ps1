@@ -7,6 +7,14 @@
 
 #include "Game.h"
 
+#if defined RETRO_PS1_BUILD
+// docs/32 4.2c: single characters on the PS1 (user decision 2026-09-26): frame 0 (Sonic & Tails) is never offered;
+// a new save starts on Sonic (1), the choice cycles Sonic, Tails, Knuckles (1..3)
+#define UISAVESLOT_FIRST_CHARACTER (1)
+#else
+#define UISAVESLOT_FIRST_CHARACTER (0)
+#endif
+
 ObjectUISaveSlot *UISaveSlot;
 
 void UISaveSlot_Update(void)
@@ -270,6 +278,10 @@ void UISaveSlot_Create(void *data)
         self->updateRange.y   = 0x300000;
         self->processButtonCB = UISaveSlot_ProcessButtonCB;
         self->state           = UISaveSlot_State_NotSelected;
+#if defined RETRO_PS1_BUILD
+        if (self->frameID < UISAVESLOT_FIRST_CHARACTER) // the No Save slot starts on Sonic too (4.2c)
+            self->frameID = UISAVESLOT_FIRST_CHARACTER;
+#endif
 
         if (self->type == UISAVESLOT_REGULAR) {
             UISaveSlot_LoadSaveInfo();
@@ -772,9 +784,9 @@ void UISaveSlot_LoadSaveInfo(void)
             self->saveLives    = 3;
 #if MANIA_USE_PLUS
             self->saveContinues = 0;
-            self->frameID       = self->encoreMode ? 6 : 0;
+            self->frameID       = self->encoreMode ? 6 : UISAVESLOT_FIRST_CHARACTER;
 #else
-            self->frameID = 0;
+            self->frameID = UISAVESLOT_FIRST_CHARACTER;
 #endif
             self->isNewSave = true;
             self->listID    = 0;
@@ -995,6 +1007,10 @@ void UISaveSlot_NextCharacter(void)
     int32 max = 4;
 #endif
     while (player >= max) player -= max;
+#if defined RETRO_PS1_BUILD
+    if (player < UISAVESLOT_FIRST_CHARACTER)
+        player = UISAVESLOT_FIRST_CHARACTER;
+#endif
 
     self->frameID            = player;
     self->buttonBouncePos    = 0x8000;
@@ -1016,6 +1032,10 @@ void UISaveSlot_PrevCharacter(void)
     int32 max = API.CheckDLC(DLC_PLUS) ? 6 : 4;
 #else
     int32 max = 4;
+#endif
+#if defined RETRO_PS1_BUILD
+    if (player < UISAVESLOT_FIRST_CHARACTER)
+        player = max - 1;
 #endif
     while (player < 0) player += max;
 
@@ -1137,9 +1157,9 @@ void UISaveSlot_HandleSaveIconChange(void)
 
     if (saveRAM->saveState == SAVEGAME_BLANK) {
 #if MANIA_USE_PLUS
-        int32 frame = self->encoreMode ? 6 : 0;
+        int32 frame = self->encoreMode ? 6 : UISAVESLOT_FIRST_CHARACTER;
 #else
-        int32 frame = 0;
+        int32 frame = UISAVESLOT_FIRST_CHARACTER;
 #endif
         if (self->frameID != frame) {
             self->frameID = frame;

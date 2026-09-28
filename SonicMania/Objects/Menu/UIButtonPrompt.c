@@ -68,28 +68,35 @@ void UIButtonPrompt_LateUpdate(void)
     EntityUIControl *control = (EntityUIControl *)self->parent;
     if (control && control->heading && self->headingAnchor) {
         EntityUIHeading *heading = (EntityUIHeading *)control->heading;
+#if defined RETRO_PS1_BUILD
+        // docs/32 4.2c: the anchors assume a 424-pixel screen; on a narrower one the prompts move in by the difference's
+        // half (the same at 424)
+        int32 inset = TO_FIXED((424 - ScreenInfo->size.x) >> 1);
+#else
+        int32 inset = 0;
+#endif
 
         switch (self->headingAnchor) {
             default:
             case UIBUTTONPROMPT_ANCHOR_NONE: break;
 
             case UIBUTTONPROMPT_ANCHOR_TOPLEFT_ROW1:
-                self->position.x = heading->position.x - TO_FIXED(188);
+                self->position.x = heading->position.x - TO_FIXED(188) + inset;
                 self->position.y = heading->position.y - TO_FIXED(8);
                 break;
 
             case UIBUTTONPROMPT_ANCHOR_TOPRIGHT_ROW1:
-                self->position.x = heading->position.x + TO_FIXED(124);
+                self->position.x = heading->position.x + TO_FIXED(124) - inset;
                 self->position.y = heading->position.y - TO_FIXED(8);
                 break;
 
             case UIBUTTONPROMPT_ANCHOR_TOPLEFT_ROW2:
-                self->position.x = heading->position.x - TO_FIXED(188);
+                self->position.x = heading->position.x - TO_FIXED(188) + inset;
                 self->position.y = heading->position.y + TO_FIXED(16);
                 break;
 
             case UIBUTTONPROMPT_ANCHOR_TOPRIGHT_ROW2:
-                self->position.x = heading->position.x + TO_FIXED(124);
+                self->position.x = heading->position.x + TO_FIXED(124) - inset;
                 self->position.y = heading->position.y + TO_FIXED(16);
                 break;
         }
