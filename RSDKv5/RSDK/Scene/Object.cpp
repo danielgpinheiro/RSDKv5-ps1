@@ -761,6 +761,97 @@ PS1_HOT void PS1LateUpdatePass()
         sceneInfo.entity = ent;
     sceneInfo.entitySlot = ENTITY_COUNT;
 }
+
+// 3.0h: ProcessPausedObjects' two loops (the title card and pause screens run in ENGINESTATE_PAUSED) as leaf scans
+// with the stock semantics: the update loop runs ACTIVE_ALWAYS / ACTIVE_PAUSED entities (update, then their draw
+// group through sceneInfo.entity) and clears inRange on blank slots; the late loop runs lateUpdate for ALWAYS / PAUSED
+// entities and clears onScreen through sceneInfo.entity on every slot. sceneInfo.entity ends on the last slot visited
+// (after its callback), entitySlot on ENTITY_COUNT, as PS1_NEXT_SLOT_ES leaves them.
+PS1_HOT EntityBase **PS1PausedScan(EntityBase **p, EntityBase **pend)
+{
+    for (; p < pend; ++p) {
+        EntityBase *ent = *p;
+        uint32 cls = ent->classID, act = ent->active;
+        if (!cls)
+            ent->inRange = false;
+        else if (act == ACTIVE_ALWAYS || act == ACTIVE_PAUSED)
+            return p;
+    }
+    return p;
+}
+
+PS1_HOT EntityBase **PS1PausedLateScan(EntityBase **p, EntityBase **pend)
+{
+    for (; p < pend; ++p) {
+        EntityBase *ent = *p;
+        uint32 act = ent->active;
+        if ((act == ACTIVE_ALWAYS || act == ACTIVE_PAUSED) && objectClassList[stageObjectIDs[ent->classID]].lateUpdate)
+            return p;
+        ent->onScreen = 0;
+    }
+    return p;
+}
+
+PS1_HOT void PS1PausedUpdatePass()
+{
+    EntityBase *ent = NULL; // stock's sceneInfo.entity after the last slot
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s = phase ? TEMPENTITY_START : 0;
+        for (;;) {
+            int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd; // a callback may add slots
+            if (s >= s1)
+                break;
+            EntityBase **q = PS1PausedScan(objectEntityPtr + s, objectEntityPtr + s1);
+            int32 qs       = (int32)(q - objectEntityPtr);
+            if (qs != s) {
+                ent = q[-1], s = qs;
+                continue;
+            }
+            ent                  = objectEntityPtr[s];
+            sceneInfo.entitySlot = s;
+            sceneInfo.entity     = ent;
+            void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
+            if (update)
+                update();
+            ent = (EntityBase *)sceneInfo.entity; // stock reads the draw group through it
+            if (ent->drawGroup < DRAWGROUP_COUNT)
+                PS1_DRAWLIST_APPEND(&drawGroups[ent->drawGroup], sceneInfo.entitySlot);
+            ++s;
+        }
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+
+PS1_HOT void PS1PausedLatePass()
+{
+    EntityBase *ent = NULL;
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s = phase ? TEMPENTITY_START : 0;
+        for (;;) {
+            int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+            if (s >= s1)
+                break;
+            EntityBase **q = PS1PausedLateScan(objectEntityPtr + s, objectEntityPtr + s1);
+            int32 qs       = (int32)(q - objectEntityPtr);
+            if (qs != s) {
+                ent = q[-1], s = qs;
+                continue;
+            }
+            ent                  = objectEntityPtr[s];
+            sceneInfo.entitySlot = s;
+            sceneInfo.entity     = ent;
+            objectClassList[stageObjectIDs[ent->classID]].lateUpdate();
+            ent           = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
+            ent->onScreen = 0;
+            ++s;
+        }
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
 } // namespace
 #endif
 
@@ -970,12 +1061,11 @@ void RSDK::ProcessPausedObjects()
     RunModCallbacks(MODCB_ONSTATICUPDATE, INT_TO_VOID(ENGINESTATE_PAUSED));
 #endif
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1PausedUpdatePass(); // 3.0h
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->classID) {
@@ -984,32 +1074,26 @@ void RSDK::ProcessPausedObjects()
                     objectClassList[stageObjectIDs[sceneInfo.entity->classID]].update();
 
                 if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
-#if RETRO_PLATFORM == RETRO_PS1
-                    PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
-#else
                     drawGroups[sceneInfo.entity->drawGroup].entries[drawGroups[sceneInfo.entity->drawGroup].entityCount++] = sceneInfo.entitySlot;
-#endif
             }
         }
         else {
             sceneInfo.entity->inRange = false;
         }
 
-#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
-#endif
     }
+#endif
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONUPDATE, INT_TO_VOID(ENGINESTATE_PAUSED));
 #endif
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1PausedLatePass(); // 3.0h
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->active == ACTIVE_ALWAYS || sceneInfo.entity->active == ACTIVE_PAUSED) {
@@ -1018,10 +1102,9 @@ void RSDK::ProcessPausedObjects()
         }
 
         sceneInfo.entity->onScreen = 0;
-#if RETRO_PLATFORM != RETRO_PS1
         sceneInfo.entitySlot++;
-#endif
     }
+#endif
 
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONLATEUPDATE, INT_TO_VOID(ENGINESTATE_PAUSED));
