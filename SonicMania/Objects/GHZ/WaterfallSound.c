@@ -84,7 +84,11 @@ void WaterfallSound_StageLoad(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// the foreach_all body of WaterfallSound_SfxCheck_WaterfallLoop, unchanged (the PS1 walks the collected slots)
+#if PS1_CHECK_WATERFALL
+volatile uint32 g_ps1WaterfallEarly = 0, g_ps1WaterfallEarlyWrong = 0; // 3.0e evidence: early-outs, and those the full test denies
+#endif
+// the foreach_all body of WaterfallSound_SfxCheck_WaterfallLoop (the PS1 walks the collected slots; 3.0e: an exact
+// early-out before the first distance)
 static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldCenterX, int32 worldCenterY, int32 *pcount)
 {
 #define count (*pcount)
@@ -105,6 +109,20 @@ static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldC
             sound->sfxPos.y  = worldCenterY;
         }
         else {
+            // 3.0e: MathHelpers_Distance rounds sqrt(dx * dx + dy * dy) of whole pixels, never below the larger of dx and
+            // dy: past the range on one axis the test below is false, so the root is skipped (the same answer)
+            int32 ax = abs(worldCenterX - sound->position.x) >> 16, ay = abs(worldCenterY - sound->position.y) >> 16;
+            int32 am = ax > ay ? ax : ay;
+            if (am < 0x8000 && (am << 16) - 8 * sound->size.y - 8 * sound->size.x > 0x2800000) {
+#if PS1_CHECK_WATERFALL // evidence build: the full test must agree (GDB reads the counters)
+                g_ps1WaterfallEarly = g_ps1WaterfallEarly + 1;
+                if (MathHelpers_Distance(sound->position.x, sound->position.y, worldCenterX, worldCenterY) - 8 * sound->size.y
+                        - 8 * sound->size.x
+                    <= 0x2800000)
+                    g_ps1WaterfallEarlyWrong = g_ps1WaterfallEarlyWrong + 1;
+#endif
+                return;
+            }
             if (MathHelpers_Distance(sound->position.x, sound->position.y, worldCenterX, worldCenterY) - 8 * sound->size.y - 8 * sound->size.x
                 <= 0x2800000) {
                 if (MathHelpers_ConstrainToBox(&sound->sfxPos, worldCenterX, worldCenterY, sound->position, hitbox)) {
