@@ -52,9 +52,7 @@ inline uint16 PS1T() { return 0; }
 // (u | v << 8 | CLUT << 16), its texture page and flags (3.3f: one pointer walks it)
 struct PS1Col {
     uint32_t tex;
-    uint16 page;
-    uint8 flags; // 4 H-flip (no copy), 5 V-flip, 6 empty, 7 no image
-    uint8 pad;
+    uint32_t pf; // texture page | flags << 16 (flags: 4 H-flip (no copy), 5 V-flip, 6 empty, 7 no image): one load (3.3j)
 };
 struct PS1ColTable {
     PS1Col col[PS1_COL_MAX];
@@ -317,7 +315,7 @@ __attribute__((noinline)) void EmitFlipped(PS1Emit &e, int32 sx, int32 sy, uint3
 // Screen lines [sy, sy + h) showing layer rows [ly, ly + h) (inside one tile row), the line's left edge at layer x.
 // Hot (hundreds of pieces a frame): -O2, the tiles fetched walking the 4x4 chunks (one chunk index per 4 tiles), the
 // tile image read as three halfwords (u | v << 8, texpage, CLUT), every piece written straight into the arena.
-__attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+__attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
     uint16 tg              = PS1T();
     const uint16 *tileImage = TileTable();
@@ -335,10 +333,8 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
     uint32 cmd  = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
     int32 n     = full ? 3 : 4;
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
-    PS1Emit e;
-    EmitOpen(e);
     uint32_t *w = e.w, *lim = e.hdr + 10, *end = e.end;
-    uint32 page = 0xFFFFFFFF;
+    uint32 page = e.page;
     for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
@@ -377,14 +373,23 @@ __attribute__((optimize("O2"))) void DrawBand(TileLayer *layer, int32 sy, int32 
         }
         PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, tpage);
     }
-    e.w = w, e.hdr = lim - 10;
-    EmitClose(e);
+    e.w = w, e.hdr = lim - 10, e.end = end, e.page = page;
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
     PS1_LT_ADD(1, PS1T() - tg);
     g_ps1LayerBands  = g_ps1LayerBands + 1;
     g_ps1LayerPieces = g_ps1LayerPieces + pieces;
 }
+// One band in its own span (a lone band of a tile row, DrawRowBands' fallback)
+void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+{
+    PS1Emit e;
+    EmitOpen(e);
+    e.page = 0xFFFFFFFF;
+    DrawBandInto(e, layer, sy, h, x, ly, bank);
+    EmitClose(e);
+}
+
 // One band as the scan found it: screen lines [sy, sy + h), layer rows [ly, ly + h), left edge at layer x
 struct PS1Band {
     int16 sy;
@@ -445,12 +450,12 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         }
         PS1Col *col = &ct->col[k];
         if (t == 0xFFFF) {
-            col->flags = PS1_COL_EMPTY;
+            col->pf = PS1_COL_EMPTY << 16;
             continue;
         }
         uint16 img = tileImage[t & 0x3FF];
         if (img == PS1_TILE_NONE) {
-            col->flags = PS1_COL_MISS;
+            col->pf = PS1_COL_MISS << 16;
             continue;
         }
         if (t & 0x400) { // an H-flipped copy (the .ptl's pairs, 3.3b) makes the piece a sprite
@@ -465,8 +470,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         if (clut == 0xFFFF)
             clut = bankClut;
         col->tex   = *(const uint16 *)ti | clut << 16;
-        col->page  = *(const uint16 *)(ti + 2);
-        col->flags = (uint8)((t & 0xC00) >> 6); // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V)
+        col->pf    = *(const uint16 *)(ti + 2) | (uint32)(t & 0xC00) << 10; // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V), << 16
     }
     PS1_LT_ADD(1, PS1T() - tg);
     // each band from the table, straight into the arena (one span for the row: 3.3f)
@@ -479,31 +483,40 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     for (int32 b = 0; b < count; ++b) {
         const PS1Band *band = &bands[b];
         int32 h = band->h, v0 = band->ly & 15, sy = band->sy;
-        int32 sx           = -(band->x & 15);
+        int32 sx0          = -(band->x & 15);
         const PS1Col *c    = &ct->col[band->d - dmin];
         bool full          = h == TILE_SIZE;
         uint32 cmd         = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
         int32 n            = full ? 3 : 4;
         uint32 yWord       = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
-        for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE, ++c) {
-            uint32 f = c->flags, tex = c->tex;
-            if (f) {
-                if (f & (PS1_COL_EMPTY | PS1_COL_MISS)) {
-                    misses += f >> 7;
-                    continue;
-                }
-                ++pieces;
-                if ((f & PS1_COL_HFLIP) || h > 4) {
-                    PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, f, c->page);
-                }
-                else {
-                    PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, c->page);
-                }
-                continue;
-            }
-            ++pieces;
-            PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, c->page);
-        }
+        uint32 xyEnd       = yWord + PS1_SCREEN_PX;
+        // the first piece may start left of the screen (x -15..0); the others at x >= 1, so their position word is
+        // yWord + x and steps by 16 (3.3j)
+#define PS1_LAKE_PIECE(sxW, xyW)                                                                                       \
+    do {                                                                                                               \
+        uint32 pf_ = c->pf, tex_ = c->tex;                                                                             \
+        if (pf_ >> 16) {                                                                                               \
+            uint32 f_ = pf_ >> 16;                                                                                     \
+            if (f_ & (PS1_COL_EMPTY | PS1_COL_MISS))                                                                   \
+                misses += f_ >> 7;                                                                                     \
+            else {                                                                                                     \
+                ++pieces;                                                                                              \
+                if ((f_ & PS1_COL_HFLIP) || h > 4)                                                                     \
+                    PS1_EMIT_FLIPPED((sxW), sy, tex_, v0, h, f_, pf_ & 0xFFFF);                                        \
+                else                                                                                                   \
+                    PS1_EMIT_VFLIP_LINES((sxW), sy, tex_, v0, h, pf_ & 0xFFFF);                                        \
+            }                                                                                                          \
+        }                                                                                                              \
+        else {                                                                                                         \
+            ++pieces;                                                                                                  \
+            PS1_EMIT_PIECE(cmd, (xyW), tex_ + vRow, wh, n, pf_);                                                       \
+        }                                                                                                              \
+    } while (0)
+        PS1_LAKE_PIECE(sx0, yWord | (uint16)sx0);
+        ++c;
+        for (uint32 xy = yWord + (uint32)(sx0 + TILE_SIZE); xy < xyEnd; xy += TILE_SIZE, ++c)
+            PS1_LAKE_PIECE((int32)(xy - yWord), xy);
+#undef PS1_LAKE_PIECE
     }
     e.w = w, e.hdr = lim - 10;
     EmitClose(e);
@@ -603,7 +616,7 @@ void PS1ClutUploadAll()
 #define PS1_CLUT_MASKS 128 // CLUTs whose palette buckets are known (more: always uploaded)
 uint16 s_palRaw[256];      // bank 0 as the CLUTs in VRAM show it (RGB565)
 uint16 s_pal16[256];       // the same as PS1 colours; [0] = 0 (transparent)
-uint32 s_clutBuckets[PS1_CLUT_MASKS]; // per CLUT (tiles, then atlas): bit b = uses a palette index in [8b, 8b + 8)
+uint32 s_clutBuckets[PS1_CLUT_MASKS][2]; // per CLUT (tiles, then atlas): bit b of word w = an index in [128w + 4b, + 4) (3.3j)
 const void *s_clutSetTiles = NULL, *s_clutSetAtlas = NULL;
 int32 s_clutSetCounts   = -1;
 uint32 s_clutGen        = 0;
@@ -617,13 +630,12 @@ volatile uint32 g_ps1ClutTestSplice  = 0; // GDB test: 1 = a fade doesn't make t
                                           // every fading frame takes the splice (exact only while every frame fades)
 }
 
-inline uint32 PS1ClutBucketsOf(const uint8 *map)
+inline void PS1ClutBucketsOf(const uint8 *map, uint32 *m)
 {
-    uint32 m = 0;
+    m[0] = m[1] = 0;
     for (int32 i = 1; i < 16; ++i)
         if (map[i])
-            m |= 1u << (map[i] >> 3);
-    return m;
+            m[map[i] >> 7] |= 1u << ((map[i] >> 2) & 31);
 }
 
 // A 4-bit CLUT's 16 entries from the copy
@@ -642,7 +654,7 @@ void PS1ClutUploadChanged()
     uint16 row[16];
     if ((s_clutFullNext && !g_ps1ClutTestSplice) || g_ps1VramGen != s_clutGen || cl != s_clutSetTiles || ac != s_clutSetAtlas || (nt | na << 16) != s_clutSetCounts) {
         for (int32 i = 0; i < 256; ++i) s_palRaw[i] = fullPalette[0][i], s_pal16[i] = i ? PS1Colour(s_palRaw[i]) : 0;
-        for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) s_clutBuckets[c] = PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map);
+        for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map, s_clutBuckets[c]);
         s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen;
         s_clutFullNext = false;
         for (int32 c = 0; c < nt; ++c) PS1ClutRowFrom(row, cl[c].map), PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
@@ -653,23 +665,23 @@ void PS1ClutUploadChanged()
         return;
     }
     s_clutHeadFull = false;
-    uint32 changed = 0;
+    uint32 changed[2] = { 0, 0 };
     int32 lo = 256, hi = -1;
     for (int32 i = 1; i < 256; ++i) {
         uint16 c = fullPalette[0][i];
         if (c != s_palRaw[i]) {
             s_palRaw[i] = c, s_pal16[i] = PS1Colour(c);
-            changed |= 1u << (i >> 3);
+            changed[i >> 7] |= 1u << ((i >> 2) & 31);
             if (i < lo)
                 lo = i;
             hi = i;
         }
     }
-    if (!changed)
+    if (!(changed[0] | changed[1]))
         return;
     int32 rows = 1;
     for (int32 c = 0; c < nt + na; ++c) {
-        if (c < PS1_CLUT_MASKS && !(s_clutBuckets[c] & changed))
+        if (c < PS1_CLUT_MASKS && !((s_clutBuckets[c][0] & changed[0]) | (s_clutBuckets[c][1] & changed[1])))
             continue;
         const PS1TileClut *t = c < nt ? &cl[c] : NULL;
         const PS1AtlasClut *a = c < nt ? NULL : &ac[c - nt];
@@ -956,6 +968,9 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         // palette bank changes), as the scan below would find them
         int32 x = layer->ps1UniformX;
         x       = x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x;
+        PS1Emit e; // one span for the layer (3.3j)
+        EmitOpen(e);
+        e.page = 0xFFFFFFFF;
         for (int32 cy = y1; cy < y2;) {
             int32 ly   = (layer->ps1UniformY + cy) % heightPx;
             uint8 bank = gfxLineBuffer[cy];
@@ -969,9 +984,10 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
                     h = k;
                     break;
                 }
-            DrawBand(layer, cy, h, x, ly, bank);
+            DrawBandInto(e, layer, cy, h, x, ly, bank);
             cy += h;
         }
+        EmitClose(e);
         PS1_LT_ADD(0, PS1T() - tl);
         uint32 dt         = PS1HblanksSince(t0);
         g_ps1LayerHbl     = g_ps1LayerHbl + dt;
