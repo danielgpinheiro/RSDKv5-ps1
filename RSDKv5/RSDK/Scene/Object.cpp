@@ -1149,7 +1149,7 @@ void RSDK::ProcessObjectDrawLists()
 #endif
                         PS1_PART_BEGIN(5);
 #if RETRO_PLATFORM == RETRO_PS1
-                        layer->ps1Uniform = 0; // ProcessParallax may set it (docs/32 3.3c); a callback's lines are its own
+                        layer->ps1Uniform = layer->ps1Direct = 0; // ProcessParallax may set them (3.3c / h); a callback's lines are its own
 #endif
                         if (layer->scanlineCallback)
                             layer->scanlineCallback(scanlines);

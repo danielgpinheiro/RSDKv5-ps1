@@ -27,6 +27,7 @@ volatile uint32 g_ps1LayerHbl    = 0; // hblanks spent drawing layers (this fram
 volatile uint32 g_ps1LayerSolidRuns = 0; // one-colour line runs drawn as rectangles (this frame)
 volatile uint32 g_ps1LayerRowTables = 0; // tile rows drawn from a column table (this frame)
 volatile uint32 g_ps1LayerUniform   = 0; // layers drawn from their uniform scroll, no scanlines (this frame)
+volatile uint32 g_ps1LayerDirect    = 0; // layers drawn from lineScroll and their scroll infos, no scanlines (3.3h, total)
 volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
@@ -791,6 +792,119 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 #endif
 }
 
+// The bands of a layer's lines [y1, y2) (3.3b), grouped per tile row: from the scanlines ProcessParallax filled, or
+// (Direct, 3.3h) from the layer's lineScroll and each scroll info's X (xOf), the rows consecutive from scrollY on line 0
+template <bool Direct>
+__attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 y1, int32 y2, int32 widthPx, int32 heightPx,
+                                                        const uint8 *solid, ScanlineInfo *sl, const int16 *xOf, int32 scrollY)
+{
+    PS1Band group[TILE_SIZE]; // the bands of the current tile row (one palette bank)
+    int32 groupCount = 0;
+#define PS1_FLUSH_GROUP()                                                                                              \
+    do {                                                                                                               \
+        if (groupCount == 1)                                                                                           \
+            DrawBand(layer, group[0].sy, group[0].h, group[0].x, group[0].ly, group[0].bank);                          \
+        else if (groupCount > 1)                                                                                       \
+            DrawRowBands(layer, group, groupCount);                                                                    \
+        groupCount = 0;                                                                                                \
+    } while (0)
+    for (int32 cy = y1; cy < y2;) {
+        int32 x, ly;
+        if constexpr (Direct) {
+            ly = scrollY + cy; // ProcessParallax's rows: scrollY on line 0, then one further per line, wrapping
+            while (ly >= heightPx)
+                ly -= heightPx;
+            x = xOf[layer->lineScroll[ly]];
+        }
+        else {
+            x = FROM_FIXED(sl->position.x);
+            if (x >= widthPx)
+                x -= widthPx;
+            else if (x < 0)
+                x += widthPx;
+            ly = FROM_FIXED(sl->position.y);
+            if (ly >= heightPx || ly < 0) { // as the software loop: the layout row wraps with the layer height
+                ly %= heightPx;
+                if (ly < 0)
+                    ly += heightPx;
+            }
+        }
+        uint8 bank   = gfxLineBuffer[cy];
+        int32 h      = 1;
+        if (bank)
+            g_ps1BankTodo = g_ps1BankTodo + 1;
+        int32 rowEnd = TILE_SIZE - (ly & 15);
+        while (h < rowEnd && cy + h < y2) {
+            if constexpr (Direct) { // rows ly + h stay in this tile row: no wrap, always consecutive
+                if (xOf[layer->lineScroll[ly + h]] != x || gfxLineBuffer[cy + h] != bank)
+                    break;
+            }
+            else {
+                int32 nx = FROM_FIXED(sl[h].position.x);
+                if (nx >= widthPx)
+                    nx -= widthPx;
+                else if (nx < 0)
+                    nx += widthPx;
+                if (nx != x || FROM_FIXED(sl[h].position.y) != ly + h || gfxLineBuffer[cy + h] != bank)
+                    break;
+            }
+            ++h;
+        }
+        if (solid && solid[ly]) {
+            // one-colour lines from here (at any X, this bank): a rectangle when the run covers at least the band's
+            // lines (so no band is split); inside a band they are drawn with its tiles
+            uint8 c = solid[ly];
+            int32 r = 1;
+            while (cy + r < y2 && gfxLineBuffer[cy + r] == bank) {
+                int32 nly;
+                if constexpr (Direct) {
+                    nly = ly + r;
+                    while (nly >= heightPx)
+                        nly -= heightPx;
+                }
+                else {
+                    nly = FROM_FIXED(sl[r].position.y);
+                    if (nly >= heightPx || nly < 0) {
+                        nly %= heightPx;
+                        if (nly < 0)
+                            nly += heightPx;
+                    }
+                }
+                if (solid[nly] != c)
+                    break;
+                ++r;
+            }
+            if (r >= h) {
+                PS1_FLUSH_GROUP();
+                DrawSolid(cy, r, c, bank);
+                cy += r;
+                if constexpr (!Direct)
+                    sl += r;
+                continue;
+            }
+        }
+        uint16 tb = PS1T();
+        if (groupCount && ((group[0].ly >> 4) != (ly >> 4) || group[0].bank != bank || groupCount == TILE_SIZE))
+            PS1_FLUSH_GROUP();
+        PS1Band &g = group[groupCount++];
+        g.sy = (int16)cy, g.h = (uint8)h, g.bank = bank, g.x = x, g.ly = ly;
+#if PS1_PROFILE
+        g_ps1LayerT[0] -= (uint16)(PS1T() - tb); // scan time = total - bands
+#endif
+        cy += h;
+        if constexpr (!Direct)
+            sl += h;
+    }
+    {
+        uint16 tb = PS1T();
+        PS1_FLUSH_GROUP();
+#if PS1_PROFILE
+        g_ps1LayerT[0] -= (uint16)(PS1T() - tb);
+#endif
+    }
+#undef PS1_FLUSH_GROUP
+}
+
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
 {
     if (!layer->xsize || !layer->ysize)
@@ -834,86 +948,19 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         return;
     }
     const uint8 *solid = PS1TileSolidLines((int32)(layer - tileLayers), heightPx);
-    PS1Band group[TILE_SIZE]; // the bands of the current tile row (one palette bank)
-    int32 groupCount = 0;
-#define PS1_FLUSH_GROUP()                                                                                              \
-    do {                                                                                                               \
-        if (groupCount == 1)                                                                                           \
-            DrawBand(layer, group[0].sy, group[0].h, group[0].x, group[0].ly, group[0].bank);                          \
-        else if (groupCount > 1)                                                                                       \
-            DrawRowBands(layer, group, groupCount);                                                                    \
-        groupCount = 0;                                                                                                \
-    } while (0)
-    for (int32 cy = y1; cy < y2;) {
-        int32 x = FROM_FIXED(sl->position.x);
-        if (x >= widthPx)
-            x -= widthPx;
-        else if (x < 0)
-            x += widthPx;
-        int32 ly = FROM_FIXED(sl->position.y);
-        if (ly >= heightPx || ly < 0) { // as the software loop: the layout row wraps with the layer height
-            ly %= heightPx;
-            if (ly < 0)
-                ly += heightPx;
+    if (layer->ps1Direct) {
+        // 3.3h: every line's X is its scroll info's (no deformation): the same bands from lineScroll, no scanlines
+        int16 xOf[0x80];
+        for (int32 i = 0; i < layer->scrollInfoCount && i < 0x80; ++i) {
+            int32 x = FROM_FIXED(layer->scrollInfo[i].tilePos);
+            xOf[i]  = (int16)(x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x);
         }
-        uint8 bank   = gfxLineBuffer[cy];
-        int32 h      = 1;
-        if (bank)
-            g_ps1BankTodo = g_ps1BankTodo + 1;
-        int32 rowEnd = TILE_SIZE - (ly & 15);
-        while (h < rowEnd && cy + h < y2) {
-            int32 nx = FROM_FIXED(sl[h].position.x);
-            if (nx >= widthPx)
-                nx -= widthPx;
-            else if (nx < 0)
-                nx += widthPx;
-            if (nx != x || FROM_FIXED(sl[h].position.y) != ly + h || gfxLineBuffer[cy + h] != bank)
-                break;
-            ++h;
-        }
-        if (solid && solid[ly]) {
-            // one-colour lines from here (at any X, this bank): a rectangle when the run covers at least the band's
-            // lines (so no band is split); inside a band they are drawn with its tiles
-            uint8 c = solid[ly];
-            int32 r = 1;
-            while (cy + r < y2 && gfxLineBuffer[cy + r] == bank) {
-                int32 nly = FROM_FIXED(sl[r].position.y);
-                if (nly >= heightPx || nly < 0) {
-                    nly %= heightPx;
-                    if (nly < 0)
-                        nly += heightPx;
-                }
-                if (solid[nly] != c)
-                    break;
-                ++r;
-            }
-            if (r >= h) {
-                PS1_FLUSH_GROUP();
-                DrawSolid(cy, r, c, bank);
-                cy += r;
-                sl += r;
-                continue;
-            }
-        }
-        uint16 tb = PS1T();
-        if (groupCount && ((group[0].ly >> 4) != (ly >> 4) || group[0].bank != bank || groupCount == TILE_SIZE))
-            PS1_FLUSH_GROUP();
-        PS1Band &g = group[groupCount++];
-        g.sy = (int16)cy, g.h = (uint8)h, g.bank = bank, g.x = x, g.ly = ly;
-#if PS1_PROFILE
-        g_ps1LayerT[0] -= (uint16)(PS1T() - tb); // scan time = total - bands
-#endif
-        cy += h;
-        sl += h;
+        PS1ScanBands<true>(layer, y1, y2, widthPx, heightPx, solid, NULL, xOf, layer->ps1UniformY);
+        g_ps1LayerDirect = g_ps1LayerDirect + 1;
     }
-    {
-        uint16 tb = PS1T();
-        PS1_FLUSH_GROUP();
-#if PS1_PROFILE
-        g_ps1LayerT[0] -= (uint16)(PS1T() - tb);
-#endif
+    else {
+        PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, sl, NULL, 0);
     }
-#undef PS1_FLUSH_GROUP
     PS1_LT_ADD(0, PS1T() - tl);
     uint32 dt     = PS1HblanksSince(t0);
     g_ps1LayerHbl = g_ps1LayerHbl + dt;

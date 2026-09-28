@@ -594,6 +594,7 @@ void RSDK::LoadSceneAssets()
                 if (scrollIndexes[i] != layer->ps1LineScrollOne)
                     layer->ps1LineScrollOne = 0xFF;
             layer->ps1Uniform = 0;
+            layer->ps1Direct  = 0;
 #else
             memcpy(layer->lineScroll, scrollIndexes, TILE_SIZE * size * sizeof(uint8));
 #endif
@@ -1482,6 +1483,21 @@ void RSDK::ProcessParallax(TileLayer *layer)
 #if !PS1_DEBUG_BIGRAM
                 break;
 #endif
+            }
+            // 3.3h: no scroll info deforms: the drawer takes each line's X from lineScroll (static: set at the scene load)
+            // and the scroll infos' tilePos, the rows consecutive from scrollPos; the fill below is skipped likewise
+            layer->ps1Direct = 0;
+            if (!layer->ps1Uniform && layer->scrollInfoCount <= 0x80) {
+                int32 i = 0;
+                while (i < layer->scrollInfoCount && !layer->scrollInfo[i].deform)
+                    ++i;
+                if (i == layer->scrollInfoCount) {
+                    layer->ps1Direct   = 1;
+                    layer->ps1UniformY = scrollPos;
+#if !PS1_DEBUG_BIGRAM
+                    break;
+#endif
+                }
             }
 #endif
             uint8 *lineScrollPtr = &layer->lineScroll[scrollPos];

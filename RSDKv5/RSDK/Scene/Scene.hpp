@@ -138,6 +138,7 @@ struct TileLayer {
     // PS1 (3.3c): the scroll info every line uses when lineScroll is one value (0xFF: several; set at the scene load:
     // nothing writes lineScroll later), and this frame's uniform scroll when ProcessParallax found no per-line work
     uint8 ps1LineScrollOne, ps1Uniform;
+    uint8 ps1Direct; // 3.3h: this frame's lines come from lineScroll and the scroll infos (no deformation), from row ps1UniformY
     int16 ps1UniformX, ps1UniformY;
 #endif
 };
