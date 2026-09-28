@@ -837,6 +837,9 @@ void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int
         PS1ChainSpanEnd(wr, n, wr + 1 + n);
     }
     g_ps1PrimApprox = g_ps1PrimApprox + 1;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
+#endif
 }
 
 // DrawBlendedFace after its ink checks: a gouraud fan (GP0 30h triangles; approximate)
@@ -867,4 +870,14 @@ void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount
         }
     }
     g_ps1PrimApprox = g_ps1PrimApprox + 1;
+#if PS1_DEBUG_BIGRAM
+    { // the host marks the face's bounding box approximate
+        int32 x0 = 0x7FFF, y0 = 0x7FFF, x1 = -0x7FFF, y1 = -0x7FFF;
+        for (int32 v = 0; v < vertCount; ++v) {
+            int32 px = FROM_FIXED(vertices[v].x), py = FROM_FIXED(vertices[v].y);
+            x0 = px < x0 ? px : x0, x1 = px > x1 ? px : x1, y0 = py < y0 ? py : y0, y1 = py > y1 ? py : y1;
+        }
+        PS1DrawLogAdd(10, 0, 0, 0, 0, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    }
+#endif
 }

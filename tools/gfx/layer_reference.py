@@ -230,7 +230,7 @@ def render(cap, folder, scene_id):
     out = np.zeros((240, 320), np.uint16)
     other_bank = 0
     calls = sorted(glob.glob(os.path.join(cap, 'sl_*_*.bin')), key=lambda p: int(re.findall(r'sl_(\d+)_', p)[0]))
-    mask = np.zeros((240, 320), np.uint8)  # 1 = a sprite pixel, 2 = a half-resolution sprite pixel
+    mask = np.zeros((240, 320), np.uint8)  # 1 = a sprite pixel, 2 = approximate (half-res / rotated sprite, GPU line / face)
     log_path = os.path.join(cap, 'drawlog.bin')
     order = [('layer', p) for p in calls]
     nsprites = 0
@@ -256,6 +256,8 @@ def render(cap, folder, scene_id):
                 nsprites += 1
             elif e[0] == 8:
                 order.append(('fill', e))
+            elif e[0] in (9, 10):  # a GPU line (x1, y1, x2, y2) / gouraud face (bounding box): approximate pixels
+                order.append(('approx', e))
             n += 1
         vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
     for kind, path in order:
@@ -273,6 +275,17 @@ def render(cap, folder, scene_id):
             G = (((o >> 5) & 31) * (255 - ag) >> 8) + cg
             B = (((o >> 10) & 31) * (255 - ab) >> 8) + cb
             out[:, :] = ((o & 0x8000) | R | G << 5 | B << 10).astype(np.uint16)
+            continue
+        if kind == 'approx':  # the GPU rasterises these itself: their pixels (a line widened by one) are not counted
+            s16 = lambda v: struct.unpack('<h', struct.pack('<H', v))[0]
+            x, y, a9, a10 = path[7], path[8], s16(path[9]), s16(path[10])
+            if path[0] == 9:
+                n = max(abs(a9 - x), abs(a10 - y), 1)
+                for i in range(n + 1):
+                    px, py = x + (a9 - x) * i // n, y + (a10 - y) * i // n
+                    mask[max(0, py - 1):max(0, min(240, py + 2)), max(0, px - 1):max(0, min(320, px + 2))] = 2
+            else:
+                mask[max(0, y):max(0, min(240, y + a10)), max(0, x):max(0, min(320, x + a9))] = 2
             continue
         if kind == 'flat':  # a flat rectangle as sent (the GPU keeps each channel's top 5 bits; mask bit 0)
             _, mode1, passes, _, r8, g8, b8, x, y, w, h = path
@@ -348,7 +361,7 @@ def main():
     got = np.frombuffer(open(os.path.join(cap, 'fb.bin'), 'rb').read(), '<u2').reshape(240, 320)
     diff_all = got != exp
     diff = diff_all & (mask != 2)
-    print('%d layer draws, %d sprites; %d of 76800 pixels differ (%d where half-resolution or rotated sprites draw: approximate, not counted); '
+    print('%d layer draws, %d sprites; %d of 76800 pixels differ (%d where half-resolution / rotated sprites, GPU lines or gouraud faces draw: approximate, not counted); '
           'lines on a bank other than 0: %d' % (ncalls, nsprites, int(diff.sum()), int((diff_all & (mask == 2)).sum()), other_bank))
     if diff.any():
         ys, xs = np.nonzero(diff)
