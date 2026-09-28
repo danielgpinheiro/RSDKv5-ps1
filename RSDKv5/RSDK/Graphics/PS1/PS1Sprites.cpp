@@ -29,6 +29,7 @@ volatile uint32 g_ps1SpriteClipTodo = 0; // draws while the screen's clip bounds
 volatile uint32 g_ps1SpriteRotated  = 0; // rotated / scaled rectangles drawn (this frame)
 volatile uint32 g_ps1TileDraws      = 0; // DrawTile pieces drawn (this frame)
 volatile uint32 g_ps1TileMissing    = 0; // DrawTile pieces whose tile has no image (not in the scene's .ptl; total)
+extern volatile uint32 g_ps1BankTodo; // PS1Layers.cpp: draws under another palette bank not done yet
 #if PS1_DEBUG_BIGRAM
 // The frame's draw calls in order (8 MB link only; tools/gfx/layer_reference.gdb dumps them): type 0 = a tile layer
 // (x = its PS1DrawLayerHScroll call number), 1 = an atlas rectangle (binding, size, position, flip, ink), 2 = a tile
@@ -347,6 +348,44 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
     return true;
 }
 
+#define PS1_SPRITE_CLUT_SCRATCH 318 // two spare sprite CLUT slots (318, 319: row 511, x 256 / 272) for other banks
+
+// The frame's CLUT when its top line uses palette bank `bank` != 0 (SetActivePalette: the PC draws each line with its
+// bank as it is now): the same palette indices from that bank, uploaded in the chain right before the draw (an 8-bit
+// frame's 256 entries into the bank's own row 240 + bank; a 4-bit frame's 16 into a spare slot, alternating)
+uint32 PS1BankClut(uint16 attr, int32 bank)
+{
+    static uint16 s_row[256];
+    static int32 s_flip = 0;
+    uint32 slot = PS1_ATLAS_CLUT(attr);
+    if (slot == PS1_ATLAS_BANK_CLUT) {
+        s_row[0] = 0;
+        for (int32 i = 1; i < 256; ++i) s_row[i] = (uint16)(0x8000 | ((fullPalette[bank][i] >> 11) & 31) | (((fullPalette[bank][i] >> 6) & 31) << 5)
+                                                        | ((fullPalette[bank][i] & 31) << 10));
+        PS1UploadClut(s_row, 256, 0, (int16)(240 + bank));
+        return (uint32)(240 + bank) << 6;
+    }
+    const PS1AtlasClut *ac = PS1AtlasCluts();
+    if (!ac || slot >= PS1AtlasClutCount())
+        return 0;
+    s_row[0] = 0;
+    for (int32 i = 1; i < 16; ++i) {
+        uint16 c = ac[slot].map[i] ? fullPalette[bank][ac[slot].map[i]] : 0;
+        s_row[i] = ac[slot].map[i] ? (uint16)(0x8000 | ((c >> 11) & 31) | (((c >> 6) & 31) << 5) | ((c & 31) << 10)) : 0;
+    }
+    uint32 scratch = PS1_SPRITE_CLUT_SCRATCH + (s_flip ^= 1);
+    int16 x = (int16)((scratch % PS1_SPRITE_CLUTS_PER_ROW) * 16), y = (int16)(496 + scratch / PS1_SPRITE_CLUTS_PER_ROW);
+    PS1UploadClut(s_row, 16, x, y);
+    return (uint32)(x >> 4) | (uint32)y << 6;
+}
+
+// The palette bank of screen line y (clamped to the screen)
+inline int32 PS1LineBank(int32 y)
+{
+    int32 sh = currentScreen->size.y;
+    return gfxLineBuffer[y < 0 ? 0 : y >= sh ? sh - 1 : y];
+}
+
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
 bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &half)
 {
@@ -390,6 +429,11 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         return;
     if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (int32 bank = PS1LineBank(y)) {
+        clut = PS1BankClut(frame->ps1Attr, bank);
+        if (!clut)
+            return;
+    }
     if (!PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink))
         return;
     g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
@@ -412,6 +456,11 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         return;
     if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (int32 bank = PS1LineBank(y)) {
+        clut = PS1BankClut(frame->ps1Attr, bank);
+        if (!clut)
+            return;
+    }
     if (!PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, half, scaleX, scaleY, direction,
                         rotation, ink, cx, cy))
         return;
@@ -434,6 +483,8 @@ void RSDK::PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alp
         return;
     if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (PS1LineBank(y))
+        g_ps1BankTodo = g_ps1BankTodo + 1;
     int32 direction = (tile >> 10) & 3;
     if (!PS1TexRect(x, y, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, direction, false, ink))
         return;

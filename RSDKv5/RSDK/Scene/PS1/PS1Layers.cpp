@@ -500,6 +500,17 @@ void RSDK::PS1LayersFrameBegin()
     PS1ClutUploadAll();
 }
 
+void RSDK::PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y)
+{
+    PS1ClutRow(row, n, x, y);
+    PS1ChainFlushCache();
+}
+
+// draws under a palette bank other than 0 not done yet (tiles, layers; total): global, declared in no header (GDB)
+extern "C" {
+volatile uint32 g_ps1BankTodo = 0;
+}
+
 void RSDK::PS1FadeRecordColour(uint32_t *word)
 {
     if (s_colourRecCount < PS1_COLOUR_RECS)
@@ -594,6 +605,8 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         }
         uint8 bank   = gfxLineBuffer[cy];
         int32 h      = 1;
+        if (bank)
+            g_ps1BankTodo = g_ps1BankTodo + 1;
         int32 rowEnd = TILE_SIZE - (ly & 15);
         while (h < rowEnd && cy + h < y2) {
             int32 nx = FROM_FIXED(sl[h].position.x);

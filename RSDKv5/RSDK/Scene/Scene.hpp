@@ -197,6 +197,8 @@ void PS1LayersFrameBegin();
 void PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB);
 void PS1FadeRecordColour(uint32_t *word); // a primitive's colour word (bits 0-23: 0xBBGGRR) drawn this frame
 void PS1FadeRestore();                     // before a CLUT-using draw: the unfaded CLUTs, once after a fade
+// 3.5b: a CLUT row uploaded in the chain now (recorded for a later FillScreen), then the GPU's CLUT cache flushed
+void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);
 void PS1DrawLayerHScroll(TileLayer *layer);
 extern "C" {
 extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;
