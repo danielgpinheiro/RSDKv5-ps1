@@ -16,6 +16,8 @@
 
 #include "video.hh" // PS1Hblanks
 
+extern "C" void PS1NoteAlloc(void *p, size_t size); // ps1/libc/stdlib.cpp: the init reserve's high-water mark
+
 // The arena. Sonic CD (docs/28 3.6): one per frame parity, 64 KB each, on the heap, time-shared with the CD
 // read-ahead windows (user decision 2026-09-24): released at the start of a load (PS1ChainSuspend), allocated again
 // at its end. Mania (docs/32 3.2): in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
@@ -170,8 +172,10 @@ static bool s_suspended = false;
 
 void PS1ChainBegin(psyqo::GPU &gpu) {
     s_gpu = &gpu;
-    if (!s_arenaMem && !s_suspended)
+    if (!s_arenaMem && !s_suspended) {
         s_arenaMem = (uint32_t *)psyqo_malloc(s_arenaWords * 4);
+        PS1NoteAlloc(s_arenaMem, s_arenaWords * 4); // docs/32 4.2a: the heap headroom counter missed the arena
+    }
     if (!s_arenaMem) {
         g_ps1ChainArenaFail = g_ps1ChainArenaFail + 1;
         s_base = s_cur = s_end = nullptr;

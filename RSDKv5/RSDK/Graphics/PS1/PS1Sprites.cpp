@@ -863,6 +863,93 @@ void RSDK::PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alp
         PS1EdgeSpans(top, bottom, bgr, ink);
 }
 
+// DrawCircleOutline after its clip (x, y on the screen; [left, right) x [top, bottom) as the PC computed them: its
+// top / bottom clamps make them the clip bounds' rows): the PC's pixels are the x with inner^2 <= dx^2 + dy^2 < outer^2,
+// per row one span (the row misses the inner circle) or two, from integer square roots kept from row to row
+namespace
+{
+struct PS1Run {
+    int32 y, h, s, e;
+};
+
+inline void PS1RunAdd(PS1Run &run, PS1FlatBatch &batch, int32 row, int32 s, int32 e, uint32 bgr, const PS1Ink &ink)
+{
+    if (run.h && s == run.s && e == run.e && row == run.y + run.h) {
+        ++run.h;
+        return;
+    }
+    PS1FlatBatchAdd(batch, run.s, run.y, run.e - run.s, run.h, bgr, ink); // h 0: nothing
+    run.y = row, run.h = 1, run.s = s, run.e = e;
+}
+
+// the largest b with b * b <= t (t >= 0), starting from a guess
+inline int32 PS1ISqrtFrom(int32 b, int32 t)
+{
+    b = b < 0 ? 0 : b;
+    while (b * b > t)
+        --b;
+    while ((b + 1) * (b + 1) <= t)
+        ++b;
+    return b;
+}
+} // namespace
+
+void RSDK::PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, int32 left, int32 top, int32 right, int32 bottom,
+                                uint32 color, int32 alpha, int32 inkEffect)
+{
+    uint32 bgr;
+    PS1Ink ink;
+    if (!PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        return;
+    int32 ir2 = innerRadius * innerRadius, or2 = outerRadius * outerRadius;
+    // rows with pixels: dy^2 < or2
+    int32 y0 = y - outerRadius + 1, y1 = y + outerRadius; // [y0, y1)
+    y0       = y0 < top ? top : y0;
+    y1       = y1 > bottom ? bottom : y1;
+    if (y1 > PS1_EDGE_ROWS)
+        y1 = PS1_EDGE_ROWS;
+    PS1FlatBatch batch;
+    batch.n  = 0;
+    PS1Run L = { 0, 0, 0, 0 }, Rr = { 0, 0, 0, 0 };
+    int32 bOut = 0, aIn = 0;
+    for (int32 row = y0; row < y1; ++row) {
+        int32 dy = row - y, y2 = dy * dy;
+        int32 tOut = or2 - y2 - 1; // dx^2 <= or2 - y2 - 1
+        if (tOut < 0)
+            continue;
+        bOut = PS1ISqrtFrom(bOut, tOut);
+        int32 a  = 0; // the smallest |dx| with dx^2 >= ir2 - y2
+        int32 tIn = ir2 - y2;
+        if (tIn > 0) {
+            aIn = PS1ISqrtFrom(aIn, tIn - 1);
+            a   = aIn + 1;
+        }
+        if (a > bOut)
+            continue;
+        if (!a) { // one span [x - b, x + b]
+            int32 s = x - bOut, e = x + bOut + 1;
+            s = s < left ? left : s;
+            e = e > right ? right : e;
+            if (s < e)
+                PS1RunAdd(L, batch, row, s, e, bgr, ink);
+            continue;
+        }
+        int32 s = x - bOut, e = x - a + 1; // [x - b, x - a]
+        s = s < left ? left : s;
+        e = e > right ? right : e;
+        if (s < e)
+            PS1RunAdd(L, batch, row, s, e, bgr, ink);
+        s = x + a, e = x + bOut + 1; // [x + a, x + b]
+        s = s < left ? left : s;
+        e = e > right ? right : e;
+        if (s < e)
+            PS1RunAdd(Rr, batch, row, s, e, bgr, ink);
+    }
+    PS1FlatBatchAdd(batch, L.s, L.y, L.e - L.s, L.h, bgr, ink);
+    PS1FlatBatchAdd(batch, Rr.s, Rr.y, Rr.e - Rr.s, Rr.h, bgr, ink);
+    PS1FlatBatchFlush(batch, bgr, ink);
+}
+
 // DrawLine after its ink checks (screen coordinates): a GPU line (GP0 40h; the GPU's own pixels, approximate)
 void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect)
 {

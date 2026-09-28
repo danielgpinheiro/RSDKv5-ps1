@@ -167,9 +167,14 @@ $(STUBS).c: $(OBJS) $(OVL_OBJS) tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py stubs $@ $(OBJS)
 $(STUBS).o: $(STUBS).c
 	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<
+# a new folder's registration files are otherwise intermediate: make deletes them after the first build
+.SECONDARY: $(foreach f,$(OVL_FOLDERS),build/gen/ovl/$(f)_reg.c build/gen/ovl/$(f)_reg.o)
 build/gen/ovl/%_reg.c: $(STUBS).c
 	@test -f $@
-build/ovl/%.bin: $(TARGET).elf build/gen/ovl/%_reg.o tools/gen_overlays.py
+# the resident image every overlay links against: one job builds it (parallel links used to rewrite it together)
+build/gen/ovl/resimg.o: $(TARGET).elf tools/gen_overlays.py
+	@/usr/bin/python3 tools/gen_overlays.py resimg $(TARGET).elf
+build/ovl/%.bin: $(TARGET).elf build/gen/ovl/resimg.o build/gen/ovl/%_reg.o tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py link $* $(TARGET).elf $(CC) $(ARCHFLAGS) -msoft-float -g
 overlays: $(OVL_BINS)
 all: overlays
@@ -185,7 +190,7 @@ build/gen/trig_tables.inc: tools/trig/gen_trig.c
 RSDKv5/RSDK/Core/Math.o RSDKv5/RSDK/Core/Math.dep: build/gen/trig_tables.inc
 
 # The objects to link (writes ps1/rsdk5_objects.inc + build/gen/game_srcs.txt; rerun after changing STAGES).
-STAGES ?= Logos,Title,GHZ
+STAGES ?= Logos,Title,Menu,GHZ
 objects:
 	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 

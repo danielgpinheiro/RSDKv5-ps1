@@ -2,12 +2,13 @@
 # Capture the sprite manifests of the scenes the current EXE loads within END_FRAME frames (docs/32 3.1):
 # tools/gfx/manifests/<Folder><Id>.txt, one "SPR path" / "SHT path" line per load (first occurrence), in load order.
 # Usage: tools/gfx/capture_manifests.sh END_FRAME [LABEL]   (a BOOT= build starts at that scene; the natural one at Logos)
+# MANIFEST_INPUT=FILE.gdb adds pad input on a hook other than perfTick (tools/play/menu_walk_input.gdb: the Menu's screens)
 set -eu
 cd "$(dirname "$0")/../.."
 END="${1:-600}"
 LABEL="${2:-$(date +%F)}"
 OUT=${TMPDIR:-/tmp}/ps1_manifest
-{ echo "set \$end_frame = $END"; cat tools/gfx/capture_manifest.gdb; } > "$OUT.in.gdb"
+{ echo "set \$end_frame = $END"; [ -n "${MANIFEST_INPUT:-}" ] && cat "$MANIFEST_INPUT"; cat tools/gfx/capture_manifest.gdb; } > "$OUT.in.gdb"
 TIMEOUT=${TIMEOUT:-300} tools/play_test.sh "$OUT.in.gdb" "$OUT" > /dev/null 2>&1 || true
 /usr/bin/python3 - "$OUT.log" "$LABEL" <<'PYEOF'
 import sys, os

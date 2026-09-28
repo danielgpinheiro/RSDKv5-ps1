@@ -1,6 +1,10 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
+#if RETRO_PLATFORM == RETRO_PS1
+extern "C" void PS1OutOfMemory(unsigned int size); // ps1/libc/new_guard.cpp: stops (GDB), never returns
+#endif
+
 namespace RSDK
 {
 #if RETRO_PLATFORM == RETRO_PS1
@@ -57,6 +61,10 @@ public:
             if (entries_realloc) {
                 entries = entries_realloc;
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            else // docs/32 4.2a: the stock goes on and clears an entry at NULL (the BIOS kernel's RAM)
+                PS1OutOfMemory((unsigned int)len);
+#endif
         }
 
         T *entry = &entries[count];

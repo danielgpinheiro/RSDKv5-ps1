@@ -13,12 +13,17 @@ namespace SKU
 // zone / act / character: 12 x 2 x 3 x 3 = 216 rows in the base-Mania scope. Stock (8 x 0x400 rows of ~272 B) = 2.2 MB.
 // One database (2.3i): replays are out of scope, and a ReplayDB request gets table -1, which every DB call checks.
 #define RETRO_USERDB_MAX     (1)
-#define RETRO_USERDB_COL_MAX (8)
+// 4.2a: TimeAttackDB's columns (zoneID, act, characterID, encore: uint8; score, replayID: uint32): 6 columns of at most
+// 4 bytes (stock: 8 of 16, room for strings, which Mania never stores). A row 272 -> 152 bytes: 62 -> 35 KB of the
+// init reserve. A table or file beyond these is refused (g_ps1UserDBOverflow), never written past.
+#define RETRO_USERDB_COL_MAX   (6)
+#define RETRO_USERDB_VALUE_MAX (4)
 // 2.3p: 0xE0 rows: TimeAttackData_AddRecord adds a row, then prunes that zone / act / character back to 3 (216 + 1)
 #define RETRO_USERDB_ROW_MAX (0xE0)
 #else
 #define RETRO_USERDB_MAX     (8)
 #define RETRO_USERDB_COL_MAX (8)
+#define RETRO_USERDB_VALUE_MAX (0x10)
 #define RETRO_USERDB_ROW_MAX (0x400)
 #endif
 
@@ -114,7 +119,7 @@ struct UserDBValue {
 
     UserDBRow *parent = NULL;
     uint8 size        = 0;
-    uint8 data[0x10];
+    uint8 data[RETRO_USERDB_VALUE_MAX];
 };
 
 struct UserDBRow {
@@ -135,7 +140,7 @@ struct UserDBRow {
     uint32 uuid    = 0;
     tm createTime;
     tm changeTime;
-    UserDBValue values[8];
+    UserDBValue values[RETRO_USERDB_COL_MAX];
 };
 
 struct UserDB {

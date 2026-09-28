@@ -16,7 +16,7 @@ The overlay links against a NOBITS image of the resident symbols (section-relati
 absolute --just-symbols addresses).
 
 Commands:
-  plan [--stages Logos,Title,GHZ]
+  plan [--stages Logos,Title,Menu,GHZ]
       ps1/rsdk5_objects.inc  Game.c's registration list for the resident objects (conditionals, static variables)
       build/gen/game_srcs.txt  resident object sources
       build/gen/ovl/folders.txt, build/gen/ovl/<F>.srcs  the overlays and their sources
@@ -24,6 +24,7 @@ Commands:
       OUT.c  pointer variables, ps1OvlTable, jump stubs, missing handlers
       build/gen/ovl/<F>_reg.c  the overlay's registrations, stub-table fills and header
       build/gen/ovl/<F>.syms  per object file: the stubbed functions it defines (for `link`)
+  resimg RESIDENT.elf           build/gen/ovl/resimg.o: the resident's symbols as a NOBITS image (once per resident link)
   link F RESIDENT.elf CC...     build/ovl/<F>.bin (two links: size, then at the top)
 """
 import os, re, subprocess, sys
@@ -75,7 +76,7 @@ def resident_set(data, srcs):
 
 
 def plan(argv):
-    stages = ['Logos', 'Title', 'GHZ']
+    stages = ['Logos', 'Title', 'Menu', 'GHZ']
     if '--stages' in argv:
         i = argv.index('--stages'); stages = argv[i + 1].split(','); del argv[i:i + 2]
     data = argv[0] if argv else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
@@ -125,6 +126,114 @@ def objs_of(folder):
     return [s[:-2] + '.o' for s in open(os.path.join(OVL, folder + '.srcs')).read().split()]
 
 
+def resident_game_objs():
+    return [s[:-2] + '.o' for s in open(os.path.join(GEN, 'game_srcs.txt')).read().split()]
+
+
+def light_folders(data=os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')):
+    """docs/32 4.2a: the folders only the GameConfig's Presentation category lists (Logos, Title, Menu, Credits, ...):
+    their scenes have STG to spare, zones do not. A resident object's function only light overlays reach is linked into
+    them (overlay_reach); what any other folder reaches stays resident, shared by every zone."""
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    light, heavy = set(), set()
+    for c in g['categories']:
+        for sc in c['scenes']:
+            (light if c['name'] == 'Presentation' else heavy).add(sc['folder'])
+    return light - heavy
+
+
+DEBUG_SECTIONS = ('.pdr', '.debug', '.mdebug', '.eh_frame', '.comment', '.gnu', '.reginfo', '.MIPS', '.note')
+MUTABLE = ('.data', '.bss', '.sdata', '.sbss')
+
+
+def parse_obj(o):
+    """-> (symbols: name -> (section, kind 'F'/'O'/' ', bind 'l'/'g'/'w'), relocations: section -> [(type, target)])"""
+    syms = {}
+    for line in run(['mipsel-none-elf-objdump', '-t', o]).splitlines():
+        m = re.match(r'^[0-9a-f]{8} (.)(.)(.)(.)(.)(.)(.) (\S+)\s+[0-9a-f]{8} (.*)$', line)
+        if m:
+            bind = 'w' if m.group(2) == 'w' else m.group(1)
+            syms[m.group(9).strip()] = (m.group(8), m.group(7), bind)
+    relocs, cur = {}, None
+    for line in run(['mipsel-none-elf-objdump', '-r', o]).splitlines():
+        m = re.match(r'RELOCATION RECORDS FOR \[(.*)\]:', line)
+        if m:
+            cur = None if m.group(1).startswith(DEBUG_SECTIONS) else m.group(1)
+            continue
+        q = line.split()
+        if cur and len(q) == 3 and q[1].startswith('R_MIPS'):
+            relocs.setdefault(cur, []).append((q[1], re.sub(r'[+-]0x[0-9a-f]+$', '', q[2])))
+    return syms, relocs
+
+
+def overlay_reach(folders, ro_objs):
+    """docs/32 4.2a: the resident objects' functions the overlays reach. A function only CALLED from an overlay (and from
+    what that call reaches) need not be resident: each overlay link appends the resident objects, and the linker takes a
+    function from there only when the resident does not have it (the resident image comes first). A function stays
+    resident (-u) when an overlay or a copied function takes its ADDRESS (a state or callback may outlive the overlay,
+    and two copies would compare unequal), or when a copy would be wrong: it touches its file's static (mutable) data
+    or takes a static function's address (directly or through the static functions it calls).
+    -> (keep: resident-object functions to keep resident, refs: every other symbol a copied function names)"""
+    info = {o: parse_obj(o) for o in ro_objs}
+    gfun = {}                       # global function -> (object, section)
+    for o, (syms, _) in info.items():
+        for n, (sec, kind, bind) in syms.items():
+            if kind == 'F' and bind in 'gw':
+                gfun[n] = (o, sec)
+    keep, refs = set(), set()
+    for fo in folders:
+        work = []
+        for o in objs_of(fo):
+            for sec, lst in parse_obj(o)[1].items():
+                for ty, t in lst:
+                    if t in gfun:
+                        if ty == 'R_MIPS_26' and sec.startswith('.text'):
+                            work.append(gfun[t])
+                        else:
+                            keep.add(t)
+        seen, bad, callers = set(), set(), {}
+        while work:
+            node = work.pop()
+            if node in seen:
+                continue
+            seen.add(node)
+            o, sec = node
+            syms = info[o][0]
+            for ty, t in info[o][1].get(sec, []):
+                if t in gfun:  # a global function (of any resident object)
+                    if ty == 'R_MIPS_26':
+                        work.append(gfun[t])
+                    else:
+                        keep.add(t)
+                    continue
+                tsec, kind, bind = syms.get(t, (t, ' ', 'l'))
+                if tsec.startswith('.text') and (t.startswith('.text') or kind == 'F'):  # a static function
+                    if tsec == sec:
+                        continue  # its own jump table / labels
+                    if ty == 'R_MIPS_26':
+                        work.append((o, tsec))
+                        callers.setdefault((o, tsec), set()).add(node)
+                    else:
+                        bad.add(node)
+                elif tsec.startswith(MUTABLE) and bind == 'l':
+                    bad.add(node)  # the file's own static data: a copy would have its own
+                elif bind != 'l' or tsec == '*UND*':
+                    refs.add(t)    # global data, engine / library functions: bound to the resident
+        # a static function that is bad makes its callers bad, up to a global one (kept resident)
+        todo = list(bad)
+        while todo:
+            node = todo.pop()
+            for c in callers.get(node, ()):
+                if c not in bad:
+                    bad.add(c)
+                    todo.append(c)
+        for o, sec in bad:
+            for n, (s2, kind, bind) in info[o][0].items():
+                if s2 == sec and kind == 'F' and bind in 'gw':
+                    keep.add(n)
+    return keep, refs, set(gfun)
+
+
 def stubs(argv):
     out, res_objs = argv[0], [o for o in argv[1:] if o.endswith('.o')]
     folders = open(os.path.join(OVL, 'folders.txt')).read().split()
@@ -151,11 +260,18 @@ def stubs(argv):
     index = {s: i for i, s in enumerate(stubbed)}
     # resident symbols only overlays use: --gc-sections would drop them from the resident link; they become roots
     # (ld reads build/gen/ovl_keep.txt as `-u symbol` options)
+    # 4.2a: minus the resident objects' functions only light overlays call (overlay_reach: linked into those overlays)
+    light = [fo for fo in folders if fo in light_folders()]
+    must, copy_refs, ro_funcs = overlay_reach(light, resident_game_objs())
     keep = set()
     for fo in folders:
         for u in nm_syms(objs_of(fo), '-u'):
-            if u in res_def:
+            if u in res_def and (fo not in light or u not in ro_funcs or u in must):
                 keep.add(u)
+    for u in copy_refs:
+        if u in res_def and (u not in ro_funcs or u in must):
+            keep.add(u)
+    keep |= must & res_def
     open(os.path.join(GEN, 'ovl_keep.txt'), 'w').write(''.join('-u %s\n' % k for k in sorted(keep)))
     others = sorted(c for c in classes if c not in resident)
     with open(out, 'w') as f:
@@ -236,15 +352,19 @@ def resimg(elf, out_s):
     return lo
 
 
+def resimg_cmd(argv):
+    elf = argv[0]
+    img_s, img_o = os.path.join(OVL, 'resimg.s'), os.path.join(OVL, 'resimg.o')
+    base = resimg(elf, img_s)
+    open(os.path.join(OVL, 'resimg.base'), 'w').write('0x%x\n' % base)
+    run(['mipsel-none-elf-as', '-march=mips1', '-EL', img_s, '-o', img_o])
+
+
 def link(argv):
     fo, elf, cc = argv[0], argv[1], argv[2:]
     work = os.path.join(OVL, fo)
     os.makedirs(work, exist_ok=True)
-    img_s, img_o = os.path.join(OVL, 'resimg.s'), os.path.join(OVL, 'resimg.o')
-    if not os.path.exists(img_o) or os.path.getmtime(img_o) < os.path.getmtime(elf):
-        base = resimg(elf, img_s)
-        open(os.path.join(OVL, 'resimg.base'), 'w').write('0x%x\n' % base)
-        run(['mipsel-none-elf-as', '-march=mips1', '-EL', img_s, '-o', img_o])
+    img_o = os.path.join(OVL, 'resimg.o')  # `resimg` (make builds it once, before the links)
     base = int(open(os.path.join(OVL, 'resimg.base')).read(), 16)
     stack = int(re.search(r'([0-9a-f]+) . __stack_start', run([NM, elf])).group(1), 16)
     top = stack - STACK_RESERVE
@@ -261,6 +381,9 @@ def link(argv):
         run(args + [o, dst])
         objs.append(dst)
     libc = [os.path.join(REPO, 'ps1', 'libc', n) for n in ('string.o', 'stdlib.o', 'math.o', 'stdio.o')]
+    # 4.2a: a light overlay's copies of the resident objects' functions it only calls (overlay_reach); the resident's
+    # own come first (the image), so only what the resident lacks is taken from these
+    ro = [os.path.join(REPO, o) for o in resident_game_objs()] if fo in light_folders() else []
     reg = os.path.join(OVL, fo + '_reg.o')
 
     def do_link(at):
@@ -284,7 +407,7 @@ def link(argv):
         out = os.path.join(work, '%s.elf' % fo)
         subprocess.run(cc + ['-nostdlib', '-Wl,-T,' + ld, '-Wl,--allow-multiple-definition', '-Wl,--gc-sections',
                              '-Wl,-wrap,memcpy', '-Wl,-wrap,memset', '-Wl,-wrap,_Znwj', '-Wl,-wrap,_Znaj',
-                             '-Wl,-e,ps1OvlHeader', '-o', out, img_o, reg] + objs + libc + ['-lgcc'], check=True)
+                             '-Wl,-e,ps1OvlHeader', '-o', out, img_o, reg] + objs + ro + libc + ['-lgcc'], check=True)
         nmout = run([NM, out])
         s = int(re.search(r'([0-9a-f]+) . __ps1_ovl_start', nmout).group(1), 16)
         e = int(re.search(r'([0-9a-f]+) . __ps1_ovl_end', nmout).group(1), 16)
@@ -304,4 +427,4 @@ def link(argv):
 
 if __name__ == '__main__':
     cmd, argv = sys.argv[1], sys.argv[2:]
-    {'plan': plan, 'stubs': stubs, 'link': link}[cmd](argv)
+    {'plan': plan, 'stubs': stubs, 'resimg': resimg_cmd, 'link': link}[cmd](argv)

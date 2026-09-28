@@ -38,6 +38,8 @@ void PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, i
 void PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 b, int32 alpha, int32 inkEffect);
 void PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect);
+void PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, int32 left, int32 top, int32 right, int32 bottom,
+                          uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect);
 // 3.4c-d: rotated / scaled frames (DrawSpriteRotozoom's geometry), DrawTile's pieces from the scene's tile images

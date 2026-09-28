@@ -1701,10 +1701,6 @@ void RSDK::DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha,
 void RSDK::DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, uint32 color, int32 alpha, int32 inkEffect,
                              bool32 screenRelative)
 {
-#if RETRO_PS1_HEADLESS
-    g_ps1PrimTodo = g_ps1PrimTodo + 1; // not drawn yet (docs/32 3.6)
-    return;
-#endif
     switch (inkEffect) {
         default: break;
         case INK_ALPHA:
@@ -1760,6 +1756,12 @@ void RSDK::DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRad
             bottom = currentScreen->clipBound_Y2;
 
         if (left != right && top != bottom) {
+#if RETRO_PLATFORM == RETRO_PS1
+            validDraw = true;
+            // docs/32 4.2a: the same pixels (inner^2 <= r^2 < outer^2 in [left, right) x [top, bottom)) as GPU rectangles
+            PS1DrawCircleOutline(x, y, innerRadius, outerRadius, left, top, right, bottom, color, alpha, inkEffect);
+            return;
+#endif
             int32 ir2           = innerRadius * innerRadius;
             int32 or2           = outerRadius * outerRadius;
             validDraw           = true;

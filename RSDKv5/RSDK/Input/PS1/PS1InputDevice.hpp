@@ -11,6 +11,10 @@ struct InputDevicePS1 : InputDevice {
     void ProcessInput(int32 controllerID);
     void CloseDevice();
 
+    // docs/32 4.2a: the one pad device in static storage (PS1InputDevice.cpp), not on the heap
+    static void *operator new(size_t size);
+    static void operator delete(void *ptr);
+
     uint16 buttonMasks;
     uint16 prevButtonMasks;
     uint8 stateUp, stateDown, stateLeft, stateRight;

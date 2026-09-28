@@ -36,6 +36,10 @@ namespace SKU
 
 using namespace RSDK;
 
+#if RETRO_PLATFORM == RETRO_PS1
+volatile uint32 g_ps1UserDBOverflow = 0; // 4.2a: tables / files beyond RETRO_USERDB_COL_MAX / VALUE_MAX (GDB; must stay 0)
+#endif
+
 RSDK::SKU::UserStorage *RSDK::SKU::userStorage     = NULL;
 RSDK::SKU::UserDBStorage *RSDK::SKU::userDBStorage = NULL;
 
@@ -102,7 +106,7 @@ void RSDK::SKU::UserDBValue::Set(int32 type, void *data)
                 char *string = (char *)data;
 
                 int32 len = (int32)strlen(string);
-                for (int32 c = 0; c < len && c < 15; ++c) {
+                for (int32 c = 0; c < len && c < (int32)sizeof(this->data) - 1; ++c) {
                     this->data[c] = string[c];
                 }
                 break;
@@ -307,6 +311,12 @@ void RSDK::SKU::UserDB::Init(va_list list)
         int32 type = va_arg(list, int32);
         if (!type)
             break;
+#if RETRO_PLATFORM == RETRO_PS1
+        if (cnt >= RETRO_USERDB_COL_MAX) { // 4.2a: the stock trusts every table to have at most 8
+            g_ps1UserDBOverflow = g_ps1UserDBOverflow + 1;
+            break;
+        }
+#endif
 
         columnTypes[cnt] = type;
         memset(columnNames[cnt], 0, 0x10);
@@ -336,6 +346,13 @@ bool32 RSDK::SKU::UserDB::Load(uint8 *buffer)
 
     columnCount = *buffer;
     buffer++;
+#if RETRO_PLATFORM == RETRO_PS1
+    if (columnCount > RETRO_USERDB_COL_MAX) { // 4.2a: a file this table cannot hold: refused (the game makes a new one)
+        g_ps1UserDBOverflow = g_ps1UserDBOverflow + 1;
+        columnCount         = 0;
+        return false;
+    }
+#endif
 
     for (int32 c = 0; c < columnCount; ++c) {
         columnTypes[c] = *buffer;
@@ -359,6 +376,13 @@ bool32 RSDK::SKU::UserDB::Load(uint8 *buffer)
         for (int32 c = 0; c < columnCount; ++c) {
             rows[r].values[c].size = *buffer;
             buffer++;
+#if RETRO_PLATFORM == RETRO_PS1
+            if (rows[r].values[c].size > RETRO_USERDB_VALUE_MAX) {
+                g_ps1UserDBOverflow = g_ps1UserDBOverflow + 1;
+                rowCount            = 0;
+                return false;
+            }
+#endif
 
             memcpy(&rows[r].values[c].data, buffer, rows[r].values[c].size);
             buffer += rows[r].values[c].size;
@@ -776,10 +800,18 @@ uint16 RSDK::SKU::UserDBStorage::LoadUserDB(const char *filename, void (*callbac
         return -1;
     }
 
-    AllocateStorage((void **)&userDBStorage->readBuffer[tableID], sizeof(UserDB), DATASET_TMP, true);
+#if RETRO_PLATFORM == RETRO_PS1
+    // docs/32 4.2a: a buffer for the file, not the table: a saved table is at most GetSize() bytes, and the PS1's one
+    // table (TimeAttackDB: 6 columns holding 12 value bytes) is 10 + (6 x 0x10 + 6 + 1) + 0xE0 rows x (2 x tm + uuid +
+    // 6 sizes + 12) = 21,169 bytes; sizeof(UserDB) (62 KB) did not fit TMP (32 KB at 2 MB)
+    const uint32 readSize = 10 + (0x10 * 6 + 6 + 1) + RETRO_USERDB_ROW_MAX * (2 * sizeof(tm) + sizeof(uint32) + 6 + 12);
+#else
+    const uint32 readSize = sizeof(UserDB);
+#endif
+    AllocateStorage((void **)&userDBStorage->readBuffer[tableID], readSize, DATASET_TMP, true);
     userDBStorage->dbLoadCB[tableID]  = UserDBStorage::LoadCB;
     userDBStorage->callbacks[tableID] = callback;
-    TryLoadUserFile(filename, userDBStorage->readBuffer[tableID], sizeof(UserDB), userDBStorage->loadCallback[tableID]);
+    TryLoadUserFile(filename, userDBStorage->readBuffer[tableID], readSize, userDBStorage->loadCallback[tableID]);
 
     UserDB *userDB = &userDBStorage->userDB[tableID];
     userDB->loaded = true;

@@ -41,7 +41,8 @@ then "Where we stopped" for the next steps.
 
 ## Build / run / debug
 ```bash
-make objects STAGES=Logos,Title,GHZ  # resident objects + one code overlay per stage folder (tools/gen_overlays.py plan)
+make objects STAGES=Logos,Title,Menu,GHZ  # resident objects + one code overlay per stage folder (tools/gen_overlays.py plan;
+                                # a Presentation folder's overlay also takes the resident functions only it calls, 4.2a)
 make gfx [STAGES=...]           # build-time graphics (phase 3): tile images (.ptl) + sprite atlas (.atl, scenes with a manifest)
 tools/gfx/capture_manifests.sh END_FRAME   # the sprite files each loaded scene uses -> tools/gfx/manifests/<Folder><N>.txt
 tools/gfx/layer_reference.sh GHZ 1 200     # 8 MB BOOT build: host render of frame 200's layers vs the framebuffer (pixels)
