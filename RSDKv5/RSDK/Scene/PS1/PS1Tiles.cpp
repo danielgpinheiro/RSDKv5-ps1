@@ -65,15 +65,20 @@ uint16 RSDK::PS1TileHFlipImage(uint16 tile)
     uint32 &c = s_hflipCache[tile & 31];
     if ((c >> 16) == tile)
         return (uint16)c;
+    // 4.2e: the pairs are sorted by tile: a binary search (the linear one cost ~60 hblanks a frame in the ruby's
+    // per-line deformation, which misses the cache)
     uint16 img         = PS1_TILE_NONE;
     const uint16 *pair = (const uint16 *)(s_ps1TileBlob + s_hflipOff);
-    for (uint32 i = 0; i < s_hflipCount; ++i, pair += 2) {
-        if (pair[0] >= tile) {
-            if (pair[0] == tile)
-                img = pair[1];
-            break;
-        }
+    uint32 lo = 0, hi = s_hflipCount; // the first pair with pair[0] >= tile is in [lo, hi]
+    while (lo < hi) {
+        uint32 mid = (lo + hi) >> 1;
+        if (pair[mid * 2] < tile)
+            lo = mid + 1;
+        else
+            hi = mid;
     }
+    if (lo < s_hflipCount && pair[lo * 2] == tile)
+        img = pair[lo * 2 + 1];
     c = (uint32)tile << 16 | img;
     return img;
 }

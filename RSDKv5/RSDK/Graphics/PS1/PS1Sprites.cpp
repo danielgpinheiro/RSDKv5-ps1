@@ -689,34 +689,47 @@ void PS1TintInvertRect(int32 x, int32 y, int32 w, int32 h)
         return;
     w = x1 - x;
     uint32 by = (uint32)PS1ChainBufferY(); // the buffer this chain draws into (0 / 256)
-    for (int32 row = y; row < y1; ++row) {
-        uint32_t *wr = PS1ChainSpanBegin(14);
+    // 4.2e: the rows go into spans of up to 16 rows (a span per row cost ~70 hblanks a frame in the ruby's frames): per
+    // row one 8-word fragment (copy, cache flush, white fill) and one 5-word fragment per texture page
+    int32 pages = ((x1 - 1) >> 8) - (x >> 8) + 1;
+    int32 perRow = 9 + pages * 6;
+    for (int32 row0 = y; row0 < y1; row0 += 16) {
+        int32 rows   = y1 - row0 < 16 ? y1 - row0 : 16;
+        uint32_t *wr = PS1ChainSpanBegin(rows * perRow);
         if (!wr)
             return;
-        int32 n = 0;
-        wr[1 + n++] = 0x80000000; // VRAM to VRAM: the row as drawn so far -> the scratch row
-        wr[1 + n++] = (by + (uint32)row) << 16 | (uint32)x;
-        wr[1 + n++] = (uint32)PS1_TINT_SCRATCH_Y << 16 | (uint32)x;
-        wr[1 + n++] = 1u << 16 | (uint32)w;
-        wr[1 + n++] = 0x01000000; // clear the texture cache (it may hold the scratch row's last copy)
-        wr[1 + n++] = 0x60FFFFFF; // white (the PC's 31 per channel)
-        wr[1 + n++] = (uint32)(uint16)row << 16 | (uint16)x;
-        wr[1 + n++] = 1u << 16 | (uint32)w;
-        PS1ChainSpanEnd(wr, n, wr + 1 + n);
-        for (int32 px = x; px < x1;) {
-            int32 page = px >> 8, pe = (page + 1) << 8, pw = (x1 < pe ? x1 : pe) - px;
-            uint32_t *t = PS1ChainSpanBegin(6);
-            if (!t)
-                return;
-            // texpage: X base page * 256 halfwords, Y base 256 (the scratch row), semi mode 2 (B - F), 15-bit direct
-            t[1] = 0xE1000000 | (uint32)(page * 4) | 1u << 4 | 2u << 5 | 2u << 7;
-            t[2] = 0x67000000; // textured rectangle, raw texels, semi-transparent
-            t[3] = (uint32)(uint16)row << 16 | (uint16)px;
-            t[4] = (uint32)(PS1_TINT_SCRATCH_Y - 256) << 8 | (uint32)(px & 0xFF);
-            t[5] = 1u << 16 | (uint32)pw;
-            PS1ChainSpanEnd(t, 5, t + 6);
-            px += pw;
+        uint32_t *hdr = NULL, *p = wr;
+        int32 lastWords = 0;
+#define PS1_TINT_FRAG(N)                                                                                               \
+    do {                                                                                                               \
+        if (hdr)                                                                                                       \
+            *hdr = (uint32_t)lastWords << 24 | ((uintptr_t)p & 0xFFFFFF);                                              \
+        hdr = p++, lastWords = (N);                                                                                    \
+    } while (0)
+        for (int32 row = row0; row < row0 + rows; ++row) {
+            PS1_TINT_FRAG(8);
+            *p++ = 0x80000000; // VRAM to VRAM: the row as drawn so far -> the scratch row
+            *p++ = (by + (uint32)row) << 16 | (uint32)x;
+            *p++ = (uint32)PS1_TINT_SCRATCH_Y << 16 | (uint32)x;
+            *p++ = 1u << 16 | (uint32)w;
+            *p++ = 0x01000000; // clear the texture cache (it may hold the scratch row's last copy)
+            *p++ = 0x60FFFFFF; // white (the PC's 31 per channel)
+            *p++ = (uint32)(uint16)row << 16 | (uint16)x;
+            *p++ = 1u << 16 | (uint32)w;
+            for (int32 px = x; px < x1;) {
+                int32 page = px >> 8, pe = (page + 1) << 8, pw = (x1 < pe ? x1 : pe) - px;
+                PS1_TINT_FRAG(5);
+                // texpage: X base page * 256 halfwords, Y base 256 (the scratch row), semi mode 2 (B - F), 15-bit direct
+                *p++ = 0xE1000000 | (uint32)(page * 4) | 1u << 4 | 2u << 5 | 2u << 7;
+                *p++ = 0x67000000; // textured rectangle, raw texels, semi-transparent
+                *p++ = (uint32)(uint16)row << 16 | (uint16)px;
+                *p++ = (uint32)(PS1_TINT_SCRATCH_Y - 256) << 8 | (uint32)(px & 0xFF);
+                *p++ = 1u << 16 | (uint32)pw;
+                px += pw;
+            }
         }
+#undef PS1_TINT_FRAG
+        PS1ChainSpanEnd(hdr, lastWords, p);
     }
     g_ps1TintInvertRects = g_ps1TintInvertRects + 1;
 }
