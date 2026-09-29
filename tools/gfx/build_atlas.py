@@ -52,6 +52,8 @@ import rsdk5_formats as F      # noqa: E402
 PAGE = V.PAGE
 BANK_CLUT = 0x1FF
 HALF_RULES = {}  # file -> side (px) from which its frames are stored at half resolution; set per scene by build_fit
+TEXT_KEEP_H = 16  # 4.3: clusters this short stay full resolution (text strips) while a plan with them fits
+KEEP_TEXT = True
 
 
 def halve(px):
@@ -614,6 +616,10 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                      and k[2][0] + k[2][2] <= r[0] + r[2] and k[2][1] + k[2][3] <= r[1] + r[3]]
             ts = [halvable[k] for k in inner]
             half = bool(ts) and all(t is not None for t in ts) and max(w, h) >= max(ts)
+            # 4.3 / 4b (user: readable text): a strip at most TEXT_KEEP_H tall is text (the title's "PRESS ANY BUTTON",
+            # headings, buttons): full resolution in every plan step (halved it can't be read)
+            if half and h <= TEXT_KEEP_H and KEEP_TEXT:
+                half = False
             # 4.2b: wider or taller than a texture page (the menu's 294 x 162 diorama backdrop): halved whatever the plan
             # step, when every frame using it may be (else the error below)
             if max(w, h) > PAGE and inner and all(always_halvable[k] for k in inner):
@@ -797,9 +803,10 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
 
 def build_fit(data, disc_data, folder, scene_id, character='sonic'):
     """build() with the fewest HALF_PLAN steps that fit (full resolution when it all fits)."""
-    global HALF_RULES
+    global HALF_RULES, KEEP_TEXT
     last = None
-    for n in range(len(HALF_PLAN) + 1):
+    for keep, n in [(True, n) for n in range(len(HALF_PLAN) + 1)] + [(False, n) for n in range(len(HALF_PLAN) + 1)]:
+        KEEP_TEXT = keep
         HALF_RULES = {}
         for files_, side in HALF_PLAN[:n]:
             for f in files_:
@@ -811,7 +818,7 @@ def build_fit(data, disc_data, folder, scene_id, character='sonic'):
                 for lab, grp in (('bosses', HALF_BOSS), ('effects', HALF_EFFECT), ('pictures', HALF_PICTURE),
                                  ('presentation', HALF_PRESENT), ('HUD', HALF_HUD))
                 if any(f in HALF_RULES for f in grp))
-            return res[0], res[1] + '\n  big sprites at half resolution: %s' % desc, *res[2:]
+            return res[0], res[1] + '\n  big sprites at half resolution: %s%s' % (desc, '' if keep else ' (text strips too)'), *res[2:]
         last = res
     return last
 
