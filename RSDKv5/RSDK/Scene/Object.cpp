@@ -1321,6 +1321,25 @@ void RSDK::ProcessObjectDrawLists()
                     if (list->hookCB)
                         list->hookCB();
 
+#if RETRO_PLATFORM == RETRO_PS1
+                    // 4.2e: the stock bubble sort (below) always makes n^2 / 2 comparisons of two entities' zdepth
+                    // (the title's 3D sprites: ~45 hblanks a frame). With a swap only on a strictly greater zdepth its
+                    // result is the stable descending order: here the same order by a stable insertion sort on the keys
+                    // read once (in the scratchpad: free between the layer drawer's calls; longer lists sort as stock)
+                    if (list->sorted && list->entityCount <= 170) {
+                        int32 n      = list->entityCount;
+                        int32 *key   = (int32 *)0x1F800000;
+                        uint16 *slot = (uint16 *)(0x1F800000 + 170 * sizeof(int32));
+                        for (int32 i = 0; i < n; ++i) {
+                            uint16 s = (uint16)list->entries[i];
+                            int32 k  = OBJECT_ENTITY(s)->zdepth, j = i;
+                            for (; j > 0 && key[j - 1] < k; --j) key[j] = key[j - 1], slot[j] = slot[j - 1];
+                            key[j] = k, slot[j] = s;
+                        }
+                        for (int32 i = 0; i < n; ++i) list->entries[i] = slot[i];
+                    }
+                    else
+#endif
                     if (list->sorted) {
                         for (int32 e = 0; e < list->entityCount; ++e) {
                             for (int32 i = list->entityCount - 1; i > e; --i) {
