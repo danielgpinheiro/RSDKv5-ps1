@@ -200,7 +200,10 @@ PLAYER_LIKE = {'Title/Sonic.bin'}
 # springs, rings, platforms…) stays full size. HALF_PLAN degrades the least visible first: bosses (on screen at an act's
 # end), then big effects, then presentation art, the always-visible HUD last; each step adds to the previous ones and
 # build_fit stops at the first that fits.
-HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin'}
+HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
+             # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
+             'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
+             'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
 HALF_EFFECT = {'Global/Explosions.bin', 'Global/Shields.bin', 'Global/Water.bin', 'Global/SpecialRing.bin',
                'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin'}
 HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison.bin', 'UI/TextEN.bin', 'UI/SaveSelect.bin',
@@ -225,7 +228,16 @@ SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
               'Players/Mighty.bin': None, 'Players/Ray.bin': None,
               'AIZ/SchrodingersCapsule.bin': None,           # the Encore capsule (Mighty and Ray inside)
               'UI/Diorama.bin': {3, 4, 6, 10, 11}}           # the Plus upsell, Encore, Competition (+ its FBZ platform)
-SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}}}  # the Competition diorama's Knuckles
+SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}},  # the Competition diorama's Knuckles
+                     # 4.2d: in the Mania-mode intro no Heavy is on screen (HeavyMystic / CutsceneHBH: no entity in
+                     # Scene1, only the Encore intro makes them); HeavyMystic's StageLoad loads its sheets regardless
+                     'AIZ': {'MSZ/HeavyMystic.bin': None, 'MSZ/Rogues.bin': None}}
+# 4.2d: CutsceneHBH loads one file per character into self->aniFrames and animates each with its own IDs (reviewed by
+# hand from CutsceneHBH.c: LoadSprites' switch, the *Setup helpers, the states); used where CutsceneHBH is the file's
+# only loader (the entity-field analysis would give every file the union)
+HBH_ANIMS = {'SPZ1/Boss.bin': {5}, 'PSZ2/Shinobi.bin': {0, 1, 3, 5}, 'MSZ/HeavyMystic.bin': {0},
+             'LRZ3/HeavyRider.bin': {0, 2, 3}, 'LRZ3/HeavyKing.bin': {0, 3, 7, 9, 16}, 'MSZ/Rogues.bin': {0, 5, 12},
+             'Cutscene/DamagedKing.bin': {0, 1}, 'Cutscene/HBHPile.bin': {0}, 'Cutscene/KingTMZ2.bin': {0, 1, 2}}
 
 
 def presentation_folders(data):
@@ -236,6 +248,17 @@ def presentation_folders(data):
     for c in g['categories']:
         for sc in c['scenes']:
             (light if c['name'] == 'Presentation' else heavy).add(sc['folder'])
+    return light - heavy
+
+
+def no_super_folders(data):
+    """4.2d: folders only the GameConfig's Presentation / Cutscenes categories list: nobody turns Super there, so the
+    player region holds no Super alternate"""
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
+    light, heavy = set(), set()
+    for c in g['categories']:
+        for sc in c['scenes']:
+            (light if c['name'] in ('Presentation', 'Cutscenes') else heavy).add(sc['folder'])
     return light - heavy
 
 
@@ -272,11 +295,27 @@ def literal_anims(path, names, active, handles_of, never=()):
         # recorder anywhere); their files' uses of the handle draw nothing. (Not every entity-less owner: UIWidgets'
         # StageLoad sets static animators that other objects' draws use.)
         skip = {src.get(o) for o in never}
+        owner, field = h.split('->', 1)
+        ani = player_ani_ids() if path.startswith('Players/') else {}
+        if owner[:1].islower():
+            # 4.2d: an entity field (`self->aniFrames`, one per entity, the same name in most objects): only the files
+            # that load THIS path into it; there any `x->field` passed to SetSpriteAnimation counts (CutsceneHBH loads
+            # one of eleven files per character into self->aniFrames and animates it as self-> / hbh->); clearing it
+            # (`= 0`) and testing it (`!x->field`) are not draws
+            fpat = r'\b[a-z]\w*->' + re.escape(field)  # entity variables (an Object's own field is another handle)
+            code = ''.join(U.code_of(f) for f in sorted(files) if f not in skip and re.search(
+                re.escape(h) + r'\s*=\s*RSDK\.LoadSpriteAnimation\(\s*"' + re.escape(path) + '"', U.code_of(f)))
+            uses = len(re.findall(r'\b' + fpat + r'\b', code))
+            benign = len(re.findall(fpat + r'\s*=\s*(?:0\s*;|RSDK\.LoadSpriteAnimation)', code)) + len(re.findall(r'!\s*' + fpat + r'\b', code))
+            calls = re.findall(r'SetSpriteAnimation\(\s*' + fpat + r'\s*,\s*([^,]+?)\s*,', code)
+            if not code or uses - benign - len(calls) or any(not c.isdigit() and c not in ani for c in calls):
+                return None
+            out |= {int(c) if c.isdigit() else ani[c] for c in calls}
+            continue
         code = ''.join(U.code_of(f) for f in sorted(files) if f not in skip)
         uses = len(re.findall(r'\b' + re.escape(h) + r'\b', code))
         loads = len(re.findall(re.escape(h) + r'\s*=\s*RSDK\.LoadSpriteAnimation', code))
         calls = re.findall(r'SetSpriteAnimation\(\s*' + re.escape(h) + r'\s*,\s*([^,]+?)\s*,', code)
-        ani = player_ani_ids() if path.startswith('Players/') else {}
         if uses - loads - len(calls) or any(not c.isdigit() and c not in ani for c in calls):
             return None
         out |= {int(c) if c.isdigit() else ani[c] for c in calls}
@@ -294,6 +333,7 @@ def select(folder, scene_id, character, files):
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
     sel, why = {}, {}
     present = folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))
+    no_super = folder in no_super_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))
     for path, spr, _ in files:
         n = len(spr['anims'])
         drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
@@ -305,6 +345,9 @@ def select(folder, scene_id, character, files):
                 sel[path], why[path] = [None] * n, 'another character'
                 continue
             alt = PLAYER_FILES[character][path]
+            if alt == 'super' and no_super:
+                sel[path], why[path] = [None] * n, 'no Super in a cutscene'
+                continue
             sel[path] = [('player', alt) if (path not in PLAYER_ANIMATED or ai in keep_player) else None for ai in range(n)]
             why[path] = 'player %s' % alt
             continue
@@ -317,6 +360,8 @@ def select(folder, scene_id, character, files):
         inactive = {'ReplayRecorder'} | ({'Player'} if present else set())
         # ANIM_OVERRIDES were reviewed for stages; a Presentation scene's buttons take their text lists from the scene data
         over = None if present else ANIM_OVERRIDES.get(path)
+        if over is None and path in HBH_ANIMS and 'CutsceneHBH' in active and handles_of.get(path) == {'self->aniFrames'}:
+            over = HBH_ANIMS[path]
         anims = over if over is not None else literal_anims(path, names, active, handles_of, inactive)
         place = []
         for ai in range(n):
@@ -326,6 +371,8 @@ def select(folder, scene_id, character, files):
             where = 'resident'
             if path in PLAYER_EXTRA:
                 where = ('player', PLAYER_EXTRA[path])
+                if PLAYER_EXTRA[path] == 'super' and no_super:
+                    where = None
             for g, members in groups.items():
                 for fp, fa in members:
                     if fp == path and (fa is None or ai in fa):
@@ -593,8 +640,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
         else:
             groups.append(set(c['colors']))
             c['clut'] = len(groups) - 1
-    if len(groups) > len(V.SPRITE_CLUT_SLOTS):
-        raise AtlasError('%s: %d CLUTs > %d sprite CLUT slots' % (name, len(groups), len(V.SPRITE_CLUT_SLOTS)))
+    if len(groups) > V.SPRITE_CLUT_USABLE:
+        raise AtlasError('%s: %d CLUTs > %d sprite CLUT slots' % (name, len(groups), V.SPRITE_CLUT_USABLE))
     clut_maps = [[0] + sorted(g) + [0] * (15 - len(g)) for g in groups]
 
     # regions: resident, then the player region (its alternates share it), then the event region
@@ -666,6 +713,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                                    | (1 if c['half'] else 0) << 6 | clut << 7)
         return None
     MISSING = struct.pack('<BBH', 0xFF, 0xFF, 0xFFFF)
+    OUTSIDE = struct.pack('<BBH', 0xFE, 0xFE, 0xFFFF)  # 4.2d: wholly outside its sheet: the runtime draws nothing, uncounted
     bind, file_tab = bytearray(), bytearray()
     patches = {w: bytearray() for w in group_images}
     counts = {'placed': 0, 'unplaced': 0}
@@ -679,7 +727,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 continue
             H_, W_ = sheets.get(sh).shape
             if x >= W_ or y >= H_ or x + w <= 0 or y + h <= 0:  # 4.2b: wholly outside its sheet (PhantomRuby.bin anim 2)
-                bind += MISSING
+                bind += OUTSIDE
                 counts['unplaced'] += 1
                 continue
             bd = binding(where, sh, max(0, x), max(0, y), w, h)

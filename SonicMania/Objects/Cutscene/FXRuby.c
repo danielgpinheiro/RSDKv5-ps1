@@ -88,7 +88,11 @@ void FXRuby_StageLoad(void)
     for (int32 d = 0; d < 0x200; ++d) FXRuby->deformation[d] = RSDK.Rand(-64, 64);
 
 #if MANIA_USE_PLUS
+#if defined RETRO_PS1_BUILD
+    FXRuby->tintLookupTable[0] = 0xFFFF; // the stock table's entry for black: a colour negative (4.2d)
+#else
     for (int32 c = 0; c < 0x10000; ++c) FXRuby->tintLookupTable[0xFFFF - c] = c;
+#endif
 #endif
 }
 

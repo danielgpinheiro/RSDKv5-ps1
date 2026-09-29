@@ -98,6 +98,31 @@ uint32_t *s_cur     = nullptr;
 uint32_t *s_end     = nullptr;
 psyqo::GPU *s_gpu   = nullptr;
 
+// 4.2d: a second block for the frames that fill the arena (the AIZ sea's per-line parallax, the ruby's deformed layers):
+// lent by the engine from STG's tail after a load when the scene has STG to spare (PS1ChainExtraTake, Storage.cpp) and
+// given back before the next load (PS1ChainSuspend). A frame moves on into it once; both are reused by the next frame
+// after the same DMA wait.
+extern "C" uint32_t *PS1ChainExtraTake(uint32_t *words) __attribute__((weak));
+extern "C" void PS1ChainExtraGive() __attribute__((weak));
+uint32_t *s_extra = nullptr;
+uint32_t s_extraWords = 0;
+bool s_inExtra = false;          // this frame writes in the extra block
+uint32_t s_mainUsed = 0;         // words the frame used in the main arena before it moved on
+volatile uint32_t g_ps1ChainExtraWords  = 0; // the block lent this scene (words; GDB)
+volatile uint32_t g_ps1ChainExtraFrames = 0; // frames that needed it
+volatile uint32_t g_ps1ChainExtraBusy   = 0; // loads begun while this frame's chain used it (must stay 0)
+
+inline bool roomFor(size_t words) {
+    if (s_cur + words <= s_end)
+        return true;
+    if (s_inExtra || !s_extra || words > s_extraWords)
+        return false;
+    s_mainUsed = (uint32_t)(s_cur - s_base);
+    s_cur = s_extra, s_end = s_extra + s_extraWords, s_inExtra = true;
+    g_ps1ChainExtraFrames = g_ps1ChainExtraFrames + 1;
+    return true;
+}
+
 // Before the frame's first arena write: the last frame's chain must be DMA'd (one arena, see above)
 inline void arenaReady() {
     if (s_waitIdle) {
@@ -117,7 +142,7 @@ bool s_tpageValid    = false;
 
 VarFragment *allocVar(unsigned n) {
     arenaReady();
-    if (!s_cur || s_cur + 2 + n > s_end) {
+    if (!s_cur || !roomFor(2 + n)) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
     }
@@ -131,7 +156,7 @@ template <typename T>
 T *allocRaw() {
     size_t words = (sizeof(T) + 3) / 4;
     arenaReady();
-    if (!s_cur || s_cur + words > s_end) {
+    if (!s_cur || !roomFor(words)) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
     }
@@ -187,6 +212,8 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
     s_waitIdle   = true;
     s_cur        = s_base;
     s_end        = s_base + s_arenaWords;
+    s_inExtra    = false;
+    s_mainUsed   = 0;
     s_batch      = nullptr;
     s_sbatch     = nullptr;
     s_tpageValid = false;
@@ -197,17 +224,31 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
 
 void PS1ChainEnd() {
     flushBatch();
-    uint32_t used = (uint32_t)(s_cur - s_base);
+    uint32_t used = s_inExtra ? s_mainUsed + (uint32_t)(s_cur - s_extra) : (uint32_t)(s_cur - s_base);
     g_ps1ChainLastWords = used;
     if (used > g_ps1ChainHighWater)
         g_ps1ChainHighWater = used;
 }
 
 void PS1ChainSuspend() {
+    // 4.2d: the lent block always goes back before a load (its records and staging use STG's tail), even when the
+    // arena stays (this frame chained its clear / CLUTs first: the usual case), once the last chain's DMA is over.
+    // A frame already writing in it (a load after the frame drew that much) would lose it: counted, must stay 0
+    if (s_extra) {
+        if (s_inExtra) {
+            g_ps1ChainExtraBusy = g_ps1ChainExtraBusy + 1;
+        }
+        else {
+            PS1GpuImmediate();
+            if (PS1ChainExtraGive)
+                PS1ChainExtraGive();
+            s_extra = nullptr, s_extraWords = 0, g_ps1ChainExtraWords = 0;
+        }
+    }
     if (!s_arenaMem || s_suspended)
         return;
     flushBatch();
-    if (s_cur != s_base) // this frame already chained something psyqo points at: keep the arenas
+    if (s_cur != s_base || s_inExtra) // this frame already chained something psyqo points at: keep the arenas
         return;
     PS1GpuImmediate(); // the previous frame's chain may still be DMA'd from the arena
     psyqo_free(s_arenaMem);
@@ -220,6 +261,12 @@ void PS1ChainSuspend() {
 void PS1ChainSetArenaWords(uint32_t words) { s_arenaWords = words ? words : PS1_CHAIN_ARENA_WORDS; }
 
 void PS1ChainResume() {
+    if (!s_extra && PS1ChainExtraTake) { // 4.2d: a second block when the loaded scene leaves STG to spare (every load)
+        uint32_t words = 0;
+        s_extra = PS1ChainExtraTake(&words);
+        s_extraWords = s_extra ? words : 0;
+        g_ps1ChainExtraWords = s_extraWords;
+    }
     if (!s_suspended)
         return;
     s_suspended = false;
@@ -494,7 +541,7 @@ uint32_t *PS1ChainDetachedBegin(int maxWords) {
         return nullptr;
     flushBatch();
     arenaReady();
-    if (!s_cur || s_cur + maxWords > s_end) {
+    if (!s_cur || !roomFor(maxWords)) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
     }
@@ -520,7 +567,7 @@ uint32_t *PS1ChainSpanBegin(int maxWords) {
     runHook();
     flushBatch();
     arenaReady();
-    if (!s_cur || s_cur + maxWords > s_end) {
+    if (!s_cur || !roomFor(maxWords)) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
     }
@@ -555,7 +602,7 @@ uint32_t *PS1ChainBulkBegin(int n, int wpp) {
     runHook();
     flushBatch();
     arenaReady();
-    if (!s_cur || s_cur + n * (wpp + 1) > s_end) {
+    if (!s_cur || !roomFor(n * (wpp + 1))) {
         g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
         return nullptr;
     }

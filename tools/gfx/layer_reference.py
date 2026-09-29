@@ -308,7 +308,11 @@ def render(cap, folder, scene_id):
                 mask[max(0, y):max(0, min(240, y + a10)), max(0, x):max(0, min(320, x + a9))] = 2
             continue
         if kind == 'flat':  # a flat rectangle as sent (the GPU keeps each channel's top 5 bits; mask bit 0)
-            _, mode1, passes, masked, r8, g8, b8, x, y, w, h = path
+            _, mode1, passes, flags, r8, g8, b8, x, y, w, h = path
+            masked = flags & 1
+            if flags & 2:  # 4.2d: INK_TINT's negative, from the previous frame: its pixels are approximate
+                mask[max(0, y):max(0, min(240, y + h)), max(0, x):max(0, min(320, x + w))] = 2
+                continue
             f = (r8 >> 3) | (g8 >> 3) << 5 | (b8 >> 3) << 10
             # 4.2b: with a mask colour set, bit 15 is forced unless the PC would store the mask colour (RGB565) there;
             # `masked` (INK_MASKED): only over the mask colour's pixels

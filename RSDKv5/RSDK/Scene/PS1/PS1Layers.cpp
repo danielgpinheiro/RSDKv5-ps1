@@ -23,6 +23,7 @@ extern "C" {
 volatile uint32 g_ps1LayerBands  = 0; // bands drawn (this frame)
 volatile uint32 g_ps1LayerPieces = 0; // tile pieces chained (this frame)
 volatile uint32 g_ps1LayerMisses = 0; // tiles with no image in VRAM (must stay 0)
+volatile uint32 g_ps1LayerNoTiles = 0; // 4.2d: layer draws in a scene with no tile images (.ptl not built yet; must stay 0)
 volatile uint32 g_ps1LayerHbl    = 0; // hblanks spent drawing layers (this frame)
 volatile uint32 g_ps1LayerSolidRuns = 0; // one-colour line runs drawn as rectangles (this frame)
 volatile uint32 g_ps1LayerRowTables = 0; // tile rows drawn from a column table (this frame)
@@ -1023,6 +1024,10 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     if (!layer->xsize || !layer->ysize || currentScreen->clipBound_X1 >= currentScreen->clipBound_X2 || y1 >= y2)
         return;
+    if (!TileTable()) { // 4.2d: no tile images loaded (a scene before its `make gfx`): nothing to draw from
+        g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
+        return;
+    }
     PS1LayerDebugHook((uint32)(layer - tileLayers));
     PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM
@@ -1054,6 +1059,10 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
 {
     if (!layer->xsize || !layer->ysize)
         return;
+    if (!TileTable()) { // 4.2d: as PS1DrawLayerBasic
+        g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
+        return;
+    }
     PS1LayerDebugHook((uint32)(layer - tileLayers));
     PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM

@@ -16,7 +16,7 @@ The overlay links against a NOBITS image of the resident symbols (section-relati
 absolute --just-symbols addresses).
 
 Commands:
-  plan [--stages Logos,Title,Menu,GHZ]
+  plan [--stages Logos,Title,Menu,AIZ,GHZCutscene,GHZ]
       ps1/rsdk5_objects.inc  Game.c's registration list for the resident objects (conditionals, static variables)
       build/gen/game_srcs.txt  resident object sources
       build/gen/ovl/folders.txt, build/gen/ovl/<F>.srcs  the overlays and their sources
@@ -76,7 +76,7 @@ def resident_set(data, srcs):
 
 
 def plan(argv):
-    stages = ['Logos', 'Title', 'Menu', 'GHZ']
+    stages = ['Logos', 'Title', 'Menu', 'AIZ', 'GHZCutscene', 'GHZ']
     if '--stages' in argv:
         i = argv.index('--stages'); stages = argv[i + 1].split(','); del argv[i:i + 2]
     data = argv[0] if argv else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')

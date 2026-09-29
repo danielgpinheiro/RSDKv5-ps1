@@ -9,6 +9,7 @@
 // post), swapped where the music changes: PS1AtlasLoadGroup.
 
 #define PS1_ATLAS_MISSING (0xFFFF) // ps1Attr of a frame the atlas does not hold (or whose group is not loaded)
+#define PS1_ATLAS_OUTSIDE (0xFE)   // ps1U / ps1V with PS1_ATLAS_MISSING: the frame lies wholly outside its sheet (4.2d)
 // ps1Attr: bits 0-3 texture column (X / 64), 4 page row (Y / 256), 5 8-bit (else 4-bit), 6 half resolution (the frame is
 // stored halved and drawn 2x), 7-15 CLUT slot (tools/gfx/vram_plan.py SPRITE_CLUT_SLOTS; 0x1FF = the palette bank's)
 #define PS1_ATLAS_COLUMN(attr) ((attr) & 15)

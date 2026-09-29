@@ -116,6 +116,10 @@ inline bool PS1RotoSpan(const PS1RotoEdge *E, int32 ya, int32 yb, int32 &xmin, i
 
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer)
 {
+    if (!TileTable()) { // 4.2d: as PS1DrawLayerBasic
+        g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
+        return;
+    }
     int32 x1 = currentScreen->clipBound_X1, y1 = currentScreen->clipBound_Y1;
     int32 x2 = currentScreen->clipBound_X2, y2 = currentScreen->clipBound_Y2;
     int32 n = y2 - y1, xw = x2 - x1;

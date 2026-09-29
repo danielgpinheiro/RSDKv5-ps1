@@ -56,6 +56,7 @@ namespace RSDK
 {
 // PS1LayersFrameBegin: this frame's counters (and the draw log) start over
 volatile uint32 g_ps1SpriteWidePieces = 0; // 4.2b: frames drawn as pieces of several texture pages (GDB)
+volatile uint32 g_ps1SpriteOutside    = 0; // 4.2d: frames wholly outside their sheet (drawn as nothing; GDB)
 
 void PS1SpritesFrameBegin()
 {
@@ -95,6 +96,7 @@ struct PS1Ink {
     uint32 mod;
     bool maskTest; // 4.1b: INK_MASKED, drawn with the GPU's mask test on
     bool forceMask; // 4.2b: a flat colour other than the mask colour while one is set: bit 15 forced (masked sprites skip it)
+    bool tintInvert; // 4.2d: INK_TINT with a negative table (FXRuby): white, then the previous frame subtracted (approximate)
 };
 
 // A palette colour as a CLUT entry (PS1Layers.cpp's PS1Colour: the mask colour keeps STP clear, 4.1b)
@@ -110,7 +112,7 @@ inline uint16 PS1ClutColour(uint16 c)
 // False: nothing to draw (or an ink not done: counted)
 bool PS1InkOf(int32 inkEffect, int32 alpha, PS1Ink &ink)
 {
-    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false, ink.forceMask = false;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false, ink.forceMask = false, ink.tintInvert = false;
     switch (inkEffect) {
         case INK_NONE: return true;
         case INK_MASKED: // only where the framebuffer holds the mask colour (bit 15 clear: its CLUT entries' STP is 0)
@@ -415,6 +417,10 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &ha
     PS1FadeRestore(); // a FillScreen earlier this frame faded the CLUTs
     uint16 attr = frame->ps1Attr;
     if (attr == PS1_ATLAS_MISSING) {
+        if (frame->ps1U == PS1_ATLAS_OUTSIDE && frame->ps1V == PS1_ATLAS_OUTSIDE) { // 4.2d: no texels to draw (the PC
+            g_ps1SpriteOutside = g_ps1SpriteOutside + 1;                           // reads past its sheet there)
+            return false;
+        }
         g_ps1SpriteMissing = g_ps1SpriteMissing + 1;
         for (int32 i = 0; i < 8; ++i) { // which sheets (GDB)
             uint32 e = g_ps1MissingSheet[i];
@@ -617,7 +623,7 @@ static_assert(PS1_EDGE_ROWS * sizeof(PS1Edge) <= 1024, "the edge buffer must fit
 bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink &ink)
 {
     uint32 r = (color >> 16) & 0xFF, g = (color >> 8) & 0xFF, b = color & 0xFF;
-    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false, ink.tintInvert = false;
     // 4.2b: as lines (4.1b): with a mask colour set, a flat pixel keeps bit 15 clear only if the PC would store the mask
     // colour there (RGB565 as rgb32To16), so INK_MASKED sprites draw over exactly the PC's pixels
     ink.forceMask = maskColor && (uint16)(rgb32To16_R[r] | rgb32To16_G[g] | rgb32To16_B[b]) != (uint16)maskColor;
@@ -643,6 +649,17 @@ bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink 
             ink.mode = inkEffect == INK_ADD ? 1 : 2;
             break;
         }
+        case INK_TINT:
+            // 4.2d: the PC maps every pixel through a 64K table the PS1 has no room (nor per-pixel read-back) for. The
+            // negative (FXRuby: the table's entry for black is white) is white minus the frame: the previous one,
+            // read from the buffer on display (PS1TintInvertRect); other tints are not done yet (counted)
+            if (tintLookupTable && tintLookupTable[0] == 0xFFFF) {
+                ink.tintInvert = true;
+                r = g = b = 0xFF;
+                break;
+            }
+            g_ps1PrimTodo = g_ps1PrimTodo + 1;
+            return false;
         case INK_MASKED: // 4.2b: only over the mask colour's pixels (bit 15 clear), as masked sprites (4.1b)
             if (!maskColor) {
                 g_ps1PrimTodo = g_ps1PrimTodo + 1;
@@ -656,11 +673,66 @@ bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink 
     return true;
 }
 
+// 4.2d: INK_TINT's negative over a rectangle (clipped to the screen), from the frame as drawn so far: per row, the row is
+// copied to a scratch row (VRAM row 510, x 0-319: sprite CLUT slots no atlas uses), the texture cache flushed, the row
+// filled white, then the copy (a 15-bit texture, one page per 256 texels) subtracted: 31 - old per channel. Texels
+// without STP (bit 15) are drawn as they are (approximate; the draw log marks the rectangle)
+#define PS1_TINT_SCRATCH_Y 510
+volatile uint32 g_ps1TintInvertRects = 0;
+void PS1TintInvertRect(int32 x, int32 y, int32 w, int32 h)
+{
+    int32 x1 = x + w, y1 = y + h;
+    int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+    x  = x < 0 ? 0 : x, y = y < 0 ? 0 : y;
+    x1 = x1 > sw ? sw : x1, y1 = y1 > sh ? sh : y1;
+    if (x1 <= x || y1 <= y)
+        return;
+    w = x1 - x;
+    uint32 by = (uint32)PS1ChainBufferY(); // the buffer this chain draws into (0 / 256)
+    for (int32 row = y; row < y1; ++row) {
+        uint32_t *wr = PS1ChainSpanBegin(14);
+        if (!wr)
+            return;
+        int32 n = 0;
+        wr[1 + n++] = 0x80000000; // VRAM to VRAM: the row as drawn so far -> the scratch row
+        wr[1 + n++] = (by + (uint32)row) << 16 | (uint32)x;
+        wr[1 + n++] = (uint32)PS1_TINT_SCRATCH_Y << 16 | (uint32)x;
+        wr[1 + n++] = 1u << 16 | (uint32)w;
+        wr[1 + n++] = 0x01000000; // clear the texture cache (it may hold the scratch row's last copy)
+        wr[1 + n++] = 0x60FFFFFF; // white (the PC's 31 per channel)
+        wr[1 + n++] = (uint32)(uint16)row << 16 | (uint16)x;
+        wr[1 + n++] = 1u << 16 | (uint32)w;
+        PS1ChainSpanEnd(wr, n, wr + 1 + n);
+        for (int32 px = x; px < x1;) {
+            int32 page = px >> 8, pe = (page + 1) << 8, pw = (x1 < pe ? x1 : pe) - px;
+            uint32_t *t = PS1ChainSpanBegin(6);
+            if (!t)
+                return;
+            // texpage: X base page * 256 halfwords, Y base 256 (the scratch row), semi mode 2 (B - F), 15-bit direct
+            t[1] = 0xE1000000 | (uint32)(page * 4) | 1u << 4 | 2u << 5 | 2u << 7;
+            t[2] = 0x67000000; // textured rectangle, raw texels, semi-transparent
+            t[3] = (uint32)(uint16)row << 16 | (uint16)px;
+            t[4] = (uint32)(PS1_TINT_SCRATCH_Y - 256) << 8 | (uint32)(px & 0xFF);
+            t[5] = 1u << 16 | (uint32)pw;
+            PS1ChainSpanEnd(t, 5, t + 6);
+            px += pw;
+        }
+    }
+    g_ps1TintInvertRects = g_ps1TintInvertRects + 1;
+}
+
 // One flat rectangle (already clipped)
 void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
 {
     if (w <= 0 || h <= 0)
         return;
+    if (ink.tintInvert) {
+        PS1TintInvertRect(x, y, w, h);
+#if PS1_DEBUG_BIGRAM
+        PS1DrawLogAdd(7, 0, 1, 2, 0xFF, 0xFF, 0xFF, x, y, w, h); // flags 2: a tint (the host counts it approximate)
+#endif
+        return;
+    }
     uint32 cmd = 0x60000000 | bgr | (ink.mode >= 0 ? 0x02000000 : 0);
     if (ink.forceMask || ink.maskTest)
         PS1ChainMaskControl(ink.forceMask, ink.maskTest);
@@ -696,6 +768,16 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
 {
     if (!b.n)
         return;
+    if (ink.tintInvert) { // 4.2d: each rectangle as PS1TintInvertRect
+        for (int32 k = 0; k < b.n; ++k) {
+            PS1TintInvertRect(b.r[k][0], b.r[k][1], b.r[k][2], b.r[k][3]);
+#if PS1_DEBUG_BIGRAM
+            PS1DrawLogAdd(7, 0, 1, 2, 0xFF, 0xFF, 0xFF, b.r[k][0], b.r[k][1], b.r[k][2], b.r[k][3]);
+#endif
+        }
+        b.n = 0;
+        return;
+    }
     bool semi  = ink.mode >= 0;
     uint32 cmd = 0x60000000 | bgr | (semi ? 0x02000000 : 0);
     int32 frags = (b.n + 3) >> 2;

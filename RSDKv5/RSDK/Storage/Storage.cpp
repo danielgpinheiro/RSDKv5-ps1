@@ -190,6 +190,27 @@ void RSDK::PS1StorageTailRelease(StorageDataSets set)
     s_ps1TailBytes[set] = 0;
 }
 
+// docs/32 4.2d: the chain's second block (ps1/gpu_chain.cpp PS1ChainResume / Suspend): STG's tail after a load when the
+// scene leaves more than PS1_CHAIN_EXTRA_MARGIN free (what the scene allocates while it runs: sprite loads, objects);
+// given back before the next load, whose records and staging use the tail. Zones near the STG limit lend nothing.
+#define PS1_CHAIN_EXTRA_MARGIN (48 * 1024)
+#define PS1_CHAIN_EXTRA_MAX    (176 * 1024) // the ruby's deformed frames (AIZ, GHZCutscene) need ~160 KB of chain in all
+extern "C" uint32_t *PS1ChainExtraTake(uint32_t *words)
+{
+    DataStorage *st = &dataStorage[DATASET_STG];
+    uint32 used     = st->usedStorage * sizeof(uint32) + HEADER_SIZE * sizeof(uint32);
+    if (s_ps1TailBytes[DATASET_STG] || st->storageLimit < used + PS1_CHAIN_EXTRA_MARGIN + 16 * 1024)
+        return NULL;
+    uint32 take = st->storageLimit - used - PS1_CHAIN_EXTRA_MARGIN;
+    take        = (take > PS1_CHAIN_EXTRA_MAX ? PS1_CHAIN_EXTRA_MAX : take) & ~15u;
+    void *p     = PS1StorageTailAlloc(DATASET_STG, take);
+    if (!p)
+        return NULL;
+    *words = take / sizeof(uint32);
+    return (uint32_t *)p;
+}
+extern "C" void PS1ChainExtraGive() { PS1StorageTailRelease(DATASET_STG); }
+
 static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
 {
     DataStorage *st = &dataStorage[set];
