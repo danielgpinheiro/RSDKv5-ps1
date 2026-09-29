@@ -52,8 +52,11 @@ import rsdk5_formats as F      # noqa: E402
 PAGE = V.PAGE
 BANK_CLUT = 0x1FF
 HALF_RULES = {}  # file -> side (px) from which its frames are stored at half resolution; set per scene by build_fit
-TEXT_KEEP_H = 16  # 4.3: clusters this short stay full resolution (text strips) while a plan with them fits
+TEXT_KEEP_H = 24  # 4.3: clusters this short stay full resolution (text strips) while a plan with them fits
 KEEP_TEXT = True
+# 4.3 (user: the pause menu's CONTINUE / RESTART read blocky): animations never halved while the text is kept (the
+# pause buttons' text, UI/TextEN.bin list 10; a scene that can't fit them falls back with the other text: GHZ2)
+NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
 
 
 def halve(px):
@@ -567,6 +570,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if x1 > x0 and y1 > y0:
                     k = (where, sh, (x0, y0, x1 - x0, y1 - y0))
                     t = HALF_RULES.get(path, HALF_RULES.get(sh))
+                    if (path, ai) in NEVER_HALF_ANIMS and KEEP_TEXT:
+                        t = None
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)
                     always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
