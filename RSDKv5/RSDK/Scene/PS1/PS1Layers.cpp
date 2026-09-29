@@ -915,10 +915,13 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 // >> 3): the PS1 keeps 5 bits a channel, so grey >> 3 each. Flat colours carry their 8-bit channels (the PC's 565 is
 // exact from them); CLUT entries are BGR555 (green's low bit gone: taken as its top bit, approximate) and the host render
 // counts the tint approximate
-inline uint32 PS1Grey5(uint32 r5, uint32 g6, uint32 b5)
+// the channels' 8-bit values as tables, and ((r + g + b) << 8) / 680 = (r + g + b) * 24673 >> 16 for every sum up to 765
+// (checked on all of them): no divide (4.3)
+const uint8 s_grey5To8[32] = { 0, 8, 16, 25, 33, 41, 49, 58, 66, 74, 82, 90, 99, 107, 115, 123, 132, 140, 148, 156, 165, 173, 181, 189, 197, 206, 214, 222, 230, 239, 247, 255 };
+const uint8 s_grey6To8[64] = { 0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97, 101, 105, 109, 113, 117, 121, 125, 130, 134, 138, 142, 146, 150, 154, 158, 162, 166, 170, 174, 178, 182, 186, 190, 194, 198, 202, 206, 210, 215, 219, 223, 227, 231, 235, 239, 243, 247, 251, 255 };
+__attribute__((always_inline)) inline uint32 PS1Grey5(uint32 r5, uint32 g6, uint32 b5)
 {
-    uint32 r = (0x20F * r5 + 23) >> 6, g = (0x103 * g6 + 33) >> 6, b = (0x20F * b5 + 23) >> 6;
-    uint32 grey = ((r + g + b) << 8) / 680;
+    uint32 grey = (uint32)(s_grey5To8[r5] + s_grey6To8[g6] + s_grey5To8[b5]) * 24673 >> 16;
     return (grey > 255 ? 255 : grey) >> 3;
 }
 inline uint32 PS1GreyWord(uint32 w) // a GP0 colour word's 8-bit fields (0xBBGGRR) -> grey, the command byte kept

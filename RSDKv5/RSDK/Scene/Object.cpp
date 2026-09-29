@@ -543,6 +543,74 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
     return p;
 }
 
+// The update passes' range decision for a live slot the scan returned (stock's switch): sets and returns inRange
+__attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
+{
+    bool32 inRange;
+    switch (ent->active) {
+        default:
+        case ACTIVE_DISABLED: inRange = ent->inRange; break;
+
+        case ACTIVE_NEVER:
+        case ACTIVE_PAUSED: ent->inRange = inRange = false; break;
+
+        case ACTIVE_ALWAYS:
+        case ACTIVE_NORMAL: ent->inRange = inRange = true; break;
+
+        case ACTIVE_BOUNDS:
+            inRange = false;
+            for (int32 s = 0; s < cameraCount; ++s) {
+                int32 sx = abs(ent->position.x - cameras[s].position.x);
+                int32 sy = abs(ent->position.y - cameras[s].position.y);
+                if (sx <= ent->updateRange.x + cameras[s].offset.x && sy <= ent->updateRange.y + cameras[s].offset.y) {
+                    inRange = true;
+                    break;
+                }
+            }
+            ent->inRange = inRange;
+            break;
+
+        case ACTIVE_XBOUNDS:
+            inRange = false;
+            for (int32 s = 0; s < cameraCount; ++s) {
+                int32 sx = abs(ent->position.x - cameras[s].position.x);
+                if (sx <= ent->updateRange.x + cameras[s].offset.x) {
+                    inRange = true;
+                    break;
+                }
+            }
+            ent->inRange = inRange;
+            break;
+
+        case ACTIVE_YBOUNDS:
+            inRange = false;
+            for (int32 s = 0; s < cameraCount; ++s) {
+                int32 sy = abs(ent->position.y - cameras[s].position.y);
+                if (sy <= ent->updateRange.y + cameras[s].offset.y) {
+                    inRange = true;
+                    break;
+                }
+            }
+            ent->inRange = inRange;
+            break;
+
+        case ACTIVE_RBOUNDS:
+            inRange = false;
+            for (int32 s = 0; s < cameraCount; ++s) {
+                int32 sx = FROM_FIXED(abs(ent->position.x - cameras[s].position.x));
+                int32 sy = FROM_FIXED(abs(ent->position.y - cameras[s].position.y));
+                if (sx * sx + sy * sy <= ent->updateRange.x + cameras[s].offset.x) {
+                    inRange = true;
+                    break;
+                }
+            }
+            ent->inRange = inRange;
+            break;
+    }
+
+    return inRange;
+}
+
 PS1_HOT void PS1UpdatePass()
 {
     PS1CameraUnion();
@@ -563,67 +631,7 @@ PS1_HOT void PS1UpdatePass()
         }
 
         ent = *p; // class != 0 (the scan settles blank slots)
-        bool32 inRange;
-        switch (ent->active) {
-            default:
-            case ACTIVE_DISABLED: inRange = ent->inRange; break;
-
-            case ACTIVE_NEVER:
-            case ACTIVE_PAUSED: ent->inRange = inRange = false; break;
-
-            case ACTIVE_ALWAYS:
-            case ACTIVE_NORMAL: ent->inRange = inRange = true; break;
-
-            case ACTIVE_BOUNDS:
-                inRange = false;
-                for (int32 s = 0; s < cameraCount; ++s) {
-                    int32 sx = abs(ent->position.x - cameras[s].position.x);
-                    int32 sy = abs(ent->position.y - cameras[s].position.y);
-                    if (sx <= ent->updateRange.x + cameras[s].offset.x && sy <= ent->updateRange.y + cameras[s].offset.y) {
-                        inRange = true;
-                        break;
-                    }
-                }
-                ent->inRange = inRange;
-                break;
-
-            case ACTIVE_XBOUNDS:
-                inRange = false;
-                for (int32 s = 0; s < cameraCount; ++s) {
-                    int32 sx = abs(ent->position.x - cameras[s].position.x);
-                    if (sx <= ent->updateRange.x + cameras[s].offset.x) {
-                        inRange = true;
-                        break;
-                    }
-                }
-                ent->inRange = inRange;
-                break;
-
-            case ACTIVE_YBOUNDS:
-                inRange = false;
-                for (int32 s = 0; s < cameraCount; ++s) {
-                    int32 sy = abs(ent->position.y - cameras[s].position.y);
-                    if (sy <= ent->updateRange.y + cameras[s].offset.y) {
-                        inRange = true;
-                        break;
-                    }
-                }
-                ent->inRange = inRange;
-                break;
-
-            case ACTIVE_RBOUNDS:
-                inRange = false;
-                for (int32 s = 0; s < cameraCount; ++s) {
-                    int32 sx = FROM_FIXED(abs(ent->position.x - cameras[s].position.x));
-                    int32 sy = FROM_FIXED(abs(ent->position.y - cameras[s].position.y));
-                    if (sx * sx + sy * sy <= ent->updateRange.x + cameras[s].offset.x) {
-                        inRange = true;
-                        break;
-                    }
-                }
-                ent->inRange = inRange;
-                break;
-        }
+        bool32 inRange = PS1RangeDecide(ent);
 
         if (inRange) {
             sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
@@ -848,6 +856,106 @@ PS1_HOT void PS1PausedLatePass()
             ++s;
         }
     }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+
+// 4.3: ProcessFrozenObjects' two loops (the pause menu runs in ENGINESTATE_FROZEN: ~200 hblanks a frame as stock loops)
+// with the stock semantics. The update loop decides inRange as the regular one (PS1UpdateScan settles the slots out of
+// range, PS1RangeDecide the rest) and runs update only for ACTIVE_ALWAYS / ACTIVE_PAUSED entities; every slot in range
+// joins its draw group (read through sceneInfo.entity after the callback) and is marked (3.0f bits). The late loop runs
+// lateUpdate for in-range ALWAYS / PAUSED entities, adds the in-range interacting ones to the type groups (through
+// sceneInfo.entity, in slot order) and clears onScreen through sceneInfo.entity: only the marked slots can have inRange
+// or onScreen set, so it visits them; after an entity copy (bits not whole) it visits every slot and marks the in-range
+// ones again
+PS1_HOT void PS1FrozenUpdatePass()
+{
+    PS1CameraUnion();
+    EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
+    int32 phase     = 0;
+    EntityBase *ent = NULL;
+    for (;;) {
+        if (p >= pend) {
+            if (phase)
+                break;
+            phase = 1, p = objectEntityPtr + TEMPENTITY_START, pend = objectEntityPtr + ps1TempSlotEnd;
+            continue;
+        }
+        EntityBase **q = PS1UpdateScan(p, pend);
+        if (q != p) {
+            ent = q[-1], p = q;
+            continue;
+        }
+        ent = *p;
+        if (PS1RangeDecide(ent)) {
+            sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
+            sceneInfo.entity     = ent;
+            PS1SlotMark(sceneInfo.entitySlot);
+            if (ent->active == ACTIVE_ALWAYS || ent->active == ACTIVE_PAUSED) {
+                void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
+                if (update) {
+                    update();
+                    PS1CameraUnion();
+                    pend = objectEntityPtr + (phase ? ps1TempSlotEnd : ps1SceneSlotEnd);
+                }
+            }
+            if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+                PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+        }
+        ++p;
+    }
+    if (ent)
+        sceneInfo.entity = ent;
+    sceneInfo.entitySlot = ENTITY_COUNT;
+}
+
+PS1_HOT void PS1FrozenLatePass()
+{
+    uint32 copies   = g_ps1EntityCopies;
+    bool whole      = copies == s_ps1BitsFrom;
+    bool wholeStart = whole;
+    EntityBase *ent = NULL;
+    int32 last      = -1;
+    for (int32 phase = 0; phase < 2; ++phase) {
+        int32 s0 = phase ? TEMPENTITY_START : 0, s = s0;
+        for (;;) {
+            int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+            if (whole)
+                s = PS1SlotNext(s, s1);
+            if (s >= s1)
+                break;
+            EntityBase *e        = objectEntityPtr[s];
+            sceneInfo.entitySlot = s;
+            sceneInfo.entity     = e;
+            if (e->inRange) {
+                if (e->active == ACTIVE_ALWAYS || e->active == ACTIVE_PAUSED) {
+                    void (*lateUpdate)(void) = objectClassList[stageObjectIDs[e->classID]].lateUpdate;
+                    if (lateUpdate)
+                        lateUpdate();
+                }
+                EntityBase *c = (EntityBase *)sceneInfo.entity;
+                if (c->interaction)
+                    PS1TypeGroupsAdd((uint16)s, c->classID, c->group);
+            }
+            ent           = (EntityBase *)sceneInfo.entity;
+            ent->onScreen = 0;
+            if (!wholeStart && objectEntityPtr[s]->inRange)
+                PS1SlotMark(s); // rebuilding the bits
+            if (g_ps1EntityCopies != copies)
+                whole = false; // a copy: every slot from here on
+            last = s;
+            ++s;
+        }
+        // stock's last visited slot is the range's last: settled with nothing to do unless the walk ended on it
+        int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
+        if (s1 > s0 && last != s1 - 1)
+            ent = objectEntityPtr[s1 - 1], last = s1 - 1;
+    }
+    if (g_ps1EntityCopies == copies)
+        s_ps1BitsFrom = copies;
+    if (!wholeStart)
+        g_ps1SlotBitsFull = g_ps1SlotBitsFull + 1;
     if (ent)
         sceneInfo.entity = ent;
     sceneInfo.entitySlot = ENTITY_COUNT;
@@ -1145,12 +1253,11 @@ void RSDK::ProcessFrozenObjects()
         }
     }
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1FrozenUpdatePass(); // 4.3
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->classID) {
@@ -1243,6 +1350,8 @@ void RSDK::ProcessFrozenObjects()
 #endif
     }
 
+#endif
+
 #if RETRO_USE_MOD_LOADER
     RunModCallbacks(MODCB_ONUPDATE, INT_TO_VOID(ENGINESTATE_FROZEN));
 #endif
@@ -1253,12 +1362,11 @@ void RSDK::ProcessFrozenObjects()
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
 #endif
 
-    sceneInfo.entitySlot = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    for (int32 e = 0; e < ENTITY_COUNT; PS1_NEXT_SLOT_ES(e)) {
+    PS1FrozenLatePass(); // 4.3
 #else
+    sceneInfo.entitySlot = 0;
     for (int32 e = 0; e < ENTITY_COUNT; ++e) {
-#endif
         sceneInfo.entity = OBJECT_ENTITY(e);
 
         if (sceneInfo.entity->inRange) {
@@ -1286,6 +1394,7 @@ void RSDK::ProcessFrozenObjects()
         sceneInfo.entitySlot++;
 #endif
     }
+#endif
 #if RETRO_PLATFORM == RETRO_PS1
     PS1TypeGroupsBuild();
 #endif
