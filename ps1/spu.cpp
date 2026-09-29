@@ -135,6 +135,14 @@ void PS1SpuVoiceStop(uint32_t voiceMask) {
     SPU_KEY_OFF_HIGH = (uint16_t)(voiceMask >> 16);
 }
 
+void PS1SpuVoiceVolume(int voice, uint16_t volL, uint16_t volR) {
+    volatile SPUVoice &v = SPU_VOICES[voice];
+    v.volumeLeft         = volL & 0x3fff;
+    v.volumeRight        = volR & 0x3fff;
+}
+
+void PS1SpuVoicePitch(int voice, uint16_t pitch) { SPU_VOICES[voice].sampleRate = pitch; }
+
 uint16_t PS1SpuVoiceEnvelope(int voice) { return SPU_VOICES[voice].currentVolume; }
 
 void PS1SpuSetCdVolume(uint16_t left, uint16_t right) {

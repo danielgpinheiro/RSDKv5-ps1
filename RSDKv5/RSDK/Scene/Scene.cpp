@@ -444,6 +444,7 @@ void RSDK::LoadSceneAssets()
 #if RETRO_PLATFORM == RETRO_PS1
     PS1TilesLoad(currentSceneFolder, sceneEntry->id); // tilesetPixels' job: the tile images go to VRAM (docs/32 3.1a)
     PS1AtlasLoad(currentSceneFolder, sceneEntry->id); // the sheets' job: the sprite atlas's default state (3.1c)
+    PS1SfxLoadBank(currentSceneFolder, sceneEntry->id); // 5.1: the scene's SFX samples into SPU RAM (TMP staging)
 #endif
 
     for (int32 s = 0; s < SCREEN_COUNT; ++s) screens[s].waterDrawPos = screens[s].size.y;

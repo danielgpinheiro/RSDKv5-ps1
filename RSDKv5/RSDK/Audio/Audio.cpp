@@ -611,6 +611,9 @@ double RSDK::GetVideoStreamPos()
 void RSDK::ClearStageSfx()
 {
     LockAudioDevice();
+#if RETRO_AUDIODEVICE_PS1
+    s_bankPath[0] = 0; // the stage SFX registered again come unbound: the next scene load uploads its bank
+#endif
 
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         if (channels[c].state == CHANNEL_SFX || channels[c].state == (CHANNEL_SFX | CHANNEL_PAUSED)) {

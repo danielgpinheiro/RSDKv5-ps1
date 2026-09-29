@@ -8,6 +8,8 @@
 
 namespace RSDK
 {
+void PS1SfxLoadBank(const char *folder, const char *id); // docs/32 5.1: the scene's SFX bank into SPU RAM
+
 class AudioDevice : public AudioDeviceBase
 {
 public:

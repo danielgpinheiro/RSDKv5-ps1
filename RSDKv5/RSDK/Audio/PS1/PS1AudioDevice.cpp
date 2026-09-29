@@ -1,8 +1,149 @@
-// PS1 port: silent AudioDevice (see PS1AudioDevice.hpp). Included by Audio.cpp like the other backends.
+// PS1 port: the AudioDevice (see PS1AudioDevice.hpp). Included by Audio.cpp like the other backends.
+#include "../../../../ps1/spu.hh"
+
+// docs/32 5.1: SFX on the SPU. Each scene's bank (tools/audio/build_sfx.py: Data/Stages/<Folder>/PS1Sfx<id>.bin, the
+// samples the objects it runs ask for) is uploaded at the scene load; a registered SFX (LoadSfx: GameConfig's globals,
+// the StageConfig's list) with a sample in the bank keeps its SPU address and rate in sfxList[].buffer and its length in
+// 44.1 kHz frames in .length (the channel bookkeeping below ends and loops it as the PC mixer would). Channel c plays on
+// SPU voice c + 1; FrameInit keys a voice when its channel starts a new play, keeps volume / pan / speed as the PC
+// mixer computes them, holds it (pitch 0) while the channel is paused, re-keys it at a loop and keys it off when the
+// channel stops.
+extern "C" {
+volatile uint32 g_ps1SfxBanks      = 0; // banks uploaded (total)
+volatile uint32 g_ps1SfxBankBytes  = 0; // the last bank's sample bytes
+volatile uint32 g_ps1SfxBankErrors = 0; // a bank missing / bad / over SPU RAM
+volatile uint32 g_ps1SfxPlays      = 0; // voice key-ons (total)
+volatile uint32 g_ps1SfxUnloaded   = 0; // plays of an SFX the scene's bank doesn't hold (a gap in sfx_sets.py's sets)
+volatile int32 g_ps1SfxUnloadedLast = -1;
+volatile uint32 g_ps1SfxVerify      = 0; // GDB sets it: each upload read back and compared (half-size chunks)
+volatile uint32 g_ps1SfxVerifyBytes = 0;
+volatile uint32 g_ps1SfxVerifyFail  = 0; // chunks that read back different
+}
+
+#define PS1_SFX_VOICE(c) ((c) + 1)
+#define PS1_SFX_INFO(s)  ((uint32)(uintptr_t)sfxList[s].buffer) // rate << 16 | SPU address / 8 (0: no sample)
+
+namespace
+{
+int16 s_voiceSound[CHANNEL_COUNT]; // the SFX the voice plays (-1: none)
+uint32 s_voicePlay[CHANNEL_COUNT]; // its channel's playIndex
+uint32 s_voiceFrom[CHANNEL_COUNT]; // its SPU start address (a loop re-keys from its loop point)
+char s_bankPath[0x40];             // the bank in SPU RAM (a reload of the same scene keeps it: ~1.7 s of reading)
+
+struct PS1SfxEntry {
+    char name[40];
+    uint32 offset, size, rate, frames44;
+};
+
+void PS1SfxVoiceMix(int32 c, uint16 &l, uint16 &r, uint16 &pitch)
+{
+    const ChannelInfo *ch = &channels[c];
+    float volL = ch->volume, volR = ch->volume; // AudioDeviceBase::ProcessAudioMixing
+    if (ch->pan < 0.0f)
+        volR = (1.0f + ch->pan) * ch->volume;
+    else
+        volL = (1.0f - ch->pan) * ch->volume;
+    volL *= engine.soundFXVolume, volR *= engine.soundFXVolume;
+    int32 il = (int32)(volL * 0x3FFF), ir = (int32)(volR * 0x3FFF);
+    l = (uint16)(il < 0 ? 0 : il > 0x3FFF ? 0x3FFF : il);
+    r = (uint16)(ir < 0 ? 0 : ir > 0x3FFF ? 0x3FFF : ir);
+    uint32 rate = PS1_SFX_INFO(ch->soundID) >> 16; // speed 16.16: pitch <= 0x1000 x 4 fits 32 bits (no 64-bit helpers)
+    uint32 p    = ((rate * PS1_SPU_PITCH_UNIT / 44100) * (uint32)ch->speed) >> 16;
+    pitch       = (uint16)(p > 0x3FFF ? 0x3FFF : p);
+    if (ch->state & CHANNEL_PAUSED)
+        pitch = 0; // held: the SPU stops reading the sample
+}
+
+// the SPU address of `pos` (44.1 kHz frames) in the channel's sample: its ADPCM block (28 samples each, after the
+// leading block psxavenc writes). Every bank rate is a multiple of 25 (build_sfx.RATES): 32-bit up to ~55 s.
+uint32 PS1SfxAddrAt(int16 sound, uint32 pos)
+{
+    uint32 info = PS1_SFX_INFO(sound), rate = info >> 16, base = (info & 0xFFFF) * 8;
+    return base + 16 + (pos * (rate / 25) / (44100 / 25) / 28) * 16;
+}
+} // namespace
+
+void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
+{
+    PS1SpuVoiceStop(0xFFFFu << 1); // voices 1-16
+    for (int32 c = 0; c < CHANNEL_COUNT; ++c) s_voiceSound[c] = -1;
+
+    char path[0x40];
+    sprintf_s(path, sizeof(path), "Data/Stages/%s/PS1Sfx%s.bin", folder, id);
+    // the same scene again (a restart): its folder's SFX stayed registered (LoadSceneFolder keeps a same-folder
+    // StageConfig) with the samples already bound
+    if (!strcmp(path, s_bankPath))
+        return;
+    s_bankPath[0] = 0;
+    for (int32 s = 0; s < SFX_COUNT - 1; ++s) sfxList[s].buffer = NULL, sfxList[s].length = 0; // (the last: the stream's)
+    FileInfo info;
+    InitFileInfo(&info);
+    if (!LoadFile(&info, path, FMODE_RB)) {
+        g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
+        return;
+    }
+    uint32 head[2];
+    ReadBytes(&info, head, sizeof(head));
+    uint32 count = head[1] & 0xFFFF;
+    // the table, then the samples through DATASET_TMP's memory (empty at LoadSceneAssets' start, after the tiles)
+    DataStorage *tmp     = &dataStorage[DATASET_TMP];
+    PS1SfxEntry *table   = (PS1SfxEntry *)tmp->memoryTable;
+    uint32 tableBytes    = count * sizeof(PS1SfxEntry);
+    if (head[0] != ('P' | 'S' << 8 | 'F' << 16 | (uint32)'5' << 24) || tableBytes + 4096 > tmp->storageLimit) {
+        CloseFile(&info);
+        g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
+        return;
+    }
+    ReadBytes(&info, table, tableBytes);
+    uint32 dataBytes = 0;
+    for (uint32 e = 0; e < count; ++e) {
+        uint32 end = table[e].offset + table[e].size;
+        dataBytes  = end > dataBytes ? end : dataBytes;
+    }
+    if (PS1_SPU_SAMPLE_START + dataBytes > PS1_SPU_SAMPLE_END) {
+        CloseFile(&info);
+        g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
+        return;
+    }
+    uint8 *buf      = (uint8 *)tmp->memoryTable + ((tableBytes + 63) & ~63u);
+    uint32 bufBytes = (tmp->storageLimit - ((tableBytes + 63) & ~63u)) & ~63u;
+    bool verify = g_ps1SfxVerify != 0;
+    if (verify)
+        bufBytes = (bufBytes / 2) & ~63u;
+    for (uint32 done = 0; done < dataBytes; done += bufBytes) {
+        uint32 n = dataBytes - done < bufBytes ? dataBytes - done : bufBytes;
+        ReadBytes(&info, buf, n);
+        PS1SpuWrite(PS1_SPU_SAMPLE_START + done, buf, n);
+        if (verify) {
+            PS1SpuRead(PS1_SPU_SAMPLE_START + done, buf + bufBytes, n);
+            if (memcmp(buf, buf + bufBytes, n))
+                g_ps1SfxVerifyFail = g_ps1SfxVerifyFail + 1;
+            g_ps1SfxVerifyBytes = g_ps1SfxVerifyBytes + n;
+        }
+    }
+    CloseFile(&info);
+    // the samples to the registered SFX with their names (the table is still in TMP: the uploads were after it)
+    for (uint32 e = 0; e < count; ++e) {
+        RETRO_HASH_MD5(hash);
+        GEN_HASH_MD5(table[e].name, hash);
+        for (int32 s = 0; s < SFX_COUNT - 1; ++s) {
+            if (sfxList[s].scope != SCOPE_NONE && HASH_MATCH_MD5(sfxList[s].hash, hash)) {
+                uint32 addr       = PS1_SPU_SAMPLE_START + table[e].offset;
+                sfxList[s].buffer = (SAMPLE_FORMAT *)(uintptr_t)(table[e].rate << 16 | addr / 8);
+                sfxList[s].length = table[e].frames44;
+            }
+        }
+    }
+    g_ps1SfxBanks     = g_ps1SfxBanks + 1;
+    g_ps1SfxBankBytes = dataBytes;
+    strcpy(s_bankPath, path);
+}
 
 bool32 AudioDevice::Init()
 {
+    PS1SpuInit();
     InitAudioChannels();
+    for (int32 c = 0; c < CHANNEL_COUNT; ++c) s_voiceSound[c] = -1;
     return true;
 }
 
@@ -10,36 +151,69 @@ void AudioDevice::Release() {}
 
 void AudioDevice::InitAudioChannels() { AudioDeviceBase::InitAudioChannels(); }
 
-// Once per engine frame (RunRetroEngine order): each playing channel advances by one frame of 44.1 kHz samples at
-// its speed; an SFX past its length loops or ends exactly as in AudioDeviceBase::ProcessAudioMixing, so the game's
-// IsSfxPlaying / GetChannelPos see the PC's state. SFX lengths are 0 until phase 5's table (they end after a frame).
+// Once per engine frame (RunRetroEngine order): the voices follow their channels (see above), then each playing
+// channel advances by one frame of 44.1 kHz samples at its speed; an SFX past its length loops or ends exactly as in
+// AudioDeviceBase::ProcessAudioMixing, so the game's IsSfxPlaying / GetChannelPos see the PC's state
 void AudioDevice::FrameInit()
 {
     const uint32 frameSamples = AUDIO_FREQUENCY / 60;
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         ChannelInfo *channel = &channels[c];
-        if (channel->state == CHANNEL_SFX) {
-            channel->bufferPos += (uint32)(((uint64)frameSamples * (uint32)channel->speed) >> 16);
-            if (!channel->sampleLength) { // length unknown until phase 5: one-shots end, loops keep playing
-                channel->bufferPos = 0;
-                if (channel->loop == (uint32)-1) {
-                    channel->state   = CHANNEL_IDLE;
-                    channel->soundID = -1;
-                }
+        bool sfx             = (channel->state & ~CHANNEL_PAUSED) == CHANNEL_SFX && channel->soundID >= 0;
+        if (!sfx) {
+            if (s_voiceSound[c] >= 0) {
+                PS1SpuVoiceStop(1u << PS1_SFX_VOICE(c));
+                s_voiceSound[c] = -1;
             }
-            else if (channel->bufferPos >= channel->sampleLength) {
-                if (channel->loop == (uint32)-1) {
-                    channel->state   = CHANNEL_IDLE;
-                    channel->soundID = -1;
-                }
-                else {
-                    channel->bufferPos = (channel->bufferPos - (uint32)channel->sampleLength) % (uint32)channel->sampleLength;
-                    channel->bufferPos += channel->loop;
-                }
+            if (channel->state == CHANNEL_STREAM)
+                channel->bufferPos += frameSamples;
+            continue;
+        }
+        uint16 l, r, pitch;
+        if (s_voiceSound[c] != channel->soundID || s_voicePlay[c] != channel->playIndex) {
+            s_voiceSound[c] = channel->soundID, s_voicePlay[c] = channel->playIndex;
+            if (!PS1_SFX_INFO(channel->soundID)) {
+                g_ps1SfxUnloaded = g_ps1SfxUnloaded + 1, g_ps1SfxUnloadedLast = channel->soundID;
+                s_voiceFrom[c] = 0;
+            }
+            else {
+                PS1SfxVoiceMix(c, l, r, pitch);
+                s_voiceFrom[c] = PS1SfxAddrAt(channel->soundID, 0) - 16;
+                PS1SpuVoicePlay(PS1_SFX_VOICE(c), s_voiceFrom[c], 44100, l, r);
+                PS1SpuVoicePitch(PS1_SFX_VOICE(c), pitch);
+                g_ps1SfxPlays = g_ps1SfxPlays + 1;
             }
         }
-        else if (channel->state == CHANNEL_STREAM) {
-            channel->bufferPos += frameSamples;
+        else if (s_voiceFrom[c]) {
+            PS1SfxVoiceMix(c, l, r, pitch);
+            PS1SpuVoiceVolume(PS1_SFX_VOICE(c), l, r);
+            PS1SpuVoicePitch(PS1_SFX_VOICE(c), pitch);
+        }
+        if (channel->state & CHANNEL_PAUSED)
+            continue;
+        // the PC mixer's bookkeeping
+        channel->bufferPos += (frameSamples * (uint32)channel->speed) >> 16;
+        if (!channel->sampleLength) { // no sample here: one-shots end, loops keep playing
+            channel->bufferPos = 0;
+            if (channel->loop == (uint32)-1) {
+                channel->state   = CHANNEL_IDLE;
+                channel->soundID = -1;
+            }
+        }
+        else if (channel->bufferPos >= channel->sampleLength) {
+            if (channel->loop == (uint32)-1) {
+                channel->state   = CHANNEL_IDLE;
+                channel->soundID = -1;
+            }
+            else {
+                channel->bufferPos = (channel->bufferPos - (uint32)channel->sampleLength) % (uint32)channel->sampleLength;
+                channel->bufferPos += channel->loop;
+                if (s_voiceFrom[c]) { // the voice starts over from the loop point
+                    PS1SfxVoiceMix(c, l, r, pitch);
+                    PS1SpuVoicePlay(PS1_SFX_VOICE(c), PS1SfxAddrAt(channel->soundID, channel->loop), 44100, l, r);
+                    PS1SpuVoicePitch(PS1_SFX_VOICE(c), pitch);
+                }
+            }
         }
     }
 }

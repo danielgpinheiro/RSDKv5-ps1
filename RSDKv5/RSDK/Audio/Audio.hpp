@@ -4,7 +4,13 @@
 namespace RSDK
 {
 
+#if RETRO_PLATFORM == RETRO_PS1
+// PS1 port (docs/32 5.1): base Mania registers at most 117 (MSZ: 68 global + 49 stage; tools/audio/sfx_sets.py checks
+// every folder against 127, the last slot being the stream's): 4 KB of BSS back
+#define SFX_COUNT (0x80)
+#else
 #define SFX_COUNT     (0x100)
+#endif
 #define CHANNEL_COUNT (0x10)
 
 #define MIX_BUFFER_SIZE (0x800)
