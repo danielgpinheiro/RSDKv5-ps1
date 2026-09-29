@@ -25,6 +25,7 @@ struct PS1AtlasClut {
 };
 
 bool PS1AtlasLoad(const char *folder, const char *sceneID); // LoadSceneAssets start (DATASET_TMP empty: pixel staging)
+void PS1AtlasRelease(); // 4.3: a same-folder reload drops the tables before its STG compaction (PS1AtlasLoad reloads them)
 void PS1AtlasLoadBindings();                                 // LoadSceneAssets end: the bindings, in the STG tail
 void PS1AtlasBind(uint16 sprID);                             // LoadSpriteAnimation: its frames' bindings
 void PS1AtlasBindEnd();                                      // after InitObjects: the table goes

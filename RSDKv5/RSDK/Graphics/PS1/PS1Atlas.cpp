@@ -102,11 +102,16 @@ void PS1AtlasPatches(FileInfo *info, const PS1AtlasGroup *g, bool clear, uint8 *
 const PS1AtlasClut *RSDK::PS1AtlasCluts() { return s_ps1AtlasBlob ? (const PS1AtlasClut *)(s_ps1AtlasBlob + s_clutOff) : NULL; }
 uint16 RSDK::PS1AtlasClutCount() { return s_clutCount; }
 
-bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
+void RSDK::PS1AtlasRelease()
 {
     if (s_ps1AtlasBlob)
         RemoveStorageEntry((void **)&s_ps1AtlasBlob);
     s_ps1AtlasBlob = NULL;
+}
+
+bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
+{
+    PS1AtlasRelease();
     s_fileCount = s_clutCount = s_groupCount = 0;
     s_region[0] = s_region[1] = -1;
     s_bindBytes                = 0;

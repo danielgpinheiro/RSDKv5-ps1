@@ -100,11 +100,16 @@ void RSDK::PS1TileSolidDrop(int32 layer)
     }
 }
 
-bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
+void RSDK::PS1TilesRelease()
 {
     if (s_ps1TileBlob)
         RemoveStorageEntry((void **)&s_ps1TileBlob);
     s_ps1TileBlob = NULL;
+}
+
+bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
+{
+    PS1TilesRelease();
     s_imageCount = s_clutCount = s_sheetCount = s_cellCount = 0;
     memset(s_solidOff, 0, sizeof(s_solidOff));
     s_solidMaskOff  = 0;

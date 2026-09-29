@@ -182,6 +182,18 @@ void RSDK::LoadSceneFolder()
 #if RETRO_REV02
     if (strcmp(currentSceneFolder, sceneInfo.listData[sceneInfo.listPos].folder) == 0 && !forceHardReset) {
         // Reload
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 4.3): a first load places the entity arena while the scene records sit in STG's tail and before
+        // any StageLoad loads a sprite file; a reload kept the stage's sprite animations (GHZ1: 92 files, 113 KB) under
+        // that peak and ran out of STG (restart, deaths). They are released as a hard reset releases them: StageLoad
+        // loads them again after the arena, in the same order (the same IDs; object static variables stay, as stock).
+        // The tile and atlas tables go too: freed later by PS1TilesLoad / PS1AtlasLoad they left a hole under the new
+        // entity arena, and the StageLoads' sprite loads then forced a compaction that moved the arena from under
+        // objectEntityPtr (a restart from the pause read a sprite file's bytes as entities)
+        ClearSpriteAnimations();
+        PS1TilesRelease();
+        PS1AtlasRelease();
+#endif
         DefragmentAndGarbageCollectStorage(DATASET_STG);
         sceneInfo.filter = sceneInfo.listData[sceneInfo.listPos].filter;
         PrintLog(PRINT_NORMAL, "Reloading Scene \"%s - %s\" with filter %d", list->name, sceneInfo.listData[sceneInfo.listPos].name,

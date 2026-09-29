@@ -472,6 +472,8 @@ void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
         }
     }
 #undef PS1_ENTRY_PTR
+    if (set == DATASET_STG)
+        PS1EntityArenaCheck();
 }
 #else
 void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)

@@ -200,6 +200,9 @@ void PS1LayersFrameBegin();
 // the direct colours recorded (flat rectangles, one-colour runs, the clear) are rewritten in the arena with the PC's
 // per-channel formula; the next CLUT-using draw uploads the unfaded CLUTs again (PS1FadeRestore)
 void PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB);
+// 4.3: the pause's grey tint over everything drawn so far (its table marked PS1_TINT_GREY_MARK: PauseMenu.c)
+#define PS1_TINT_GREY_MARK (0x0001)
+void PS1TintScreenGrey();
 void PS1FadeRecordColour(uint32_t *word); // a primitive's colour word (bits 0-23: 0xBBGGRR) drawn this frame
 // 3.6b: a span of flat rectangles as PS1FlatBatchFlush writes it (from its first fragment header: header, the texpage
 // word when semi, then up to four 3-word rectangles, the next fragment right after): one record for all their colours

@@ -7,6 +7,7 @@ uint8 RSDK::ps1EntityGhosts[ENTITY_COUNT * 4 + sizeof(EntityBase)] __attribute__
 volatile uint32 RSDK::g_ps1EntityRelocations = 0;
 volatile uint32 RSDK::g_ps1EntityGhostWrites = 0;
 volatile uint32 RSDK::g_ps1EntitySpareFail   = 0;
+volatile uint32 RSDK::g_ps1EntityArenaMoved  = 0; // 4.3: STG compactions that moved the entity arena (must stay 0)
 volatile uint32 RSDK::g_ps1EntityArenaBytes  = 0;
 volatile uint32 RSDK::g_ps1EntityArenaPeak   = 0;
 volatile uint32 RSDK::g_ps1EntityCreateSkips = 0;
@@ -19,6 +20,7 @@ int32 RSDK::ps1TempSlotEnd  = TEMPENTITY_START + PS1_TEMP_BLOCKS;
 namespace
 {
 uint8 *s_arena      = NULL; // DATASET_STG, one per scene
+uint8 *s_arenaAt    = NULL; // 4.3: where it was placed (a compaction must never move it: the slots point into it)
 uint8 *s_spare      = NULL; // the arena's tail, bump-allocated by relocations
 uint8 *s_spareEnd   = NULL;
 
@@ -54,13 +56,20 @@ uint32 MaxClassSize()
 }
 } // namespace
 
+// 4.3: after an STG compaction: the arena must still be where the slots point (counted if not)
+void RSDK::PS1EntityArenaCheck()
+{
+    if (s_arena != s_arenaAt)
+        g_ps1EntityArenaMoved = g_ps1EntityArenaMoved + 1;
+}
+
 void RSDK::PS1EntityStorageClear()
 {
     PS1EntityCheckGhosts();
     for (int32 s = 0; s < ENTITY_COUNT; ++s) objectEntityPtr[s] = Ghost(s);
     if (s_arena)
         RemoveStorageEntry((void **)&s_arena);
-    s_arena = s_spare = s_spareEnd = NULL;
+    s_arena = s_spare = s_spareEnd = s_arenaAt = NULL;
     g_ps1EntityArenaBytes = 0;
     ps1SceneSlotEnd       = RESERVE_ENTITY_COUNT;
     ps1TempSlotEnd        = TEMPENTITY_START + PS1_TEMP_BLOCKS;
@@ -342,6 +351,7 @@ void RSDK::PS1SceneEntitiesPlace()
 
     s_arena = NULL;
     AllocateStorage((void **)&s_arena, bytes, DATASET_STG, true); // stops at PS1StorageExhausted if STG is too small
+    s_arenaAt = s_arena;
     g_ps1EntityArenaBytes = bytes;
     if (bytes > g_ps1EntityArenaPeak)
         g_ps1EntityArenaPeak = bytes;

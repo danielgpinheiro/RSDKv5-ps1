@@ -1054,6 +1054,12 @@ void RSDK::PS1FillOpaque(uint32 r5, uint32 g5, uint32 b5)
 // DrawRectangle after its clip (the PC's validDraw is already set)
 void RSDK::PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect)
 {
+    // 4.3: the pause's full-screen grey tint (the PC maps every pixel through its table; alpha unused)
+    if (inkEffect == INK_TINT && tintLookupTable && tintLookupTable[0] == PS1_TINT_GREY_MARK && x <= 0 && y <= 0
+        && x + w >= currentScreen->size.x && y + h >= currentScreen->size.y) {
+        PS1TintScreenGrey();
+        return;
+    }
     uint32 bgr;
     PS1Ink ink;
     if (PS1FlatInk(color, inkEffect, alpha, bgr, ink))

@@ -590,6 +590,7 @@ volatile uint32 g_ps1FadeCalls    = 0; // FillScreens that blended something (to
 volatile uint32 g_ps1FadeOpaque   = 0; // 4.2e: FillScreens at full alpha drawn as one opaque rectangle (total)
 volatile uint32 g_ps1FadeRestores = 0; // unfaded CLUT uploads after a fade (total)
 volatile uint32 g_ps1FadeOverflow = 0; // FillScreens that met more CLUT / colour words than the tables hold (must stay 0)
+volatile uint32 g_ps1TintGrey     = 0; // 4.3: pause grey tints (total)
 }
 bool s_fadeRecsLost = false; // this frame recorded fewer words than it drew (a FillScreen would miss some)
 
@@ -906,6 +907,65 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
         g_ps1FadeOverflow = g_ps1FadeOverflow + 1;
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(8, 0, 0, 0, (uint8)((color >> 16) & 0xFF), (uint8)((color >> 8) & 0xFF), (uint16)(color & 0xFF), alphaR, alphaG, alphaB, 0);
+#endif
+}
+
+// 4.3: the pause's tint (Plus: PauseMenu_SetupTintTable): for an RGB565 pixel, r = (0x20F * r5 + 23) >> 6, g = (0x103 * g6
+// + 33) >> 6, b = (0x20F * b5 + 23) >> 6, grey = min(((r + g + b) << 8) / 680, 255), stored as RGB565 (grey >> 3, >> 2,
+// >> 3): the PS1 keeps 5 bits a channel, so grey >> 3 each. Flat colours carry their 8-bit channels (the PC's 565 is
+// exact from them); CLUT entries are BGR555 (green's low bit gone: taken as its top bit, approximate) and the host render
+// counts the tint approximate
+inline uint32 PS1Grey5(uint32 r5, uint32 g6, uint32 b5)
+{
+    uint32 r = (0x20F * r5 + 23) >> 6, g = (0x103 * g6 + 33) >> 6, b = (0x20F * b5 + 23) >> 6;
+    uint32 grey = ((r + g + b) << 8) / 680;
+    return (grey > 255 ? 255 : grey) >> 3;
+}
+inline uint32 PS1GreyWord(uint32 w) // a GP0 colour word's 8-bit fields (0xBBGGRR) -> grey, the command byte kept
+{
+    uint32 v = PS1Grey5((w & 0xFF) >> 3, ((w >> 8) & 0xFF) >> 2, ((w >> 16) & 0xFF) >> 3) << 3;
+    return (w & 0xFF000000) | v | v << 8 | v << 16;
+}
+
+void RSDK::PS1TintScreenGrey()
+{
+    if (!s_clutHeadFull)
+        PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them turn (3.3e)
+    s_clutFullNext = true;
+    for (int32 r = 0; r < s_clutRecCount; ++r) {
+        uint16_t *e = s_clutRecs[r].data;
+        for (int32 i = 0; i < s_clutRecs[r].n; ++i) {
+            uint32 c = e[i];
+            if (!c)
+                continue;
+            uint32 g5 = (c >> 5) & 31, v = PS1Grey5(c & 31, g5 << 1 | g5 >> 4, (c >> 10) & 31);
+            e[i]      = (uint16_t)(0x8000 | v | v << 5 | v << 10);
+        }
+    }
+    for (int32 r = 0; r < s_colourRecCount; ++r) {
+        PS1ColourRec &rec = s_colourRecs[r];
+        if (rec.n) {
+            uint32_t *f = rec.w;
+            for (int32 left = rec.n; left > 0;) {
+                uint32_t *p = f + 1 + rec.semi;
+                int32 k     = left < 4 ? left : 4;
+                for (int32 j = 0; j < k; ++j) p[3 * j] = PS1GreyWord(p[3 * j]);
+                left -= k;
+                f = p + 3 * k;
+            }
+            continue;
+        }
+        *rec.w = PS1GreyWord(*rec.w);
+    }
+    uint32 clear = PS1FrameClearColour();
+    if (clear != 0xFFFFFFFF)
+        PS1FrameClearSet(PS1GreyWord(clear) & 0xFFFFFF);
+    s_ps1Faded     = true;
+    g_ps1TintGrey  = g_ps1TintGrey + 1;
+    if (s_fadeRecsLost)
+        g_ps1FadeOverflow = g_ps1FadeOverflow + 1;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); // type 11: the grey tint (tools/gfx/layer_reference.py)
 #endif
 }
 

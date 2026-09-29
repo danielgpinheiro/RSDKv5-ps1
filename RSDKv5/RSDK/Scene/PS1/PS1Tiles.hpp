@@ -20,6 +20,7 @@ struct PS1TileClut {
 
 // Loads the scene's tiles (LoadSceneAssets, while DATASET_TMP is empty: its memory stages the pixels). False: no file.
 bool PS1TilesLoad(const char *folder, const char *sceneID);
+void PS1TilesRelease(); // 4.3: a same-folder reload drops the tables before its STG compaction (PS1TilesLoad reloads them)
 // DrawAniTile on the PS1: 16-aligned copies re-point the tiles; others are counted (g_ps1AniTileMisses)
 void PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 srcY, uint16 width, uint16 height);
 

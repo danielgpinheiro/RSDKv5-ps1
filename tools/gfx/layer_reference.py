@@ -278,6 +278,8 @@ def render(cap, folder, scene_id):
                 order.append(('fill', e))
             elif e[0] in (9, 10):  # a GPU line (x1, y1, x2, y2) / gouraud face (bounding box): approximate pixels
                 order.append(('approx', e))
+            elif e[0] == 11:  # 4.3: the pause's grey tint over every pixel so far
+                order.append(('grey', e))
             n += 1
         vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
     for kind, path in order:
@@ -295,6 +297,13 @@ def render(cap, folder, scene_id):
             G = (((o >> 5) & 31) * (255 - ag) >> 8) + cg
             B = (((o >> 10) & 31) * (255 - ab) >> 8) + cb
             out[:, :] = ((o & 0x8000) | R | G << 5 | B << 10).astype(np.uint16)
+            continue
+        if kind == 'grey':  # 4.3: PauseMenu's Plus tint on 5-bit channels (green's low bit taken as its top bit, as the PS1)
+            o = out.astype(np.int32)
+            r5, g5, b5 = o & 31, (o >> 5) & 31, (o >> 10) & 31
+            g6 = g5 << 1 | g5 >> 4
+            grey = np.minimum((((0x20F * r5 + 23) >> 6) + ((0x103 * g6 + 33) >> 6) + ((0x20F * b5 + 23) >> 6)) * 256 // 680, 255) >> 3
+            out[:, :] = ((o & 0x8000) | grey | grey << 5 | grey << 10).astype(np.uint16)
             continue
         if kind == 'approx':  # the GPU rasterises these itself: their pixels (a line widened by one) are not counted
             s16 = lambda v: struct.unpack('<h', struct.pack('<H', v))[0]
