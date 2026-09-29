@@ -18,7 +18,8 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   extracted `Data/`). Never commit game data.
 - `../nugget` and `dependencies/RSDKv5` stay plain upstream.
 - Emulators: **PCSX-Redux** (user, 2026-09-28: DuckStation belongs to another session). The harness (`tools/emu.sh`)
-  uses PCSX-Redux by default, refuses to start an emulator that already runs (`pgrep`), kills only its own PID and
+  uses PCSX-Redux by default, refuses to start while a PCSX-Redux on the default config runs (other sessions'
+  `-portable` copies on their own GDB ports run alongside: `../docs/32` choice 80), kills only its own PID and
   restores the settings it changes (`pcsx.json`: `-8mb`); never `pkill`. DuckStation with the user's SCPH-101 BIOS
   (`EMU=ds`, `*_ds.sh`, `../docs/31` §6) only when the user allows it again.
 

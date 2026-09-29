@@ -1851,16 +1851,37 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
     if (!*entity)
         g_ps1ProfForeachAll[0]++;
 #endif
-    for (int32 id = foreachStackPtr->id; id < ENTITY_COUNT; id = PS1NextSlot(id)) {
-#if PS1_PROFILE
-        g_ps1ProfForeachAll[1]++;
-#endif
-        Entity *nextEntity = OBJECT_ENTITY(id);
-        if (nextEntity->classID == classID) {
-            foreachStackPtr->id = id;
-            *entity             = nextEntity;
-            return true;
+    // 4.2e: PS1NextSlot's walk as plain pointer loops over its ranges (the menu's foreach_all scans ~19 hblanks a frame)
+    int32 id = foreachStackPtr->id;
+    while (id < ENTITY_COUNT) {
+        int32 stop = ENTITY_COUNT, next = ENTITY_COUNT; // [id, stop), then next (PS1NextSlot(stop - 1))
+        if (ps1SceneSlotEnd > id && ps1SceneSlotEnd < TEMPENTITY_START)
+            stop = ps1SceneSlotEnd, next = TEMPENTITY_START;
+        if (ps1TempSlotEnd > id && ps1TempSlotEnd < stop)
+            stop = ps1TempSlotEnd, next = ENTITY_COUNT;
+        EntityBase **p = &objectEntityPtr[id], **pend = &objectEntityPtr[stop];
+        for (; p + 4 <= pend; p += 4) { // four at a time: the loads fill each other's delay slots; the first match wins
+            EntityBase *e0 = p[0], *e1 = p[1], *e2 = p[2], *e3 = p[3];
+            uint16 c0 = e0->classID, c1 = e1->classID, c2 = e2->classID, c3 = e3->classID;
+            if (c0 == classID || c1 == classID || c2 == classID || c3 == classID) {
+                p += c0 == classID ? 0 : c1 == classID ? 1 : c2 == classID ? 2 : 3;
+                break;
+            }
         }
+        for (; p < pend; ++p) {
+            if ((*p)->classID == classID) {
+#if PS1_PROFILE
+                g_ps1ProfForeachAll[1] += (uint32)(p - &objectEntityPtr[id]) + 1;
+#endif
+                foreachStackPtr->id = (int32)(p - objectEntityPtr);
+                *entity             = (Entity *)*p;
+                return true;
+            }
+        }
+#if PS1_PROFILE
+        g_ps1ProfForeachAll[1] += (uint32)(stop - id);
+#endif
+        id = next == ps1TempSlotEnd ? ENTITY_COUNT : next;
     }
 #else
     for (; foreachStackPtr->id < ENTITY_COUNT; ++foreachStackPtr->id) {

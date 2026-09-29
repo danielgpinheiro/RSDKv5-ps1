@@ -39,6 +39,7 @@ void PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, i
 void PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 b, int32 alpha, int32 inkEffect);
 void PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect);
+void PS1FillOpaque(uint32 r5, uint32 g5, uint32 b5); // 4.2e: FillScreen at full alpha (5-bit channels of the result)
 void PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, int32 left, int32 top, int32 right, int32 bottom,
                           uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect);

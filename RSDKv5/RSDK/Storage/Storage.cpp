@@ -45,6 +45,10 @@ extern volatile uint32 g_ps1ReserveHigh;
 }
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+extern volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];
+extern volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX];
+#endif
 bool32 RSDK::InitStorage()
 {
     // Storage limits.
@@ -77,6 +81,7 @@ bool32 RSDK::InitStorage()
         dataStorage[s].entryCount  = 0;
         dataStorage[s].clearCount  = 0;
 #if RETRO_PLATFORM == RETRO_PS1
+        g_ps1StorageLivePeak[s] = 0, g_ps1StorageEntryPeak[s] = 0; // 4.2e: keeps them linked for the GDB scripts
         if (s == DATASET_STG)
             continue; // below
 #endif
@@ -146,8 +151,8 @@ void RSDK::ReleaseStorage()
 // PS1 port (docs/32 2.2): what each dataset really needs. The datasets are bump allocators that garbage-collect when
 // full, so the high-water mark of usedStorage says little; the live bytes (entries whose owner pointer still points
 // at them: what GarbageCollectStorage keeps) after each allocation give the limit a dataset needs. GDB reads these.
-volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte headers
-volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX]; // live entries
+volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte headers (measuring link only, 4.2e: kept for the GDB scripts)
+volatile uint32 g_ps1StorageEntryPeak[DATASET_MAX]; // live entries (measuring link only)
 volatile uint32 g_ps1StorageLargest[DATASET_MAX];   // largest single allocation
 volatile uint32 g_ps1StorageFail[DATASET_MAX];      // allocations that failed after garbage collection (must be 0)
 // Compactions forced by a full dataset inside AllocateStorage. They move blocks, and only the owner pointers follow:
@@ -216,6 +221,9 @@ static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
     DataStorage *st = &dataStorage[set];
     if (!ok)
         g_ps1StorageFail[set] = g_ps1StorageFail[set] + 1;
+    if (size > g_ps1StorageLargest[set])
+        g_ps1StorageLargest[set] = size;
+#if PS1_DEBUG_BIGRAM // 4.2e: the live bytes / entries walk (every allocation: ~8 hblanks a frame in the menu) measures only
     uint32 live = 0, entries = 0;
     for (int32 e = 0; e < (int32)st->entryCount; ++e) {
         if (st->dataEntries[e] && *st->dataEntries[e] == st->storageEntries[e]) {
@@ -227,8 +235,7 @@ static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
         g_ps1StorageLivePeak[set] = live;
     if (entries > g_ps1StorageEntryPeak[set])
         g_ps1StorageEntryPeak[set] = entries;
-    if (size > g_ps1StorageLargest[set])
-        g_ps1StorageLargest[set] = size;
+#endif
 }
 #endif
 
@@ -388,6 +395,85 @@ void RSDK::RemoveStorageEntry(void **dataPtr)
 }
 
 // This defragments the storage, leaving all empty space at the end.
+#if RETRO_PLATFORM == RETRO_PS1
+// 4.2e: stock checks every block against every entry, twice (blocks x entries: the menu's string pool, ~600 blocks x ~500
+// entries, took 3,000-5,400 hblanks, a hitch every ~60 frames). Here the entries are sorted by pointer once and both
+// passes walk the blocks and the sorted entries together: the same blocks stay, move and get their pointers updated (the
+// blocks' data pointers rise; a block whose pointer does not restarts the walk). The order lives in the scratchpad (free
+// outside the layer / flat drawing calls)
+#define PS1_DEFRAG_ORDER ((uint16 *)0x1F800000)
+static_assert(STORAGE_ENTRY_COUNT * sizeof(uint16) <= 1024, "the entry order must fit the scratchpad");
+void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
+{
+    DataStorage *st = &dataStorage[set];
+    ++st->clearCount;
+    GarbageCollectStorage(set);
+
+    uint16 *order = PS1_DEFRAG_ORDER;
+    int32 count   = (int32)st->entryCount;
+#define PS1_ENTRY_PTR(i) ((uint32 *)st->storageEntries[order[i]])
+    for (int32 i = 0; i < count; ++i) { // insertion sort: the entries are mostly in allocation order
+        uint32 *v = (uint32 *)st->storageEntries[i];
+        int32 j   = i;
+        for (; j > 0 && PS1_ENTRY_PTR(j - 1) > v; --j) order[j] = order[j - 1];
+        order[j] = (uint16)i;
+    }
+
+    uint32 processedStorage = 0, unusedStorage = 0;
+    uint32 *defragmentDestination = st->memoryTable, *currentHeader = st->memoryTable, *last = NULL;
+    int32 k = 0;
+    while (processedStorage < st->usedStorage) {
+        uint32 *dataPtr = &st->memoryTable[currentHeader[HEADER_DATA_OFFSET]];
+        uint32 size     = (currentHeader[HEADER_DATA_LENGTH] / sizeof(uint32)) + HEADER_SIZE;
+        if (dataPtr < last)
+            k = 0;
+        last = dataPtr;
+        while (k < count && PS1_ENTRY_PTR(k) < dataPtr) ++k;
+        currentHeader[HEADER_ACTIVE] = k < count && PS1_ENTRY_PTR(k) == dataPtr;
+
+        if (currentHeader[HEADER_ACTIVE]) {
+            processedStorage += size;
+            if (currentHeader > defragmentDestination) {
+                for (uint32 i = 0; i < size; ++i) *defragmentDestination++ = *currentHeader++;
+            }
+            else {
+                defragmentDestination += size;
+                currentHeader += size;
+            }
+        }
+        else {
+            currentHeader += size;
+            processedStorage += size;
+            unusedStorage += size;
+        }
+    }
+
+    if (unusedStorage != 0) {
+        st->usedStorage -= unusedStorage;
+        uint32 *currentHeader = st->memoryTable;
+        uint32 dataOffset     = 0;
+        last = NULL, k = 0;
+        while (dataOffset < st->usedStorage) {
+            uint32 *dataPtr = &st->memoryTable[currentHeader[HEADER_DATA_OFFSET]];
+            uint32 size     = (currentHeader[HEADER_DATA_LENGTH] / sizeof(uint32)) + HEADER_SIZE;
+            if (dataPtr < last)
+                k = 0;
+            last = dataPtr;
+            // an updated entry points below its old place, so below every later block's: the walk skips it
+            while (k < count && PS1_ENTRY_PTR(k) < dataPtr) ++k;
+            for (int32 m = k; m < count && PS1_ENTRY_PTR(m) == dataPtr; ++m) {
+                int32 c = order[m];
+                if (st->dataEntries[c])
+                    st->storageEntries[c] = *st->dataEntries[c] = currentHeader + HEADER_SIZE;
+            }
+            currentHeader[HEADER_DATA_OFFSET] = dataOffset + HEADER_SIZE;
+            currentHeader += size;
+            dataOffset += size;
+        }
+    }
+#undef PS1_ENTRY_PTR
+}
+#else
 void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
 {
     uint32 processedStorage = 0;
@@ -472,6 +558,8 @@ void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
         }
     }
 }
+
+#endif
 
 void RSDK::CopyStorage(uint32 **src, uint32 **dst)
 {

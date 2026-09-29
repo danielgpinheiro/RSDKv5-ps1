@@ -587,6 +587,7 @@ int32 s_colourRecCount = 0;
 bool s_ps1Faded        = false;
 extern "C" {
 volatile uint32 g_ps1FadeCalls    = 0; // FillScreens that blended something (total)
+volatile uint32 g_ps1FadeOpaque   = 0; // 4.2e: FillScreens at full alpha drawn as one opaque rectangle (total)
 volatile uint32 g_ps1FadeRestores = 0; // unfaded CLUT uploads after a fade (total)
 volatile uint32 g_ps1FadeOverflow = 0; // FillScreens that met more CLUT / colour words than the tables hold (must stay 0)
 }
@@ -852,6 +853,11 @@ void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
     int32 fr = (int32)((color >> 16) & 0xFF) >> 3, fg = (int32)((color >> 8) & 0xFF) >> 3, fb = (int32)(color & 0xFF) >> 3;
     int32 cr = fr * alphaR >> 8, cg = fg * alphaG >> 8, cb = fb * alphaB >> 8;
     int32 kr = 0xFF - alphaR, kg = 0xFF - alphaG, kb = 0xFF - alphaB;
+    if (!kr && !kg && !kb) { // 4.2e: every pixel so far becomes (cr, cg, cb): one opaque rectangle (PS1FillOpaque)
+        PS1FillOpaque((uint32)cr, (uint32)cg, (uint32)cb);
+        g_ps1FadeOpaque = g_ps1FadeOpaque + 1;
+        return;
+    }
     if (!s_clutHeadFull)
         PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them fade (3.3e)
     s_clutFullNext = true;   // VRAM keeps faded CLUTs after this frame

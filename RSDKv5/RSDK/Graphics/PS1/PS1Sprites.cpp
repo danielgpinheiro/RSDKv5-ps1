@@ -818,7 +818,7 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
     b.n            = 0;
 }
 
-inline void PS1FlatBatchAdd(PS1FlatBatch &b, int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
+__attribute__((always_inline)) inline void PS1FlatBatchAdd(PS1FlatBatch &b, int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
 {
     if (w <= 0 || h <= 0)
         return;
@@ -827,34 +827,154 @@ inline void PS1FlatBatchAdd(PS1FlatBatch &b, int32 x, int32 y, int32 w, int32 h,
         PS1FlatBatchFlush(b, bgr, ink);
 }
 
+// 4.2e: flat rectangles of one colour and ink written straight into the chain (no batch copy): spans of up to
+// PS1_FLAT_SPAN_RECTS, four to a fragment as the batch's (after the texpage word when blended), the mask state set once
+// around the whole draw (PS1RectOut below). Inks with several passes and the tint go through the batch
+#define PS1_FLAT_SPAN_RECTS 32
+
+__attribute__((noinline)) void PS1FlatSlowAdd(PS1FlatBatch *b, uint32 bgr, const PS1Ink *ink, int32 x, int32 y, int32 w, int32 h)
+{
+    PS1FlatBatchAdd(*b, x, y, w, h, bgr, *ink);
+}
+
+__attribute__((noinline)) void PS1FlatSpanClose(uint32_t *first, uint32_t *hdr, int32 n, bool semi, uint32_t *end)
+{
+    PS1ChainSpanEnd(hdr, 3 * (((n - 1) & 3) + 1) + (semi ? 1 : 0), end);
+    PS1FadeRecordSpan(first, n, semi); // 3.6b: one record for the span's colours
+    g_ps1FlatDraws = g_ps1FlatDraws + n;
+}
+
+// 4.2e: the writer (the ring's, the circle's and the edge spans' loops): its state is the caller's locals (every part
+// inline; only a span's opening and closing are calls). PS1MirrorPut draws a run of rows above and below a centre row
+// (rows y - d1..y - d0 and y + d0..y + d1, the centre row once), clipped to the rows [r0, r1). Inks the batch handles go
+// there one rectangle at a time
+struct PS1RectOut {
+    uint32_t *p, *hdr, *first;
+    int32 k, n, room; // rectangles in this fragment, in this span; room left in it (-1: the arena is full)
+    uint32 cmd, tpage;
+    int32 semi;
+    bool direct, mask;
+    int32 y, r0, r1;
+    PS1FlatBatch *batch;
+    uint32 bgr;
+    const PS1Ink *ink;
+};
+
+// the last span closed (n rectangles), a new one opened (its texpage word written when blended); NULL: no room
+__attribute__((noinline)) uint32_t *PS1RectSpanOpen(uint32_t *first, uint32_t *hdr, int32 n, int32 semi, uint32_t *p, uint32 tpage)
+{
+    if (n)
+        PS1FlatSpanClose(first, hdr, n, semi, p);
+    uint32_t *q = PS1ChainSpanBegin(PS1_FLAT_SPAN_RECTS / 4 * 14);
+    if (q && semi)
+        q[1] = tpage;
+    return q;
+}
+
+__attribute__((always_inline)) inline void PS1RectBegin(PS1RectOut &o, PS1FlatBatch &batch, uint32 bgr, const PS1Ink &ink, int32 y, int32 r0, int32 r1)
+{
+    o.batch = &batch, o.bgr = bgr, o.ink = &ink, batch.n = 0;
+    o.direct = ink.passes == 1 && !ink.tintInvert;
+    o.semi   = ink.mode >= 0 ? 1 : 0;
+    o.cmd    = 0x60000000 | bgr | (o.semi ? 0x02000000 : 0);
+    o.tpage  = 0xE1000000 | (uint32)ink.mode << 5;
+    o.mask   = o.direct && (ink.forceMask || ink.maskTest);
+    o.p = o.hdr = o.first = NULL, o.k = o.n = o.room = 0;
+    o.y = y, o.r0 = r0, o.r1 = r1;
+    if (o.mask)
+        PS1ChainMaskControl(ink.forceMask, ink.maskTest);
+}
+
+__attribute__((always_inline)) inline void PS1RectPut(PS1RectOut &o, int32 x, int32 y, int32 w, int32 h)
+{
+    if (w <= 0 || h <= 0)
+        return;
+    if (!o.direct) {
+        PS1FlatSlowAdd(o.batch, o.bgr, o.ink, x, y, w, h);
+        return;
+    }
+    if (o.room <= 0) { // a new span
+        if (o.room < 0)
+            return;
+        uint32_t *q = PS1RectSpanOpen(o.first, o.hdr, o.n, o.semi, o.p, o.tpage);
+        if (!q) {
+            o.room = -1, o.n = 0;
+            return;
+        }
+        o.first = o.hdr = q, o.p = q + 1 + o.semi, o.k = o.n = 0, o.room = PS1_FLAT_SPAN_RECTS;
+    }
+    else if (o.k == 4) { // a new fragment
+        *o.hdr = (uint32_t)(12 + o.semi) << 24 | ((uintptr_t)o.p & 0xFFFFFF);
+        o.hdr = o.p++;
+        if (o.semi)
+            *o.p++ = o.tpage;
+        o.k = 0;
+    }
+    uint32_t *p = o.p;
+    p[0] = o.cmd;
+    p[1] = (uint32)(uint16)y << 16 | (uint16)x;
+    p[2] = (uint32)(uint16)h << 16 | (uint16)w;
+    o.p = p + 3, ++o.k, ++o.n, --o.room;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(7, (uint8)(o.ink->mode + 1), 1, (uint8)o.ink->maskTest, (uint8)(o.bgr & 0xFF), (uint8)((o.bgr >> 8) & 0xFF), (uint16)(o.bgr >> 16), x,
+                  y, w, h);
+#endif
+}
+
+// a run [s, e) over d0..d1
+__attribute__((always_inline)) inline void PS1MirrorPut(PS1RectOut &o, int32 s, int32 e, int32 d0, int32 d1)
+{
+    int32 ua = o.y - d1, ub = o.y - d0 + 1, da = o.y + d0, db = o.y + d1 + 1;
+    if (!d0) // one rectangle across the centre
+        ub = db, da = db;
+    ua = ua < o.r0 ? o.r0 : ua;
+    ub = ub > o.r1 ? o.r1 : ub;
+    da = da < o.r0 ? o.r0 : da;
+    db = db > o.r1 ? o.r1 : db;
+    PS1RectPut(o, s, ua, e - s, ub - ua);
+    PS1RectPut(o, s, da, e - s, db - da);
+}
+
+__attribute__((always_inline)) inline void PS1RectEnd(PS1RectOut &o)
+{
+    if (!o.direct) {
+        PS1FlatBatchFlush(*o.batch, o.bgr, *o.ink);
+        return;
+    }
+    if (o.n)
+        PS1FlatSpanClose(o.first, o.hdr, o.n, o.semi, o.p);
+    if (o.mask)
+        PS1ChainMaskControl(false, false);
+}
+
 // The edge buffer's rows [top, bottom) (clamped to the clip bounds as the PC does) as flat rectangles, identical rows merged
+// (4.2e: through the register writer, one emission site)
 __attribute__((optimize("O2"))) void PS1EdgeSpans(int32 top, int32 bottom, uint32 bgr, const PS1Ink &ink)
 {
     PS1FlatBatch batch;
-    batch.n = 0;
+    PS1RectOut o;
+    PS1RectBegin(o, batch, bgr, ink, 0, 0, 0);
     int32 runY = 0, runH = 0, runS = 0, runE = 0;
     const int32 cx1 = currentScreen->clipBound_X1, cx2 = currentScreen->clipBound_X2; // 3.6b: once, not per row
-    for (int32 s = top; s < bottom; ++s) {
-        PS1Edge *edge = &PS1_EDGES[s];
-        int32 start = edge->start, end = edge->end;
-        start = start < cx1 ? cx1 : start;
-        start = start > cx2 ? cx2 : start;
-        end   = end < cx1 ? cx1 : end;
-        end   = end > cx2 ? cx2 : end;
-        if (end <= start) {
-            PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
-            runH = 0;
-            continue;
+    for (int32 s = top; s <= bottom; ++s) { // s = bottom: no row (ends the last run)
+        int32 start = 0, end = 0;
+        if (s < bottom) {
+            PS1Edge *edge = &PS1_EDGES[s];
+            start = edge->start, end = edge->end;
+            start = start < cx1 ? cx1 : start;
+            start = start > cx2 ? cx2 : start;
+            end   = end < cx1 ? cx1 : end;
+            end   = end > cx2 ? cx2 : end;
         }
-        if (runH && start == runS && end == runE && s == runY + runH) {
+        if (end > start && runH && start == runS && end == runE) {
             ++runH;
             continue;
         }
-        PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
-        runY = s, runH = 1, runS = start, runE = end;
+        if (runH)
+            PS1RectPut(o, runS, runY, runE - runS, runH);
+        runY = s, runH = end > start ? 1 : 0, runS = start, runE = end;
     }
-    PS1FlatBatchAdd(batch, runS, runY, runE - runS, runH, bgr, ink);
-    PS1FlatBatchFlush(batch, bgr, ink);
+    PS1RectEnd(o);
 }
 
 // ProcessScanEdge (Scene3D.cpp) on the PS1 edge buffer
@@ -907,6 +1027,17 @@ __attribute__((optimize("O2"))) void PS1ScanEdge(int32 x1, int32 y1, int32 x2, i
 }
 } // namespace
 
+// 4.2e: FillScreen at full alpha puts one colour on every pixel drawn so far (what the frame draws after it is not
+// touched): an opaque flat rectangle over the screen instead of fading every CLUT and colour word (the menu's background
+// does this every frame: ~70 hblanks). Bit 15 as any flat's (the PC's RGB565: G in bits 6-10 after the fill)
+void RSDK::PS1FillOpaque(uint32 r5, uint32 g5, uint32 b5)
+{
+    PS1Ink ink;
+    ink.mode = -1, ink.passes = 1, ink.mod = 0x80, ink.maskTest = false, ink.tintInvert = false;
+    ink.forceMask = maskColor && (uint16)(r5 << 11 | g5 << 6 | b5) != (uint16)maskColor;
+    PS1FlatRect(0, 0, currentScreen->size.x, currentScreen->size.y, b5 << 19 | g5 << 11 | r5 << 3, ink);
+}
+
 // DrawRectangle after its clip (the PC's validDraw is already set)
 void RSDK::PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 alpha, int32 inkEffect)
 {
@@ -940,136 +1071,184 @@ void RSDK::PS1DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int
         PS1EdgeSpans(topScreen, bottomScreen + 1, bgr, ink); // the PC's rows run to bottomScreen inclusive
 }
 
-// DrawCircle after its ink checks (x, y already on the screen): its rows from its edges (the PC's midpoint loop)
-void RSDK::PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect)
+// DrawCircle after its ink checks (x, y already on the screen): its rows from its edges (the PC's midpoint loop). 4.2e:
+// the loop writes rows y + k and y - k alike (y +- the shrinking radius, y +- i), so one row per |k| is kept (no clip
+// checks: the rows outside the clip are just not drawn), and each run of identical rows is drawn above and below the
+// centre (PS1MirrorPut)
+__attribute__((optimize("O2"))) void RSDK::PS1DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha, int32 inkEffect)
 {
-    int32 yRadiusBottom = y + radius, bottom = yRadiusBottom + 1, yRadiusTop = y - radius, top = yRadiusTop;
+    int32 bottom = y + radius + 1, top = y - radius;
     top    = top < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : top > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : top;
     bottom = bottom < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1
                                                    : bottom > currentScreen->clipBound_Y2 ? currentScreen->clipBound_Y2 : bottom;
     if (top == bottom || bottom >= PS1_EDGE_ROWS)
         return;
-    for (int32 i = top; i < bottom; ++i) PS1_EDGES[i].start = 0x7FFF, PS1_EDGES[i].end = -1;
-#define PS1_EDGE_MAX(ROW, V) if ((ROW) >= top && (ROW) <= bottom && (V) > PS1_EDGES[ROW].end) PS1_EDGES[ROW].end = (int16)(V)
-#define PS1_EDGE_MIN(ROW, V) if ((ROW) >= top && (ROW) <= bottom && (V) < PS1_EDGES[ROW].start) PS1_EDGES[ROW].start = (int16)(V)
-    int32 r = 3 - 2 * radius, xRad = x - radius, curY = y, curX = x, dist = x - y;
+    uint32 bgr;
+    PS1Ink ink;
+    if (!PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        return;
+    // the rows [top, bottom) as |k| = |row - y| in [lo, hi] (hi - lo < PS1_EDGE_ROWS); h[k]: rows y - k and y + k
+    int32 lo = top > y ? top - y : bottom - 1 < y ? y - (bottom - 1) : 0;
+    int32 hi = y - top > bottom - 1 - y ? y - top : bottom - 1 - y;
+    uint32 span = (uint32)(hi - lo);
+    PS1Edge *h  = PS1_EDGES - lo;
+    for (int32 k = lo; k <= hi; ++k) h[k].start = 0x7FFF, h[k].end = -1;
+    int32 r = 3 - 2 * radius, rc = radius, xRad = x - radius;
     for (int32 i = 0; i <= radius; ++i) {
-        int32 scanX = i + curX;
-        PS1_EDGE_MAX(yRadiusBottom, scanX);
-        PS1_EDGE_MAX(yRadiusTop, scanX);
-        int32 scanY = i + y;
-        PS1_EDGE_MAX(scanY, yRadiusBottom + dist);
-        PS1_EDGE_MAX(curY, yRadiusBottom + dist);
-        PS1_EDGE_MIN(yRadiusBottom, x);
-        PS1_EDGE_MIN(yRadiusTop, x);
-        PS1_EDGE_MIN(scanY, xRad);
-        PS1_EDGE_MIN(curY, xRad);
+        // the PC: rows y +- rc take max(i + x) and min(x - i), rows y +- i max(x + rc) and min(xRad) (rows outside
+        // [lo, hi] are not drawn)
+        if ((uint32)(rc - lo) <= span) {
+            PS1Edge *a = &h[rc];
+            int32 v    = x + i;
+            if (v > a->end)
+                a->end = (int16)v;
+            v = x - i;
+            if (v < a->start)
+                a->start = (int16)v;
+        }
+        if ((uint32)(i - lo) <= span) {
+            PS1Edge *c = &h[i];
+            int32 v    = x + rc;
+            if (v > c->end)
+                c->end = (int16)v;
+            if (xRad < c->start)
+                c->start = (int16)xRad;
+        }
         if (r >= 0) {
-            --yRadiusBottom;
-            ++yRadiusTop;
-            r += 4 * (i - radius) + 10;
-            --radius;
+            r += 4 * (i - rc) + 10;
+            --rc;
             ++xRad;
         }
         else {
             r += 4 * i + 6;
         }
-        --curY;
-        --x;
     }
-#undef PS1_EDGE_MAX
-#undef PS1_EDGE_MIN
-    uint32 bgr;
-    PS1Ink ink;
-    if (PS1FlatInk(color, inkEffect, alpha, bgr, ink))
-        PS1EdgeSpans(top, bottom, bgr, ink);
+    // the runs over k
+    const int32 cx1 = currentScreen->clipBound_X1, cx2 = currentScreen->clipBound_X2;
+    PS1FlatBatch batch;
+    PS1RectOut o;
+    PS1RectBegin(o, batch, bgr, ink, y, top, bottom);
+    int32 runS = 0, runE = 0, runD = -1;
+    for (int32 k = lo; k <= hi + 1; ++k) { // k = hi + 1: no row (ends the last run)
+        int32 start = 0, end = 0;
+        if (k <= hi) {
+            start = h[k].start, end = h[k].end;
+            start = start < cx1 ? cx1 : start;
+            start = start > cx2 ? cx2 : start;
+            end   = end < cx1 ? cx1 : end;
+            end   = end > cx2 ? cx2 : end;
+        }
+        bool on = start < end;
+        if (on && runD >= 0 && start == runS && end == runE)
+            continue;
+        if (runD >= 0) // one call site: the writer is inline
+            PS1MirrorPut(o, runS, runE, runD, k - 1);
+        runD = on ? k : -1, runS = start, runE = end;
+    }
+    PS1RectEnd(o);
 }
 
 // DrawCircleOutline after its clip (x, y on the screen; [left, right) x [top, bottom) as the PC computed them: its
 // top / bottom clamps make them the clip bounds' rows): the PC's pixels are the x with inner^2 <= dx^2 + dy^2 < outer^2,
-// per row one span (the row misses the inner circle) or two, from integer square roots kept from row to row
+// per row one span (the row misses the inner circle) or two. 4.2e: rows y - d and y + d have the same spans: d walks
+// once from the nearest visible row's to the farthest (integer square roots kept from step to step, no multiplies), the
+// left and right spans kept as runs over d, each run drawn above and below the centre (host check: every pixel once,
+// the PC's set)
 namespace
 {
-struct PS1Run {
-    int32 y, h, s, e;
-};
-
-inline void PS1RunAdd(PS1Run &run, PS1FlatBatch &batch, int32 row, int32 s, int32 e, uint32 bgr, const PS1Ink &ink)
+// the largest b with b * b <= t, from the last step's b and its square bb: t only shrinks as d grows, and b starts at the
+// radius (b * b > t), so b only walks down
+__attribute__((always_inline)) inline int32 PS1ISqrtDown(int32 &b, int32 &bb, int32 t)
 {
-    if (run.h && s == run.s && e == run.e && row == run.y + run.h) {
-        ++run.h;
-        return;
-    }
-    PS1FlatBatchAdd(batch, run.s, run.y, run.e - run.s, run.h, bgr, ink); // h 0: nothing
-    run.y = row, run.h = 1, run.s = s, run.e = e;
-}
-
-// the largest b with b * b <= t (t >= 0), starting from a guess
-inline int32 PS1ISqrtFrom(int32 b, int32 t)
-{
-    b = b < 0 ? 0 : b;
-    while (b * b > t)
-        --b;
-    while ((b + 1) * (b + 1) <= t)
-        ++b;
+    while (bb > t)
+        bb -= 2 * b - 1, --b;
     return b;
 }
+
 } // namespace
 
-void RSDK::PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, int32 left, int32 top, int32 right, int32 bottom,
-                                uint32 color, int32 alpha, int32 inkEffect)
+__attribute__((optimize("O2"))) void RSDK::PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius, int32 left,
+                                                                 int32 top, int32 right, int32 bottom, uint32 color, int32 alpha,
+                                                                 int32 inkEffect)
 {
     uint32 bgr;
     PS1Ink ink;
     if (!PS1FlatInk(color, inkEffect, alpha, bgr, ink))
         return;
-    int32 ir2 = innerRadius * innerRadius, or2 = outerRadius * outerRadius;
-    // rows with pixels: dy^2 < or2
-    int32 y0 = y - outerRadius + 1, y1 = y + outerRadius; // [y0, y1)
-    y0       = y0 < top ? top : y0;
-    y1       = y1 > bottom ? bottom : y1;
-    if (y1 > PS1_EDGE_ROWS)
-        y1 = PS1_EDGE_ROWS;
+    int32 rowEnd = bottom < PS1_EDGE_ROWS ? bottom : PS1_EDGE_ROWS;
+    int32 r0 = y - (outerRadius - 1), r1 = y + outerRadius; // the rows with pixels, clipped
+    r0 = r0 < top ? top : r0;
+    r1 = r1 > rowEnd ? rowEnd : r1;
+    if (r0 >= r1)
+        return;
+    // their |dy|: [lo, hi]
+    int32 lo = r0 > y ? r0 - y : r1 - 1 < y ? y - (r1 - 1) : 0;
+    int32 hi = y - r0 > r1 - 1 - y ? y - r0 : r1 - 1 - y;
     PS1FlatBatch batch;
-    batch.n  = 0;
-    PS1Run L = { 0, 0, 0, 0 }, Rr = { 0, 0, 0, 0 };
-    int32 bOut = 0, aIn = 0;
-    for (int32 row = y0; row < y1; ++row) {
-        int32 dy = row - y, y2 = dy * dy;
-        int32 tOut = or2 - y2 - 1; // dx^2 <= or2 - y2 - 1
-        if (tOut < 0)
-            continue;
-        bOut = PS1ISqrtFrom(bOut, tOut);
-        int32 a  = 0; // the smallest |dx| with dx^2 >= ir2 - y2
-        int32 tIn = ir2 - y2;
-        if (tIn > 0) {
-            aIn = PS1ISqrtFrom(aIn, tIn - 1);
-            a   = aIn + 1;
+    PS1RectOut o;
+    PS1RectBegin(o, batch, bgr, ink, y, r0, r1);
+    int32 ir2 = innerRadius * innerRadius, or2 = outerRadius * outerRadius;
+    // 4.2e: three short loops (their values stay in registers): per d the spans' |dx| bounds into the edge buffer
+    // (start = a, the inner bound (0: one span), end = b, the outer one (-1: no pixels)), then the left spans' runs, then the
+    // right ones'
+    PS1Edge *tab = PS1_EDGES - lo;
+    {
+        int32 d2 = lo * lo, bOut = outerRadius, bOut2 = or2, aIn = innerRadius < 0 ? -innerRadius : innerRadius, aIn2 = ir2;
+        for (int32 d = lo; d <= hi; d2 += 2 * d + 1, ++d) {
+            int32 a = 0, b = -1;
+            int32 tOut = or2 - d2 - 1; // dx^2 <= or2 - d^2 - 1
+            if (tOut >= 0) {
+                b         = PS1ISqrtDown(bOut, bOut2, tOut);
+                int32 tIn = ir2 - d2; // the smallest |dx| with dx^2 >= ir2 - d^2
+                if (tIn > 0)
+                    a = PS1ISqrtDown(aIn, aIn2, tIn - 1) + 1;
+                if (a > b)
+                    b = -1;
+            }
+            tab[d].start = (int16)a, tab[d].end = (int16)b;
         }
-        if (a > bOut)
-            continue;
-        if (!a) { // one span [x - b, x + b]
-            int32 s = x - bOut, e = x + bOut + 1;
-            s = s < left ? left : s;
-            e = e > right ? right : e;
-            if (s < e)
-                PS1RunAdd(L, batch, row, s, e, bgr, ink);
-            continue;
-        }
-        int32 s = x - bOut, e = x - a + 1; // [x - b, x - a]
-        s = s < left ? left : s;
-        e = e > right ? right : e;
-        if (s < e)
-            PS1RunAdd(L, batch, row, s, e, bgr, ink);
-        s = x + a, e = x + bOut + 1; // [x + a, x + b]
-        s = s < left ? left : s;
-        e = e > right ? right : e;
-        if (s < e)
-            PS1RunAdd(Rr, batch, row, s, e, bgr, ink);
     }
-    PS1FlatBatchAdd(batch, L.s, L.y, L.e - L.s, L.h, bgr, ink);
-    PS1FlatBatchAdd(batch, Rr.s, Rr.y, Rr.e - Rr.s, Rr.h, bgr, ink);
-    PS1FlatBatchFlush(batch, bgr, ink);
+    {
+        int32 runS = 0, runE = 0, runD = -1;
+        for (int32 d = lo; d <= hi + 1; ++d) { // d = hi + 1: no row (ends the last run)
+            int32 s = 0, e = 0;
+            if (d <= hi) {
+                int32 a = tab[d].start, b = tab[d].end;
+                if (b >= 0) {
+                    s = x - b, e = a ? x - a + 1 : x + b + 1;
+                    s = s < left ? left : s;
+                    e = e > right ? right : e;
+                }
+            }
+            bool on = s < e;
+            if (on && runD >= 0 && s == runS && e == runE)
+                continue;
+            if (runD >= 0) // one call site: the writer is inline
+                PS1MirrorPut(o, runS, runE, runD, d - 1);
+            runD = on ? d : -1, runS = s, runE = e;
+        }
+    }
+    if (ir2 > lo * lo) { // some row crosses the inner circle (a negative inner radius too: the PC squares it)
+        int32 runS = 0, runE = 0, runD = -1;
+        for (int32 d = lo; d <= hi + 1; ++d) {
+            int32 s = 0, e = 0;
+            if (d <= hi) {
+                int32 a = tab[d].start, b = tab[d].end;
+                if (a && b >= 0) { // else one span (the left pass drew it) or none
+                    s = x + a, e = x + b + 1;
+                    s = s < left ? left : s;
+                    e = e > right ? right : e;
+                }
+            }
+            bool on = s < e;
+            if (on && runD >= 0 && s == runS && e == runE)
+                continue;
+            if (runD >= 0)
+                PS1MirrorPut(o, runS, runE, runD, d - 1);
+            runD = on ? d : -1, runS = s, runE = e;
+        }
+    }
+    PS1RectEnd(o);
 }
 
 // DrawLine after its ink checks (screen coordinates): a GPU line (GP0 40h; the GPU's own pixels, approximate)

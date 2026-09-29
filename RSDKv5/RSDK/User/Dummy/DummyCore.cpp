@@ -102,10 +102,18 @@ void DummyCore::StageLoad()
 
 bool32 DummyCore::CheckFocusLost() { return focusState != 0; }
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 4.2e: the menus ask for the confirm flip every frame (UIControl): the name's hash once, not per call
+int32 DummyCore::GetUserLanguage() { static const uint32 id = GetAPIValueID("SYSTEM_LANGUAGE", 0); return GetAPIValue(id); }
+int32 DummyCore::GetUserRegion() { static const uint32 id = GetAPIValueID("SYSTEM_REGION", 0); return GetAPIValue(id); }
+int32 DummyCore::GetUserPlatform() { static const uint32 id = GetAPIValueID("SYSTEM_PLATFORM", 0); return GetAPIValue(id); }
+bool32 DummyCore::GetConfirmButtonFlip() { static const uint32 id = GetAPIValueID("SYSTEM_CONFIRM_FLIP", 0); return GetAPIValue(id); }
+#else
 int32 DummyCore::GetUserLanguage() { return GetAPIValue(GetAPIValueID("SYSTEM_LANGUAGE", 0)); }
 int32 DummyCore::GetUserRegion() { return GetAPIValue(GetAPIValueID("SYSTEM_REGION", 0)); }
 int32 DummyCore::GetUserPlatform() { return GetAPIValue(GetAPIValueID("SYSTEM_PLATFORM", 0)); }
 bool32 DummyCore::GetConfirmButtonFlip() { return GetAPIValue(GetAPIValueID("SYSTEM_CONFIRM_FLIP", 0)); }
+#endif
 
 void DummyCore::LaunchManual()
 {
