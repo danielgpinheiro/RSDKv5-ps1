@@ -159,6 +159,7 @@ volatile uint32 g_ps1StorageFail[DATASET_MAX];      // allocations that failed a
 // entity pointers into the arena and animator frame pointers into the sprite lists would go stale. STG must stay 0
 // (the scene-start compaction in LoadSceneFolder is the planned one).
 volatile uint32 g_ps1StorageForcedDefrags[DATASET_MAX];
+volatile uint32 g_ps1StoragePinHoles = 0; // 4.3: compactions that left a gap under the pinned entity arena (total)
 
 bool32 RSDK::ps1StorageMayFail = false;
 volatile uint32 g_ps1StorageExhausted = 0; // 1 + the dataset of the allocation that stopped the PS1 (GDB)
@@ -419,6 +420,11 @@ void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
         order[j] = (uint16)i;
     }
 
+    // 4.3: the scene's entity arena never moves (the slots, and whatever StageLoad / Create kept, point into it): the
+    // blocks under it compact up to it and the gap left becomes one inactive block, reclaimed after the arena is
+    // released (the next load). A forced compaction during GHZ1's load (from GHZCutscene, STG full) had moved it
+    uint32 *pin = set == DATASET_STG ? (uint32 *)PS1EntityArenaData() : NULL;
+    bool moved  = false;
     uint32 processedStorage = 0, unusedStorage = 0;
     uint32 *defragmentDestination = st->memoryTable, *currentHeader = st->memoryTable, *last = NULL;
     int32 k = 0;
@@ -433,8 +439,19 @@ void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
 
         if (currentHeader[HEADER_ACTIVE]) {
             processedStorage += size;
+            if (currentHeader > defragmentDestination && dataPtr == pin) {
+                uint32 hole = (uint32)(currentHeader - defragmentDestination); // >= HEADER_SIZE: freed blocks' words
+                defragmentDestination[HEADER_ACTIVE]      = false;
+                defragmentDestination[HEADER_SET_ID]      = set;
+                defragmentDestination[HEADER_DATA_OFFSET] = (uint32)(defragmentDestination - st->memoryTable) + HEADER_SIZE;
+                defragmentDestination[HEADER_DATA_LENGTH] = (hole - HEADER_SIZE) * sizeof(uint32);
+                unusedStorage -= hole;
+                defragmentDestination = currentHeader;
+                g_ps1StoragePinHoles  = g_ps1StoragePinHoles + 1;
+            }
             if (currentHeader > defragmentDestination) {
                 for (uint32 i = 0; i < size; ++i) *defragmentDestination++ = *currentHeader++;
+                moved = true;
             }
             else {
                 defragmentDestination += size;
@@ -448,7 +465,7 @@ void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
         }
     }
 
-    if (unusedStorage != 0) {
+    if (moved || unusedStorage != 0) {
         st->usedStorage -= unusedStorage;
         uint32 *currentHeader = st->memoryTable;
         uint32 dataOffset     = 0;

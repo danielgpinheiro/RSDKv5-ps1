@@ -159,6 +159,11 @@ void RSDK::LoadSceneFolder()
     // the new arena from under objectEntityPtr (Title: TitleSonic_StageLoad's sprite load filled STG). The stock code
     // clears the entity list in LoadSceneAssets; nothing reads it between here and there.
     PS1EntityStorageClear();
+    // 4.3 / 4.4: the previous scene's tile and atlas tables too: freed later by PS1TilesLoad / PS1AtlasLoad they left a
+    // hole under the new entity arena (GHZ1 after GHZCutscene: 10 KB), and a forced compaction in the StageLoads then
+    // moved the arena from under objectEntityPtr (a restart read a sprite file's bytes as entities)
+    PS1TilesRelease();
+    PS1AtlasRelease();
     // the layout chunks go with the layers (cleared below): the next compaction reclaims them
     ps1ChunkPool   = NULL;
     ps1ChunkShared = ps1ChunkNext = ps1ChunkCap = 0;
@@ -186,13 +191,8 @@ void RSDK::LoadSceneFolder()
         // PS1 (docs/32 4.3): a first load places the entity arena while the scene records sit in STG's tail and before
         // any StageLoad loads a sprite file; a reload kept the stage's sprite animations (GHZ1: 92 files, 113 KB) under
         // that peak and ran out of STG (restart, deaths). They are released as a hard reset releases them: StageLoad
-        // loads them again after the arena, in the same order (the same IDs; object static variables stay, as stock).
-        // The tile and atlas tables go too: freed later by PS1TilesLoad / PS1AtlasLoad they left a hole under the new
-        // entity arena, and the StageLoads' sprite loads then forced a compaction that moved the arena from under
-        // objectEntityPtr (a restart from the pause read a sprite file's bytes as entities)
+        // loads them again after the arena, in the same order (the same IDs; object static variables stay, as stock)
         ClearSpriteAnimations();
-        PS1TilesRelease();
-        PS1AtlasRelease();
 #endif
         DefragmentAndGarbageCollectStorage(DATASET_STG);
         sceneInfo.filter = sceneInfo.listData[sceneInfo.listPos].filter;

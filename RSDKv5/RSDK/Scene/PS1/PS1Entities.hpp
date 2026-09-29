@@ -36,6 +36,7 @@ extern volatile uint32 g_ps1EntityGhostWrites; // non-zero bytes found in the gh
 extern volatile uint32 g_ps1EntitySpareFail;   // a relocation that found no spare room (the entity was blanked)
 extern volatile uint32 g_ps1EntityArenaMoved;  // 4.3: STG compactions that moved the entity arena (must stay 0)
 void PS1EntityArenaCheck();
+void *PS1EntityArenaData(); // 4.3: the arena block (STG compactions keep it in place), or NULL
 extern volatile uint32 g_ps1EntityArenaBytes;  // this scene's arena
 extern volatile uint32 g_ps1EntityArenaPeak;
 extern volatile uint32 g_ps1EntityCreateSkips; // temp slots skipped by CreateEntity for being too small

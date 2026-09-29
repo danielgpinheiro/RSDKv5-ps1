@@ -56,6 +56,8 @@ uint32 MaxClassSize()
 }
 } // namespace
 
+void *RSDK::PS1EntityArenaData() { return s_arena; }
+
 // 4.3: after an STG compaction: the arena must still be where the slots point (counted if not)
 void RSDK::PS1EntityArenaCheck()
 {
