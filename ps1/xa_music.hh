@@ -1,5 +1,5 @@
 /*
- * CD-XA music (docs/28 phase 5.2): plays one track of Data/Music/Music.xa (tools/audio/build_music.py)
+ * CD-XA music (Sonic CD docs/28 phase 5.2; Sonic 2 docs/30 phase 5.2; Mania docs/32 phase 5.2): plays one track of Data/Music/Music.xa (tools/audio/build_music.py)
  * through the CD drive's XA-ADPCM decoder into the SPU's CD input. No CPU decoding, no SPU RAM.
  * Sonic CD: 68 tracks in 8 channels, back to back per channel; a track starts at its start row, loops
  * at its loop row (the script's loop point, row-aligned at build time) and ends at its end marker.
@@ -17,8 +17,15 @@
 #include <stdint.h>
 
 bool PS1XaInit();                                   // reads Data/Music/Music.bin + finds Music.xa
-int  PS1XaFindTrack(const char *path);              // "Data/Music/JP/R1A.ogg" -> track, -1 if absent
+int  PS1XaFindTrack(const char *name);              // "GreenHill1.ogg" (any case) -> track, -1 if absent
 void PS1XaPlay(int track, bool loop);               // (re)start a track from its beginning
+// ... from one of its rows (PlayStream's startPos), looping back to loopRow (rows from the track's start)
+void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow);
+uint32_t PS1XaPositionRows();                       // the playing position, rows from the track's start (timed)
+uint32_t PS1XaTrackRows(int track);                 // a track's audio rows (18.75 per second)
+uint32_t PS1XaTrackPad(int track);                  // the silence before its first sample (37.8 kHz samples)
+int PS1XaCurrentTrack();                            // the last track played, -1 before any
+bool PS1XaCurrentLoop();
 void PS1XaStop();                                   // pause the drive and wait until the action ended
 void PS1XaPause();                                  // PauseSound: stop reading, keep the position
 void PS1XaResume();                                 // ResumeSound: ReadS again from the current position

@@ -1,5 +1,6 @@
 // PS1 port: the AudioDevice (see PS1AudioDevice.hpp). Included by Audio.cpp like the other backends.
 #include "../../../../ps1/spu.hh"
+#include "../../../../ps1/xa_music.hh"
 
 // docs/32 5.1: SFX on the SPU. Each scene's bank (tools/audio/build_sfx.py: Data/Stages/<Folder>/PS1Sfx<id>.bin, the
 // samples the objects it runs ask for) is uploaded at the scene load; a registered SFX (LoadSfx: GameConfig's globals,
@@ -18,6 +19,11 @@ volatile int32 g_ps1SfxUnloadedLast = -1;
 volatile uint32 g_ps1SfxVerify      = 0; // GDB sets it: each upload read back and compared (half-size chunks)
 volatile uint32 g_ps1SfxVerifyBytes = 0;
 volatile uint32 g_ps1SfxVerifyFail  = 0; // chunks that read back different
+// docs/32 5.2: music
+volatile uint32 g_ps1MusicReady   = 0; // Music.xa + Music.bin found
+volatile uint32 g_ps1MusicStarts  = 0; // PlayStream -> an XA track
+volatile uint32 g_ps1MusicMissing = 0; // PlayStream of a track not on the disc (the channel keeps its timing only)
+volatile uint32 g_ps1MusicResumes = 0; // a file read stopped the music (one CD action at a time): restarted where it was
 }
 
 #define PS1_SFX_VOICE(c) ((c) + 1)
@@ -29,6 +35,16 @@ int16 s_voiceSound[CHANNEL_COUNT]; // the SFX the voice plays (-1: none)
 uint32 s_voicePlay[CHANNEL_COUNT]; // its channel's playIndex
 uint32 s_voiceFrom[CHANNEL_COUNT]; // its SPU start address (a loop re-keys from its loop point)
 char s_bankPath[0x40];             // the bank in SPU RAM (a reload of the same scene keeps it: ~1.7 s of reading)
+
+// docs/32 5.2: the stream channel the CD-XA music follows (PlayStream -> LoadStream -> PS1StreamStart)
+int8 s_xaChannel = -1, s_xaTrack = -1;
+bool s_xaLoop, s_xaPaused;
+uint16 s_xaLoopRow, s_xaPad;
+uint16 s_cdVolume = 0xFFFF;
+
+// a 44.1 kHz sample position of the track (the PC's startPos / loopPoint / GetChannelPos) -> its XA row (18.75 per
+// second, 2,016 samples at 37.8 kHz = 6 / 7 of 44.1 kHz; the build pads the track so its loop point starts a row)
+uint32 PS1XaRowOf(uint32 pos44) { return ((pos44 * 6 + 3) / 7 + s_xaPad) / 2016; }
 
 struct PS1SfxEntry {
     char name[40];
@@ -139,9 +155,27 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
     strcpy(s_bankPath, path);
 }
 
+void RSDK::PS1StreamStart(int32 c)
+{
+    int32 track = PS1XaFindTrack(streamFilePath);
+    if (track < 0) {
+        g_ps1MusicMissing = g_ps1MusicMissing + 1;
+        if (s_xaChannel == c)
+            s_xaChannel = -1;
+        return;
+    }
+    s_xaChannel = c, s_xaTrack = track, s_xaPaused = false;
+    s_xaPad     = PS1XaTrackPad(track);
+    s_xaLoop    = streamLoopPoint != 0;
+    s_xaLoopRow = s_xaLoop ? PS1XaRowOf(streamLoopPoint) : 0;
+    PS1XaPlayAt(track, s_xaLoop, PS1XaRowOf(streamStartPos), s_xaLoopRow);
+    g_ps1MusicStarts = g_ps1MusicStarts + 1;
+}
+
 bool32 AudioDevice::Init()
 {
     PS1SpuInit();
+    g_ps1MusicReady = PS1XaInit();
     InitAudioChannels();
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) s_voiceSound[c] = -1;
     return true;
@@ -150,6 +184,42 @@ bool32 AudioDevice::Init()
 void AudioDevice::Release() {}
 
 void AudioDevice::InitAudioChannels() { AudioDeviceBase::InitAudioChannels(); }
+
+// The XA follows its stream channel: stopped / paused / resumed with it, the CD volume from its volume (the PC mixer
+// halves stream samples), its position from the XA's timed position, the channel ending with a non-looping track;
+// a track a file read stopped (one CD action at a time) goes on from where it was
+static void PS1StreamFrame(ChannelInfo *channel)
+{
+    if ((channel->state & ~CHANNEL_PAUSED) != CHANNEL_STREAM) {
+        PS1XaStop();
+        s_xaChannel = -1;
+        PS1SpuSetCdVolume(0, 0), s_cdVolume = 0;
+        return;
+    }
+    if (PS1XaEnded()) {
+        channel->state   = CHANNEL_IDLE;
+        channel->soundID = -1;
+        s_xaChannel      = -1;
+        return;
+    }
+    if (channel->state & CHANNEL_PAUSED) {
+        if (!s_xaPaused)
+            PS1XaPause(), s_xaPaused = true;
+    }
+    else if (s_xaPaused) {
+        PS1XaResume(), s_xaPaused = false;
+    }
+    else if (!PS1XaPlaying()) {
+        PS1XaPlayAt(s_xaTrack, s_xaLoop, PS1XaRowOf(channel->bufferPos), s_xaLoopRow);
+        g_ps1MusicResumes = g_ps1MusicResumes + 1;
+    }
+    uint32 at        = PS1XaPositionRows() * 2016;
+    channel->bufferPos = at > s_xaPad ? (at - s_xaPad) * 7 / 6 : 0;
+    int32 v          = (int32)(channel->volume * engine.streamVolume * (0x7FFF / 2));
+    uint16 cd        = (uint16)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v);
+    if (cd != s_cdVolume)
+        PS1SpuSetCdVolume(cd, cd), s_cdVolume = cd;
+}
 
 // Once per engine frame (RunRetroEngine order): the voices follow their channels (see above), then each playing
 // channel advances by one frame of 44.1 kHz samples at its speed; an SFX past its length loops or ends exactly as in
@@ -165,8 +235,10 @@ void AudioDevice::FrameInit()
                 PS1SpuVoiceStop(1u << PS1_SFX_VOICE(c));
                 s_voiceSound[c] = -1;
             }
-            if (channel->state == CHANNEL_STREAM)
-                channel->bufferPos += frameSamples;
+            if (c == s_xaChannel)
+                PS1StreamFrame(channel);
+            else if (channel->state == CHANNEL_STREAM)
+                channel->bufferPos += frameSamples; // a track the disc lacks: timing only
             continue;
         }
         uint16 l, r, pitch;

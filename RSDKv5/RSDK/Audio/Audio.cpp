@@ -199,16 +199,17 @@ void AudioDeviceBase::InitAudioChannels()
 }
 
 #if RETRO_AUDIODEVICE_PS1
-// PS1 port (docs/32): music is CD-XA (phase 5, ps1/xa_music). Until then a started stream just "plays":
-// the channel goes to CHANNEL_STREAM and PS1AudioDevice::FrameInit advances its position.
+// PS1 port (docs/32 5.2): music is CD-XA (ps1/xa_music): the stream channel starts the track at startPos's row and
+// PS1AudioDevice::FrameInit keeps the XA and the channel together (position, pause, stop, volume, end).
 void RSDK::UpdateStreamBuffer(ChannelInfo *channel) {}
 
 void RSDK::LoadStream(ChannelInfo *channel)
 {
     if (channel->state != CHANNEL_LOADING_STREAM)
         return;
-    channel->bufferPos = 0;
+    channel->bufferPos = streamStartPos;
     channel->state     = CHANNEL_STREAM;
+    PS1StreamStart((int32)(channel - channels));
 }
 #else
 void RSDK::UpdateStreamBuffer(ChannelInfo *channel)

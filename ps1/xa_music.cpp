@@ -1,5 +1,5 @@
 /*
- * CD-XA music — see xa_music.hh. Action pattern from ps1/cdrom_stream.cpp; XA command sequence
+ * CD-XA music — see xa_music.hh (from the Sonic 2 port; Mania: docs/32 5.2). Action pattern from ps1/cdrom_stream.cpp; XA command sequence
  * from PSn00bSDK examples/cdrom/cdxa and psx-spx cdromdrive.md (Setfilter, Setmode, ReadS).
  */
 #include "xa_music.hh"
@@ -39,16 +39,17 @@ namespace {
 #define XA_FILE       1
 #define XA_MODE       0xE8 // 2x speed | XA-ADPCM | 2340-byte sectors | XA filter
 #define XA_SECTOR     2340
-#define XA_MAX_TRACK  80
+#define XA_MAX_TRACK  64 // Mania: 62 tracks in scope
 #define XA_INTERLEAVE 8
+#define XA_MARKER     24 // bytes of a data sector read: header, subheader, 'RSDKXAEND', channel, u16 id (the rest is left
+                         // in the drive's buffer, as PSn00bSDK's CdGetSector reads part of a sector)
 
-struct Track { // Music.bin XAM2 entry (tools/audio/build_music.py), 48 bytes
-    char path[32];
-    uint8_t channel, pad;
-    uint16_t id;
-    uint32_t startRow, loopRow, rows;
+struct Track { // Music.bin XAM5 entry (tools/audio/build_music.py), 12 bytes
+    uint32_t hash; // FNV-1a of the lower-case name
+    uint16_t startRow, rows, pad;
+    uint8_t channel, id;
 };
-static_assert(sizeof(Track) == 48, "Music.bin entry");
+static_assert(sizeof(Track) == 12, "Music.bin entry");
 Track s_tracks[XA_MAX_TRACK];
 int s_trackCount    = 0;
 uint32_t s_fileLba  = 0;
@@ -63,10 +64,18 @@ struct Xa {
     int channel           = -1;
     int track             = -1;
     bool loop             = false;
+    uint32_t offset       = 0; // start row within the track (PlayStream's startPos)
+    uint32_t loopRow      = 0; // the loop's row within the track (PlayStream's loopPoint)
+    // Playing position (rows from the track's start): posBase at time posT0 (psyqo::GPU::now(), us), 18.75 rows/s;
+    // rebased at the start, each loop (IRQ) and pause.
+    volatile uint32_t posBase = 0;
+    volatile uint32_t posT0   = 0;
 };
 Xa s_xa;
 
-alignas(4) uint8_t s_sector[(XA_SECTOR + 3) & ~3];
+uint32_t nowUs() { return g_ps1GPU ? g_ps1GPU->now() : 0; }
+
+alignas(4) uint8_t s_sector[XA_MARKER];
 
 void sendSetloc(uint32_t lba) {
     psyqo::MSF msf(lba + 150);
@@ -92,7 +101,7 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
             psyqo::Hardware::CDRom::Command.send(CDL::READS);
         } else {
             setState(XaState::SETLOC);
-            sendSetloc(rowLba(s_tracks[s_xa.track].startRow));
+            sendSetloc(rowLba(s_tracks[s_xa.track].startRow + s_xa.offset));
         }
     }
     // From the main loop: pause if playing (the IRQ may be mid-sequence: then on its next ack).
@@ -117,7 +126,7 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
         psyqo::Hardware::SBus::ComCtrl  = 0x132c;
         eastl::atomic_signal_fence(eastl::memory_order_acquire);
         DMA_CTRL[DMA_CDROM].MADR = reinterpret_cast<uintptr_t>(s_sector);
-        DMA_CTRL[DMA_CDROM].BCR  = (XA_SECTOR / 4) | 0x10000;
+        DMA_CTRL[DMA_CDROM].BCR  = (XA_MARKER / 4) | 0x10000;
         DMA_CTRL[DMA_CDROM].CHCR = 0x11000000; // burst: completes before the CPU continues
         g_ps1XaDataSectors = g_ps1XaDataSectors + 1;
         // 2340-byte layout: 4-byte header (MSF, mode), 8-byte subheader (file, channel, submode,
@@ -130,8 +139,10 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
             if (s_xa.loop && !m_pauseRequested) {
                 g_ps1XaLoops     = g_ps1XaLoops + 1;
                 g_ps1XaLoopFrame = g_ps1PerfFrames;
+                s_xa.posBase     = s_xa.loopRow;
+                s_xa.posT0       = nowUs();
                 setState(XaState::LOOP_SETLOC);
-                sendSetloc(rowLba(t.loopRow));
+                sendSetloc(rowLba(t.startRow + s_xa.loopRow));
             } else {
                 g_ps1XaEnds = g_ps1XaEnds + 1;
                 s_xa.ended  = true;
@@ -227,15 +238,6 @@ void startAction(bool resume) {
     s_action.start(resume);
 }
 
-bool pathEquals(const char *a, const char *b) {
-    for (; *a && *b; ++a, ++b) {
-        char x = *a >= 'A' && *a <= 'Z' ? *a + 32 : *a;
-        char y = *b >= 'A' && *b <= 'Z' ? *b + 32 : *b;
-        if (x != y)
-            return false;
-    }
-    return *a == *b;
-}
 
 } // namespace
 
@@ -247,16 +249,15 @@ bool PS1XaInit() {
     if (!f)
         return false;
     uint8_t head[12];
-    if (fread(head, 1, 12, f) != 12 || memcmp(head, "XAM2", 4) || (head[6] | (head[7] << 8)) != XA_INTERLEAVE) {
+    if (fread(head, 1, 12, f) != 12 || memcmp(head, "XAM5", 4) || (head[6] | (head[7] << 8)) != XA_INTERLEAVE) {
         fclose(f);
         return false;
     }
     int count    = head[4] | (head[5] << 8);
     s_trackCount = 0;
-    while (s_trackCount < count && s_trackCount < XA_MAX_TRACK && fread(&s_tracks[s_trackCount], sizeof(Track), 1, f) == 1) {
-        s_tracks[s_trackCount].path[31] = 0;
-        ++s_trackCount;
-    }
+    if (count > XA_MAX_TRACK)
+        count = XA_MAX_TRACK;
+    s_trackCount = (int)(fread(s_tracks, sizeof(Track), count, f));
     fclose(f);
     // psyqo's reset never demutes the CD audio output (CD-DA / XA).
     static volatile bool s_demuted;
@@ -269,18 +270,23 @@ bool PS1XaInit() {
     return true;
 }
 
-int PS1XaFindTrack(const char *path) {
+int PS1XaFindTrack(const char *name) {
     const char *prefix = "Data/Music/";
     size_t n           = strlen(prefix);
-    if (!strncmp(path, prefix, n))
-        path += n;
+    if (!strncmp(name, prefix, n))
+        name += n;
+    uint32_t h = 0x811C9DC5u; // FNV-1a of the lower-case name (build_music.fnv1a)
+    for (; *name; ++name)
+        h = (h ^ (uint8_t)(*name >= 'A' && *name <= 'Z' ? *name + 32 : *name)) * 0x01000193u;
     for (int i = 0; i < s_trackCount; ++i)
-        if (pathEquals(s_tracks[i].path, path))
+        if (s_tracks[i].hash == h)
             return i;
     return -1;
 }
 
-void PS1XaPlay(int track, bool loop) {
+void PS1XaPlay(int track, bool loop) { PS1XaPlayAt(track, loop, 0, 0); }
+
+void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow) {
     if (!s_ready || !g_ps1CDRom || track < 0 || track >= s_trackCount)
         return;
     PS1XaStop();
@@ -289,6 +295,10 @@ void PS1XaPlay(int track, bool loop) {
     s_xa.loop    = loop;
     s_xa.ended   = false;
     s_xa.paused  = false;
+    s_xa.offset  = row < s_tracks[track].rows ? row : 0;
+    s_xa.loopRow = loopRow < s_tracks[track].rows ? loopRow : 0;
+    s_xa.posBase = s_xa.offset;
+    s_xa.posT0   = nowUs();
     g_ps1XaStarts     = g_ps1XaStarts + 1;
     g_ps1XaStartFrame = g_ps1PerfFrames;
     g_ps1XaChannel    = s_xa.channel;
@@ -306,6 +316,7 @@ void PS1XaStop() {
 
 void PS1XaPause() {
     if (s_xa.running && !s_xa.ended) {
+        s_xa.posBase = PS1XaPositionRows();
         s_action.requestPause();
         waitIdle();
         s_xa.paused = true;
@@ -315,9 +326,25 @@ void PS1XaPause() {
 void PS1XaResume() {
     if (s_xa.paused && !s_xa.running) {
         s_xa.paused = false;
+        s_xa.posT0  = nowUs();
         startAction(true);
     }
 }
+
+uint32_t PS1XaPositionRows() {
+    if (s_xa.track < 0)
+        return 0;
+    uint32_t rows = s_xa.posBase;
+    if (s_xa.running && !s_xa.paused && !s_xa.ended)
+        rows += (nowUs() - s_xa.posT0) / 1000 * 3 / 160; // 18.75 rows per second (32-bit: no libgcc 64-bit divide)
+    uint32_t n = s_tracks[s_xa.track].rows, from = s_xa.loopRow;
+    return n && rows >= n ? from + (rows - n) % (n - from) : rows; // past the end: the loop part again
+}
+
+uint32_t PS1XaTrackRows(int track) { return track >= 0 && track < s_trackCount ? s_tracks[track].rows : 0; }
+uint32_t PS1XaTrackPad(int track) { return track >= 0 && track < s_trackCount ? s_tracks[track].pad : 0; }
+int PS1XaCurrentTrack() { return s_xa.track; }
+bool PS1XaCurrentLoop() { return s_xa.loop; }
 
 bool PS1XaPlaying() { return s_xa.running && !s_xa.ended; }
 bool PS1XaEnded() { return s_xa.ended; }

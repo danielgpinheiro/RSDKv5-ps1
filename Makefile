@@ -214,6 +214,10 @@ gfx:
 sfx:
 	/usr/bin/python3 tools/audio/build_sfx.py $(GAME_DATA) build/sfx $(subst $(comma), ,$(STAGES))
 
+# Build-time music (docs/32 5.2): Data/Music/*.ogg -> build/music/Music/Music.xa (CD-XA, 8 channels) + Music.bin
+music:
+	/usr/bin/python3 tools/audio/build_music.py $(GAME_DATA) build/music
+
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
@@ -221,7 +225,8 @@ disc:
 	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
+	if [ -d build/music/Music ]; then mkdir -p build/iso/Data/Music && cp build/music/Music/Music.xa build/music/Music/Music.bin build/iso/Data/Music/; fi
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 
-.PHONY: disc objects overlays gfx sfx
+.PHONY: disc objects overlays gfx sfx music

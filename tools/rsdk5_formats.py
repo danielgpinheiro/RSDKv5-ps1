@@ -150,7 +150,7 @@ def read_scene(path, names=()):
             vals = []
             for vh, vt in vars_:
                 if vt == 8:
-                    n = r.u16(); r.bytes(2 * n); vals.append(None)
+                    n = r.u16(); vals.append(r.bytes(2 * n).decode('utf-16-le', 'replace'))  # string (UTF-16)
                 elif vt == 9:
                     vals.append((r.i32(), r.i32()))
                 else:
