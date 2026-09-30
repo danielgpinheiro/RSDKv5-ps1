@@ -7,6 +7,7 @@
 // and fills the resident's stub table (ps1OvlTable) with the functions resident code or other overlays name.
 #include "video_ops.hh"
 #include "RSDK/Core/RetroEngine.hpp"
+#include "RSDK/Graphics/PS1/PS1Scene3D.hpp"
 #include "common/syscalls/syscalls.h"
 
 using namespace RSDK;
@@ -49,6 +50,7 @@ void RSDK::PS1LoadOverlay(const char *folder)
     objectClassCount = s_residentClasses;
     for (uint32 k = 0; k < ps1OvlCount; ++k) ps1OvlTable[k] = ps1OvlMiss[k];
     g_ps1VideoOps = PS1VideoOps{}; // docs/32 6.2: the video player goes with the overlay that had it
+    g_ps1S3DOps   = PS1Scene3DOps{}; // 7.3: and the 3D draw
     (void)ps1OvlStubsRef;
     strncpy(g_ps1OvlFolder, folder, sizeof(g_ps1OvlFolder) - 1);
     g_ps1OvlLoads = g_ps1OvlLoads + 1;

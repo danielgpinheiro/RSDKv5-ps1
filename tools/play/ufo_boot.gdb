@@ -1,5 +1,7 @@
 # UFO stage boot at 2 MB (docs/32 7.2), `make BOOT=3,0` (UFO1): prints the STG left after the load (with no meshes
-# until the PS1 mesh format: the meshes' budget), the frame cost, and the guards.
+# until the PS1 mesh format: the meshes' budget), the frame cost, and the guards. The 3D draw lives in the UFO
+# overlay: its symbols come from build/gen/ovl/UFO1/UFO1.elf.
+add-symbol-file build/gen/ovl/UFO1/UFO1.elf
 break RSDK::LoadSceneAssets
 commands
 silent

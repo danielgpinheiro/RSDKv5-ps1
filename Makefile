@@ -20,6 +20,7 @@ RSDKv5/RSDK/Storage/Storage.cpp \
 RSDKv5/RSDK/Storage/Text.cpp \
 RSDKv5/RSDK/Graphics/Drawing.cpp \
 RSDKv5/RSDK/Graphics/Scene3D.cpp \
+RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.cpp \
 RSDKv5/RSDK/Graphics/Animation.cpp \
 RSDKv5/RSDK/Graphics/Sprite.cpp \
 RSDKv5/RSDK/Graphics/Palette.cpp \
@@ -149,6 +150,10 @@ LDFLAGS  += -Wl,--gc-sections
 ps1/mdec.o: CPPFLAGS += -O2
 # Renderer hot paths (tile bands, chain appends): speed over size.
 ps1/gpu_chain.o: CPPFLAGS += -O2
+# docs/32 7.3: the 3D draw (an overlay's: speed over size)
+RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o ps1/gte3d.o: CPPFLAGS += -O2
+# docs/32 7.3: the UFO stage's objects (an overlay: no resident RAM) call abs() inline (~20 hblanks a frame as calls)
+$(patsubst %.c,%.o,$(wildcard SonicMania/Objects/UFO/*.c)): CPPFLAGS += '-Dabs(n)=__builtin_abs(n)'
 
 # Cancel make's built-in `%: %.o` link rule: the extensionless libc shim headers
 # (ps1/libc/string, vector, ...) listed in .dep files must not be rebuilt from `string.o`.

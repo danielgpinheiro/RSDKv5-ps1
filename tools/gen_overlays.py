@@ -39,14 +39,21 @@ OVL = os.path.join(GEN, 'ovl')
 NM, OBJCOPY = 'mipsel-none-elf-nm', 'mipsel-none-elf-objcopy'
 STACK_RESERVE = 16 * 1024  # RSDK/Storage/Storage.cpp PS1_STACK_RESERVE
 MAGIC = 0x314C564F         # 'OVL1'
-# docs/32 6.2: objects that call RSDK.LoadVideo; their folders' overlays link the video player (Sonic CD's, docs/31)
-VIDEO_OBJECTS = {'TitleSetup', 'UIVideo'}
-VIDEO_OBJS = ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o']
+# Optional engine parts linked into the overlays of the folders whose objects need them (not the resident EXE): their
+# objects, and the function the overlay's register calls to plug them in. docs/32 6.2: the video player (Sonic CD's,
+# docs/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects
+EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o'], 'PS1VideoLink'),
+          's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'ps1/gte3d.o'],
+                  'PS1Scene3DLink')}
+
+
+def extra_folders(name):
+    p = os.path.join(OVL, '%s_folders.txt' % name)
+    return open(p).read().split() if os.path.exists(p) else []
 
 
 def video_folders():
-    p = os.path.join(OVL, 'video_folders.txt')
-    return open(p).read().split() if os.path.exists(p) else []
+    return extra_folders('video')
 
 
 def run(args):
@@ -103,10 +110,11 @@ def plan(argv):
             open(os.path.join(OVL, st + '.srcs'), 'w').write('\n'.join(srcs[o] for o in objs) + '\n')
             open(os.path.join(OVL, st + '.objs'), 'w').write('\n'.join(objs) + '\n')
     open(os.path.join(OVL, 'folders.txt'), 'w').write('\n'.join(folders) + '\n')
-    # docs/32 6.2: the folders whose objects play videos get the video player (ps1/video_ops.hh)
-    vf = [st for st in folders if os.path.exists(os.path.join(data, 'Stages', st, 'StageConfig.bin'))
-          and VIDEO_OBJECTS & set(F.read_stageconfig(os.path.join(data, 'Stages', st, 'StageConfig.bin'))['objects'])]
-    open(os.path.join(OVL, 'video_folders.txt'), 'w').write('\n'.join(vf) + '\n')
+    # the folders whose objects need an optional engine part (EXTRAS) get it linked into their overlay
+    for name, (objects, _, _) in EXTRAS.items():
+        ef = [st for st in folders if os.path.exists(os.path.join(data, 'Stages', st, 'StageConfig.bin'))
+              and objects & set(F.read_stageconfig(os.path.join(data, 'Stages', st, 'StageConfig.bin'))['objects'])]
+        open(os.path.join(OVL, '%s_folders.txt' % name), 'w').write('\n'.join(ef) + '\n')
     region = game_c_region()
     kept = 0
     with open(os.path.join(REPO, 'ps1', 'rsdk5_objects.inc'), 'w') as f:
@@ -287,11 +295,12 @@ def stubs(argv):
     # docs/32 6.2: the resident symbols the video player (linked into video folders' overlays) uses stay resident (one
     # CD stream, one chain: shared state), and the resident's allocator for its buffers (PS1VideoMalloc / Free: STG's
     # tail) must win over the player's weak psyqo defaults
-    if video_folders():
-        vobjs = [os.path.join(REPO, o) for o in VIDEO_OBJS]
-        vdef = nm_syms(vobjs, '--defined-only')
-        keep |= {u for u in nm_syms(vobjs, '-u') if u in res_def and u not in vdef}
-        keep |= {'PS1VideoMalloc', 'PS1VideoFree'} & res_def
+    for name, (_, eobjs, _) in EXTRAS.items():
+        if extra_folders(name):
+            vobjs = [os.path.join(REPO, o) for o in eobjs]
+            vdef = nm_syms(vobjs, '--defined-only')
+            keep |= {u for u in nm_syms(vobjs, '-u') if u in res_def and u not in vdef}
+    keep |= {'PS1VideoMalloc', 'PS1VideoFree'} & res_def
     open(os.path.join(GEN, 'ovl_keep.txt'), 'w').write(''.join('-u %s\n' % k for k in sorted(keep)))
     others = sorted(c for c in classes if c not in resident)
     with open(out, 'w') as f:
@@ -346,8 +355,9 @@ def stubs(argv):
                     f.write(line + '\n')
             for s in fills:
                 f.write('    ps1OvlTable[%d] = (void *)__ovl_%s;\n' % (index[s], s))
-            if fo in video_folders():
-                f.write('    { extern void PS1VideoLink(void); PS1VideoLink(); } // docs/32 6.2: the video player\n')
+            for name, (_, _, fn) in EXTRAS.items():
+                if fo in extra_folders(name):
+                    f.write('    { extern void %s(void); %s(); } // docs/32: %s\n' % (fn, fn, name))
             f.write('}\n\n')
             f.write('typedef struct { unsigned magic, size; void (*reg)(void); unsigned base; } PS1OverlayHeader;\n')
             f.write('extern char __ps1_ovl_start[], PS1_OVL_SIZE[];\n')
@@ -407,8 +417,9 @@ def link(argv):
     # own come first (the image), so only what the resident lacks is taken from these
     ro = [os.path.join(REPO, o) for o in resident_game_objs()] if fo in light_folders() else []
     reg = os.path.join(OVL, fo + '_reg.o')
-    if fo in video_folders():  # docs/32 6.2: the video player (not in the resident: nothing there calls it)
-        objs += [os.path.join(REPO, o) for o in VIDEO_OBJS]
+    for name, (_, eobjs, _) in EXTRAS.items():  # optional engine parts (not in the resident: nothing there calls them)
+        if fo in extra_folders(name):
+            objs += [os.path.join(REPO, o) for o in eobjs]
 
     def do_link(at):
         ld = os.path.join(work, 'ovl.ld')
