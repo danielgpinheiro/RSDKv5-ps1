@@ -302,6 +302,40 @@ FONT_TRIM = {'Sprites/UI/SmallFont.bin': ('EN', 'FR', 'GE', 'IT', 'SP')}
 ANIM_TRIM = {'Sprites/Global/SuperButtons.bin': {1: 'PC EN/JP', 9: 'PC FR', 10: 'PC IT', 11: 'PC GE', 12: 'PC SP'}}
 
 
+# docs/32 7.1: frames wider than any screen position the PS1's 320 columns can show, cropped to what they can show
+# (x + x0, width w, pivot x + x0: the same pixels land in the same screen columns). Sprites/SpecialBS/Globe.bin's turn
+# animation: 512 x 240 frames drawn at the screen centre (pivot -256) by BSS_Setup, whose camera never scrolls sideways
+# (ScreenInfo->position.x = 0x100 - center.x every frame): columns 96..415 only (symmetric: a mirrored draw too)
+FRAME_CROP = {'Sprites/SpecialBS/Globe.bin': {0: (96, 320)}}
+
+
+def crop_sprite(data, rules):
+    """The sprite file with rules[animation] = (x0, w) applied to every frame of those animations."""
+    r = F.R(data)
+    assert r.bytes(4) == b'SPR\0'
+    r.u32()
+    for _ in range(r.u8()):
+        r.string()
+    hitboxes = r.u8()
+    for _ in range(hitboxes):
+        r.string()
+    out = bytearray(data)
+    for ai in range(r.u16()):
+        r.string()
+        n = r.u16(); r.i16(); r.u8(); r.u8()
+        for _ in range(n):
+            r.u8(); r.i16(); r.u16()
+            at = r.p
+            x, y, w, h, px, py = struct.unpack_from('<6h', data, at)
+            if ai in rules:
+                x0, w2 = rules[ai]
+                assert x0 + w2 <= w, 'crop past the frame'
+                struct.pack_into('<6h', out, at, x + x0, y, w2, h, px + x0, py)
+            r.bytes(12 + 8 * hitboxes)
+    r.done('sprite')
+    return bytes(out)
+
+
 def font_charset(src_data, langs):
     chars = set(range(0x20, 0x7F))
     for lang in langs:
@@ -416,6 +450,18 @@ def main():
                 n['copied'] += 1
                 print('data_disc: %s: %d of %d glyphs kept (%s + ASCII), self-checked' % (
                     f, b['frame_count'], a['frame_count'], ' '.join(FONT_TRIM[os.path.relpath(s, src).replace(os.sep, '/')])))
+            elif os.path.relpath(s, src).replace(os.sep, '/') in FRAME_CROP:
+                rules = FRAME_CROP[os.path.relpath(s, src).replace(os.sep, '/')]
+                open(d, 'wb').write(crop_sprite(open(s, 'rb').read(), rules))
+                a, b = F.read_sprite(s), F.read_sprite(d)  # self-check: only the cropped fields changed
+                for ai, (aa, bb) in enumerate(zip(a['anims'], b['anims'])):
+                    for fa, fb in zip(aa['frames'], bb['frames']):
+                        if ai in rules:
+                            x0, w2 = rules[ai]
+                            fa = dict(fa, x=fa['x'] + x0, w=w2, pivot_x=fa['pivot_x'] + x0)
+                        assert fa == fb
+                n['copied'] += 1
+                print('data_disc: %s: frames of animations %s cropped to the PS1 screen' % (f, sorted(rules)))
             elif os.path.relpath(s, src).replace(os.sep, '/') in ANIM_TRIM:
                 drop = ANIM_TRIM[os.path.relpath(s, src).replace(os.sep, '/')]
                 out = trim_sprite(open(s, 'rb').read(), lambda uc, ai: ai not in drop)

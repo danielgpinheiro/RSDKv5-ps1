@@ -26,7 +26,8 @@ extern "C" void PS1NoteAlloc(void *p, size_t size); // ps1/libc/stdlib.cpp: the 
 // has taken frame N's (a few thousand small primitives: ~30 hblanks). The frame's first write waits for that DMA to be
 // over (arenaReady; g_ps1ChainIdleWaits counts the frames that had to wait).
 #ifndef PS1_CHAIN_ARENA_KB
-#define PS1_CHAIN_ARENA_KB 50 // a measuring build may pass more (EXTRA_CPPFLAGS=-DPS1_CHAIN_ARENA_KB=128, 8 MB link)
+#define PS1_CHAIN_ARENA_KB 60 // a measuring build may pass more (EXTRA_CPPFLAGS=-DPS1_CHAIN_ARENA_KB=128, 8 MB link). 7.1: 50 -> 60: GHZ1's
+                              // title card over its busy middle (after Blue Spheres) needs 14,302 words (57 KB)
 #endif
 #define PS1_CHAIN_ARENA_WORDS (PS1_CHAIN_ARENA_KB * 1024 / 4)
 // Every chained fragment is kept <= 14 words (psyqo GPU::c_chainThreshold / 4). psyqo links

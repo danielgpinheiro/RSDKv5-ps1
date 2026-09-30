@@ -200,7 +200,9 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
 # Character art: 15 colours per frame, full resolution (user decision: players lossy; the title screen's big Sonic is
 # character art too: 687 KB at 8-bit, more than all the texture VRAM)
-PLAYER_LIKE = {'Title/Sonic.bin'}
+PLAYER_LIKE = {'Title/Sonic.bin', 'SpecialBS/Sonic.bin', 'SpecialBS/Tails.bin', 'SpecialBS/Knuckles.bin'}
+# docs/32 7.1: Blue Spheres' own character files (BSS_Player loads every one): single characters, one per atlas
+BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bin', 'knux': 'SpecialBS/Knuckles.bin'}
 # What may be stored at half resolution (user decision 2026-09-26: bosses, big effects, UI art); everything else (badniks,
 # springs, rings, platforms…) stays full size. HALF_PLAN degrades the least visible first: bosses (on screen at an act's
 # end), then big effects, then presentation art, the always-visible HUD last; each step adds to the previous ones and
@@ -231,6 +233,7 @@ ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10}}
 # base Mania (user decision 2026-09-26: no Encore, Mighty, Ray, Competition): animations never placed (None: the whole file)
 SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
               'Players/Mighty.bin': None, 'Players/Ray.bin': None,
+              'SpecialBS/Mighty.bin': None, 'SpecialBS/Ray.bin': None,
               'AIZ/SchrodingersCapsule.bin': None,           # the Encore capsule (Mighty and Ray inside)
               'UI/Diorama.bin': {3, 4, 6, 10, 11}}           # the Plus upsell, Encore, Competition (+ its FBZ platform)
 SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}},  # the Competition diorama's Knuckles
@@ -344,6 +347,9 @@ def select(folder, scene_id, character, files):
         drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
         if drop is None:
             sel[path], why[path] = [None] * n, 'out of scope (base Mania)'
+            continue
+        if path in BSS_PLAYER_FILES.values() and path != BSS_PLAYER_FILES[character]:
+            sel[path], why[path] = [None] * n, 'another character'
             continue
         if path in all_players and not present:
             if path not in PLAYER_FILES[character]:

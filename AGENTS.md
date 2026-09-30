@@ -81,7 +81,7 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   per-scene pools (`../docs/32`): nothing "stock" fits.
 - **Golden rule**: no runtime asset decoding; converters decode their output back and compare.
 - Per-frame drawing is **DMA-chained** (`ps1/gpu_chain.hh`); fragments ≤ 14 words; immediate VRAM writes
-  go to the other buffer (`../docs/29` §3). Clip primitives beyond the GPU limits. **One 50 KB arena** (3.3b): a
+  go to the other buffer (`../docs/29` §3). Clip primitives beyond the GPU limits. **One 60 KB arena** (3.3b; 50 → 60 KB in 7.1): a
   frame's first write waits for the last chain's DMA (`g_ps1ChainIdleWaits`); watch `g_ps1ChainHighWater` / overflow.
 - Tile layers (`RSDK/Scene/PS1/PS1Layers.cpp`, `../docs/32` 3.3b): bands written straight into the arena, bands of one
   tile row from a scratchpad column table, one-colour runs as rectangles (mask bit set: exact pixels). The `.ptl` is
