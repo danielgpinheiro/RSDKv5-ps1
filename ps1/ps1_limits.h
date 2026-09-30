@@ -13,4 +13,9 @@
 #define SCENEENTITY_COUNT    (0x800) /* the largest Mania-mode scene keeps 2017 entities (PSZ2/2, docs/32 phase 1) */
 #define TEMPENTITY_COUNT     (0x100)
 
+/* docs/32 7.4, the Dreamcast port's values: scanlines[0].deform = these, then the camera in scanlines[1..2]: a layer the
+   engine draws as 3D tiles (the UFO stages' playfield: RSDK/Graphics/PS1/PS1UfoFloor.cpp) */
+#define SCANLINE_MAJOR_MAGIC_3DTILES (0xFEDCBA09u)
+#define SCANLINE_MINOR_MAGIC_UFO     (0x90ABCDEFu)
+
 #endif /* PS1_LIMITS_H */

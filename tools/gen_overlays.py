@@ -41,9 +41,10 @@ STACK_RESERVE = 16 * 1024  # RSDK/Storage/Storage.cpp PS1_STACK_RESERVE
 MAGIC = 0x314C564F         # 'OVL1'
 # Optional engine parts linked into the overlays of the folders whose objects need them (not the resident EXE): their
 # objects, and the function the overlay's register calls to plug them in. docs/32 6.2: the video player (Sonic CD's,
-# docs/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects
+# docs/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects (7.4: with their floor)
 EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o'], 'PS1VideoLink'),
-          's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'ps1/gte3d.o'],
+          's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o',
+                                                             'ps1/gte3d.o'],
                   'PS1Scene3DLink')}
 
 

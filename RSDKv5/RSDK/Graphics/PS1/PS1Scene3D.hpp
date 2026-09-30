@@ -1,4 +1,4 @@
-// PS1 port (docs/32 7.3): Scene3D on the GTE. Scene3D.cpp keeps the resident part (PMD5 loading, the models added
+// PS1 port (docs/32 7.3): Scene3D on the GTE. Scene3D.cpp keeps the resident part (PMD6 loading, the models added
 // since each Prepare, the work block); the draw (PS1Scene3D.cpp, with ps1/gte3d) is linked into the overlays of the stage
 // folders that draw 3D (tools/gen_overlays.py S3D_OBJECTS: the UFO stages), which fill g_ps1S3DOps when they load (the
 // overlay loader clears it): GHZ1's STG can't hold 7 KB more resident code.
@@ -21,6 +21,7 @@ extern uint32 g_ps1S3DWorkVerts, g_ps1S3DWorkFaces;
 inline uint8 *PS1MeshData(const RSDK::Model *m) { return (uint8 *)m->vertices; }
 struct PS1Scene3DOps {
     void (*draw)(uint16 sceneID);
+    void (*floor)(RSDK::TileLayer *layer); // 7.4: the UFO floor (PS1UfoFloor.cpp), for a layer whose scanlines carry a camera
 };
 extern PS1Scene3DOps g_ps1S3DOps;
 extern "C" {

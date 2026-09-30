@@ -116,6 +116,13 @@ inline bool PS1RotoSpan(const PS1RotoEdge *E, int32 ya, int32 yb, int32 &xmin, i
 
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer)
 {
+    if ((uint32)scanlines[0].deform.x == SCANLINE_MAJOR_MAGIC_3DTILES) { // 7.4: a camera for 3D tiles, not lines
+        if ((uint32)scanlines[0].deform.y == SCANLINE_MINOR_MAGIC_UFO && g_ps1S3DOps.floor)
+            g_ps1S3DOps.floor(layer); // the UFO floor (RSDK/Graphics/PS1/PS1UfoFloor.cpp, in the UFO overlays)
+        else
+            g_ps1RotoTodo = g_ps1RotoTodo + 1;
+        return;
+    }
     if (!TileTable()) { // 4.2d: as PS1DrawLayerBasic
         g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
         return;

@@ -423,7 +423,7 @@ static void PS1Scene3DModelLoaded(Model *model)
 {
     uint32 faces = model->indexCount / model->faceVertCount;
     if (model->flags & PS1_MESH_POS16) {
-        const int16 *p = (const int16 *)(PS1MeshData(model) + 4 * model->vertCount + 2 * model->indexCount);
+        const int16 *p = (const int16 *)(PS1MeshData(model) + 6 * model->indexCount);
         int32 r = 0;
         for (uint32 i = 0; i < 3u * model->vertCount * model->frameCount; ++i) r = abs(p[i]) > r ? abs(p[i]) : r;
         model->ps1Radius = (uint16)r;
@@ -455,9 +455,9 @@ static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matri
     scene3DList[sceneIndex].drawMode = drawMode; // as the PC: the scene draws in its last model's mode
 }
 extern "C" {
-volatile uint32 g_ps1MeshLoads  = 0; // PMD5 meshes loaded (total)
+volatile uint32 g_ps1MeshLoads  = 0; // PMD6 meshes loaded (total)
 volatile uint32 g_ps1MeshBytes  = 0; // their bytes in STG (total)
-volatile uint32 g_ps1MeshErrors = 0; // a mesh missing or not PMD5 (must stay 0)
+volatile uint32 g_ps1MeshErrors = 0; // a mesh missing or not PMD6 (must stay 0)
 }
 #endif
 uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
@@ -490,13 +490,13 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
     FileInfo info;
     InitFileInfo(&info);
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 7.2: the disc carries the PMD5 mesh (the Dreamcast port's optimised mesh, packed at build time): one read
+    // docs/32 7.2 / 7.4: the disc carries the PMD6 mesh (the Dreamcast port's optimised mesh, packed at build time): one read
     // into one STG block, no decoding
     if (LoadFile(&info, fullFilePath, FMODE_RB)) {
         uint8 head[16];
         ReadBytes(&info, head, sizeof(head));
         uint32 size = (uint32)info.fileSize - sizeof(head);
-        if (memcmp(head, "PMD5", 4) || (head[5] != 3 && head[5] != 4)) {
+        if (memcmp(head, "PMD6", 4) || (head[5] != 3 && head[5] != 4)) {
             CloseFile(&info);
             g_ps1MeshErrors = g_ps1MeshErrors + 1;
             return -1;

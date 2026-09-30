@@ -33,6 +33,12 @@ Output <out>/<Folder>/Scene<N>.ptl (little-endian):
   hflip  : u16 tile, image [hflipCount], sorted by tile: the image of tile t H-flipped                   (4 B each)
   block  : u16 x, y, w, h (VRAM halfwords), u32 offset at dataOffset                            (12 B)
   pixels : at dataOffset (a sector boundary), each block's w*h halfwords row-major
+The header's last 6 bytes (docs/32 7.4): u16 lodFirst, u8 lodPagesW, lodPagesH, 2 pad: a UFO stage's floor minimap (the
+Dreamcast port's LOD texture: one texel per tile of the Playfield layer, its most common opaque colour, drawn beyond the
+real tiles' distance): lodPagesW x lodPagesH 4-bit texture pages (256 x 256 texels each: map tile (x, y) at page
+(x >> 8, y >> 8), texel (x & 255, y & 255); blocks in the tile columns after the images'), images lodFirst.. (row-major,
+u = v = 0, the page's texpage, CLUT = the last CLUT: the 15 most used colours; the other tiles' colours take the nearest
+of them). lodFirst 0: none.
 
 Usage: build_tiles.py DATA_DIR OUT_DIR FOLDER SCENE_ID... [--report]
 """
@@ -50,6 +56,7 @@ TILE = 16
 ANI_SHEETS = {'GHZ': ['GHZ/AniTiles.gif']}
 # Texture columns for tiles (column, page row), filled in this order: the right end of page row 1 first
 TILE_COLUMNS = [(15, 1), (14, 1), (13, 1), (12, 1), (11, 1), (10, 1)]
+LOD_COLUMNS = TILE_COLUMNS + [(9, 1), (8, 1)]  # 7.4: a UFO floor's minimap pages go after the tile images
 
 
 SOLID_MIN = 16  # one-colour lines a layer needs for its table
@@ -123,6 +130,55 @@ def solid_lines(layer, pixels_of):
                 col[ty * TILE + r] = c
                 tiles.update(ids)
     return col, tiles
+
+
+def bank0_rgb(data, folder):
+    """Palette bank 0 as the scene starts it: GameConfig's rows, the StageConfig's over them (index -> (r, g, b))."""
+    g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))['palettes'][0]
+    st = F.read_stageconfig(os.path.join(data, 'Stages', folder, 'StageConfig.bin'))['palettes'][0]
+    pal = {}
+    for rows in (g, st):
+        for r, cs in rows.items():
+            for i, c in enumerate(cs):
+                pal[r * 16 + i] = c
+    return pal
+
+
+def lod_minimap(data, folder, layers, gif, used):
+    """7.4: the Playfield layer's minimap: per tile its most common opaque palette index, mapped to 15 codes (the most
+    used colours; others to the nearest by RGB). -> (code texture [H, W] uint8 padded to 256s, the 15 palette indices)
+    or None."""
+    pf = [L for L in layers if L['name'] == 'Playfield' and L['type'] == 2] if folder.startswith('UFO') else []
+    if not pf:
+        return None
+    L = pf[0]
+    rep = {}
+    for t in used:
+        px = gif[t * TILE:(t + 1) * TILE].ravel()
+        nz = px[px != 0]
+        rep[t] = int(np.bincount(nz).argmax()) if nz.size else 0
+    counts = {}
+    for v in L['tiles']:
+        if v != 0xFFFF and rep.get(v & 0x3FF):
+            counts[rep[v & 0x3FF]] = counts.get(rep[v & 0x3FF], 0) + 1
+    top = [i for i, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:15]]
+    pal = bank0_rgb(data, folder)
+    code = {0: 0}
+    for i in counts:
+        if i in top:
+            code[i] = top.index(i) + 1
+        else:
+            c = pal.get(i, (0, 0, 0))
+            code[i] = 1 + min(range(len(top)), key=lambda k: sum((a - b) ** 2 for a, b in zip(c, pal.get(top[k], (0, 0, 0)))))
+    W, H = L['xsize'], L['ysize']
+    tex = np.zeros((-(-H // V.PAGE) * V.PAGE, -(-W // V.PAGE) * V.PAGE), np.uint8)
+    t = np.array(L['tiles'], np.int64).reshape(H, W)
+    for y in range(H):
+        for x in range(W):
+            v = int(t[y, x])
+            if v != 0xFFFF:
+                tex[y, x] = code[rep.get(v & 0x3FF, 0)]
+    return tex, top
 
 
 def build(data, folder, scene_id, columns=TILE_COLUMNS):
@@ -274,17 +330,49 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     if len(solid_tab) > 0xFFFF:
         raise TileError('%s%s: one-colour tables %d B' % (folder, scene_id, len(solid_tab)))
 
+    # 7.4: a UFO floor's minimap (see the header's last bytes): 4-bit pages after the tile images' columns
+    lod = lod_minimap(data, folder, layers, gif, used)
+    lod_pages, lod_first, lod_clut = [], 0, None
+    if lod is not None:
+        tex, top = lod
+        ph, pw = tex.shape[0] // V.PAGE, tex.shape[1] // V.PAGE
+        free_lod = [c for c in LOD_COLUMNS if c not in used_cols]
+        if len(free_lod) < pw * ph:
+            raise TileError('%s%s: minimap needs %d pages, %d free' % (folder, scene_id, pw * ph, len(free_lod)))
+        if len(clut_maps) >= len(V.TILE_CLUT_SLOTS):
+            raise TileError('%s%s: no CLUT slot for the minimap' % (folder, scene_id))
+        clut_maps.append([0] + top + [0] * (15 - len(top)))
+        lod_clut = len(clut_maps) - 1
+        for py in range(ph):
+            for px in range(pw):
+                col, row = free_lod[py * pw + px]
+                q = tex[py * V.PAGE:(py + 1) * V.PAGE, px * V.PAGE:(px + 1) * V.PAGE].astype(np.uint16)
+                words = q[:, 0::4] | (q[:, 1::4] << 4) | (q[:, 2::4] << 8) | (q[:, 3::4] << 12)
+                vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:(col + 1) * V.COL_HW] = words
+                # decode back
+                w = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:(col + 1) * V.COL_HW].astype(np.int32)
+                nib = np.stack([(w >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(V.PAGE, V.PAGE)
+                if not np.array_equal(nib, tex[py * V.PAGE:(py + 1) * V.PAGE, px * V.PAGE:(px + 1) * V.PAGE]):
+                    raise TileError('%s%s: minimap page %d,%d does not decode back' % (folder, scene_id, px, py))
+                lod_pages.append((col, row))
+        lod_first = len(images)
+        lod_dims = (pw, ph)
+
     blocks = []
     for (col, row) in used_cols:
         n = lines.get((col, row), 0)
         if n:
             blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, n))
+    for (col, row) in lod_pages:
+        blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, V.PAGE))
     out = bytearray()
     img_tab = bytearray()
     for i in range(len(images)):
         col, row, d, u, v = place[i]
         img_tab += struct.pack('<BBHH', u, v, V.texpage(col, row, d),
                                V.clut_attr(*V.TILE_CLUT_SLOTS[clut_of[i]]) if d == 4 else 0xFFFF)
+    for (col, row) in lod_pages:
+        img_tab += struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[lod_clut]))
     clut_tab = b''.join(struct.pack('<HH', *V.TILE_CLUT_SLOTS[g]) + bytes(m) for g, m in enumerate(clut_maps))
     sheet_tab = b''.join(struct.pack('<32sHHH', n.encode()[:31], w, h, f) for n, w, h, f in sheets)
     cell_tab = struct.pack('<%dH' % len(cells), *cells)
@@ -295,18 +383,21 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     head = (32 + 2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)
             + len(blk_tab))
     data_off = (head + 2047) // 2048 * 2048
-    out += struct.pack('<4sHHHHHHIIH6x', b'PTL2', len(images), len(clut_maps), len(sheets), len(cells), len(blocks),
-                       len(solid_tab), data_off, len(pixels), len(hflip))
+    out += struct.pack('<4sHHHHHHIIHHBB2x', b'PTL2', len(images) + len(lod_pages), len(clut_maps), len(sheets), len(cells),
+                       len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
+                       lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0)
     out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + blk_tab
     out += bytes(data_off - len(out)) + pixels
 
     n4 = sum(1 for d in depth if d == 4)
     report = ('%s/Scene%s tiles %d (+%d ani cells) -> %d images (4-bit %d, 8-bit %d), CLUTs %d, columns %s, VRAM %d KB, '
-              'one-colour lines %d in %d layers, H-flipped copies %d, file %d B, runtime tables %d B, self-check exact' % (
+              'one-colour lines %d in %d layers, H-flipped copies %d, file %d B, runtime tables %d B, self-check exact%s' % (
                   folder, scene_id, len(used), len(cells), len(images), n4, len(images) - n4, len(clut_maps),
                   ' '.join('%d/%d' % c for c in used_cols), sum(w * h for _, _, w, h in blocks) * 2 // 1024,
                   solid_count, sum(1 for c in solid_tabs if c is not None), len(hflip), len(out),
-                  2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)))
+                  2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab),
+                  '; minimap %dx%d pages (%s), CLUT %d' % (lod_dims[0], lod_dims[1], ' '.join('%d/%d' % c for c in lod_pages), lod_clut)
+                  if lod_pages else ''))
     return bytes(out), report, vram, blocks
 
 

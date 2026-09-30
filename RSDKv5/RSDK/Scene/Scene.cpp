@@ -12,6 +12,7 @@ using namespace RSDK;
 #if RETRO_PLATFORM == RETRO_PS1
 #include "PS1/PS1Tiles.cpp"  // the scene's tile images in VRAM (docs/32 3.1a)
 #include "PS1/PS1Layers.cpp" // tile layers drawn by the GPU (3.3)
+#include "RSDK/Graphics/PS1/PS1Scene3D.hpp" // g_ps1S3DOps.floor: the UFO floor (7.4)
 #include "PS1/PS1Roto.cpp"   // rotozoom layers (4.1d)
 #endif
 

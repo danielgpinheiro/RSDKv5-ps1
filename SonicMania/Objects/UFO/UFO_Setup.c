@@ -189,6 +189,26 @@ void UFO_Setup_Scanline_Playfield(ScanlineInfo *scanlines)
 
     RSDK.SetClipBounds(0, 0, camera->clipY, ScreenInfo->size.x, ScreenInfo->size.y);
 
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32 7.4), as the Dreamcast port: the camera for the engine's 3D tile floor (RSDK/Graphics/PS1/
+    // PS1UfoFloor.cpp) instead of 240 deformed lines, each with the palette bank of its distance
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_UFO;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = RSDK.Sin1024(camera->angle);
+    scanlines->deform.y   = RSDK.Cos1024(camera->angle);
+    scanlines->position.x = RSDK.Sin1024(-camera->angleX);
+    scanlines->position.y = RSDK.Cos1024(-camera->angleX);
+    scanlines++;
+    scanlines->deform.x   = camera->position.x;
+    scanlines->deform.y   = camera->height;
+    scanlines->position.x = camera->position.y;
+    scanlines->position.y = 0;
+    return;
+#endif
+
     int32 sin  = RSDK.Sin1024(camera->angle) >> 2;
     int32 cos  = RSDK.Cos1024(camera->angle) >> 2;
     int32 sinX = RSDK.Sin1024(-camera->angleX) >> 2;

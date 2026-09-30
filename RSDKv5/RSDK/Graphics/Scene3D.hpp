@@ -79,9 +79,10 @@ struct Model {
     uint8 faceVertCount;
     uint8 scope;
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 7.2: the PMD5 mesh (tools/mesh/build_meshes.py) in one STG block, `vertices` its owner pointer (a
-    // compaction moves the block and updates only that): colours (vertCount x RGB555), indices, then frameCount stored
-    // frames of positions (8-bit x ps1Scale >> 8, or 16-bit when PS1_MESH_POS16); ps1FrameStep: keyframes kept 1 in N
+    // docs/32 7.2 / 7.4: the PMD6 mesh (tools/mesh/build_meshes.py) in one STG block, `vertices` its owner pointer (a
+    // compaction moves the block and updates only that): colours (one GPU colour word per face corner: indexCount),
+    // indices (into the positions), then frameCount stored frames of vertCount positions (8-bit x ps1Scale >> 8, or
+    // 16-bit when PS1_MESH_POS16); ps1FrameStep: keyframes kept 1 in N
     uint8 ps1FrameStep;
     uint16 ps1Scale;
     uint16 ps1Radius; // 7.3: the largest |coordinate| in engine units (the GTE unit shift's bound)

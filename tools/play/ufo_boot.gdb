@@ -1,6 +1,6 @@
 # UFO stage boot at 2 MB (docs/32 7.2), `make BOOT=3,0` (UFO1): prints the STG left after the load (with no meshes
 # until the PS1 mesh format: the meshes' budget), the frame cost, and the guards. The 3D draw lives in the UFO
-# overlay: its symbols come from build/gen/ovl/UFO1/UFO1.elf.
+# overlay (7.4: and the floor): its symbols come from build/gen/ovl/UFO1/UFO1.elf.
 add-symbol-file build/gen/ovl/UFO1/UFO1.elf
 break RSDK::LoadSceneAssets
 commands
@@ -25,7 +25,7 @@ end
 break perfTick if g_ps1PerfFrames % 60 == 0
 commands
 silent
-printf "L %u cat=%d list=%d state=%d hbl=%u stgUsed=%u stgLimit=%u free=%u meshes=%u meshBytes=%u meshErr=%u | s3d draws=%u faces=%u culled=%u overflow=%u todo=%u matrix=%u gteFlag=%u | hbl xform=%u faces=%u sort=%u emit=%u | sprMissing=%u primTodo=%u inkTodo=%u overflow=%u high=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, RSDK::dataStorage[0].usedStorage * 4, RSDK::dataStorage[0].storageLimit, RSDK::dataStorage[0].storageLimit - RSDK::dataStorage[0].usedStorage * 4, g_ps1MeshLoads, g_ps1MeshBytes, g_ps1MeshErrors, g_ps1S3DDraws, g_ps1S3DFaces, g_ps1S3DCulled, g_ps1S3DOverflow, g_ps1S3DTodo, g_ps1S3DMatrix, g_ps1GteFlagged, g_ps1S3DHbl[0], g_ps1S3DHbl[1], g_ps1S3DHbl[2], g_ps1S3DHbl[3], *(unsigned *)&g_ps1SpriteMissing, *(unsigned *)&g_ps1PrimTodo, *(unsigned *)&g_ps1SpriteInkTodo, g_ps1ChainOverflow, g_ps1ChainHighWater
+printf "L %u cat=%d list=%d state=%d hbl=%u stgUsed=%u stgLimit=%u free=%u meshes=%u meshBytes=%u meshErr=%u | s3d draws=%u faces=%u culled=%u overflow=%u todo=%u matrix=%u gteFlag=%u | hbl xform=%u faces=%u sort=%u emit=%u | floor draws=%u quads=%u lod=%u hbl=%u todo=%u cluts=%u banks=%x rotoTodo=%u | sprMissing=%u primTodo=%u inkTodo=%u overflow=%u high=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, RSDK::dataStorage[0].usedStorage * 4, RSDK::dataStorage[0].storageLimit, RSDK::dataStorage[0].storageLimit - RSDK::dataStorage[0].usedStorage * 4, g_ps1MeshLoads, g_ps1MeshBytes, g_ps1MeshErrors, g_ps1S3DDraws, g_ps1S3DFaces, g_ps1S3DCulled, g_ps1S3DOverflow, g_ps1S3DTodo, g_ps1S3DMatrix, g_ps1GteFlagged, g_ps1S3DHbl[0], g_ps1S3DHbl[1], g_ps1S3DHbl[2], g_ps1S3DHbl[3], g_ps1FloorDraws, g_ps1FloorQuads, g_ps1FloorLodQuads, g_ps1FloorHbl, g_ps1FloorTodo, g_ps1FloorCluts, g_ps1FloorBanks, g_ps1RotoTodo, *(unsigned *)&g_ps1SpriteMissing, *(unsigned *)&g_ps1PrimTodo, *(unsigned *)&g_ps1SpriteInkTodo, g_ps1ChainOverflow, g_ps1ChainHighWater
 if g_ps1PerfFrames >= 600
   printf "L GUARD fail=%u,%u,%u,%u,%u oom=%u missing=%u stubs=%u heapHeadroom=%u arenaFail=%u ovlErrors=%u\n", g_ps1StorageFail[0], g_ps1StorageFail[1], g_ps1StorageFail[2], g_ps1StorageFail[3], g_ps1StorageFail[4], g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, (unsigned)g_ps1UnlinkedCalls, g_ps1HeapHeadroom, g_ps1ChainArenaFail, g_ps1OvlErrors
   quit

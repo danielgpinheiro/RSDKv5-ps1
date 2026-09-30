@@ -7,9 +7,22 @@
 
 using namespace RSDK;
 
+extern "C" {
+volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
+volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
+}
+
 namespace
 {
 uint32 *s_ps1S3DBulk = NULL; // the open chain bulk (32 faces)
+// (a << sh) / d with the CPU's 32-bit divide when a << sh fits (the 64-bit one is a libgcc loop: ~16 hblanks a frame)
+static inline int32 PS1ShiftDiv(int32 a, int32 sh, int32 d)
+{
+    const int32 lim = 1 << (30 - sh);
+    if (a < lim && a > -lim)
+        return (a << sh) / d;
+    return (int32)(((int64)a << sh) / d);
+}
 static inline int32 PS1BitLen(uint32 v)
 {
     int32 n = 0;
@@ -127,8 +140,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                       currentScreen->center.x << 16, currentScreen->center.y << 16);
         // the vertices (keyframes blended), 96 at a time
         const uint8 *data  = PS1MeshData(mdl);
-        const uint16 *idx  = (const uint16 *)(data + 4 * mdl->vertCount);
-        const uint8 *pos   = data + 4 * mdl->vertCount + 2 * mdl->indexCount;
+        const uint16 *idx  = (const uint16 *)(data + 4 * mdl->indexCount); // PMD6: a colour per corner first
+        const uint8 *pos   = data + 6 * mdl->indexCount;
         const int32 vc     = mdl->vertCount;
         const uint32 fstride = (pos16 ? 6u : 3u) * vc;
         const uint8 *fa = pos + fstride * (it.frameA < mdl->frameCount ? it.frameA : 0);
@@ -159,9 +172,9 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         const int32 cz = m.values[2][3], cr = (int32)(bound - (uint32)abs(m.values[2][3]));
         bool inside    = false;
         if (cz - cr > 0x100) {
-            const int32 rs = (int32)(((int64)cr << scn->projectionX) / (cz - cr)) + 2; // its radius on screen, rounded out
-            const int32 sx = currentScreen->center.x + (int32)(((int64)m.values[0][3] << scn->projectionX) / cz);
-            const int32 sy = currentScreen->center.y - (int32)(((int64)m.values[1][3] << scn->projectionX) / cz);
+            const int32 rs = PS1ShiftDiv(cr, scn->projectionX, cz - cr) + 2; // its radius on screen, rounded out
+            const int32 sx = currentScreen->center.x + PS1ShiftDiv(m.values[0][3], scn->projectionX, cz);
+            const int32 sy = currentScreen->center.y - PS1ShiftDiv(m.values[1][3], scn->projectionX, cz);
             inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
         }
         if (fvc == 4)
@@ -169,6 +182,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         else
             PS1S3DFaces<3>(idx, faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
         vb += vc, fb += faces;
+        g_ps1S3DModelFaces[it.model] = g_ps1S3DModelFaces[it.model] + faces;
+        g_ps1S3DModelDraws[it.model] = g_ps1S3DModelDraws[it.model] + 1;
         t0 = PS1_HBL();
         g_ps1S3DHbl[1] = g_ps1S3DHbl[1] + (uint16)(t0 - t1);
     }
@@ -202,8 +217,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     int32 mfvc[PS1_S3D_ITEMS];
     for (int32 j = 0, v = 0, f = 0; j < n; ++j) {
         const Model *mdl = &modelList[g_ps1S3DItems[list[j]].model];
-        mcols[j]         = (const uint32 *)PS1MeshData(mdl);
-        midx[j]          = (const uint16 *)(mcols[j] + mdl->vertCount);
+        mcols[j]         = (const uint32 *)PS1MeshData(mdl); // per face corner (PMD6)
+        midx[j]          = (const uint16 *)(mcols[j] + mdl->indexCount);
         mvb[j] = v, mfb[j] = f, mfvc[j] = mdl->faceVertCount;
         v += mdl->vertCount, f += mdl->indexCount / mdl->faceVertCount;
     }
@@ -234,7 +249,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                     goto done;
                 wend = w + 32 * (wpp + 1);
             }
-            const uint16 *fi = idx0 + (g - fbase) * fvc;
+            const uint32 fo = (g - fbase) * fvc; // the face's first corner
+            const uint16 *fi = idx0 + fo;
             // RSDK's quads go round; the GPU's are two triangles (0 1 2, 1 2 3): corners 0 1 3 2
             const uint32 i0 = fi[0], i1 = fi[1], i2 = fvc == 4 ? fi[3] : fi[2];
             if (flat) {
@@ -243,9 +259,10 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                     w[4] = vxy[fi[2]];
             }
             else {
-                w[0] = cmd | cols[i0], w[1] = vxy[i0], w[2] = cols[i1], w[3] = vxy[i1], w[4] = cols[i2], w[5] = vxy[i2];
+                const uint32 *fc = cols + fo; // the corners' colours (PMD6)
+                w[0] = cmd | fc[0], w[1] = vxy[i0], w[2] = fc[1], w[3] = vxy[i1], w[4] = fc[fvc == 4 ? 3 : 2], w[5] = vxy[i2];
                 if (fvc == 4)
-                    w[6] = cols[fi[2]], w[7] = vxy[fi[2]];
+                    w[6] = fc[2], w[7] = vxy[fi[2]];
             }
             w += wpp + 1;
             ++drawn;
@@ -261,4 +278,10 @@ done:
 }
 } // namespace
 
-extern "C" void PS1Scene3DLink() { g_ps1S3DOps.draw = PS1Scene3DDraw; }
+void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
+
+extern "C" void PS1Scene3DLink()
+{
+    g_ps1S3DOps.draw  = PS1Scene3DDraw;
+    g_ps1S3DOps.floor = PS1UfoFloorDraw;
+}

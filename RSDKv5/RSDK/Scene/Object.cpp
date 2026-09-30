@@ -395,6 +395,9 @@ namespace
 {
 bool s_camUnionOk = false;
 int32 s_camMinX, s_camMinY;
+// 7.4: one camera: ACTIVE_RBOUNDS slots (the UFO stages' rings and spheres: ~400) decided in the scan with stock's test
+bool s_camOne = false;
+int32 s_camX, s_camY, s_camOX;
 uint32 s_camW, s_camH; // max - min of the union, modulo 2^32
 inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
 void PS1CameraUnion()
@@ -421,6 +424,9 @@ void PS1CameraUnion()
     }
     s_camMinX = minX, s_camMinY = minY;
     s_camW = (uint32)maxX - (uint32)minX, s_camH = (uint32)maxY - (uint32)minY;
+    s_camOne = cameraCount == 1;
+    if (s_camOne)
+        s_camX = cameras[0].position.x, s_camY = cameras[0].position.y, s_camOX = cameras[0].offset.x;
 }
 
 // 3.0f: a bit per slot that may have inRange or onScreen set. The update pass marks each slot it leaves in range, the
@@ -523,6 +529,13 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                     if ((int32)(y + 0x40000000u) < 0 || (ry + 0x10000000u) >= 0x20000000u || y - minY + ry <= h + 2 * ry)
                         return p;
                 }
+            }
+            else if (active == ACTIVE_RBOUNDS && s_camOne) {
+                // stock's test for one camera, in its int32 arithmetic (wrapping as the PC's): out of range settles here
+                int32 dx = x - s_camX, dy = ent->position.y - s_camY;
+                int32 sx = FROM_FIXED(dx < 0 ? -dx : dx), sy = FROM_FIXED(dy < 0 ? -dy : dy);
+                if ((int32)((uint32)sx * (uint32)sx + (uint32)sy * (uint32)sy) <= (int32)((uint32)rx + (uint32)s_camOX))
+                    return p;
             }
             else if (active != ACTIVE_NEVER && active != ACTIVE_PAUSED)
                 return p;
