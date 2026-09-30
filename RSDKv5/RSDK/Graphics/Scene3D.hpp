@@ -78,7 +78,17 @@ struct Model {
     uint8 flags;
     uint8 faceVertCount;
     uint8 scope;
+#if RETRO_PLATFORM == RETRO_PS1
+    // docs/32 7.2: the PMD5 mesh (tools/mesh/build_meshes.py) in one STG block, `vertices` its owner pointer (a
+    // compaction moves the block and updates only that): colours (vertCount x RGB555), indices, then frameCount stored
+    // frames of positions (8-bit x ps1Scale >> 8, or 16-bit when PS1_MESH_POS16); ps1FrameStep: keyframes kept 1 in N
+    uint8 ps1FrameStep;
+    uint16 ps1Scale;
+#endif
 };
+#if RETRO_PLATFORM == RETRO_PS1
+#define PS1_MESH_POS16 (0x80) // Model::flags on the PS1: 16-bit positions
+#endif
 
 struct Scene3DVertex {
     int32 x;
@@ -186,7 +196,11 @@ inline void SetMeshAnimation(uint16 model, Animator *animator, int16 speed, uint
     animator->frameCount      = modelList[model].frameCount;
     animator->speed           = speed;
     animator->prevAnimationID = animator->animationID;
+#if RETRO_PLATFORM == RETRO_PS1
+    animator->frameDuration = 0x100 * modelList[model].ps1FrameStep; // 7.2: a kept keyframe spans the dropped ones
+#else
     animator->frameDuration   = 0x100;
+#endif
     animator->loopIndex       = loopIndex;
     animator->animationID     = model;
 }

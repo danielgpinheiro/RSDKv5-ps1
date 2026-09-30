@@ -190,7 +190,7 @@ build/gen/trig_tables.inc: tools/trig/gen_trig.c
 RSDKv5/RSDK/Core/Math.o RSDKv5/RSDK/Core/Math.dep: build/gen/trig_tables.inc
 
 # The objects to link (writes ps1/rsdk5_objects.inc + build/gen/game_srcs.txt; rerun after changing STAGES).
-STAGES ?= Logos,Title,Menu,AIZ,GHZCutscene,GHZ,SpecialBS
+STAGES ?= Logos,Title,Menu,AIZ,GHZCutscene,GHZ,SpecialBS,UFO1
 objects:
 	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 
@@ -222,6 +222,10 @@ music:
 video:
 	/usr/bin/python3 tools/fmv/build_str.py $(GAME_DATA) build/video
 
+# Build-time meshes (docs/32 7.2): the Dreamcast port's mesh optimiser, then the PS1 PMD5 format -> build/meshes/Meshes
+meshes:
+	/usr/bin/python3 tools/mesh/build_meshes.py $(GAME_DATA) build/meshes
+
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
@@ -229,9 +233,10 @@ disc:
 	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
+	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi
 	if [ -d build/video/Video ]; then mkdir -p build/iso/Data/Video && cp build/video/Video/*.str build/video/Video/*.sti build/video/Video/PS1Video.bin build/iso/Data/Video/; fi
 	if [ -d build/music/Music ]; then mkdir -p build/iso/Data/Music && cp build/music/Music/Music.xa build/music/Music/Music.bin build/iso/Data/Music/; fi
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 
-.PHONY: disc objects overlays gfx sfx music video
+.PHONY: disc objects overlays gfx sfx music video meshes

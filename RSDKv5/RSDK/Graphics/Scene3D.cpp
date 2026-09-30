@@ -376,6 +376,13 @@ void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
     for (int32 i = 0; i < 0x10; ++i) dest->values[i / 4][i % 4] = (int32)inv[i];
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+extern "C" {
+volatile uint32 g_ps1MeshLoads  = 0; // PMD5 meshes loaded (total)
+volatile uint32 g_ps1MeshBytes  = 0; // their bytes in STG (total)
+volatile uint32 g_ps1MeshErrors = 0; // a mesh missing or not PMD5 (must stay 0)
+}
+#endif
 uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
 {
     if (!scope || scope > SCOPE_STAGE)
@@ -405,6 +412,39 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
     Model *model = &modelList[id];
     FileInfo info;
     InitFileInfo(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+    // docs/32 7.2: the disc carries the PMD5 mesh (the Dreamcast port's optimised mesh, packed at build time): one read
+    // into one STG block, no decoding
+    if (LoadFile(&info, fullFilePath, FMODE_RB)) {
+        uint8 head[16];
+        ReadBytes(&info, head, sizeof(head));
+        uint32 size = (uint32)info.fileSize - sizeof(head);
+        if (memcmp(head, "PMD5", 4) || (head[5] != 3 && head[5] != 4)) {
+            CloseFile(&info);
+            g_ps1MeshErrors = g_ps1MeshErrors + 1;
+            return -1;
+        }
+        model->scope         = scope;
+        HASH_COPY_MD5(model->hash, hash);
+        model->flags         = (head[4] & 1) ? PS1_MESH_POS16 : 0;
+        model->faceVertCount = head[5];
+        model->vertCount     = head[6] | head[7] << 8;
+        model->frameCount    = head[8] | head[9] << 8;
+        model->ps1FrameStep  = head[10] ? head[10] : 1;
+        model->ps1Scale      = head[12] | head[13] << 8;
+        model->indexCount    = head[14] | head[15] << 8;
+        model->texCoords = NULL, model->colors = NULL, model->indices = NULL;
+        AllocateStorage((void **)&model->vertices, size, DATASET_STG, false);
+        if (model->vertices)
+            ReadBytes(&info, model->vertices, size);
+        CloseFile(&info);
+        g_ps1MeshBytes = g_ps1MeshBytes + size;
+        g_ps1MeshLoads = g_ps1MeshLoads + 1;
+        return model->vertices ? id : (uint16)-1;
+    }
+    g_ps1MeshErrors = g_ps1MeshErrors + 1;
+    return -1;
+#endif
     if (LoadFile(&info, fullFilePath, FMODE_RB)) {
         uint32 sig = ReadInt32(&info, false);
 
@@ -517,6 +557,9 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
 }
 void RSDK::AddModelToScene(uint16 modelFrames, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, color color)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return; // docs/32 7.3: the PMD5 meshes go straight to the GTE (the stock path reads float-era vertex arrays)
+#endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
         if (matWorld) {
             Model *mdl            = &modelList[modelFrames];
@@ -662,6 +705,9 @@ void RSDK::AddModelToScene(uint16 modelFrames, uint16 sceneIndex, uint8 drawMode
 void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *animator, uint8 drawMode, Matrix *matWorld, Matrix *matNormals,
                                color color)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return; // docs/32 7.3: the PMD5 meshes go straight to the GTE (the stock path reads float-era vertex arrays)
+#endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
         if (matWorld && animator) {
             Model *mdl            = &modelList[modelFrames];
