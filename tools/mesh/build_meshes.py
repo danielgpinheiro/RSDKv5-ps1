@@ -16,6 +16,10 @@ Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK
   colours (one per face corner, index count x u32: the GPU's colour word, 0x00BBGGRR, from the baked lighting), indices
   (u16 each, into the positions), then per stored frame the positions (positions x 3 x i8 or i16, engine fixed point as
   LoadMesh keeps them: float x 256 for 16-bit).
+  Flag bit3 (7.4, the meshes NORMALS lists: drawn with the scene's lighting, as the special ring): after the LOD (or the
+  positions), a normal per face corner: i8 x, y, z (x 127), 0.
+  Flag bit2 (7.4): a distance LOD follows the positions (4-aligned): u16 index count, u16 0, colours (u32 per corner),
+  indices (into the same positions): the engine draws it when the model is small on screen.
   docs/32 7.4 (PMD5 -> PMD6): the baked colours had split the vertices (Sonic's jog: 698 vertices, 251 positions): the
   colours now go with the face corners and vertices sharing every stored position are one, so the GTE transforms each
   position once (the emit reads a corner's colour as it read the vertex's).
@@ -54,6 +58,15 @@ MESHES.update({'Special/ItemBox.bin': ['--simplify', '--bake-lighting'], 'Specia
 for d in ('Flower1', 'Flower2', 'Flower3', 'Pillar1', 'Pillar2', 'Tree'):
     MESHES['Decoration/%s.bin' % d] = DECOR_B
 POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase.bin'} | {'Decoration/Bird.bin', 'Decoration/Fish.bin'}
+# docs/32 7.4: distance LODs (PS1 only: the Dreamcast optimiser stops at its colour / normal seams, the UFO at 368 of 774
+# faces): positions clustered on a grid (frame 0), each cluster kept as its member nearest the cluster's centre (an
+# existing position: the animation stays), faces with two corners in one cluster dropped, duplicates dropped; the grid
+# is sized for about this share of the faces
+# by eye (rendered side by side): the UFO and the bird keep their shape; the grid collapsed thin parts elsewhere (the
+# tree's trunk, the pillars' caps, the fish's fins, the flowers' stems), so those have none
+LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.3 lost its stripes
+# docs/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
+NORMALS = {'Global/SpecialRing.bin'}
 # docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
 # faces); the decorations are open (palm leaves, wings: the PC shows both sides), as SSZ / TMZ until checked
 CULLED = {p for p in MESHES if p.startswith('Special/')} | {'Global/SpecialRing.bin'}
@@ -78,6 +91,8 @@ def read_mdl(path):
     stride = 6 if flags & 1 else 3
     vals = struct.unpack_from('<%df' % (vc * fc * stride), d, p)
     frames = [[tuple(int(vals[(f * vc + v) * stride + k] * 0x100) for k in range(3)) for v in range(vc)] for f in range(fc)]
+    normals = [tuple(vals[v * stride + 3 + k] for k in range(3)) for v in range(vc)] if flags & 1 else None  # frame 0
+    read_mdl.normals = normals
     return fvc, vc, cols, idx, frames
 
 
@@ -85,6 +100,43 @@ def gpu_bgr(c):
     # MDL colours are stored as u32 (the engine's `color`: 0xAARRGGBB read little-endian) -> the GPU's 0x00BBGGRR
     r, g, b = (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF
     return r | g << 8 | b << 16
+
+
+def cluster_lod(uniq, cidx, ccol, fvc, share):
+    """-> (lod corner positions, lod corner colours) with about `share` of the faces (see LOD_SHARE)"""
+    p0 = [u[0] for u in uniq]
+    lo = [min(p[k] for p in p0) for k in range(3)]
+    hi = [max(p[k] for p in p0) for k in range(3)]
+    span = max(h - l for h, l in zip(hi, lo)) or 1
+    faces = [tuple(cidx[f * fvc:(f + 1) * fvc]) for f in range(len(cidx) // fvc)]
+    target = max(4, int(len(faces) * share))
+    best = None
+    for steps in range(64, 1, -1):  # the finest grid at or under the target
+        cell = span / steps
+        key = [tuple(int((p[k] - lo[k]) // cell) for k in range(3)) for p in p0]
+        members = {}
+        for i, k in enumerate(key):
+            members.setdefault(k, []).append(i)
+        rep = {}
+        for k, ms in members.items():
+            c = [sum(p0[i][d] for i in ms) / len(ms) for d in range(3)]
+            r = min(ms, key=lambda i: sum((p0[i][d] - c[d]) ** 2 for d in range(3)))
+            for i in ms:
+                rep[i] = r
+        seen, out = set(), []
+        for f, fc in enumerate(faces):
+            m = tuple(rep[i] for i in fc)
+            if len(set(m)) < fvc:
+                continue
+            k = tuple(sorted(m))
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append((m, ccol[f * fvc:(f + 1) * fvc]))
+        best = out
+        if len(out) <= target:
+            break
+    return [i for m, _ in best for i in m], [c for _, cs in best for c in cs]
 
 
 def convert(path, src, pos8, culled):
@@ -119,6 +171,22 @@ def convert(path, src, pos8, culled):
     for fi in range(len(kept)):
         out += struct.pack(fmt, *[x for u in uniq for x in u[fi]])
     out += b'\0' * (-len(out) % 4)
+    lod = None
+    if path in LOD_SHARE and fvc == 3:
+        lod = cluster_lod(uniq, cidx, ccol, fvc, LOD_SHARE[path])
+        out = bytearray(out)
+        out[4] |= 4
+        out += struct.pack('<HH', len(lod[0]), 0) + struct.pack('<%dI' % len(lod[1]), *lod[1])
+        out += struct.pack('<%dH' % len(lod[0]), *lod[0]) + b'\0' * (-2 * len(lod[0]) % 4)
+        out = bytes(out)
+    nrm = read_mdl.normals if path in NORMALS else None
+    if nrm:
+        out = bytearray(out)
+        out[4] |= 8
+        q8 = lambda x: max(-127, min(127, int(round(x * 127))))
+        for v in idx:
+            out += struct.pack('<bbbb', q8(nrm[v][0]), q8(nrm[v][1]), q8(nrm[v][2]), 0)
+        out = bytes(out)
     # read back: every corner's position (each frame) and colour as the Dreamcast pass left them
     magic, fl, fv, v2, f2, st, _, sc, ic = struct.unpack_from('<4sBBHHBBHH', out, 0)
     assert (magic, v2, f2, st, sc, ic) == (b'PMD6', pc, len(kept), step, scale, len(idx)), path
@@ -138,7 +206,12 @@ def convert(path, src, pos8, culled):
                 back = x * scale >> 8 if pos8 else x
                 worst = max(worst, abs(back - f[v][k]))
     assert worst <= (scale >> 1) + 1 if pos8 else worst == 0, (path, worst, scale)
-    return out, (vc, pc, n, len(kept), step, len(idx) // fvc, pos8, scale, worst)
+    if lod:  # read back the LOD: every corner a stored position, its colour one of the mesh's
+        p = (p + 3) & ~3
+        n2 = struct.unpack_from('<H', out, p)[0]
+        assert n2 == len(lod[0]) and all(i < pc for i in struct.unpack_from('<%dH' % n2, out, p + 4 + 4 * n2)), path
+        assert set(struct.unpack_from('<%dI' % n2, out, p + 4)) <= set(colors), path
+    return out, (vc, pc, n, len(kept), step, len(idx) // fvc, pos8, scale, worst, len(lod[0]) // 3 if lod else 0)
 
 
 def main():
@@ -153,13 +226,13 @@ def main():
                 dc = src  # nothing to dedup / simplify / bake (the optimizer writes no file): the source as it is
             elif r.returncode or not os.path.exists(dc):
                 sys.exit('optimizer failed on %s:\n%s%s' % (path, r.stdout[-400:], r.stderr[-400:]))
-            out, (vc, pc, n, kept, step, faces, pos8, scale, worst) = convert(path, dc, path in POS8, path in CULLED)
+            out, (vc, pc, n, kept, step, faces, pos8, scale, worst, lodf) = convert(path, dc, path in POS8, path in CULLED)
             dst = os.path.join(out_data, 'Meshes', path)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             open(dst, 'wb').write(out)
             total += len(out)
-            print('%-26s %4d verts -> %4d positions %3d -> %3d frames (step %d) %4d faces %s | %6d B (MDL %6d B)' % (
-                path, vc, pc, n, kept, step, faces, 'pos8 x%.2f' % (scale / 256) if pos8 else 'pos16', len(out),
+            print('%-26s %4d verts -> %4d positions %3d -> %3d frames (step %d) %4d faces%s %s | %6d B (MDL %6d B)' % (
+                path, vc, pc, n, kept, step, faces, ' (LOD %d)' % lodf if lodf else '', 'pos8 x%.2f' % (scale / 256) if pos8 else 'pos16', len(out),
                 os.path.getsize(src)))
     print('meshes: %d files, %d bytes' % (len(MESHES), total))
 

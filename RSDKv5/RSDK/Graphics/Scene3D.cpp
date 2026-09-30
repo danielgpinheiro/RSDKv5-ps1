@@ -441,7 +441,8 @@ static void PS1Scene3DModelLoaded(Model *model)
     AllocateStorage((void **)&g_ps1S3DWork, needV * 6 + needF * 7 + PS1_S3D_BUCKETS * 2 + 16, DATASET_STG, false);
     g_ps1S3DWorkVerts = g_ps1S3DWork ? needV : 0, g_ps1S3DWorkFaces = g_ps1S3DWork ? needF : 0;
 }
-static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, uint32 colour, uint16 a, uint16 b, uint16 interp)
+static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, uint32 colour, uint16 a,
+                          uint16 b, uint16 interp)
 {
     if (model >= MODEL_COUNT || sceneIndex >= SCENE3D_COUNT || !matWorld || !modelList[model].vertices)
         return;
@@ -452,6 +453,7 @@ static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matri
     PS1S3DItem &it = g_ps1S3DItems[g_ps1S3DCount++];
     it.m = *matWorld, it.colour = colour, it.model = model, it.scene = sceneIndex;
     it.frameA = a, it.frameB = b, it.interp = interp, it.drawMode = drawMode;
+    for (int32 c = 0; c < 3; ++c) it.n1[c] = matNormals ? matNormals->values[1][c] : 0;
     scene3DList[sceneIndex].drawMode = drawMode; // as the PC: the scene draws in its last model's mode
 }
 extern "C" {
@@ -519,6 +521,23 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
         g_ps1MeshLoads = g_ps1MeshLoads + 1;
         if (!model->vertices)
             return -1;
+        // 7.4: a distance LOD after the positions (u16 corners, u16 0, colours, indices)
+        model->ps1LodIndexCount = 0, model->ps1LodOffset = 0, model->ps1NormOffset = 0;
+        uint32 off = (6u * model->indexCount + (uint32)model->frameCount * model->vertCount * ((head[4] & 1) ? 6 : 3) + 3) & ~3u;
+        if (head[4] & 4) {
+            uint32 n = off + 4 <= size ? *(uint16 *)((uint8 *)model->vertices + off) : 0;
+            if (n && off + 4 + 6 * n <= size && n % model->faceVertCount == 0)
+                model->ps1LodIndexCount = (uint16)n, model->ps1LodOffset = off + 4;
+            else
+                g_ps1MeshErrors = g_ps1MeshErrors + 1;
+            off = (off + 4 + 6 * n + 3) & ~3u;
+        }
+        if (head[4] & 8) { // normals per corner (the lit modes that don't project)
+            if (off + 4u * model->indexCount <= size)
+                model->ps1NormOffset = off;
+            else
+                g_ps1MeshErrors = g_ps1MeshErrors + 1;
+        }
         PS1Scene3DModelLoaded(model);
         return id;
     }
@@ -638,7 +657,7 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
 void RSDK::AddModelToScene(uint16 modelFrames, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, color color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, color, 0, 0, 0); // docs/32 7.3
+    PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, matNormals, color, 0, 0, 0); // docs/32 7.3
     return;
 #endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
@@ -795,7 +814,7 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
             next = animator->loopIndex;
         int32 span   = animator->frameDuration > 0 ? animator->frameDuration : 0x100;
         int32 interp = (animator->timer << 8) / span;
-        PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, color, (uint16)animator->frameID, (uint16)next,
+        PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, matNormals, color, (uint16)animator->frameID, (uint16)next,
                       (uint16)(interp < 0 ? 0 : interp > 0x100 ? 0x100 : interp));
     }
     return;
@@ -967,9 +986,123 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
     }
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 7.4: the lit modes that don't project (the special ring: S3D_SOLIDCOLOR_SHADED_BLENDED, S3D_WIREFRAME_SHADED),
+// as stock: positions through matWorld (8.8 world pixels), each corner's colour from its normal's y through matNormals
+// with the scene's diffuse / specular, faces far first (stock's depth and insertion sort), drawn by DrawBlendedFace /
+// DrawLine (their GPU paths). Up to PS1_S3D_ORTHO faces a scene (the ring: 80). False: not one of those modes.
+#define PS1_S3D_ORTHO 128
+static int32 PS1Lit(int32 ny, uint32 colour, int32 shift, int32 diffuse, int32 intensity, int32 specularIntensity)
+{
+    int32 normalVal = (ny >> 2) * (abs(ny) >> 2);
+    int32 specular  = (normalVal >> 6) >> specularIntensity;
+    specular        = specular < 0 ? 0 : specular > 0xFF ? 0xFF : specular;
+    int32 c         = specular + ((int32)((colour >> shift) & 0xFF) * ((ny >> 10) + diffuse) >> intensity);
+    return c < 0 ? 0 : c > 0xFF ? 0xFF : c;
+}
+static uint32 PS1LitColour(const Scene3D *scn, int32 ny, uint32 colour)
+{
+    return (uint32)PS1Lit(ny, colour, 16, scn->diffuseX, scn->diffuseIntensityX, scn->specularIntensityX) << 16
+           | (uint32)PS1Lit(ny, colour, 8, scn->diffuseY, scn->diffuseIntensityY, scn->specularIntensityY) << 8
+           | (uint32)PS1Lit(ny, colour, 0, scn->diffuseZ, scn->diffuseIntensityZ, scn->specularIntensityZ);
+}
+static bool PS1Scene3DOrtho(uint16 sceneID)
+{
+    Scene3D *scn = &scene3DList[sceneID];
+    if (scn->drawMode != S3D_SOLIDCOLOR_SHADED_BLENDED && scn->drawMode != S3D_WIREFRAME_SHADED)
+        return false;
+    // the items' positions through their matWorld (8.8 world pixels); each face its depth, item and index (stack:
+    // PS1_S3D_ORTHO positions and faces a scene)
+    int32 px[PS1_S3D_ORTHO], py[PS1_S3D_ORTHO], depth[PS1_S3D_ORTHO];
+    uint16 fIdx[PS1_S3D_ORTHO];
+    uint8 fItem[PS1_S3D_ORTHO];
+    int32 base[PS1_S3D_ITEMS]; // each item's first position
+    int32 faces = 0, positions = 0;
+    for (int32 i = 0; i < g_ps1S3DCount; ++i) {
+        const PS1S3DItem &it = g_ps1S3DItems[i];
+        if (it.scene != sceneID)
+            continue;
+        const Model *mdl = &modelList[it.model];
+        const int32 fvc  = mdl->faceVertCount, nf = mdl->indexCount / fvc;
+        if (!(mdl->flags & PS1_MESH_POS16) || faces + nf > PS1_S3D_ORTHO || positions + mdl->vertCount > PS1_S3D_ORTHO) {
+            g_ps1S3DTodo = g_ps1S3DTodo + 1;
+            continue;
+        }
+        const uint8 *data = PS1MeshData(mdl);
+        const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
+        const int16 *pos  = (const int16 *)(data + 6 * mdl->indexCount); // frame 0
+        const Matrix &m   = it.m;
+        int32 pz[PS1_S3D_ORTHO];
+        base[i] = positions;
+        for (int32 v = 0; v < mdl->vertCount; ++v) {
+            int32 x = pos[3 * v], y = pos[3 * v + 1], z = pos[3 * v + 2];
+            px[positions + v] = m.values[0][3] + (z * m.values[0][2] >> 8) + (m.values[0][0] * x >> 8) + (m.values[0][1] * y >> 8);
+            py[positions + v] = m.values[1][3] + (y * m.values[1][1] >> 8) + (z * m.values[1][2] >> 8) + (m.values[1][0] * x >> 8);
+            pz[v] = m.values[2][3] + ((x * m.values[2][0]) >> 8) + ((m.values[2][2] * z >> 8) + (m.values[2][1] * y >> 8));
+        }
+        // stock's depth: 3 corners ((z0 / 2 + z1 / 2) / 2 + z2 / 2), 4 corners the sum of z / 4
+        for (int32 f = 0; f < nf; ++f, ++faces) {
+            const uint16 *c = idx + f * fvc;
+            depth[faces] = fvc == 4 ? (pz[c[0]] >> 2) + (pz[c[1]] >> 2) + (pz[c[2]] >> 2) + (pz[c[3]] >> 2)
+                                    : ((((pz[c[0]] >> 1) + (pz[c[1]] >> 1)) >> 1) + (pz[c[2]] >> 1));
+            fIdx[faces] = (uint16)f, fItem[faces] = (uint8)i;
+        }
+        positions += mdl->vertCount;
+    }
+    // far first (stock's insertion sort: equal depths keep their order)
+    for (int32 i = 1; i < faces; ++i) {
+        int32 d = depth[i], j = i - 1;
+        uint16 f = fIdx[i];
+        uint8 t  = fItem[i];
+        for (; j >= 0 && depth[j] < d; --j) depth[j + 1] = depth[j], fIdx[j + 1] = fIdx[j], fItem[j + 1] = fItem[j];
+        depth[j + 1] = d, fIdx[j + 1] = f, fItem[j + 1] = t;
+    }
+    Entity *entity = sceneInfo.entity;
+    Vector2 vertPos[4];
+    uint32 vertClrs[4];
+    for (int32 f = 0; f < faces; ++f) {
+        const PS1S3DItem &it = g_ps1S3DItems[fItem[f]];
+        const Model *mdl     = &modelList[it.model];
+        const int32 n        = mdl->faceVertCount, first = fIdx[f] * n, b = base[fItem[f]];
+        const uint8 *data    = PS1MeshData(mdl);
+        const uint16 *c      = (const uint16 *)(data + 4 * mdl->indexCount) + first;
+        const int8 *nrm      = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) + 4 * first : NULL;
+        int32 nys[4];
+        for (int32 v = 0; v < n; ++v) { // the corner's normal y through matNormals (LoadMesh keeps normals x 0x10000)
+            int32 nx = nrm ? nrm[4 * v] * 0x10000 / 127 : 0, ny = nrm ? nrm[4 * v + 1] * 0x10000 / 127 : 0;
+            int32 nz = nrm ? nrm[4 * v + 2] * 0x10000 / 127 : 0;
+            nys[v]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
+        }
+        if (scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED) {
+            for (int32 v = 0; v < n; ++v) {
+                vertPos[v].x = (px[b + c[v]] << 8) - (currentScreen->position.x << 16);
+                vertPos[v].y = (py[b + c[v]] << 8) - (currentScreen->position.y << 16);
+                vertClrs[v]  = PS1LitColour(scn, nys[v], it.colour);
+            }
+            DrawBlendedFace(vertPos, vertClrs, n, entity->alpha, entity->inkEffect);
+        }
+        else { // the face's mean normal, its edges as lines
+            int32 ny = 0;
+            for (int32 v = 0; v < n; ++v) ny += nys[v];
+            uint32 colour = PS1LitColour(scn, ny / n, it.colour);
+            for (int32 v = 0; v < n; ++v) {
+                int32 w = v + 1 < n ? v + 1 : 0;
+                DrawLine(px[b + c[v]] << 8, py[b + c[v]] << 8, px[b + c[w]] << 8, py[b + c[w]] << 8, colour, entity->alpha,
+                         entity->inkEffect, false);
+            }
+        }
+    }
+    g_ps1S3DDraws = g_ps1S3DDraws + 1;
+    g_ps1S3DFaces = g_ps1S3DFaces + faces;
+    return true;
+}
+#endif
+
 void RSDK::Draw3DScene(uint16 sceneID)
 {
 #if RETRO_PLATFORM == RETRO_PS1
+    if (sceneID < SCENE3D_COUNT && PS1Scene3DOrtho(sceneID)) // 7.4: the special ring's modes (no projection)
+        return;
     if (g_ps1S3DOps.draw) // docs/32 7.3: on the GTE (the draw is linked into the overlays of the folders that need it)
         g_ps1S3DOps.draw(sceneID);
     else

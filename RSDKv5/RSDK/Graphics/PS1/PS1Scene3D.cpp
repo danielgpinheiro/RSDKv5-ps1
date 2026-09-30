@@ -8,6 +8,8 @@
 using namespace RSDK;
 
 extern "C" {
+volatile int32 g_ps1S3DLodPx = 40;   // 7.4: a model with a distance LOD uses it below this radius on screen (pixels)
+volatile uint32 g_ps1S3DLodDraws = 0; // models drawn with their LOD (total)
 volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
 volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
 }
@@ -108,7 +110,14 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     uint32 kmin = 0xFFFFFFFF, kmax = 0, culled = 0;
     uint32 vb = 0, fb = 0;
     int16 chunk[3 * 96];
+    // per model drawn: its face corners' colours and indices (the mesh's or its distance LOD's), its face count
+    const uint32 *mcols[PS1_S3D_ITEMS];
+    const uint16 *midx[PS1_S3D_ITEMS];
+    int32 mfaces[PS1_S3D_ITEMS], mfvc[PS1_S3D_ITEMS];
+    uint32 mvb[PS1_S3D_ITEMS], mfb[PS1_S3D_ITEMS]; // its first vertex / face in the work arrays
     for (int32 j = 0; j < n; ++j) {
+        mfaces[j] = 0, mcols[j] = NULL, midx[j] = NULL, mvb[j] = vb, mfb[j] = fb; // (a model skipped owns no faces)
+        mfvc[j] = modelList[g_ps1S3DItems[list[j]].model].faceVertCount;
         const PS1S3DItem &it = g_ps1S3DItems[list[j]];
         const Model *mdl     = &modelList[it.model];
         const Matrix &m      = it.m;
@@ -166,21 +175,28 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         // the faces: valid ones get a depth key (the mean depth, in 12ths, engine units)
         const uint32 zmin = (0x100u >> k) ? (0x100u >> k) : 1;
         const int32 fvc   = mdl->faceVertCount;
-        const int32 faces = mdl->indexCount / fvc;
         const int32 cull  = (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DBackCull : 0;
         // the model's bounding sphere wholly on screen and within the GPU's limits: its faces need no box test
         const int32 cz = m.values[2][3], cr = (int32)(bound - (uint32)abs(m.values[2][3]));
         bool inside    = false;
+        int32 rs       = 0x7FFF;
         if (cz - cr > 0x100) {
-            const int32 rs = PS1ShiftDiv(cr, scn->projectionX, cz - cr) + 2; // its radius on screen, rounded out
+            rs = PS1ShiftDiv(cr, scn->projectionX, cz - cr) + 2; // its radius on screen, rounded out
             const int32 sx = currentScreen->center.x + PS1ShiftDiv(m.values[0][3], scn->projectionX, cz);
             const int32 sy = currentScreen->center.y - PS1ShiftDiv(m.values[1][3], scn->projectionX, cz);
             inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
         }
+        // 7.4: small on screen: its distance LOD (the same positions, fewer faces)
+        const bool lod = mdl->ps1LodIndexCount && rs < g_ps1S3DLodPx;
+        mcols[j]       = (const uint32 *)(lod ? data + mdl->ps1LodOffset : data);
+        midx[j]        = lod ? (const uint16 *)(data + mdl->ps1LodOffset + 4 * mdl->ps1LodIndexCount) : idx;
+        const int32 faces = (lod ? mdl->ps1LodIndexCount : mdl->indexCount) / fvc;
+        mfaces[j]         = faces;
+        g_ps1S3DLodDraws  = g_ps1S3DLodDraws + lod;
         if (fvc == 4)
-            PS1S3DFaces<4>(idx, faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
+            PS1S3DFaces<4>(midx[j], faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
         else
-            PS1S3DFaces<3>(idx, faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
+            PS1S3DFaces<3>(midx[j], faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
         vb += vc, fb += faces;
         g_ps1S3DModelFaces[it.model] = g_ps1S3DModelFaces[it.model] + faces;
         g_ps1S3DModelDraws[it.model] = g_ps1S3DModelDraws[it.model] + 1;
@@ -210,18 +226,6 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     uint32 flatBgr, semi;
     if (!PS1Face3DBegin(entity->inkEffect, entity->alpha, flatColour, &flatBgr, &semi))
         return;
-    // per model: its colours (GPU words), indices, vertex / face bases
-    const uint32 *mcols[PS1_S3D_ITEMS];
-    const uint16 *midx[PS1_S3D_ITEMS];
-    uint32 mvb[PS1_S3D_ITEMS], mfb[PS1_S3D_ITEMS];
-    int32 mfvc[PS1_S3D_ITEMS];
-    for (int32 j = 0, v = 0, f = 0; j < n; ++j) {
-        const Model *mdl = &modelList[g_ps1S3DItems[list[j]].model];
-        mcols[j]         = (const uint32 *)PS1MeshData(mdl); // per face corner (PMD6)
-        midx[j]          = (const uint16 *)(mcols[j] + mdl->indexCount);
-        mvb[j] = v, mfb[j] = f, mfvc[j] = mdl->faceVertCount;
-        v += mdl->vertCount, f += mdl->indexCount / mdl->faceVertCount;
-    }
     uint32 drawn = 0;
     int32 cj = -1, fvc = 3, wpp = 0;
     const uint32 *cols = NULL, *vxy = NULL;

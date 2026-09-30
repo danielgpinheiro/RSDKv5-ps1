@@ -6,6 +6,7 @@
 
 struct PS1S3DItem {
     RSDK::Matrix m;
+    int32 n1[3]; // 7.4: the normals matrix's y row (the lit modes that don't project: the special ring)
     uint32 colour;
     uint16 model, scene;
     uint16 frameA, frameB;

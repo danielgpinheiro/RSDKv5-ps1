@@ -86,6 +86,9 @@ struct Model {
     uint8 ps1FrameStep;
     uint16 ps1Scale;
     uint16 ps1Radius; // 7.3: the largest |coordinate| in engine units (the GTE unit shift's bound)
+    uint16 ps1LodIndexCount; // 7.4: the distance LOD's corners (0: none), its colours at ps1LodOffset in the block
+    uint32 ps1LodOffset;
+    uint32 ps1NormOffset; // 7.4: normals per face corner (i8 x, y, z x 127, 0), 0: none
 #endif
 };
 #if RETRO_PLATFORM == RETRO_PS1
