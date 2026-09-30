@@ -103,7 +103,8 @@ void RSDK::PrintLog(int32 mode, const char *message, ...)
 #endif
         }
 
-#if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_ANDROID
+// PS1 port (docs/32 5.3): no log.txt: the disc is read-only, and each fopen stopped the CD-XA music (one CD action)
+#if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_ANDROID && RETRO_PLATFORM != RETRO_PS1
         char logPath[0x100];
         sprintf_s(logPath, sizeof(logPath), "%slog.txt", SKU::userFileDir);
         FileIO *file = fOpen(logPath, "a");
