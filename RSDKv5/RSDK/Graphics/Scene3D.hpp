@@ -84,10 +84,12 @@ struct Model {
     // frames of positions (8-bit x ps1Scale >> 8, or 16-bit when PS1_MESH_POS16); ps1FrameStep: keyframes kept 1 in N
     uint8 ps1FrameStep;
     uint16 ps1Scale;
+    uint16 ps1Radius; // 7.3: the largest |coordinate| in engine units (the GTE unit shift's bound)
 #endif
 };
 #if RETRO_PLATFORM == RETRO_PS1
 #define PS1_MESH_POS16 (0x80) // Model::flags on the PS1: 16-bit positions
+#define PS1_MESH_CLOSED (0x40) // ... a closed mesh: faces turned away dropped (7.3)
 #endif
 
 struct Scene3DVertex {
@@ -160,8 +162,15 @@ inline void MatrixCopy(Matrix *matDst, Matrix *matSrc) { memcpy(matDst, matSrc, 
 
 uint16 LoadMesh(const char *filepath, uint8 scope);
 uint16 Create3DScene(const char *name, uint16 faceCnt, uint8 scope);
+#if RETRO_PLATFORM == RETRO_PS1
+void PS1Scene3DPrepare(uint16 sceneID); // docs/32 7.3: the scene's models added since its last Prepare go
+void PS1Scene3DClear();                 // ... and every scene's, with the work block (Clear3DScenes)
+#endif
 inline void Prepare3DScene(uint16 sceneID)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1Scene3DPrepare(sceneID);
+#endif
     if (sceneID < SCENE3D_COUNT) {
         Scene3D *scn = &scene3DList[sceneID];
 
@@ -238,6 +247,9 @@ void Draw3DScene(uint16 sceneID);
 
 inline void Clear3DScenes()
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1Scene3DClear();
+#endif
     // Unload Models
     for (int32 m = 0; m < MODEL_COUNT; ++m) {
         if (modelList[m].scope != SCOPE_GLOBAL) {

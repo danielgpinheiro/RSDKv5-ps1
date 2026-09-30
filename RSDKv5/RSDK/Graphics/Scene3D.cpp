@@ -377,6 +377,315 @@ void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
+#include "../../../ps1/gte3d.hh"
+// docs/32 7.3: Scene3D on the GTE (the Dreamcast port's approach: meshes with baked lighting, transformed in hardware).
+// AddModelTo3DScene / AddMeshFrameTo3DScene record the model, its matrix, colour and (mesh frames) the two keyframes
+// and the blend between them; Draw3DScene then, per recorded model: picks a unit shift k from the model's reach in view
+// space (every view coordinate within 16 bits: exact for near models, coarser only for far ones), loads the GTE with
+// the matrix (4.12, the y row negated for the screen), the translation >> k, H = 1 << projectionX and the screen centre,
+// and projects the vertices (8-bit positions as << 7 against the matrix times the model's scale, 16-bit as they are;
+// keyframes blended on the CPU first). A face with a vertex nearer than the PC's cut (z < 0x100) or flagged by the GTE
+// is dropped (the PC skips it), one wholly off screen or past the GPU's primitive limits too; the rest are sorted by
+// their mean depth (a bucket sort over the scene's own depth span: 256 steps; the PC's insertion sort orders exactly)
+// and sent back to front as gouraud faces in their baked colours (the flat modes: the model's colour). Buffers: one STG
+// block sized when the meshes load (twice the largest model: a scene holds the UFO and its emerald).
+namespace
+{
+struct PS1S3DItem {
+    Matrix m;
+    uint32 colour;
+    uint16 model, scene;
+    uint16 frameA, frameB;
+    uint16 interp; // 0..256: frameA -> frameB
+    uint8 drawMode;
+};
+#define PS1_S3D_ITEMS   8
+#define PS1_S3D_BUCKETS 256
+PS1S3DItem s_ps1S3DItems[PS1_S3D_ITEMS];
+int32 s_ps1S3DCount       = 0;
+uint8 *s_ps1S3DWork        = NULL; // STG block (its owner pointer)
+uint32 s_ps1S3DWorkVerts   = 0, s_ps1S3DWorkFaces = 0;
+inline uint8 *PS1MeshData(const Model *m) { return (uint8 *)m->vertices; }
+} // namespace
+extern "C" {
+volatile uint32 g_ps1S3DDraws    = 0; // Draw3DScene calls that drew (total)
+volatile uint32 g_ps1S3DFaces    = 0; // faces sorted and sent (total)
+volatile uint32 g_ps1S3DCulled   = 0; // faces dropped: near / flagged / off screen / too big (total)
+volatile uint32 g_ps1S3DOverflow = 0; // models dropped: more than PS1_S3D_ITEMS in the scenes at once, or the work short
+volatile uint32 g_ps1S3DTodo     = 0; // draws in a mode not done yet (wireframe, the non-screen modes)
+volatile uint32 g_ps1S3DMatrix   = 0; // models whose matrix doesn't fit the GTE (skipped)
+volatile uint32 g_ps1S3DHbl[4] = { 0, 0, 0, 0 }; // hblanks: transform, faces, sort, emit (total; GDB)
+volatile int32 g_ps1S3DBackCull  = -1; // closed meshes' faces turned away dropped (positive screen winding: checked
+                                       // against the unculled picture), 0 = none; 1 = the other sign (GDB test)
+}
+void RSDK::PS1Scene3DPrepare(uint16 sceneID)
+{
+    int32 k = 0;
+    for (int32 i = 0; i < s_ps1S3DCount; ++i)
+        if (s_ps1S3DItems[i].scene != sceneID)
+            s_ps1S3DItems[k++] = s_ps1S3DItems[i];
+    s_ps1S3DCount = k;
+}
+void RSDK::PS1Scene3DClear()
+{
+    s_ps1S3DCount = 0;
+    s_ps1S3DWork = NULL, s_ps1S3DWorkVerts = 0, s_ps1S3DWorkFaces = 0; // (the stage's STG goes with it)
+}
+// a model loaded: its reach, and the work block grown to hold two of the largest models
+static void PS1Scene3DModelLoaded(Model *model)
+{
+    uint32 faces = model->indexCount / model->faceVertCount;
+    if (model->flags & PS1_MESH_POS16) {
+        const int16 *p = (const int16 *)(PS1MeshData(model) + 2 * model->vertCount + 2 * model->indexCount);
+        int32 r = 0;
+        for (uint32 i = 0; i < 3u * model->vertCount * model->frameCount; ++i) r = abs(p[i]) > r ? abs(p[i]) : r;
+        model->ps1Radius = (uint16)r;
+    }
+    else {
+        model->ps1Radius = (uint16)((127 * model->ps1Scale) >> 8);
+    }
+    uint32 needV = 2 * model->vertCount, needF = 2 * faces;
+    if (needV <= s_ps1S3DWorkVerts && needF <= s_ps1S3DWorkFaces)
+        return;
+    needV = needV > s_ps1S3DWorkVerts ? needV : s_ps1S3DWorkVerts;
+    needF = needF > s_ps1S3DWorkFaces ? needF : s_ps1S3DWorkFaces;
+    if (s_ps1S3DWork)
+        RemoveStorageEntry((void **)&s_ps1S3DWork);
+    AllocateStorage((void **)&s_ps1S3DWork, needV * 6 + needF * 7 + PS1_S3D_BUCKETS * 2 + 16, DATASET_STG, false);
+    s_ps1S3DWorkVerts = s_ps1S3DWork ? needV : 0, s_ps1S3DWorkFaces = s_ps1S3DWork ? needF : 0;
+}
+static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, uint32 colour, uint16 a, uint16 b, uint16 interp)
+{
+    if (model >= MODEL_COUNT || sceneIndex >= SCENE3D_COUNT || !matWorld || !modelList[model].vertices)
+        return;
+    if (s_ps1S3DCount >= PS1_S3D_ITEMS) {
+        g_ps1S3DOverflow = g_ps1S3DOverflow + 1;
+        return;
+    }
+    PS1S3DItem &it = s_ps1S3DItems[s_ps1S3DCount++];
+    it.m = *matWorld, it.colour = colour, it.model = model, it.scene = sceneIndex;
+    it.frameA = a, it.frameB = b, it.interp = interp, it.drawMode = drawMode;
+    scene3DList[sceneIndex].drawMode = drawMode; // as the PC: the scene draws in its last model's mode
+}
+static inline int32 PS1BitLen(uint32 v)
+{
+    int32 n = 0;
+    while (v) ++n, v >>= 1;
+    return n;
+}
+// one model's faces (FVC corners each): the ones to draw get their depth key, the others 0xFFFFFFFF; owner = the model
+template <int32 FVC>
+__attribute__((optimize("O2"), always_inline)) static inline void PS1S3DFaces(const uint16 *idx, int32 faces, const uint32 *xyp,
+                                                                              const uint16 *szp, uint32 zmin, int32 k, int32 cull, uint8 j,
+                                                                              uint32 *keyp, uint8 *ownp, uint32 &kmin, uint32 &kmax,
+                                                                              uint32 &culled)
+{
+    const uint32 scale = FVC == 3 ? 4 : 3;
+    const int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+    for (int32 f = 0; f < faces; ++f, idx += FVC) {
+        const uint32 i0 = idx[0], i1 = idx[1], i2 = idx[2], i3 = FVC == 4 ? idx[3] : i2;
+        const uint32 z0 = szp[i0], z1 = szp[i1], z2 = szp[i2], z3 = FVC == 4 ? szp[i3] : 0;
+        ownp[f] = j;
+        if (z0 < zmin || z1 < zmin || z2 < zmin || (FVC == 4 && z3 < zmin)) {
+            keyp[f] = 0xFFFFFFFF, ++culled;
+            continue;
+        }
+        const uint32 a = xyp[i0], b = xyp[i1], c = xyp[i2], d = xyp[i3];
+        const int32 ax = (int16)a, ay = (int32)a >> 16, bx = (int16)b, by = (int32)b >> 16, cx = (int16)c, cy = (int32)c >> 16;
+        const int32 dx = (int16)d, dy = (int32)d >> 16;
+        int32 x0 = ax < bx ? ax : bx, x1 = ax < bx ? bx : ax, y0 = ay < by ? ay : by, y1 = ay < by ? by : ay;
+        x0 = cx < x0 ? cx : x0, x1 = cx > x1 ? cx : x1, y0 = cy < y0 ? cy : y0, y1 = cy > y1 ? cy : y1;
+        if (FVC == 4)
+            x0 = dx < x0 ? dx : x0, x1 = dx > x1 ? dx : x1, y0 = dy < y0 ? dy : y0, y1 = dy > y1 ? dy : y1;
+        bool ok = x1 >= 0 && x0 < sw && y1 >= 0 && y0 < sh && x1 - x0 <= 1023 && y1 - y0 <= 511;
+        if (ok && cull) { // turned away: the first three corners' screen winding
+            const int32 cross = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+            ok                = cull > 0 ? cross >= 0 : cross <= 0;
+        }
+        if (!ok) {
+            keyp[f] = 0xFFFFFFFF, ++culled;
+            continue;
+        }
+        const uint32 kk = ((z0 + z1 + z2 + z3) << k) * scale;
+        keyp[f]         = kk;
+        kmin            = kk < kmin ? kk : kmin;
+        kmax            = kk > kmax ? kk : kmax;
+    }
+}
+__attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
+{
+    if (sceneID >= SCENE3D_COUNT)
+        return;
+    Scene3D *scn = &scene3DList[sceneID];
+    int32 list[PS1_S3D_ITEMS], n = 0;
+    uint32 totalV = 0, totalF = 0;
+    for (int32 i = 0; i < s_ps1S3DCount; ++i) {
+        if (s_ps1S3DItems[i].scene != sceneID)
+            continue;
+        const Model *mdl = &modelList[s_ps1S3DItems[i].model];
+        list[n++] = i;
+        totalV += mdl->vertCount, totalF += mdl->indexCount / mdl->faceVertCount;
+    }
+    if (!n)
+        return;
+    bool flat = scn->drawMode == S3D_SOLIDCOLOR_SCREEN;
+    if (!flat && scn->drawMode != S3D_SOLIDCOLOR_SHADED_SCREEN && scn->drawMode != S3D_SOLIDCOLOR_SHADED_BLENDED_SCREEN) {
+        g_ps1S3DTodo = g_ps1S3DTodo + 1;
+        return;
+    }
+    if (totalV > s_ps1S3DWorkVerts || totalF > s_ps1S3DWorkFaces) {
+        g_ps1S3DOverflow = g_ps1S3DOverflow + 1;
+        return;
+    }
+    uint32 *sxy   = (uint32 *)s_ps1S3DWork;
+    uint32 *key   = sxy + s_ps1S3DWorkVerts;
+    uint16 *sz    = (uint16 *)(key + s_ps1S3DWorkFaces);
+    uint16 *next  = sz + s_ps1S3DWorkVerts;
+    uint16 *head  = next + s_ps1S3DWorkFaces;
+    uint8 *owner  = (uint8 *)(head + PS1_S3D_BUCKETS); // the face's model (index into list)
+#define PS1_HBL() (*(volatile uint16 *)0xBF801110)
+    uint16 t0 = PS1_HBL(), tx = 0;
+    uint32 kmin = 0xFFFFFFFF, kmax = 0, culled = 0;
+    uint32 vb = 0, fb = 0;
+    int16 chunk[3 * 96];
+    for (int32 j = 0; j < n; ++j) {
+        const PS1S3DItem &it = s_ps1S3DItems[list[j]];
+        const Model *mdl     = &modelList[it.model];
+        const Matrix &m      = it.m;
+        const bool pos16     = mdl->flags & PS1_MESH_POS16;
+        // the unit shift: every view coordinate |T + M v| within 16 bits
+        uint32 bound = 0;
+        for (int32 r = 0; r < 3; ++r) {
+            uint32 b = (uint32)abs(m.values[r][3])
+                       + (uint32)(((uint64)(abs(m.values[r][0]) + abs(m.values[r][1]) + abs(m.values[r][2])) * mdl->ps1Radius) >> 8);
+            bound = b > bound ? b : bound;
+        }
+        int32 k = 0;
+        while ((bound >> k) > 32000) ++k;
+        int32 R[9];
+        bool fits = true;
+        for (int32 r = 0; r < 3; ++r) {
+            for (int32 c = 0; c < 3; ++c) {
+                int32 v = pos16 ? (m.values[r][c] << 4) >> k : (int32)(((int64)m.values[r][c] * mdl->ps1Scale) >> (11 + k));
+                v       = r == 1 ? -v : v;
+                fits    = fits && v >= -32768 && v <= 32767;
+                R[r * 3 + c] = v;
+            }
+        }
+        if (!fits) {
+            g_ps1S3DMatrix = g_ps1S3DMatrix + 1;
+            continue;
+        }
+        PS1Gte3DSetup((const int32_t *)R, m.values[0][3] >> k, -(m.values[1][3] >> k), m.values[2][3] >> k, 1u << scn->projectionX,
+                      currentScreen->center.x << 16, currentScreen->center.y << 16);
+        // the vertices (keyframes blended), 96 at a time
+        const uint8 *data  = PS1MeshData(mdl);
+        const uint16 *cols = (const uint16 *)data;
+        const uint16 *idx  = (const uint16 *)(data + 2 * mdl->vertCount);
+        const uint8 *pos   = data + 2 * mdl->vertCount + 2 * mdl->indexCount;
+        const int32 vc     = mdl->vertCount;
+        const uint32 fstride = (pos16 ? 6u : 3u) * vc;
+        const uint8 *fa = pos + fstride * (it.frameA < mdl->frameCount ? it.frameA : 0);
+        const uint8 *fbp = pos + fstride * (it.frameB < mdl->frameCount ? it.frameB : 0);
+        const int32 t = it.interp;
+        for (int32 v0 = 0; v0 < vc; v0 += 96) {
+            int32 cnt = vc - v0 < 96 ? vc - v0 : 96;
+            if (pos16) {
+                const int16 *a = (const int16 *)fa + 3 * v0, *b = (const int16 *)fbp + 3 * v0;
+                for (int32 i = 0; i < 3 * cnt; ++i) chunk[i] = t ? (int16)(a[i] + (((b[i] - a[i]) * t) >> 8)) : a[i];
+            }
+            else {
+                const int8 *a = (const int8 *)fa + 3 * v0, *b = (const int8 *)fbp + 3 * v0;
+                for (int32 i = 0; i < 3 * cnt; ++i) chunk[i] = (int16)((a[i] << 7) + (((b[i] - a[i]) * t) >> 1));
+            }
+            PS1Gte3DProject(chunk, cnt, (uint32_t *)(sxy + vb + v0), sz + vb + v0);
+        }
+        uint16 t1 = PS1_HBL();
+        tx += (uint16)(t1 - t0);
+        // the faces: valid ones get a depth key (the mean depth, in 12ths, engine units)
+        const uint32 zmin = (0x100u >> k) ? (0x100u >> k) : 1;
+        const int32 fvc   = mdl->faceVertCount;
+        const int32 faces = mdl->indexCount / fvc;
+        const int32 cull  = (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DBackCull : 0;
+        if (fvc == 4)
+            PS1S3DFaces<4>(idx, faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled);
+        else
+            PS1S3DFaces<3>(idx, faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled);
+        vb += vc, fb += faces;
+        t0 = PS1_HBL();
+        g_ps1S3DHbl[1] = g_ps1S3DHbl[1] + (uint16)(t0 - t1);
+    }
+    g_ps1S3DCulled = g_ps1S3DCulled + culled;
+    g_ps1S3DHbl[0] = g_ps1S3DHbl[0] + tx;
+    uint16 t2 = PS1_HBL();
+    if (kmin > kmax)
+        return;
+    // bucket sort, far first
+    int32 shift = PS1BitLen(kmax - kmin) - 8;
+    shift       = shift < 0 ? 0 : shift;
+    for (int32 b = 0; b < PS1_S3D_BUCKETS; ++b) head[b] = 0xFFFF;
+    for (uint32 g = 0; g < fb; ++g) {
+        if (key[g] == 0xFFFFFFFF)
+            continue;
+        uint32 b = (key[g] - kmin) >> shift;
+        next[g]  = head[b];
+        head[b]  = (uint16)g;
+    }
+    uint16 t3 = PS1_HBL();
+    g_ps1S3DHbl[2] = g_ps1S3DHbl[2] + (uint16)(t3 - t2);
+    Entity *entity = sceneInfo.entity;
+    const uint32 flatColour = s_ps1S3DItems[list[n - 1]].colour;
+    uint32 flatBgr, semi;
+    if (!PS1Face3DBegin(entity->inkEffect, entity->alpha, flatColour, &flatBgr, &semi))
+        return;
+    // per model: its data, vertex / face bases
+    const uint16 *mcols[PS1_S3D_ITEMS], *midx[PS1_S3D_ITEMS];
+    uint32 mvb[PS1_S3D_ITEMS], mfb[PS1_S3D_ITEMS];
+    int32 mfvc[PS1_S3D_ITEMS];
+    for (int32 j = 0, v = 0, f = 0; j < n; ++j) {
+        const Model *mdl = &modelList[s_ps1S3DItems[list[j]].model];
+        mcols[j] = (const uint16 *)PS1MeshData(mdl);
+        midx[j]  = mcols[j] + mdl->vertCount;
+        mvb[j] = v, mfb[j] = f, mfvc[j] = mdl->faceVertCount;
+        v += mdl->vertCount, f += mdl->indexCount / mdl->faceVertCount;
+    }
+    uint32 drawn = 0;
+    for (int32 b = PS1_S3D_BUCKETS - 1; b >= 0; --b) {
+        for (uint32 g = head[b]; g != 0xFFFF; g = next[g]) {
+            const int32 j      = owner[g];
+            const int32 fvc    = mfvc[j];
+            const uint16 *fi   = midx[j] + (g - mfb[j]) * fvc;
+            const uint32 *vxy  = sxy + mvb[j];
+            const uint16 *cols = mcols[j];
+            const int32 wpp    = flat ? fvc + 1 : 2 * fvc;
+            uint32 *w          = PS1Face3DSlot(wpp);
+            if (!w)
+                goto done;
+            // RSDK's quads go round; the GPU's are two triangles (0 1 2, 1 2 3): corners 0 1 3 2
+            const uint32 i0 = fi[0], i1 = fi[1], i2 = fvc == 4 ? fi[3] : fi[2], i3 = fvc == 4 ? fi[2] : 0;
+            if (flat) {
+                w[0] = (fvc == 4 ? 0x28000000 : 0x20000000) | semi | flatBgr;
+                w[1] = vxy[i0], w[2] = vxy[i1], w[3] = vxy[i2];
+                if (fvc == 4)
+                    w[4] = vxy[i3];
+            }
+            else {
+#define PS1_BGR(c) ((uint32)((c) & 31) << 3 | (uint32)((c) & 0x3E0) << 6 | (uint32)((c) & 0x7C00) << 9)
+                w[0] = (fvc == 4 ? 0x38000000 : 0x30000000) | semi | PS1_BGR(cols[i0]);
+                w[1] = vxy[i0], w[2] = PS1_BGR(cols[i1]), w[3] = vxy[i1], w[4] = PS1_BGR(cols[i2]), w[5] = vxy[i2];
+                if (fvc == 4)
+                    w[6] = PS1_BGR(cols[i3]), w[7] = vxy[i3];
+#undef PS1_BGR
+            }
+            ++drawn;
+        }
+    }
+done:
+    PS1Face3DEnd();
+    g_ps1S3DHbl[3] = g_ps1S3DHbl[3] + (uint16)(PS1_HBL() - t3);
+    g_ps1S3DDraws = g_ps1S3DDraws + 1;
+    g_ps1S3DFaces = g_ps1S3DFaces + drawn;
+}
 extern "C" {
 volatile uint32 g_ps1MeshLoads  = 0; // PMD5 meshes loaded (total)
 volatile uint32 g_ps1MeshBytes  = 0; // their bytes in STG (total)
@@ -426,7 +735,7 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
         }
         model->scope         = scope;
         HASH_COPY_MD5(model->hash, hash);
-        model->flags         = (head[4] & 1) ? PS1_MESH_POS16 : 0;
+        model->flags         = ((head[4] & 1) ? PS1_MESH_POS16 : 0) | ((head[4] & 2) ? PS1_MESH_CLOSED : 0);
         model->faceVertCount = head[5];
         model->vertCount     = head[6] | head[7] << 8;
         model->frameCount    = head[8] | head[9] << 8;
@@ -440,7 +749,10 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
         CloseFile(&info);
         g_ps1MeshBytes = g_ps1MeshBytes + size;
         g_ps1MeshLoads = g_ps1MeshLoads + 1;
-        return model->vertices ? id : (uint16)-1;
+        if (!model->vertices)
+            return -1;
+        PS1Scene3DModelLoaded(model);
+        return id;
     }
     g_ps1MeshErrors = g_ps1MeshErrors + 1;
     return -1;
@@ -558,7 +870,8 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
 void RSDK::AddModelToScene(uint16 modelFrames, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, color color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    return; // docs/32 7.3: the PMD5 meshes go straight to the GTE (the stock path reads float-era vertex arrays)
+    PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, color, 0, 0, 0); // docs/32 7.3
+    return;
 #endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
         if (matWorld) {
@@ -706,7 +1019,18 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
                                color color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    return; // docs/32 7.3: the PMD5 meshes go straight to the GTE (the stock path reads float-era vertex arrays)
+    // docs/32 7.3: the keyframe, the next one (the loop's start after the last) and the blend (the timer over a kept
+    // keyframe's span, 0x100 x the frame step)
+    if (animator && modelFrames < MODEL_COUNT) {
+        int32 next = animator->frameID + 1;
+        if (next >= animator->frameCount)
+            next = animator->loopIndex;
+        int32 span   = animator->frameDuration > 0 ? animator->frameDuration : 0x100;
+        int32 interp = (animator->timer << 8) / span;
+        PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, color, (uint16)animator->frameID, (uint16)next,
+                      (uint16)(interp < 0 ? 0 : interp > 0x100 ? 0x100 : interp));
+    }
+    return;
 #endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
         if (matWorld && animator) {
@@ -878,7 +1202,8 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
 void RSDK::Draw3DScene(uint16 sceneID)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    return; // Create3DScene: no scene buffers on the PS1 (phase 3: GTE)
+    PS1Scene3DDraw(sceneID); // docs/32 7.3: on the GTE
+    return;
 #endif
     if (sceneID < SCENE3D_COUNT) {
         Entity *entity = sceneInfo.entity;

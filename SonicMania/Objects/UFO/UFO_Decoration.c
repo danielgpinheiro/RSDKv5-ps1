@@ -52,7 +52,12 @@ void UFO_Decoration_Draw(void)
 {
     RSDK_THIS(UFO_Decoration);
 
+#if defined RETRO_PS1_BUILD
+    // docs/32 7.3: the Dreamcast port's draw distance (3/4 of the update range)
+    if (self->zdepth >= 0x4000 && self->zdepth < 0x2000000 * 3 / 4) {
+#else
     if (self->zdepth >= 0x4000) {
+#endif
         RSDK.Prepare3DScene(UFO_Decoration->sceneIndex);
 
         RSDK.MatrixScaleXYZ(&self->matTransform, self->scale.x, self->size, self->scale.x);
@@ -89,8 +94,13 @@ void UFO_Decoration_Create(void *data)
         self->visible       = true;
         self->drawGroup     = 4;
         self->active        = ACTIVE_BOUNDS;
+#if defined RETRO_PS1_BUILD
+        self->updateRange.x = 0x4000000 * 3 / 4; // docs/32 7.3: the Dreamcast port's
+        self->updateRange.y = 0x4000000 * 3 / 4;
+#else
         self->updateRange.x = 0x4000000;
         self->updateRange.y = 0x4000000;
+#endif
 
         if (self->type == UFO_DECOR_BIRD)
             self->height = 0x600000;

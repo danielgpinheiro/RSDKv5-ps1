@@ -45,7 +45,11 @@ void UFO_Circuit_Draw(void)
 {
     RSDK_THIS(UFO_Circuit);
 
+#if defined RETRO_PS1_BUILD
+    if (self->zdepth >= 0x4000 && self->zdepth <= 0x140000) { // docs/32 7.3: the Dreamcast port's draw window
+#else
     if (self->zdepth >= 0x4000) {
+#endif
         RSDK.Prepare3DScene(UFO_Circuit->sceneIndex);
 
         RSDK.MatrixScaleXYZ(&self->matTransform, 0x200, 0x200, 0x200);

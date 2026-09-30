@@ -9,7 +9,7 @@ draws no per-frame lighting, as the Dreamcast). Its --stripify is left out (a Dr
 triangles).
 
 Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK/Graphics/Scene3D.cpp PS1 LoadMesh):
-  'PMD5', u8 flags (bit0 16-bit positions, else 8-bit), u8 face vertex count (3, or 4: quads), u16 vertices, u16 stored frames,
+  'PMD5', u8 flags (bit0 16-bit positions, else 8-bit; bit1 closed: faces turned away may be dropped), u8 face vertex count (3, or 4: quads), u16 vertices, u16 stored frames,
   u8 frame step (1, or 2: every other keyframe kept, the engine interpolating across twice the span), u8 0,
   u16 scale (8-bit positions: engine units (float x 256) = value * scale >> 8), u16 index count;
   colours (vertices x u16, RGB555: the baked lighting), indices (u16 each), then per stored frame the positions
@@ -27,6 +27,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OPT = os.environ.get('DC_MESH_OPT') or os.path.join(HERE, '../../../../Dreamcast/mania-mesh-optimizer/cmake-build-release/mania-mesh-optimizer')
 
 CHAR = ['--simplify', '--bake-lighting']                     # model_process.sh: --simplify --stripify --bake-lighting
+# docs/32 7.3: the PS1 draws a tenth of the Dreamcast's triangles in a frame: the always-visible big meshes (the special
+# stage's characters and UFO) simplified further by the same tool (Sonic's jog 769 -> 417 faces, the UFO 774 -> 454)
+CHAR_PS1 = CHAR + ['--simplify-index-threshold', '0.3', '--simplify-target-error', '0.08']
 DECOR_A = ['--simplify', '--bake-lighting', '--simplify-index-threshold', '0.015', '--simplify-target-error', '0.0225']
 DECOR_B = ['--simplify', '--bake-lighting', '--simplify-index-threshold', '0.005', '--simplify-target-error', '0.1']
 BIG = ['--simplify', '--simplify-index-threshold', '0.05', '--simplify-target-error', '0.1']
@@ -35,17 +38,20 @@ BIG = ['--simplify', '--simplify-index-threshold', '0.05', '--simplify-target-er
 MESHES = {}
 for c in ('Sonic', 'Tails', 'Knux'):
     for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble'):
-        MESHES['Special/%s%s.bin' % (c, a)] = CHAR
+        MESHES['Special/%s%s.bin' % (c, a)] = CHAR_PS1
 for e in ('Blue', 'Cyan', 'Green', 'Grey', 'Purple', 'Red', 'Yellow'):
     MESHES['Special/Emerald%s.bin' % e] = ['--bake-lighting']
 MESHES.update({'Special/ItemBox.bin': ['--simplify', '--bake-lighting'], 'Special/Shadow.bin': [],
-               'Special/Springboard.bin': CHAR, 'Special/UFOChase.bin': CHAR,
+               'Special/Springboard.bin': CHAR, 'Special/UFOChase.bin': CHAR_PS1,
                'Decoration/Bird.bin': DECOR_A, 'Decoration/Fish.bin': DECOR_A,
                'Global/SpecialRing.bin': [], 'SSZ/EggTower.bin': BIG, 'SSZ/MonarchPlans.bin': BIG,
                'TMZ/MonarchBG.bin': [], 'TMZ/OrbNet.bin': []})
 for d in ('Flower1', 'Flower2', 'Flower3', 'Pillar1', 'Pillar2', 'Tree'):
     MESHES['Decoration/%s.bin' % d] = DECOR_B
 POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase.bin'} | {'Decoration/Bird.bin', 'Decoration/Fish.bin'}
+# docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
+# faces); the decorations are open (palm leaves, wings: the PC shows both sides), as SSZ / TMZ until checked
+CULLED = {p for p in MESHES if p.startswith('Special/')} | {'Global/SpecialRing.bin'}
 
 
 def read_mdl(path):
@@ -76,7 +82,7 @@ def rgb555(c):
     return (r >> 3) | (g >> 3) << 5 | (b >> 3) << 10
 
 
-def convert(path, src, pos8):
+def convert(path, src, pos8, culled):
     fvc, vc, cols, idx, frames = read_mdl(src)
     assert fvc in (3, 4), path  # quads (Global/SpecialRing) are drawn as PS1 quads
     n = len(frames)
@@ -92,7 +98,7 @@ def convert(path, src, pos8):
         scale = 0x100
         q = lambda x: x
     colors = [rgb555(c) for c in cols] if cols else [0x7FFF] * vc
-    out = struct.pack('<4sBBHHBBHH', b'PMD5', 0 if pos8 else 1, fvc, vc, len(kept), step, 0, scale, len(idx))
+    out = struct.pack('<4sBBHHBBHH', b'PMD5', (0 if pos8 else 1) | (2 if culled else 0), fvc, vc, len(kept), step, 0, scale, len(idx))
     out += struct.pack('<%dH' % vc, *colors) + struct.pack('<%dH' % len(idx), *idx)
     fmt = '<%db' % (3 * vc) if pos8 else '<%dh' % (3 * vc)
     for f in kept:
@@ -129,7 +135,7 @@ def main():
                 dc = src  # nothing to dedup / simplify / bake (the optimizer writes no file): the source as it is
             elif r.returncode or not os.path.exists(dc):
                 sys.exit('optimizer failed on %s:\n%s%s' % (path, r.stdout[-400:], r.stderr[-400:]))
-            out, (vc, n, kept, step, faces, pos8, scale, worst) = convert(path, dc, path in POS8)
+            out, (vc, n, kept, step, faces, pos8, scale, worst) = convert(path, dc, path in POS8, path in CULLED)
             dst = os.path.join(out_data, 'Meshes', path)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             open(dst, 'wb').write(out)

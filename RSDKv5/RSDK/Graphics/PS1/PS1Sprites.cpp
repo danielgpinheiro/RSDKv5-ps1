@@ -1301,6 +1301,59 @@ void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int
 }
 
 // DrawBlendedFace after its ink checks: a gouraud fan (GP0 30h triangles; approximate)
+// docs/32 7.3: Scene3D's faces (PS1Atlas.hpp): G3 / G4 (F3 / F4 for the flat modes) written straight into the chain
+// arena, 32 at a time (PS1ChainBulkBegin); the ink as PS1FlatInk gives it (one pass; a mask colour: bit 15 forced)
+namespace
+{
+PS1Ink s_ps1F3DInk;
+uint32 s_ps1F3DSemi = 0;
+uint32 *s_ps1F3DBase = NULL;
+int32 s_ps1F3DN = 0, s_ps1F3DWpp = 0;
+void PS1Face3DFlush()
+{
+    if (s_ps1F3DBase)
+        PS1ChainBulkEnd(s_ps1F3DN);
+    s_ps1F3DBase = NULL, s_ps1F3DN = 0;
+}
+} // namespace
+extern "C" {
+volatile uint32 g_ps1Face3DDrawn = 0; // Scene3D faces sent (total)
+}
+bool RSDK::PS1Face3DBegin(int32 inkEffect, int32 alpha, uint32 flatColor, uint32 *flatBgr, uint32 *semi)
+{
+    uint32 bgr;
+    if (!PS1FlatInk(flatColor, inkEffect, alpha, bgr, s_ps1F3DInk))
+        return false;
+    s_ps1F3DSemi = s_ps1F3DInk.mode >= 0 ? 0x02000000 : 0;
+    *flatBgr = bgr, *semi = s_ps1F3DSemi;
+    s_ps1F3DBase = NULL, s_ps1F3DN = 0, s_ps1F3DWpp = 0;
+    if (s_ps1F3DInk.mode >= 0)
+        PS1ChainTPageRaw((uint16)(s_ps1F3DInk.mode << 5));
+    if (maskColor)
+        PS1ChainMaskControl(true, false);
+    return true;
+}
+uint32 *RSDK::PS1Face3DSlot(int32 wpp)
+{
+    if (!s_ps1F3DBase || wpp != s_ps1F3DWpp || s_ps1F3DN == 32) {
+        PS1Face3DFlush();
+        s_ps1F3DBase = (uint32 *)PS1ChainBulkBegin(32, wpp);
+        if (!s_ps1F3DBase)
+            return NULL;
+        s_ps1F3DWpp = wpp;
+    }
+    g_ps1Face3DDrawn = g_ps1Face3DDrawn + 1;
+    return s_ps1F3DBase + s_ps1F3DN++ * (wpp + 1);
+}
+void RSDK::PS1Face3DEnd()
+{
+    PS1Face3DFlush();
+    if (maskColor)
+        PS1ChainMaskControl(false, false);
+    if (s_ps1F3DInk.mode >= 0)
+        PS1ChainInvalidateTPage();
+}
+
 void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect)
 {
     PS1Ink ink;

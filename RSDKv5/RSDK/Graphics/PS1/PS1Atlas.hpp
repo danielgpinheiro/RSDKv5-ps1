@@ -45,6 +45,12 @@ void PS1DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRadius
                           uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 alpha, int32 inkEffect);
 void PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect);
+// docs/32 7.3: Scene3D faces (Scene3D.cpp PS1 Draw3DScene), back to front: Begin sets the ink (false: nothing to draw;
+// the flat colour as the GPU takes it and the semi-transparency bit), Slot gives the words of one face (wpp: G3 6, G4 8,
+// F3 4, F4 5; NULL: the chain is full), End sends what is batched
+bool PS1Face3DBegin(int32 inkEffect, int32 alpha, uint32 flatColor, uint32 *flatBgr, uint32 *semi);
+uint32 *PS1Face3DSlot(int32 wpp);
+void PS1Face3DEnd();
 // 3.4c-d: rotated / scaled frames (DrawSpriteRotozoom's geometry), DrawTile's pieces from the scene's tile images
 void PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int32 scaleX, int32 scaleY, int32 direction, int32 rotation,
                           int32 inkEffect, int32 alpha);

@@ -50,7 +50,11 @@ void UFO_Shadow_Draw(void)
 {
     RSDK_THIS(UFO_Shadow);
 
+#if defined RETRO_PS1_BUILD
+    if (self->zdepth >= 0x4000 && self->zdepth < 0x20000) { // docs/32 7.3: the Dreamcast port's (close up only)
+#else
     if (self->zdepth >= 0x4000) {
+#endif
         RSDK.MatrixScaleXYZ(&self->matrix, self->shadowScale, 0x100, self->shadowScale);
         RSDK.MatrixTranslateXYZ(&self->matrix, self->position.x, 0, self->position.y, 0);
         RSDK.MatrixMultiply(&self->matrix, &self->matrix, &UFO_Camera->matWorld);
