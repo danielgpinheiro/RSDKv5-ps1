@@ -800,7 +800,11 @@ void RSDK::StartGameObjects()
     sceneInfo.state          = ENGINESTATE_LOAD;
     sceneInfo.inEditor       = false;
     sceneInfo.debugMode      = engine.devMenu;
+#if RETRO_PLATFORM == RETRO_PS1
+    devMenu.state = NULL; // docs/32 6.2: no dev menu (Debug.cpp OpenDevMenu)
+#else
     devMenu.state            = DevMenu_MainMenu;
+#endif
 
     for (int32 l = 0; l < DRAWGROUP_COUNT; ++l) engine.drawGroupVisible[l] = true;
 

@@ -209,7 +209,7 @@ void RSDK::LoadStream(ChannelInfo *channel)
         return;
     channel->bufferPos = streamStartPos;
     channel->state     = CHANNEL_STREAM;
-    PS1StreamStart((int32)(channel - channels));
+    PS1StreamQueue((int32)(channel - channels));
 }
 #else
 void RSDK::UpdateStreamBuffer(ChannelInfo *channel)

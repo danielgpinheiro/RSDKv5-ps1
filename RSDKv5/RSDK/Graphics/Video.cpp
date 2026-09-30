@@ -3,13 +3,87 @@
 using namespace RSDK;
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 port (docs/32): no Ogg/Theora. Phase 6 plays the videos as STR through ps1/fmv (MDEC); until then no video
-// starts (LoadVideo returns false, as on the PC when the file is missing).
+// PS1 port (docs/32 6.2): no Ogg/Theora. A video plays as an STR sequence (tools/fmv/build_str.py: the pictures with the
+// music stream the game starts alongside, as CD-XA inside) through ps1/fmv (Sonic CD's MDEC player, docs/31's fixes).
+// LoadVideo records the video; the PlayStream of the same frame (before or after it) names the sound; the first
+// ProcessVideo looks the pair (and the scene's id) up in Data/Video/PS1Video.bin and starts the sequence. A video
+// inside an earlier sequence (an ending's second part) returns false, as on the PC when a video is missing.
+#include "../../../ps1/video_ops.hh" // the player is linked into the overlays of the folders with videos
 FileInfo VideoManager::file;
 bool32 VideoManager::initializing = false;
 
-bool32 RSDK::LoadVideo(const char *filename, double startDelay, bool32 (*skipCallback)()) { return false; }
-void RSDK::ProcessVideo() {}
+extern "C" {
+volatile uint32 g_ps1VideoMissing = 0; // a (video, stream, scene) with no sequence on the disc
+volatile uint32 g_ps1VideoDone    = 0; // videos the engine returned from
+}
+namespace
+{
+char s_ps1VideoName[16];
+bool s_ps1VideoStarted = false;
+
+struct PS1VideoRow { // PS1Video.bin (tools/fmv/build_str.py)
+    char video[16], audio[16], scene[8], sequence[16];
+};
+// the row for video (+ audio, when given) in this scene; false if none
+bool PS1VideoFind(const char *video, const char *audio, PS1VideoRow *out)
+{
+    FileInfo info;
+    InitFileInfo(&info);
+    if (!LoadFile(&info, "Data/Video/PS1Video.bin", FMODE_RB))
+        return false;
+    uint32 head[2];
+    ReadBytes(&info, head, sizeof(head));
+    const char *scene = sceneInfo.listData ? sceneInfo.listData[sceneInfo.listPos].id : "";
+    bool found        = false;
+    for (uint32 n = head[1] & 0xFFFF; n && !found; --n) {
+        ReadBytes(&info, out, sizeof(*out));
+        out->video[15] = out->audio[15] = out->scene[7] = out->sequence[15] = 0;
+        found = !strcmp(out->video, video) && (!audio || !out->audio[0] || !strcmp(out->audio, audio))
+                && (!out->scene[0] || !strcmp(out->scene, scene));
+    }
+    CloseFile(&info);
+    return found;
+}
+void PS1VideoFinish()
+{
+    PS1StreamVideoDone(); // the stream it played with ended with it (its sound was the STR's)
+    sceneInfo.state        = engine.storedState;
+    g_ps1VideoDone         = g_ps1VideoDone + 1;
+}
+} // namespace
+
+bool32 RSDK::LoadVideo(const char *filename, double startDelay, bool32 (*skipCallback)())
+{
+    if (sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK || !g_ps1VideoOps.request)
+        return false;
+    PS1VideoRow row;
+    if (PS1VideoFind(filename, NULL, &row) && !row.sequence[0])
+        return false; // inside an earlier sequence
+    strncpy(s_ps1VideoName, filename, sizeof(s_ps1VideoName) - 1);
+    s_ps1VideoStarted   = false;
+    engine.skipCallback = skipCallback;
+    engine.storedState  = sceneInfo.state;
+    sceneInfo.state     = ENGINESTATE_VIDEOPLAYBACK;
+    return true;
+}
+
+void RSDK::ProcessVideo()
+{
+    if (!s_ps1VideoStarted) { // the frame after LoadVideo: its PlayStream has been seen
+        s_ps1VideoStarted = true;
+        PS1VideoRow row;
+        if (!PS1VideoFind(s_ps1VideoName, PS1StreamPendingName(), &row) || !row.sequence[0]) {
+            g_ps1VideoMissing = g_ps1VideoMissing + 1;
+            PS1VideoFinish();
+            return;
+        }
+        g_ps1VideoOps.request(row.sequence, 0); // opens at the next frame's start (nothing chained yet)
+        return;
+    }
+    bool skip = engine.skipCallback && engine.skipCallback();
+    if (!g_ps1VideoOps.update || g_ps1VideoOps.update(skip))
+        PS1VideoFinish();
+}
 #else
 FileInfo VideoManager::file;
 

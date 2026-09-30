@@ -1,5 +1,6 @@
 /*
- * Full-screen FMV — see fmv.hh.
+ * Full-screen FMV — see fmv.hh. From Sonic CD (with its real-hardware fixes, docs/31); Mania (docs/32 6.2): 320x160 at
+ * Y 40, Data/Video.
  */
 #include "fmv.hh"
 #include "cdrom_stream.hh"
@@ -8,6 +9,7 @@
 #include "loading.hh"
 #include "video.hh"
 #include "xa_music.hh"
+#include "video_ops.hh"
 
 #include <stdio.h>
 #include <string.h>
@@ -40,7 +42,7 @@ volatile uint32_t g_ps1FmvTimeouts = 0; // videos closed by the length watchdog
 volatile uint32_t g_ps1FmvOverlayForce = 0; // GDB test hook: 1 = diagnostics strip on (as if SELECT toggled it)
 
 #define FMV_ARENA_WORDS 256 // per parity while a video plays: fills, a copy and the fade
-#define FMV_Y           32  // 176 lines letterboxed in 240
+#define FMV_Y           40  // Mania: 160 lines letterboxed in 240 (Sonic CD: 32, 176)
 #define FMV_FADE_STEP   8   // as upstream ProcessVideo: fadeMode += 8 per frame after a skip
 // Length watchdog: a video never plays longer than its frames at 15 fps (4 vblanks each at 60 Hz) plus
 // 5 s, whatever the stream does: the game always gets back control (the PSone FMV hang, docs/28).
@@ -67,7 +69,7 @@ void swapArenas(uint32_t words) {
 // For real hardware, where there is no debugger: three text lines in the bottom letterbox and two in the
 // top one, in both buffers, drawn by the CPU into a 320 x 8 line buffer (heap, only while shown) and
 // uploaded. The values count from the video's start. If the game hangs, the last strip stays on screen.
-#define OVL_Y     212 // 3 lines of 8 rows in the bottom bar (208..240)
+#define OVL_Y     212 // 3 lines of 8 rows in the bottom bar (200..240)
 #define OVL_LINES 3
 #define OVL_TOP_Y 8   // 2 lines in the top bar (0..32): MDEC mode and the register snapshot
 #define OVL_TOP_LINES 2
@@ -229,7 +231,7 @@ void updateOverlay() {
 } // namespace
 
 bool PS1FmvRequest(const char *name, int soundtrack) {
-    snprintf(s_path, sizeof(s_path), "Data/Videos/%s.str", name);
+    snprintf(s_path, sizeof(s_path), "Data/Video/%s.str", name); // Mania: Data/Video (tools/fmv/build_str.py)
     s_audio   = soundtrack ? 1 : 0;
     s_state   = State::REQUESTED;
     s_picture = false;
@@ -315,3 +317,17 @@ int PS1FmvUpdate(bool skip) {
 }
 
 bool PS1FmvActive() { return s_state == State::PLAYING; }
+
+// docs/32 6.2 (Mania): this player lives in the overlays of the folders that play videos; their register function
+// calls this (tools/gen_overlays.py), the next overlay load clears the table (ps1/video_ops.hh)
+extern "C" void PS1VideoLink() {
+    g_ps1VideoOps.beginFrame   = PS1FmvBeginFrame;
+    g_ps1VideoOps.request      = PS1FmvRequest;
+    g_ps1VideoOps.update       = PS1FmvUpdate;
+    g_ps1VideoOps.closeForRead = []() {
+        if (!PS1VideoIsOpen())
+            return false;
+        PS1VideoClose();
+        return true;
+    };
+}

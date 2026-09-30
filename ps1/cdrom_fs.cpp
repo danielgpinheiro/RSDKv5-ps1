@@ -10,6 +10,7 @@
  * fallback) are deferred.
  */
 
+#include "video_ops.hh"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -556,12 +557,11 @@ FILE *fopen(const char *path, const char *mode) {
     uint32_t lba, size;
     if (!g_ps1CDRom || !g_ps1GPU)
         return nullptr;
-    if (PS1VideoIsOpen()) {
+    if (g_ps1VideoOps.closeForRead && g_ps1VideoOps.closeForRead()) { // docs/32 6.2: the player is an overlay's
         // One CD action at a time: a file read while the FMV streams would break both.
         // Callers stop the video first (PS1StopVideo); this is the safety net.
         ramsyscall_printf("[cdrom_fs] fopen('%s') while a video streams: closing the video\n", path);
-        g_ps1VideoForcedClose = g_ps1VideoForcedClose + 1;
-        PS1VideoClose();
+        g_ps1VideoForcedClose = g_ps1VideoForcedClose + 1; // (closeForRead closed it)
     }
     for (int i = 0; i < s_residentCount; ++i) {
         if (pathEq(s_resident[i].path, path)) {

@@ -41,6 +41,9 @@ int8 s_xaChannel = -1, s_xaTrack = -1;
 bool s_xaLoop, s_xaPaused;
 uint16 s_xaLoopRow, s_xaPad;
 uint16 s_cdVolume = 0xFFFF;
+// docs/32 6.2: a PlayStream starts its XA at the next FrameInit, unless a video took it (the STR carries its sound)
+int8 s_pendChannel = -1, s_videoChannel = -1;
+char s_streamName[0x20]; // the last PlayStream's file ("IntroHP.ogg"): the video lookup's key
 
 // a 44.1 kHz sample position of the track (the PC's startPos / loopPoint / GetChannelPos) -> its XA row (18.75 per
 // second, 2,016 samples at 37.8 kHz = 6 / 7 of 44.1 kHz; the build pads the track so its loop point starts a row)
@@ -155,6 +158,28 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
     strcpy(s_bankPath, path);
 }
 
+void RSDK::PS1StreamQueue(int32 c)
+{
+    if (s_xaChannel == c) { // a new stream on the music's channel: the old track stops now
+        PS1XaStop();
+        s_xaChannel = -1;
+    }
+    s_pendChannel = (int8)c;
+    const char *name = streamFilePath + (strncmp(streamFilePath, "Data/Music/", 11) ? 0 : 11);
+    strncpy(s_streamName, name, sizeof(s_streamName) - 1);
+}
+
+const char *RSDK::PS1StreamPendingName() { return s_streamName; }
+
+void RSDK::PS1StreamVideoDone()
+{
+    if (s_videoChannel >= 0 && (channels[s_videoChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM) {
+        channels[s_videoChannel].state   = CHANNEL_IDLE;
+        channels[s_videoChannel].soundID = -1;
+    }
+    s_videoChannel = -1;
+}
+
 void RSDK::PS1StreamStart(int32 c)
 {
     int32 track = PS1XaFindTrack(streamFilePath);
@@ -227,6 +252,14 @@ static void PS1StreamFrame(ChannelInfo *channel)
 void AudioDevice::FrameInit()
 {
     const uint32 frameSamples = AUDIO_FREQUENCY / 60;
+    bool video                = sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK; // the video owns the CD (ps1/fmv)
+    if (s_pendChannel >= 0) {
+        if (video)
+            s_videoChannel = s_pendChannel; // its sound plays from the STR
+        else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM)
+            PS1StreamStart(s_pendChannel);
+        s_pendChannel = -1;
+    }
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         ChannelInfo *channel = &channels[c];
         bool sfx             = (channel->state & ~CHANNEL_PAUSED) == CHANNEL_SFX && channel->soundID >= 0;
@@ -235,7 +268,7 @@ void AudioDevice::FrameInit()
                 PS1SpuVoiceStop(1u << PS1_SFX_VOICE(c));
                 s_voiceSound[c] = -1;
             }
-            if (c == s_xaChannel)
+            if (c == s_xaChannel && !video)
                 PS1StreamFrame(channel);
             else if (channel->state == CHANNEL_STREAM)
                 channel->bufferPos += frameSamples; // a track the disc lacks: timing only

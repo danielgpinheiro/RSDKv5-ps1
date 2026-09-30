@@ -5,6 +5,7 @@
 // scene-start STG compaction: STG's limit then ends where the overlay starts, so each scene pays for its own code.
 // The overlay starts with its header; its register function registers its object classes (after the resident ones)
 // and fills the resident's stub table (ps1OvlTable) with the functions resident code or other overlays name.
+#include "video_ops.hh"
 #include "RSDK/Core/RetroEngine.hpp"
 #include "common/syscalls/syscalls.h"
 
@@ -23,6 +24,8 @@ volatile uint32 g_ps1OvlErrors = 0; // a bad header or no room (must stay 0)
 char g_ps1OvlFolder[0x10];
 void PS1StorageExhausted(uint32 set, uint32 size); // RSDK/Storage/Storage.cpp: stops
 }
+
+PS1VideoOps g_ps1VideoOps = {};
 
 namespace
 {
@@ -45,6 +48,7 @@ void RSDK::PS1LoadOverlay(const char *folder)
     // the previous overlay's classes and functions go (its static variables were released by ClearStageObjects)
     objectClassCount = s_residentClasses;
     for (uint32 k = 0; k < ps1OvlCount; ++k) ps1OvlTable[k] = ps1OvlMiss[k];
+    g_ps1VideoOps = PS1VideoOps{}; // docs/32 6.2: the video player goes with the overlay that had it
     (void)ps1OvlStubsRef;
     strncpy(g_ps1OvlFolder, folder, sizeof(g_ps1OvlFolder) - 1);
     g_ps1OvlLoads = g_ps1OvlLoads + 1;

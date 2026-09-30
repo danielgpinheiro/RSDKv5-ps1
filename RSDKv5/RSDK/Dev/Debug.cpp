@@ -268,6 +268,11 @@ void DevMenu_HandleTouchControls(int8 cornerButton)
 
 void RSDK::OpenDevMenu()
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    // PS1 port (docs/32 6.2): the dev menu is the PC's debugging tool (keyboard hot keys, a corner tap); the PS1 has no
+    // way to drive it, and its 14.7 KB of resident code would come out of STG (GHZ1's margin): never opened
+    return;
+#endif
     devMenu.state     = DevMenu_MainMenu;
     devMenu.selection = 0;
     devMenu.scrollPos = 0;

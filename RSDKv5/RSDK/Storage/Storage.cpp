@@ -217,6 +217,36 @@ extern "C" uint32_t *PS1ChainExtraTake(uint32_t *words)
 }
 extern "C" void PS1ChainExtraGive() { PS1StorageTailRelease(DATASET_STG); }
 
+// docs/32 6.2: the video's buffers (ps1/video.cpp, ~110 KB) from STG's tail: nothing allocates while the engine is in
+// ENGINESTATE_VIDEOPLAYBACK (the scene waits; a load comes after). The chain gave its extra block back as the video
+// opened (PS1ChainSuspend) and takes none while these are out (PS1ChainExtraTake sees the tail in use).
+extern "C" void *psyqo_malloc(size_t size); // psyqo/alloc.h (its headers clash with the engine's assert)
+extern "C" void psyqo_free(void *ptr);
+static uint32 s_ps1VideoTailBlocks = 0;
+volatile uint32 g_ps1VideoTailBytes = 0;
+extern "C" void *PS1VideoMalloc(size_t n)
+{
+    void *p = PS1StorageTailAlloc(DATASET_STG, (uint32)(n + 63) & ~63u); // 64-byte multiples: every buffer word-aligned
+    if (!p)
+        return psyqo_malloc(n);
+    ++s_ps1VideoTailBlocks;
+    g_ps1VideoTailBytes = g_ps1VideoTailBytes + ((uint32)(n + 63) & ~63u);
+    return p;
+}
+extern "C" void PS1VideoFree(void *p)
+{
+    DataStorage *st = &dataStorage[DATASET_STG];
+    if (p >= (void *)st->memoryTable && p < (void *)((uint8 *)st->memoryTable + st->storageLimit + s_ps1TailBytes[DATASET_STG])) {
+        if (s_ps1VideoTailBlocks && !--s_ps1VideoTailBlocks) {
+            PS1StorageTailRelease(DATASET_STG);
+            g_ps1VideoTailBytes = 0;
+        }
+    }
+    else if (p) {
+        psyqo_free(p);
+    }
+}
+
 static void PS1StorageStats(uint32 set, bool32 ok, uint32 size)
 {
     DataStorage *st = &dataStorage[set];

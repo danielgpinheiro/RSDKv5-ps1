@@ -18,10 +18,72 @@ bool s_ps1FrameOpen = false;
 void *s_ps1FrameClear = NULL; // this frame's clear (FastFill in the arena) and its colour: a FillScreen blends it too (3.5)
 uint32 s_ps1FrameClearColour = 0;
 }
+#include "../../../../ps1/video_ops.hh" // 6.2: the video player (an overlay's): a video opens / closes at a frame's start
+
 void RSDK::PS1RenderBeginFrame()
 {
     PS1ChainBeginFrame();
+    if (g_ps1VideoOps.beginFrame)
+        g_ps1VideoOps.beginFrame(); // (nothing chained yet: it swaps the arenas)
     s_ps1FrameOpen = false;
+}
+
+// docs/32 6.2: video frames (ps1/fmv.cpp, from Sonic CD's render.cpp): 0 = black, 1 = a new picture was just written
+// into the other buffer (the one shown after this frame's flip): this frame copies it too, so both hold it (the bars
+// filled black); 2 = no new picture: the displayed frame is copied over (the skip fade darkens it a step each frame).
+// Rows the video frame leaves alone: the diagnostics strip (ps1/fmv.cpp), uploaded into both buffers, in two bands.
+#define PS1_FMV_Y0 40  // 160 picture lines letterboxed in 240 (ps1/fmv.cpp FMV_Y)
+#define PS1_FMV_Y1 200
+static int s_ps1FmvKeep[2][2] = { { 0, 0 }, { 0, 0 } };
+void PS1RenderFmvKeepRows(int y0, int y1, int y2, int y3)
+{
+    s_ps1FmvKeep[0][0] = y0, s_ps1FmvKeep[0][1] = y1;
+    s_ps1FmvKeep[1][0] = y2, s_ps1FmvKeep[1][1] = y3;
+}
+// fill (copy = false) or copy from the last frame the lines [y0, y1) minus the kept bands
+static void PS1FmvLines(int y0, int y1, bool copy, int band = 0)
+{
+    if (y0 >= y1)
+        return;
+    if (band == 2) {
+        if (copy)
+            PS1ChainCopyLastFrameLines(y0, y1);
+        else
+            PS1ChainFillLines(y0, y1, 0, 0, 0);
+        return;
+    }
+    int k0 = s_ps1FmvKeep[band][0] > y0 ? s_ps1FmvKeep[band][0] : y0;
+    int k1 = s_ps1FmvKeep[band][1] < y1 ? s_ps1FmvKeep[band][1] : y1;
+    if (k0 >= k1) {
+        PS1FmvLines(y0, y1, copy, band + 1);
+        return;
+    }
+    PS1FmvLines(y0, k0, copy, band + 1);
+    PS1FmvLines(k1, y1, copy, band + 1);
+}
+void PS1RenderFmvFrame(int mode)
+{
+    if (s_ps1FrameOpen)
+        return;
+    s_ps1FrameOpen = true;
+    if (mode == 1) {
+        PS1FmvLines(0, PS1_FMV_Y0, false);
+        PS1FmvLines(PS1_FMV_Y0, PS1_FMV_Y1, true);
+        PS1FmvLines(PS1_FMV_Y1, SCREEN_YSIZE, false);
+    }
+    else {
+        PS1FmvLines(0, SCREEN_YSIZE, mode == 2);
+    }
+}
+// the skip fade (upstream ProcessVideo: += 8 a frame): the frame, a copy of the last, darkened by step / 255 with
+// subtractive blending (texpage semi-transparency mode 2, B - F), so 32 frames reach black
+void PS1RenderFmvFade(int step)
+{
+    PS1ChainTPageRaw(2 << 5);
+    uint32_t w[3] = { 0x62000000u | (uint32_t)step | (uint32_t)step << 8 | (uint32_t)step << 16, 0,
+                      (uint32_t)PS1_SCREEN_W_CLEAR | (uint32_t)SCREEN_YSIZE << 16 };
+    PS1ChainPrimsRawN(w, 3, 1);
+    PS1ChainInvalidateTPage();
 }
 void RSDK::PS1FrameStart(bool clear)
 {

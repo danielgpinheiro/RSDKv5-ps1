@@ -101,12 +101,16 @@ bool PS1VideoInit() {
     return true;
 }
 
+// Where the video buffers come from (Mania, docs/32 6.2: STG's free tail while a video plays); psyqo's heap by default.
+extern "C" __attribute__((weak)) void *PS1VideoMalloc(size_t n) { return psyqo_malloc(n); }
+extern "C" __attribute__((weak)) void PS1VideoFree(void *p) { psyqo_free(p); }
+
 static void freeBuffers() {
-    psyqo_free(s_bs);
-    psyqo_free(s_vlcTable);
-    psyqo_free(s_rle);
-    psyqo_free(s_ring);
-    psyqo_free(s_video);
+    PS1VideoFree(s_bs);
+    PS1VideoFree(s_vlcTable);
+    PS1VideoFree(s_rle);
+    PS1VideoFree(s_ring);
+    PS1VideoFree(s_video);
     s_bs = nullptr;
     s_vlcTable = nullptr;
     s_rle = nullptr;
@@ -117,11 +121,11 @@ static void freeBuffers() {
 
 static bool allocBuffers() {
     uint32_t pixels = s_direct ? STR_COLUMN * s_height : STR_PIXELS;
-    s_ring     = (uint8_t *)psyqo_malloc(STR_RING_SECTORS * ISO_SECTOR);
-    s_rle      = (uint32_t *)psyqo_malloc(s_rleWords * sizeof(uint32_t));
-    s_vlcTable = (DECDCTTAB *)psyqo_malloc(sizeof(DECDCTTAB));
-    s_bs       = (uint8_t *)psyqo_malloc(s_bsBytes);
-    s_video    = (uint16_t *)psyqo_malloc(pixels * sizeof(uint16_t));
+    s_ring     = (uint8_t *)PS1VideoMalloc(STR_RING_SECTORS * ISO_SECTOR);
+    s_rle      = (uint32_t *)PS1VideoMalloc(s_rleWords * sizeof(uint32_t));
+    s_vlcTable = (DECDCTTAB *)PS1VideoMalloc(sizeof(DECDCTTAB));
+    s_bs       = (uint8_t *)PS1VideoMalloc(s_bsBytes);
+    s_video    = (uint16_t *)PS1VideoMalloc(pixels * sizeof(uint16_t));
     if (!s_video || !s_ring || !s_rle || !s_vlcTable || !s_bs) {
         freeBuffers();
         return false;

@@ -10,6 +10,9 @@ namespace RSDK
 {
 void PS1SfxLoadBank(const char *folder, const char *id); // docs/32 5.1: the scene's SFX bank into SPU RAM
 void PS1StreamStart(int32 channel); // docs/32 5.2: PlayStream's track on the CD-XA
+void PS1StreamQueue(int32 channel); // 6.2: from LoadStream: started at the next FrameInit unless a video takes it
+const char *PS1StreamPendingName(); // 6.2: the last PlayStream's file (the video lookup)
+void PS1StreamVideoDone();          // 6.2: the video ended: its stream channel with it
 
 class AudioDevice : public AudioDeviceBase
 {
