@@ -12,7 +12,8 @@ Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK
   'PMD5', u8 flags (bit0 16-bit positions, else 8-bit; bit1 closed: faces turned away may be dropped), u8 face vertex count (3, or 4: quads), u16 vertices, u16 stored frames,
   u8 frame step (1, or 2: every other keyframe kept, the engine interpolating across twice the span), u8 0,
   u16 scale (8-bit positions: engine units (float x 256) = value * scale >> 8), u16 index count;
-  colours (vertices x u16, RGB555: the baked lighting), indices (u16 each), then per stored frame the positions
+  colours (vertices x u32: the GPU's colour word, 0x00BBGGRR, from the baked lighting), indices (u16 each), then per
+  stored frame the positions
   (vertices x 3 x i8 or i16, engine fixed point as LoadMesh keeps them: float x 256 for 16-bit).
   Keyframes are halved where the animation has an even frame count of 10 or more (the loop back to frame 0 keeps its
   timing); 8-bit positions for the animated meshes whose steps stay small on screen, 16-bit for the rest (table).
@@ -76,10 +77,10 @@ def read_mdl(path):
     return fvc, vc, cols, idx, frames
 
 
-def rgb555(c):
-    # MDL colours are stored as u32 (the engine's `color`: 0xAARRGGBB read little-endian)
+def gpu_bgr(c):
+    # MDL colours are stored as u32 (the engine's `color`: 0xAARRGGBB read little-endian) -> the GPU's 0x00BBGGRR
     r, g, b = (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF
-    return (r >> 3) | (g >> 3) << 5 | (b >> 3) << 10
+    return r | g << 8 | b << 16
 
 
 def convert(path, src, pos8, culled):
@@ -97,9 +98,9 @@ def convert(path, src, pos8, culled):
         assert maxabs < 0x8000, path
         scale = 0x100
         q = lambda x: x
-    colors = [rgb555(c) for c in cols] if cols else [0x7FFF] * vc
+    colors = [gpu_bgr(c) for c in cols] if cols else [0xFFFFFF] * vc
     out = struct.pack('<4sBBHHBBHH', b'PMD5', (0 if pos8 else 1) | (2 if culled else 0), fvc, vc, len(kept), step, 0, scale, len(idx))
-    out += struct.pack('<%dH' % vc, *colors) + struct.pack('<%dH' % len(idx), *idx)
+    out += struct.pack('<%dI' % vc, *colors) + struct.pack('<%dH' % len(idx), *idx)
     fmt = '<%db' % (3 * vc) if pos8 else '<%dh' % (3 * vc)
     for f in kept:
         out += struct.pack(fmt, *[q(x) for v in f for x in v])
@@ -108,8 +109,8 @@ def convert(path, src, pos8, culled):
     magic, fl, fv, v2, f2, st, _, sc, ic = struct.unpack_from('<4sBBHHBBHH', out, 0)
     assert (magic, v2, f2, st, sc, ic) == (b'PMD5', vc, len(kept), step, scale, len(idx)), path
     p = 16
-    assert list(struct.unpack_from('<%dH' % vc, out, p)) == colors
-    p += 2 * vc
+    assert list(struct.unpack_from('<%dI' % vc, out, p)) == colors
+    p += 4 * vc
     assert list(struct.unpack_from('<%dH' % ic, out, p)) == list(idx)
     p += 2 * ic
     worst = 0
