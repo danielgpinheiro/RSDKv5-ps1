@@ -256,8 +256,10 @@ void AudioDevice::FrameInit()
     if (s_pendChannel >= 0) {
         if (video)
             s_videoChannel = s_pendChannel; // its sound plays from the STR
-        else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM)
+        else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM) {
+            PS1AtlasMusicGroups(s_streamName); // 7b: the sprite groups this music brings (before its XA: the CD is free)
             PS1StreamStart(s_pendChannel);
+        }
         s_pendChannel = -1;
     }
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {

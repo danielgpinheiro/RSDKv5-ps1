@@ -367,6 +367,10 @@ void RSDK::InitObjects()
 #endif
         sceneInfo.entitySlot = e;
         sceneInfo.entity     = OBJECT_ENTITY(e);
+#if RETRO_PLATFORM == RETRO_PS1
+        if (PS1DormantLoadCreate(e)) // 7b: a dormant record's Create runs here too, into a scratch block
+            continue;
+#endif
 
         if (sceneInfo.entity->classID) {
             if (objectClassList[stageObjectIDs[sceneInfo.entity->classID]].create) {
@@ -378,6 +382,7 @@ void RSDK::InitObjects()
 
     sceneInfo.state = ENGINESTATE_REGULAR;
 #if RETRO_PLATFORM == RETRO_PS1
+    PS1DormantLoadDone(); // 7b
     PS1AtlasBindEnd(); // every StageLoad / Create has bound its frames (docs/32 3.1c)
 #endif
 

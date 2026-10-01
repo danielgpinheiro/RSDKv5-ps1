@@ -278,6 +278,38 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
     return true;
 }
 
+// 7b: the swaps docs/32 3.1 planned "where the music changes", keyed by the track a PlayStream starts (its old track
+// stopped: the CD is free for the group's read): a boss track (and the Heavies' theme) brings the boss group, the act
+// clear the end group, Super's track Super's frames; a jingle (1-up, power-ups, drowning, game over) changes nothing;
+// any other track (the stage's, again after Super) the normal frames. A group the scene's atlas lacks is no error.
+void RSDK::PS1AtlasMusicGroups(const char *track)
+{
+    if (!s_ps1AtlasBlob || !track)
+        return;
+    static const char *const jingles[] = { "1up.ogg", "Invincible.ogg", "Sneakers.ogg", "Drowning.ogg", "GameOver.ogg" };
+    for (const char *j : jingles)
+        if (!strcmp(track, j))
+            return;
+    auto load = [](const char *name) {
+        for (int32 g = 0; g < s_groupCount; ++g)
+            if (!strncmp(Groups()[g].name, name, 8)) {
+                PS1AtlasLoadGroup(name);
+                return;
+            }
+    };
+    if (!strcmp(track, "Super.ogg")) {
+        load("super");
+        return;
+    }
+    if (!strcmp(track, "ActClear.ogg")) {
+        load("end");
+        return;
+    }
+    if (!strncmp(track, "Boss", 4) || !strcmp(track, "MetalSonic.ogg") || !strcmp(track, "HBHMischief.ogg"))
+        load("boss");
+    load("normal");
+}
+
 void RSDK::PS1AtlasServiceRequests()
 {
     int32 g = g_ps1AtlasGroupReq;

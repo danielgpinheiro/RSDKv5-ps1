@@ -114,7 +114,8 @@ void PS1TypeGroupsBuild();
 // class, position, the active variables' bytes), then placed in their final slots in one arena sized from them.
 extern volatile uint32 g_ps1EntitiesDropped; // scene entities past the file-slot range (GDB; must stay 0)
 void PS1SceneEntitiesBegin();
-void PS1SceneObjectBegin(uint32 bytes); // a DATASET_TMP block for one object's records (0: the object has none)
+void PS1SceneObjectBegin(uint32 bytes, uint16 classID, uint16 vars); // a block for one object's records (0: none), its layout first
+void PS1SceneObjectVar(uint16 offset, uint8 type, uint16 len);     // 7b: its next active variable (file order)
 void PS1SceneEntityBegin(uint16 fileSlot, uint16 classID, int32 x, int32 y);
 void PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16 len);
 void PS1SceneEntitiesPlace();
@@ -126,6 +127,9 @@ void PS1SceneChildVar(uint16 classID, uint16 offset, uint8 type);
 // records the ones out of reach that are as their Create left them. The rest of the engine sees a dormant slot as an
 // empty one (a ghost).
 void PS1DormantUpdate();
+bool PS1DormantLoadCreate(int32 slot); // InitObjects: a dormant record's Create at its slot (stock's load-time create)
+void PS1DormantLoadDone();             // after InitObjects
+extern volatile uint32 g_ps1DormantDiffs, g_ps1DormantBadActive;
 extern volatile uint32 g_ps1DormantRecords, g_ps1DormantPool, g_ps1DormantLive, g_ps1DormantPeak;
 extern volatile uint32 g_ps1DormantFail;      // a creation with no pool block left (the entity stayed dormant: must be 0)
 extern volatile uint32 g_ps1DormantCreated, g_ps1DormantReturned, g_ps1DormantGone, g_ps1DormantDropped;

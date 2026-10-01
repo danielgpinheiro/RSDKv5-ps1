@@ -25,11 +25,14 @@
    record, creates it when the cameras come near and returns it to a record when they leave
    (RSDK/Scene/PS1/PS1Entities.cpp). */
 typedef struct {
-    void (*create)(void *data);      /* the class (matched by its Create) */
+    const char *name;                /* the class (its name: no reference from the resident to an overlay's class) */
     int (*eligible)(const void *e);  /* the entity as the scene file sets it, before Create: may it go dormant */
     int range;                       /* its updateRange once created (both axes, 16.16; the engine's range test) */
     int (*rangeOf)(const void *e);   /* or this, from the entity as the scene file sets it (NULL: range) */
     unsigned short transient[4];     /* (offset, size) pairs its update / draw rewrite before any read: not compared */
+    unsigned char diffs;             /* may go back to a record with up to 7 changed words, restored when re-created
+                                        (an animation's phase, a spring's last frame): exact, as if it had stayed */
+    const char *unless[3];           /* not in a stage with one of these classes (they walk or keep this one's entities) */
 } PS1DormantSpec;
 
 /* docs/32 7b: reserved slots sized by what the game puts there. In a stage with a Zone object (the zones) a reserved

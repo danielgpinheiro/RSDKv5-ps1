@@ -56,6 +56,9 @@ BANK_CLUT = 0x1FF
 HALF_RULES = {}  # file -> side (px) from which its frames are stored at half resolution; set per scene by build_fit
 TEXT_KEEP_H = 24  # 4.3: clusters this short stay full resolution (text strips) while a plan with them fits
 KEEP_TEXT = True
+# 7b: a plan step (LOSSY in HALF_PLAN): level art (every sheet but character art) merged to 15 colours per cluster, as
+# the players are, so no cluster needs 8 bits; set per scene by build_fit
+LOSSY_LEVEL = False
 # 4.3 (user: the pause menu's CONTINUE / RESTART read blocky): animations never halved while the text is kept (the
 # pause buttons' text, UI/TextEN.bin list 10; a scene that can't fit them falls back with the other text: GHZ2)
 NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
@@ -167,6 +170,7 @@ class Bin:
     def __init__(self, col, row, depth, width):
         self.col, self.row, self.depth, self.width = col, row, depth, width
         self.sky = [0] * width
+        self.limit = PAGE  # 7b: a band may end above the page's last line (the sprite CLUT rows' scratch)
 
     def peek(self, w, h, split=False):
         """split: the item may not cross a texture page boundary: True / COL_HW = a column (4-bit), 2 * COL_HW = two
@@ -177,7 +181,7 @@ class Bin:
             if pg and u // pg != (u + w - 1) // pg:
                 continue
             v = max(self.sky[u:u + w])
-            if v + h <= PAGE and (best is None or v < best[1] or (v == best[1] and u < best[0])):
+            if v + h <= self.limit and (best is None or v < best[1] or (v == best[1] and u < best[0])):
                 best = (u, v)
         return best
 
@@ -208,7 +212,16 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                                  ('Puyo/Combos.bin', None), ('Puyo/PuyoIndicator.bin', None), ('Puyo/PuyoUI.bin', None),
                                  ('CPZ/MBMSonic.bin', None), ('CPZ/MBMTails.bin', None), ('CPZ/MBMKnux.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
-                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 7b: SPZ1's Heavy Gunner, SPZ2's Weather Mobile (Eggman's mobile, the Egg TV); the act-2 end's TV picture
+                'SPZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('SPZ1/Boss.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'SPZ2': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None), ('SPZ2/EggTV.bin', None),
+                                  ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None),
+                                 ('SPZ2/TVFlyingBattery.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
 # scope), by file name or by the sheets an animation's frames use
@@ -234,6 +247,7 @@ BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bi
 # build_fit stops at the first that fits.
 HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'CPZ/AmoebaDroid.bin', 'Eggman/EggmanCPZ.bin', 'CPZ/MBMSonic.bin', 'CPZ/MBMTails.bin', 'CPZ/MBMKnux.bin',  # 7b
+             'SPZ2/WeatherMobile.bin', 'Eggman/EggMobile.bin', 'SPZ2/EggTV.bin',  # 7b
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
@@ -246,16 +260,31 @@ HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison
                 'UI/Diorama.bin', 'UI/Picture.bin', 'UI/MainIcons.bin', 'UI/HeadingsEN.bin', 'UI/Buttons.bin',
                 'UI/ButtonLabel.bin', 'UI/MedallionPanel.bin'}
 HALF_HUD = {'Global/HUD.bin'}
+# 7b (choice 116): Super Sonic (seen only after a transformation) shares the player region with Sonic; at half resolution
+# the region is the normal frames' size (Studiopolis: 211 -> 174 KB). Before the always-visible HUD.
+HALF_SUPER = {'Players/SuperSonic.bin'}
+# 7b (choice 116): a zone's big set pieces and backdrop decorations (Studiopolis: the TV van, shop windows, film
+# projector, popcorn machine, signs, parallax props; the cable warp, lotto machine, film reels): their big frames at half
+# resolution after every other art but the HUD (the zone's art does not fit VRAM at 15 colours)
+HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin', 'SPZ1/PopcornMachine.bin',
+              'SPZ1/Decoration.bin', 'SPZ1/SPZParallax.bin', 'SPZ1/SpinSign.bin',
+              'SPZ2/CableWarp.bin', 'SPZ2/LottoMachine.bin', 'SPZ2/FilmReel.bin', 'SPZ2/LottoBall.bin',
+              'SPZ2/GreenScreen.bin', 'SPZ2/TVPole.bin'}
 # 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
-HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96),
+LOSSY = 'lossy'  # 7b: HALF_PLAN's colour step (after the bosses: fewer colours shows less than half resolution)
+HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (LOSSY, 0), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96),
              (HALF_EFFECT, 48),
-             (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_HUD, 48), (HALF_HUD, 32)]
-HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE  # files, and (HALF_PICTURE) sheets
+             (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_LEVEL, 96), (HALF_LEVEL, 64),
+             (HALF_SUPER, 32), (HALF_HUD, 48), (HALF_HUD, 32), (HALF_LEVEL, 48), (HALF_LEVEL, 32), (HALF_BOSS, 16)]
+HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HALF_LEVEL | HALF_SUPER  # files, and (HALF_PICTURE) sheets
 # reviewed by hand (the literal analysis can't follow a handle stored in an entity): in a stage, UIButton_Create sets
 # list 0 before PauseMenu (10) / UIDialog (9) set theirs; 7 = a disabled button
-ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10}}
+ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10},
+                  # 7b: HUD_GetButtonFrame draws the pad's own set (the PS1 pad reports DEVICE_PS4: UIBUTTONPROMPT_PS4 = 3,
+                  # RSDK/Input/PS1/PS1InputDevice.cpp) and the icon (0)
+                  'Global/SuperButtons.bin': {0, 3}}
 # base Mania (user decision 2026-09-26: no Encore, Mighty, Ray, Competition): animations never placed (None: the whole file)
 SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
               'Players/Mighty.bin': None, 'Players/Ray.bin': None,
@@ -316,14 +345,48 @@ def player_ani_ids():
     return out
 
 
-def literal_anims(path, names, active, handles_of, never=()):
+def editor_anim_values(code_path, cls, field, scene):
+    """7b: the values the scene's `cls` entities give their editable variable `field` (RSDK_EDITABLE_VAR in its own file,
+    never assigned there: the ID SetSpriteAnimation gets as `self->field`); None if it is not one"""
+    import re
+    import scene_usage as U
+    code = U.code_of(code_path)
+    if not re.search(r'RSDK_EDITABLE_VAR\(\s*' + cls + r'\s*,\s*\w+\s*,\s*' + field + r'\s*\)', code):
+        return None
+    if re.search(r'self->' + field + r'\s*(?:[-+*/|&^]?=(?!=)|\+\+|--)', code):
+        return None  # changed at run time
+    h = F.name_hash(field)
+    vals = set()
+    for o in scene['objects']:
+        if o['name'] == cls:
+            for e in o['entities']:
+                v = e['vars'].get(h)
+                if v is None or isinstance(v, (tuple, str)):
+                    return None
+                vals.add(int.from_bytes(v, 'little', signed=True))
+    return vals
+
+
+def literal_anims(path, names, active, handles_of, never=(), scene=None):
     """Animation IDs the active code passes with this file's handles; None = all (a non-literal ID, or the handle is
-    used some other way than SetSpriteAnimation / its load)."""
+    used some other way than SetSpriteAnimation / its load). 7b: an object's editable variable as the ID (`self->type`
+    in Decoration) counts the values the scene's entities give it."""
     import re
     import scene_usage as U
     src = U.sources()
     files = U.code_closure(active, set(names), src)
     out = set()
+    editor = {}  # call text -> values, per object file that makes the call
+    if scene is not None:
+        for f in sorted(files):
+            cls = os.path.basename(f)[:-2]
+            for h in handles_of.get(path, ()):
+                for c in re.findall(r'SetSpriteAnimation\(\s*' + re.escape(h) + r'\s*,\s*(self->\w+)\s*,', U.code_of(f)):
+                    vals = editor_anim_values(f, cls, c[6:], scene)
+                    if vals is None:
+                        editor[c] = None
+                    elif editor.get(c, set()) is not None:
+                        editor[c] = editor.get(c, set()) | vals
     for h in sorted(handles_of.get(path, ())):
         # 4.2b: `never`: objects whose code runs in no entity here (select(): Player in a Presentation scene, the replay
         # recorder anywhere); their files' uses of the handle draw nothing. (Not every entity-less owner: UIWidgets'
@@ -350,9 +413,10 @@ def literal_anims(path, names, active, handles_of, never=()):
         uses = len(re.findall(r'\b' + re.escape(h) + r'\b', code))
         loads = len(re.findall(re.escape(h) + r'\s*=\s*RSDK\.LoadSpriteAnimation', code))
         calls = re.findall(r'SetSpriteAnimation\(\s*' + re.escape(h) + r'\s*,\s*([^,]+?)\s*,', code)
-        if uses - loads - len(calls) or any(not c.isdigit() and c not in ani for c in calls):
+        if uses - loads - len(calls) or any(not c.isdigit() and c not in ani and editor.get(c) is None for c in calls):
             return None
-        out |= {int(c) if c.isdigit() else ani[c] for c in calls}
+        for c in calls:
+            out |= {int(c)} if c.isdigit() else ({ani[c]} if c in ani else editor[c])
     return out if handles_of.get(path) else None
 
 
@@ -360,8 +424,9 @@ def select(folder, scene_id, character, files):
     """For each file, each animation: None (not placed) or its placement: 'resident', ('player', alt), ('event', g)."""
     import scene_usage as U
     names, placed, active, _ = U.active_objects(folder, scene_id)
+    _, _, scene = U.scene_objects(folder, scene_id)  # 7b: editable variables as animation IDs
     need = U.needed_files(names, active, [p for p, _, _ in files])
-    keep_player, _ = U.player_anims(active, names)
+    keep_player, _ = U.player_anims(active, names, U.scene_objects(folder, scene_id)[2])
     handles_of = U.file_handles(names)
     groups = EVENT_GROUPS.get(folder, {})
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
@@ -389,6 +454,17 @@ def select(folder, scene_id, character, files):
                 sel[path], why[path] = [None] * n, 'no Super in a cutscene'
                 continue
             sel[path] = [('player', alt) if (path not in PLAYER_ANIMATED or ai in keep_player) else None for ai in range(n)]
+            # 7b: the victory pose shows only after the act clear (ActClear sets it frames after the act-clear music, which
+            # loads the end group): with the end group, out of the player region
+            if alt == 'normal' and path in PLAYER_ANIMATED and 'end' in groups:
+                vic = player_ani_ids()['ANI_VICTORY']
+                if vic < n and sel[path][vic] is not None:
+                    sel[path][vic] = ('event', 'end')
+            # 7b: a pose only the boss's objects set (the Weather Mobile's wind: ANI_FAN) goes with the boss group
+            if alt == 'normal' and path in PLAYER_ANIMATED and 'boss' in groups:
+                for ai in U.boss_only_poses(active, names, {fp for fp, _ in groups['boss']}):
+                    if ai < n and sel[path][ai] is not None:
+                        sel[path][ai] = ('event', 'boss')
             why[path] = 'player %s' % alt
             continue
         if need.get(path) is None:
@@ -402,7 +478,7 @@ def select(folder, scene_id, character, files):
         over = None if present else ANIM_OVERRIDES.get(path)
         if over is None and path in HBH_ANIMS and 'CutsceneHBH' in active and handles_of.get(path) == {'self->aniFrames'}:
             over = HBH_ANIMS[path]
-        anims = over if over is not None else literal_anims(path, names, active, handles_of, inactive)
+        anims = over if over is not None else literal_anims(path, names, active, handles_of, inactive, scene)
         place = []
         for ai in range(n):
             if (anims is not None and ai not in anims) or ai in drop:
@@ -435,10 +511,13 @@ def pack(clusters, columns, what, bands=None):
     Sets c['bin'], c['u'] (texels in the item's page), c['v']; returns the columns used, or raises AtlasError."""
     free = list(columns)
     bins, over = [], []
-    for (col, row, v0) in bands or ():
-        if v0 < PAGE:
+    for band in bands or ():
+        col, row, v0 = band[:3]
+        v1 = band[3] if len(band) > 3 else PAGE
+        if v0 < v1:
             b = Bin(col, row, 0, V.COL_HW)
             b.sky = [v0] * V.COL_HW
+            b.limit = v1
             b.band = True
             bins.append(b)
 
@@ -481,6 +560,10 @@ def pack(clusters, columns, what, bands=None):
             for b in bins:
                 if hw <= b.width:
                     cand = b.peek(hw, h, pg if b.width > pg else False)
+                    # 7b: a capped band (the CLUT rows' free lines: only short strips fit) is taken first, so the
+                    # columns keep their lines for the tall frames of the regions packed after
+                    if cand and b.limit < PAGE:
+                        cand = (cand[0], cand[1] - PAGE)
                     if cand and (best is None or cand[1] < best[1][1]):
                         best = (b, cand)
             if best:
@@ -593,11 +676,20 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                     for ai, a in enumerate(s['anims']) for f in a['frames']]
             files.append((path, s, keys))
     sel, why = select(folder, scene_id, character, files)
+    if os.environ.get('ATLAS_FILES'):  # 7b: each file's placed texels (KB at 4-bit; rects it shares are counted per file)
+        for path, _, keys in files:
+            rs = {}
+            for ai, (sh, x, y, w, h) in keys:
+                if sel[path][ai] is not None and sh is not None and w > 0 and h > 0:
+                    rs.setdefault(sel[path][ai], set()).add((sh, x, y, w, h))
+            for where, r in rs.items():
+                print('  FILE %-30s %-20s %6.1f KB, largest %s' % (path, where, sum(w * h for _, _, _, w, h in r) / 2048,
+                      max((max(w, h) for _, _, _, w, h in r), default=0)))
 
     # the unique sheet rects of every placement (a rect used by two placements is stored in each); a rect is halvable
     # only if every frame using it comes from a HALVABLE file, character art if any does from a PLAYER_LIKE one
     rects = {}                                  # (placement, sheet) -> set(rect)
-    halvable, charart = {}, set()
+    halvable, charart, textish = {}, set(), {}
     always_halvable = {}                        # every frame using the rect comes from a HALVABLE file (any plan step)
     for path, _, keys in files:
         for ai, (sh, x, y, w, h) in keys:
@@ -613,6 +705,9 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                         t = None
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)
+                    # 7b: text lives in presentation / HUD art (the strips KEEP_TEXT protects); a set piece's or a boss's
+                    # short strip is not text
+                    textish[k] = textish.get(k, False) or path in HALF_PRESENT or path in HALF_HUD
                     always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
                     if path in PLAYER_LIKE or path.startswith('Players/'):
                         charart.add(sh)
@@ -650,6 +745,23 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                         total += w * h
             work[sh] = after
         lossy[char] = (mp, changed, total)
+    # 7b: the LOSSY plan step: level art's clusters to 15 colours, each cluster its own merge (its nearest colours)
+    if LOSSY_LEVEL:
+        for (where, sh) in sorted(rects, key=str):
+            if sh in charart:
+                continue
+            for (x, y, w, h) in outer_rects(rects[(where, sh)]):
+                region = work[sh][y:y + h, x:x + w]
+                if len(set(np.unique(region).tolist()) - {0}) <= 15:
+                    continue
+                mp = merge_colours([region], sheets.pal[sh])
+                lut = np.arange(256, dtype=np.uint8)
+                for a_, b_ in mp.items():
+                    lut[a_] = b_
+                after = lut[region]
+                ch, tot = lossy.get(sh, ({}, 0, 0))[1:]
+                lossy[sh] = (mp, ch + int((region != after).sum()), tot + w * h)
+                work[sh][y:y + h, x:x + w] = after
 
     clusters = []
     for (where, sh) in sorted(rects, key=str):
@@ -662,7 +774,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             half = bool(ts) and all(t is not None for t in ts) and max(w, h) >= max(ts)
             # 4.3 / 4b (user: readable text): a strip at most TEXT_KEEP_H tall is text (the title's "PRESS ANY BUTTON",
             # headings, buttons): full resolution in every plan step (halved it can't be read)
-            if half and h <= TEXT_KEEP_H and KEEP_TEXT:
+            if half and h <= TEXT_KEEP_H and KEEP_TEXT and any(textish.get(k) for k in inner):
                 half = False
             # 4.2b: wider or taller than a texture page (the menu's 294 x 162 diorama backdrop): halved whatever the plan
             # step, when every frame using it may be (else the error below)
@@ -693,12 +805,31 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     if len(groups) > V.SPRITE_CLUT_USABLE:
         raise AtlasError('%s: %d CLUTs > %d sprite CLUT slots' % (name, len(groups), V.SPRITE_CLUT_USABLE))
     clut_maps = [[0] + sorted(g) + [0] * (15 - len(g)) for g in groups]
+    # 7b: the sprite CLUT rows this atlas leaves free (under the second framebuffer: page row 1, lines 240-255 of
+    # columns 0-4; rows 510-511 are the runtime's scratch) hold short strips
+    clut_rows = -(-len(groups) // 20)  # (20 CLUTs a row: vram_plan.SPRITE_CLUT_SLOTS)
+    clut_band = [(c, 1, 240 + clut_rows, 254) for c in range(0, 5)] if 240 + clut_rows < 254 else []
 
     # regions: resident, then the player region (its alternates share it), then the event region
+    tbands = []
     if columns is None:
-        _, _, _, tblocks = T.build(data, folder, scene_id)
+        tbin, _, _, tblocks = T.build(data, folder, scene_id)
+        # 7b: the tile CLUT rows the scene leaves free (vram_plan.TILE_CLUT_SLOTS: 32 in rows 240-247, then 20 a row from
+        # 248, under the first framebuffer: page row 0, columns 0-4) hold short strips too
+        tcluts = int.from_bytes(tbin[6:8], 'little')
+        trow = 248 + -(-max(0, tcluts - 32) // 20)
+        if trow < 256:
+            clut_band = clut_band + [(c, 0, trow, 256) for c in range(0, 5)]
         tcols = {(c, y // V.PAGE) for (x, y, w, h) in tblocks for c in range(x // V.COL_HW, (x + w - 1) // V.COL_HW + 1)}
         columns = [(c, r) for r in (0, 1) for c in V.TEX_COLUMNS if (c, r) not in tcols]
+        # 7b: a tile page's lines below its tiles (the .ptl uploads lines 0..n of a page: build_tiles' blocks) take sprites
+        tlines = {}
+        for (x, y, w, h) in tblocks:
+            if w == V.COL_HW and y % V.PAGE == 0:
+                tlines[(x // V.COL_HW, y // V.PAGE)] = max(tlines.get((x // V.COL_HW, y // V.PAGE), 0), h)
+            else:  # (a whole-page LOD / pattern image)
+                tlines[(x // V.COL_HW, y // V.PAGE)] = V.PAGE
+        tbands = [(c, r, n) for (c, r), n in sorted(tlines.items()) if n < V.PAGE and c in V.TEX_COLUMNS]
     # 7.5: sheets DrawDeformedSprite draws (whole, 128x128, repeated by the GPU's texture window) get the last free column
     deform = [p for (k, p) in man if k == 'SHT' and p in DEFORM_SHEETS]
     dcol = None
@@ -708,14 +839,24 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     for c in clusters:
         places.setdefault(c['where'], []).append(c)
     sizes = {w: kb_of(cs) for w, cs in places.items()}
+    if os.environ.get('ATLAS_SIZES'):  # 7b: the KB each sheet takes in each region (fitting a new zone)
+        for w, cs in sorted(places.items(), key=lambda kv: str(kv[0])):
+            per = {}
+            for c in cs:
+                per.setdefault(c['sheet'], []).append(c)
+            print('  %s: %s' % (w, ', '.join('%s %.1f (8-bit %.1f)' % (sh, kb_of(v), kb_of([c for c in v if c['depth'] == 8]))
+                                             for sh, v in sorted(per.items(), key=lambda kv: -kb_of(kv[1])))))
     summary = '%s: resident %.0f KB; player %s; events %s; %d columns (%d KB)' % (
         name, sizes.get('resident', 0), ', '.join('%s %.0f KB' % (w[1], k) for w, k in sizes.items() if w != 'resident' and w[0] == 'player'),
         ', '.join('%s %.0f KB' % (w[1], k) for w, k in sizes.items() if w != 'resident' and w[0] == 'event'), len(columns), len(columns) * 32)
     try:
-        used = pack(places.get('resident', []), columns, name + ' resident')
+        used = pack(places.get('resident', []), columns, name + ' resident', tbands + clut_band)
         rest = [cp for cp in columns if cp not in used]
         taken = used_lines(places.get('resident', []))
-        rbands = [(col, row, n) for (col, row), n in sorted(taken.items()) if n < PAGE]
+        lim = {(c, r): v1 for (c, r, _, v1) in clut_band}
+        for band in tbands + clut_band:  # 7b: tile pages / CLUT rows the resident left alone
+            taken.setdefault(band[:2], band[2])
+        rbands = [(col, row, n, lim.get((col, row), PAGE)) for (col, row), n in sorted(taken.items()) if n < lim.get((col, row), PAGE)]
         # event groups (large frames: bosses, sign posts) first, into whole columns and the resident's free lines; each
         # group alone, the region = the most any group needs
         ev = sorted((k for k in places if k != 'resident' and k[0] == 'event'), key=str)
@@ -728,7 +869,9 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
         rest2 = [cp for cp in rest if cp not in region_event]
         # the player region (normal / Super take turns; frames of ~48 px) in the lines left under both, then columns
         taken2 = used_lines([c for w in ['resident'] + ev for c in places.get(w, [])])
-        pbands = [(col, row, n) for (col, row), n in sorted(taken2.items()) if n < PAGE]
+        for band in tbands + clut_band:
+            taken2[band[:2]] = max(taken2.get(band[:2], band[2]), band[2])
+        pbands = [(col, row, n, lim.get((col, row), PAGE)) for (col, row), n in sorted(taken2.items()) if n < lim.get((col, row), PAGE)]
         pl = sorted((k for k in places if k != 'resident' and k[0] == 'player'), key=str)
         player_cols = []
         for w in pl:
@@ -873,28 +1016,33 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                sum(w * h for _, _, w, h in blocks) * 2 // 1024, len(used), len(region_player), len(region_event), len(columns),
                len(bind), len(out), checked, summary))
     for char, (mp, changed, total) in sorted(lossy.items()):
-        rep += '\n  players %s: %d colours merged (%s), %d of %d texels changed (%.2f%%)' % (
-            char, len(mp), ', '.join('%d->%d' % ab for ab in sorted(mp.items())), changed, total, 100.0 * changed / max(1, total))
+        rep += '\n  %s %s: %d colours merged (%s), %d of %d texels changed (%.2f%%)' % (
+            'level art' if '.gif' in char else 'players', char, len(mp), ', '.join('%d->%d' % ab for ab in sorted(mp.items())), changed, total, 100.0 * changed / max(1, total))
     return bytes(out), rep, clusters, lossy, sel, why
 
 
 def build_fit(data, disc_data, folder, scene_id, character='sonic'):
     """build() with the fewest HALF_PLAN steps that fit (full resolution when it all fits)."""
-    global HALF_RULES, KEEP_TEXT
+    global HALF_RULES, KEEP_TEXT, LOSSY_LEVEL
     last = None
     for keep, n in [(True, n) for n in range(len(HALF_PLAN) + 1)] + [(False, n) for n in range(len(HALF_PLAN) + 1)]:
         KEEP_TEXT = keep
         HALF_RULES = {}
+        LOSSY_LEVEL = False
         for files_, side in HALF_PLAN[:n]:
+            if files_ == LOSSY:
+                LOSSY_LEVEL = True
+                continue
             for f in files_:
                 HALF_RULES[f] = side
         res = build(data, disc_data, folder, scene_id, character)
         if res[0] is not None:
             desc = 'none' if n == 0 else '; '.join(
-                '%s >= %d px' % (lab, min((t for f, t in HALF_RULES.items() if f in grp), default=0))
-                for lab, grp in (('bosses', HALF_BOSS), ('effects', HALF_EFFECT), ('pictures', HALF_PICTURE),
-                                 ('presentation', HALF_PRESENT), ('HUD', HALF_HUD))
-                if any(f in HALF_RULES for f in grp))
+                ['%s >= %d px' % (lab, min((t for f, t in HALF_RULES.items() if f in grp), default=0))
+                 for lab, grp in (('bosses', HALF_BOSS), ('effects', HALF_EFFECT), ('pictures', HALF_PICTURE),
+                                  ('presentation', HALF_PRESENT), ('HUD', HALF_HUD), ('set pieces', HALF_LEVEL),
+                                  ('Super Sonic', HALF_SUPER))
+                 if any(f in HALF_RULES for f in grp)] + (['level art at 15 colours'] if LOSSY_LEVEL else []))
             return res[0], res[1] + '\n  big sprites at half resolution: %s%s' % (desc, '' if keep else ' (text strips too)'), *res[2:]
         last = res
     return last

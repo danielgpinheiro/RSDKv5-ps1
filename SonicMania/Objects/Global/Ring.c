@@ -928,14 +928,17 @@ void Ring_Serialize(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// PS1 port (docs/32 7b, choice 113): static rings go dormant (ps1_limits.h PS1DormantSpec). A fixed ring's update
-// (Ring_State_Normal) writes only animator.frameID (= Zone->ringFrame) before its draw sets direction from it: both
-// rewritten before any read, so a ring re-created with them 0 behaves as the one that stayed. Moving rings stay entities.
+// PS1 port (docs/32 7b, choices 113 / 117): the classes whose entities go dormant out of the cameras' reach
+// (ps1_limits.h PS1DormantSpec; the engine side: RSDK/Scene/PS1/PS1Entities.cpp). Each one reviewed in its code: its
+// Create has no side effect a second run would change (it runs at the load as stock, and again when its record is
+// re-created), no other object keeps a pointer to it, out of range (ACTIVE_BOUNDS) nothing runs it.
+// Rings: a fixed ring's update (Ring_State_Normal) writes only animator.frameID (= Zone->ringFrame) before its draw sets
+// direction from it: both rewritten before any read. Moving rings stay entities.
 static int Ring_PS1Eligible(const void *e) { return ((const EntityRing *)e)->moveType == RING_MOVE_FIXED; }
 
-// Plane switches: their update only switches the players' planes (and shows them in debug mode, which is off), so one
-// out of reach is as its Create left it; its range follows its size and angle (PlaneSwitch_Create).
-static int PlaneSwitch_PS1Eligible(const void *e) { return true; }
+// Plane switches: their update only switches the players' planes (and shows them in debug mode, which is off); their
+// range follows size and angle (PlaneSwitch_Create).
+static int PS1Always(const void *e) { return true; }
 static int PlaneSwitch_PS1Range(const void *e)
 {
     const EntityPlaneSwitch *ps = (const EntityPlaneSwitch *)e;
@@ -944,10 +947,39 @@ static int PlaneSwitch_PS1Range(const void *e)
     return x > y ? x : y;
 }
 
+// Shop windows (SPZ1): as created until one shatters (State_Shattered destroys it two frames on); the draw rewrites
+// animator.frameID; Create sets the CircleBumpers it covers to the low draw group (the same every run). Range: size.
+static int ShopWindow_PS1Range(const void *e)
+{
+    const EntityShopWindow *w = (const EntityShopWindow *)e;
+    return w->size.x > w->size.y ? w->size.x : w->size.y;
+}
+
+// Invisible blocks: collision only; the ones in ACTIVE_NORMAL stay entities; outside time attack the time-attack ones
+// destroy themselves in Create (the record is then gone).
+static int InvisibleBlock_PS1Eligible(const void *e) { return !((const EntityInvisibleBlock *)e)->activeNormal; }
+static int InvisibleBlock_PS1Range(const void *e)
+{
+    const EntityInvisibleBlock *b = (const EntityInvisibleBlock *)e;
+    int32 x = (b->width + 5) << 19, y = (b->height + 5) << 19;
+    return x > y ? x : y;
+}
+
+// `unless`: the stages' classes that walk or keep these entities (foreach_all, stored pointers: their whole object
+// files reviewed for each class; a ring another object creates is a temp entity, never a record)
 const PS1DormantSpec ps1DormantSpecs[] = {
-    { Ring_Create, Ring_PS1Eligible, TO_FIXED(64), NULL,
-      { offsetof(EntityRing, animator.frameID), sizeof(int32), offsetof(EntityRing, direction), sizeof(uint8) } },
-    { PlaneSwitch_Create, PlaneSwitch_PS1Eligible, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 } },
-    { NULL, NULL, 0, NULL, { 0, 0, 0, 0 } },
+    { "Ring", Ring_PS1Eligible, TO_FIXED(64), NULL,
+      { offsetof(EntityRing, animator.frameID), sizeof(int32), offsetof(EntityRing, direction), sizeof(uint8) }, false,
+      { "ERZOutro", "RingField", "LaundroMobile" } },
+    { "PlaneSwitch", PS1Always, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 }, false, { "HeavyRider", "RollerMKII", NULL } },
+    { "ShopWindow", PS1Always, 0, ShopWindow_PS1Range, { offsetof(EntityShopWindow, animator.frameID), sizeof(int32), 0, 0 },
+      false, { NULL, NULL, NULL } },
+    { "InvisibleBlock", InvisibleBlock_PS1Eligible, 0, InvisibleBlock_PS1Range, { 0, 0, 0, 0 }, false,
+      { "Shiversaw", NULL, NULL } },
+    // springs (a bounce leaves the animation on its last frame) and decorations (animation, rotation) come back with
+    // their changed words
+    { "Spring", PS1Always, TO_FIXED(96), NULL, { 0, 0, 0, 0 }, true, { "PopOut", "MetalSonic", NULL } },
+    { "Decoration", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { "AIZSetup", "MSZSetup", "EncoreGoodEnd" } },
+    { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
 };
 #endif

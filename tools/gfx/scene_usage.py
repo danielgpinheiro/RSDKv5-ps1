@@ -200,8 +200,55 @@ def player_anim_values():
     return val
 
 
-def player_anims(active, names):
-    used = set(re.findall(r'\bANI_\w+\b', active_code(names, active)))
+# 7b: an ANI_ name a `case` label or a comparison names sets no animation (Player.c's switch on Tails' tail poses)
+NONSET = re.compile(r'case\s+ANI_\w+\s*:|[!=<>]=\s*ANI_\w+|ANI_\w+\s*[!=<>]=|[<>]\s*ANI_\w+|ANI_\w+\s*[<>](?!=)')
+# 7b: poses one object's code sets only for some entities or with some other object (reviewed in the code):
+# (object, ANI) -> ('never',) / ('active', {objects}) / ('var', editable variable, {values of some scene entity})
+POSE_GATES = {('Player', 'ANI_HANG'): ('never',),                   # a sidekick Tails carrying the leader (one character)
+              ('Player', 'ANI_DROWN'): ('active', {'Water'}),       # Water.c sets PLAYER_DEATH_DROWN
+              ('Player', 'ANI_FLUME'): ('active', {'HCZSetup'}),    # Player_State_WaterSlide: HCZSetup's slides
+              ('Platform', 'ANI_TWISTER'): ('var', 'collision', {8}),    # PLATFORM_C_SOLID_HOLD
+              ('Platform', 'ANI_TURNTABLE'): ('var', 'collision', {14})}  # PLATFORM_C_SOLID_BARREL
+
+
+def gate_open(gate, obj, active, scene):
+    if gate[0] == 'never':
+        return False
+    if gate[0] == 'active':
+        return bool(gate[1] & set(active))
+    if scene is None:
+        return True
+    h = F.name_hash(gate[1])
+    for o in scene['objects']:
+        if o['name'] == obj:
+            for e in o['entities']:
+                v = e['vars'].get(h)
+                if v is not None and not isinstance(v, (tuple, str)) and int.from_bytes(v, 'little', signed=True) in gate[2]:
+                    return True
+    return False
+
+
+def boss_only_poses(active, names, boss_files):
+    """7b: the player poses (IDs) that only objects loading a boss-group sprite file set (their code, NONSET aside)"""
+    owners = file_owners(names)  # path -> objects loading it
+    boss_objs = {o for p, objs in owners.items() if p in boss_files for o in objs}
+    setters = {}
+    for f in code_closure(active, set(names), sources()):
+        obj = os.path.basename(f)[:-2]
+        for a in set(re.findall(r'\bANI_\w+\b', NONSET.sub(' ', code_of(f)))):
+            setters.setdefault(a, set()).add(obj)
+    val = player_anim_values()
+    return {val[a] for a, objs in setters.items() if a in val and objs and objs <= boss_objs}
+
+
+def player_anims(active, names, scene=None):
+    used = set()
+    for f in code_closure(active, set(names), sources()):
+        obj = os.path.basename(f)[:-2]
+        for a in set(re.findall(r'\bANI_\w+\b', NONSET.sub(' ', code_of(f)))):
+            g = POSE_GATES.get((obj, a))
+            if g is None or gate_open(g, obj, active, scene):
+                used.add(a)
     val = player_anim_values()
     return {v for n, v in val.items() if n in used}, val
 

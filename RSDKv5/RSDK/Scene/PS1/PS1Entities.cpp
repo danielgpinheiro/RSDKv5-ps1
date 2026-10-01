@@ -244,8 +244,10 @@ void RSDK::PS1TypeGroupsBuild()
 }
 
 // ---- the scene file's entities ----
-// Record: {u16 fileSlot, u16 classID, i32 x, i32 y, u8 filter, u8 pad, u16 payloadLen} then payload items
-// {u16 offset, u8 type, u8 pad, u16 len, data[len]}, each item padded to 4 bytes.
+// One block per object of the scene file: its variable layout (RecLayout: the active variables in file order), then its
+// records: {u16 fileSlot, u16 classID, i32 x, i32 y, u8 filter, u8 pad, u16 payloadLen} and the variables' raw bytes
+// in the layout's order (a string: u16 characters, then them), each record 4-byte aligned (7b: no per-variable headers:
+// SPZ1's 2,372 entities took 237 KB of records with them).
 namespace
 {
 struct SceneRec {
@@ -269,6 +271,22 @@ uint8 *s_rec       = NULL; // the current object's block
 uint32 s_recSize   = 0;
 uint32 s_recUsed   = 0;
 SceneRec *s_cur    = NULL;
+struct RecVar {
+    uint16 offset;
+    uint8 type;
+    uint8 len; // 0: a string
+};
+struct RecLayout {
+    uint16 n;
+    uint8 hasString;
+    uint8 pad;
+    RecVar v[1]; // n of them
+};
+uint32 s_blockStart[PS1_SCENE_BLOCKS];  // the records' offset in their block (after its layout)
+const RecLayout *s_classLayout[TYPE_COUNT]; // a class's block's layout (classID 0, the classes this build lacks: none)
+RecLayout *s_curLayout = NULL;
+inline const RecLayout *LayoutOf(const SceneRec *r) { return r->classID < TYPE_COUNT ? s_classLayout[r->classID] : NULL; }
+inline uint32 RecBytes(const SceneRec *r) { return Align4(sizeof(SceneRec) + r->payloadLen); }
 
 // 7b: the classes with a "childCount" variable (PS1SceneChildVar) and the slots their entities' counts cover
 #define PS1_CHILD_VARS 8
@@ -276,42 +294,43 @@ uint16 s_childClass[PS1_CHILD_VARS], s_childOffset[PS1_CHILD_VARS];
 int32 s_childVars = 0;
 uint32 s_noDormant[(ENTITY_COUNT + 31) / 32];
 
-// A record's payload: {u16 offset, u8 type, u8 pad, u16 len, data[len]} items, each 4-byte aligned. Into an entity
-// block of `cap` bytes, as the stock loader writes the variables.
-__attribute__((noinline)) void ApplyPayload(EntityBase *e, uint32 cap, const uint8 *q, uint32 payloadLen)
+// A record's variables (its class's layout, the raw bytes) into an entity block of `cap` bytes, as the stock loader
+// writes them
+__attribute__((noinline)) void ApplyPayload(EntityBase *e, uint32 cap, const SceneRec *r)
 {
-    uint8 *eb = (uint8 *)e;
-    for (const uint8 *end = q + payloadLen; q < end;) {
-        uint16 offset, len;
-        memcpy(&offset, q, 2);
-        uint8 type = q[2];
-        memcpy(&len, q + 4, 2);
-        const uint8 *data = q + 6;
-        if (type == VAR_STRING) {
-            if (offset + sizeof(String) <= cap) {
-                String *string = (String *)&eb[offset];
-                uint16 chars   = len / 2;
+    const RecLayout *l = LayoutOf(r);
+    uint8 *eb          = (uint8 *)e;
+    const uint8 *q     = (const uint8 *)(r + 1), *end = q + r->payloadLen;
+    for (int32 i = 0; l && i < l->n && q < end; ++i) {
+        const RecVar *v = &l->v[i];
+        if (!v->len) { // a string
+            uint16 chars;
+            memcpy(&chars, q, 2);
+            q += 2;
+            if (v->offset + sizeof(String) <= cap) {
+                String *string = (String *)&eb[v->offset];
                 InitString(string, "", chars);
                 for (string->length = 0; string->length < chars; ++string->length)
-                    memcpy(&string->chars[string->length], data + 2 * string->length, 2);
+                    memcpy(&string->chars[string->length], q + 2 * string->length, 2);
             }
+            q += 2 * chars;
+            continue;
         }
-        else if (offset + len <= cap) {
-            memcpy(&eb[offset], data, len);
-        }
-        q += Align4(6 + len);
+        if (v->offset + v->len <= cap)
+            memcpy(&eb[v->offset], q, v->len);
+        q += v->len;
     }
 }
 
 // The entity a record makes before its Create (Place's writes): the block cleared, class, filter, position, variables
-__attribute__((noinline)) void FillEntity(EntityBase *e, uint32 cap, uint16 classID, int32 x, int32 y, const uint8 *payload, uint32 payloadLen)
+__attribute__((noinline)) void FillEntity(EntityBase *e, uint32 cap, const SceneRec *r)
 {
     memset(e, 0, cap);
-    e->classID    = classID;
+    e->classID    = r->classID;
     e->filter     = 0xFF;
-    e->position.x = x;
-    e->position.y = y;
-    ApplyPayload(e, cap, payload, payloadLen);
+    e->position.x = r->x;
+    e->position.y = r->y;
+    ApplyPayload(e, cap, r);
 }
 
 // ---- 7b (choice 113): dormant entities ----
@@ -321,10 +340,20 @@ struct DormRec {
     uint16 slot;
     uint16 unique;
     int32 x, y;
+    uint16 diff; // its changed words (a DormDiff), or PS1_DORMANT_NODIFF
+    uint16 pad;
+};
+#define PS1_DORMANT_NODIFF 0xFFFF
+// A record's words that differ from what its Create makes (word index in the block, value)
+#define PS1_DORMANT_DIFF_WORDS 7
+struct DormDiff {
+    uint8 n;
+    uint8 word[PS1_DORMANT_DIFF_WORDS];
+    uint32 value[PS1_DORMANT_DIFF_WORDS];
 };
 #define PS1_DORMANT_GONE    0x8000
 #define PS1_DORMANT_UNIQUES 160 // (the most in base Mania: SPZ2 act 1, 118)
-#define PS1_DORMANT_SPECS   4
+#define PS1_DORMANT_SPECS   8
 #define PS1_DORMANT_SCRATCH 256 // the largest class a spec may name (bytes)
 #define PS1_DORMANT_CREATE  TO_FIXED(32) // creation margin beyond the stock range (16.16)
 #define PS1_DORMANT_RETURN  TO_FIXED(64) // return margin (> creation: a ring at the edge does not flip every frame)
@@ -353,9 +382,16 @@ int32 s_dN = 0, s_dLo = 0, s_dHi = 0;
 EntityBase **s_dFree = NULL, **s_dMatBlk = NULL;
 uint16 *s_dMatRec = NULL;
 int32 s_dFreeN = 0, s_dMatN = 0, s_dPool = 0;
+DormDiff *s_dDiff = NULL;   // one per record a diff spec may return with changes
+uint16 *s_dDiffFree = NULL;
+int32 s_dDiffFreeN  = 0;
+int32 s_dLoadNext   = 0;     // InitObjects: the next record (slot order) whose Create runs at the load
 uint32 s_dCap  = 0;
 int32 s_dRange = 0;
-uint8 s_dScratch[PS1_DORMANT_SCRATCH] __attribute__((aligned(8)));
+// the scratch entity, after a block header: a Create into it sees a slot's block (GetEntitySlot; a destroyEntity clears
+// only its capacity, not sizeof(EntityBase) as for a pointer that is no slot's)
+uint8 s_dScratchBlk[sizeof(PS1EntityHeader) + PS1_DORMANT_SCRATCH] __attribute__((aligned(8)));
+uint8 *const s_dScratch = s_dScratchBlk + sizeof(PS1EntityHeader);
 // this frame's boxes per camera, before an entity's range: creation (c) and return (r), x0 x1 y0 y1 (16.16, clamped)
 int32 s_dCams = 0;
 int32 s_dBoxC[PS1_DORMANT_CAMERAS][4], s_dBoxR[PS1_DORMANT_CAMERAS][4];
@@ -433,58 +469,30 @@ __attribute__((noinline)) void SortRecs(DormRec *r, int32 n)
 // A record's childCount value (its class's variable), 0 if it has none
 __attribute__((noinline)) int32 ChildCount(const SceneRec *r)
 {
-    for (int32 c = 0; c < s_childVars; ++c) {
+    const RecLayout *l = LayoutOf(r);
+    for (int32 c = 0; l && !l->hasString && c < s_childVars; ++c) {
         if (s_childClass[c] != r->classID)
             continue;
-        for (const uint8 *q = (const uint8 *)(r + 1), *end = q + r->payloadLen; q < end;) {
-            uint16 offset, len;
-            memcpy(&offset, q, 2);
-            memcpy(&len, q + 4, 2);
-            if (offset == s_childOffset[c] && q[2] != VAR_STRING) {
-                int32 v = 0;
-                memcpy(&v, q + 6, len < 4 ? len : 4);
-                if (len == 1 && q[2] == VAR_INT8)
-                    v = (int8)v;
-                else if (len == 2 && q[2] == VAR_INT16)
-                    v = (int16)v;
-                return v;
-            }
-            q += Align4(6 + len);
+        const uint8 *q = (const uint8 *)(r + 1);
+        for (int32 i = 0; i < l->n; q += l->v[i].len, ++i) {
+            if (l->v[i].offset != s_childOffset[c])
+                continue;
+            int32 v = 0;
+            memcpy(&v, q, l->v[i].len < 4 ? l->v[i].len : 4);
+            if (l->v[i].len == 1 && l->v[i].type == VAR_INT8)
+                v = (int8)v;
+            else if (l->v[i].len == 2 && l->v[i].type == VAR_INT16)
+                v = (int16)v;
+            return v;
         }
     }
     return 0;
 }
 
-// Does record r's variable list match `layout` (n entries, or none yet: n = 0 and layout NULL)? Its raw bytes in `raw`.
-__attribute__((noinline)) bool SameLayout(const SceneRec *r, const SceneRec *layout, uint32 *raw)
+inline bool HasString(const SceneRec *r)
 {
-    const uint8 *q = (const uint8 *)(r + 1), *end = q + r->payloadLen;
-    const uint8 *l = layout ? (const uint8 *)(layout + 1) : NULL, *lend = layout ? l + layout->payloadLen : NULL;
-    *raw = 0;
-    while (q < end) {
-        uint16 len;
-        memcpy(&len, q + 4, 2);
-        if (l) {
-            if (l >= lend || memcmp(l, q, 6))
-                return false;
-            l += Align4(6 + len);
-        }
-        *raw += len;
-        q += Align4(6 + len);
-    }
-    return !l || l == lend;
-}
-
-__attribute__((noinline)) bool HasString(const SceneRec *r)
-{
-    for (const uint8 *q = (const uint8 *)(r + 1), *end = q + r->payloadLen; q < end;) {
-        uint16 len;
-        memcpy(&len, q + 4, 2);
-        if (q[2] == VAR_STRING)
-            return true;
-        q += Align4(6 + len);
-    }
-    return false;
+    const RecLayout *l = LayoutOf(r);
+    return !l || l->hasString;
 }
 } // namespace
 
@@ -498,19 +506,23 @@ void RSDK::PS1SceneEntitiesBegin()
     s_rec        = NULL;
     s_recSize = s_recUsed = 0;
     s_cur                 = NULL;
+    s_curLayout           = NULL;
+    memset(s_classLayout, 0, sizeof(s_classLayout));
 }
 
-void RSDK::PS1SceneObjectBegin(uint32 bytes)
+void RSDK::PS1SceneObjectBegin(uint32 bytes, uint16 classID, uint16 vars)
 {
     if (s_rec && s_blockCount < PS1_SCENE_BLOCKS) {
-        s_blockUsed[s_blockCount - 1] = s_recUsed;
+        s_blockUsed[s_blockCount - 1] = Align4(s_recUsed);
         g_ps1SceneRecordBytes         = g_ps1SceneRecordBytes; // (peak kept in Place)
     }
     s_rec = NULL;
     s_recSize = s_recUsed = 0;
     s_cur                 = NULL;
+    s_curLayout           = NULL;
     if (!bytes)
         return;
+    bytes += Align4(sizeof(RecLayout) + vars * sizeof(RecVar)); // its layout first
     if (s_blockCount >= PS1_SCENE_BLOCKS) {
         g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
         return;
@@ -526,14 +538,38 @@ void RSDK::PS1SceneObjectBegin(uint32 bytes)
     s_rec                      = s_blocks[s_blockCount];
     s_recSize                  = bytes;
     s_blockSize[s_blockCount]  = bytes;
-    s_blockUsed[s_blockCount]  = 0;
+    s_curLayout                = (RecLayout *)s_rec;
+    s_curLayout->n             = 0;
+    s_curLayout->hasString     = 0;
+    s_recUsed                  = Align4(sizeof(RecLayout) + vars * sizeof(RecVar));
+    s_blockStart[s_blockCount] = s_recUsed;
+    s_blockUsed[s_blockCount]  = s_recUsed;
+    if (classID && classID < TYPE_COUNT)
+        s_classLayout[classID] = s_curLayout;
     ++s_blockCount;
+}
+
+void RSDK::PS1SceneObjectVar(uint16 offset, uint8 type, uint16 len)
+{
+    if (!s_curLayout)
+        return;
+    RecVar *v = &s_curLayout->v[s_curLayout->n++];
+    v->offset = offset;
+    v->type   = type;
+    v->len    = type == VAR_STRING ? 0 : (uint8)len;
+    if (type == VAR_STRING)
+        s_curLayout->hasString = 1;
 }
 
 void RSDK::PS1SceneEntityBegin(uint16 fileSlot, uint16 classID, int32 x, int32 y)
 {
     s_cur = NULL;
     if (!s_rec || s_recUsed + sizeof(SceneRec) > s_recSize) {
+        g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
+        return;
+    }
+    s_recUsed         = Align4(s_recUsed); // (the previous record's raw bytes end anywhere)
+    if (s_recUsed + sizeof(SceneRec) > s_recSize) {
         g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
         return;
     }
@@ -552,18 +588,18 @@ void RSDK::PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16
 {
     if (!s_cur)
         return;
-    uint32 item = Align4(6 + len); // records and items stay 4-byte aligned (SceneRec holds int32s)
+    uint32 item = type == VAR_STRING ? 2 + len : len; // raw: a string's character count first
     if (s_recUsed + item > s_recSize) {
         g_ps1SceneRecordDropped = g_ps1SceneRecordDropped + 1;
         return;
     }
     uint8 *p = s_rec + s_recUsed;
-    memset(p, 0, item); // 7b: the padding too (payloads are compared byte for byte: the block holds an earlier scene's bytes)
-    memcpy(p, &offset, 2);
-    p[2] = type;
-    p[3] = 0;
-    memcpy(p + 4, &len, 2);
-    memcpy(p + 6, data, len);
+    if (type == VAR_STRING) {
+        uint16 chars = len / 2;
+        memcpy(p, &chars, 2);
+        p += 2;
+    }
+    memcpy(p, data, len);
     s_recUsed += item;
     s_cur->payloadLen += item;
     if (offset == offsetof(Entity, filter) && len == 1)
@@ -575,7 +611,7 @@ void RSDK::PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16
 void RSDK::PS1SceneEntitiesPlace()
 {
     if (s_rec && s_blockCount)
-        s_blockUsed[s_blockCount - 1] = s_recUsed;
+        s_blockUsed[s_blockCount - 1] = Align4(s_recUsed);
     uint32 recordBytes = 0;
     for (int32 b = 0; b < s_blockCount; ++b) recordBytes += s_blockSize[b];
     if (recordBytes > g_ps1SceneRecordBytes)
@@ -585,25 +621,26 @@ void RSDK::PS1SceneEntitiesPlace()
     SceneRec **index = NULL;
     AllocateStorage((void **)&index, PS1_SCENE_FILESLOTS * sizeof(SceneRec *), DATASET_TMP, true);
     for (int32 b = 0; b < s_blockCount; ++b) {
-        for (uint32 p = 0; p < s_blockUsed[b];) {
+        for (uint32 p = s_blockStart[b]; p < s_blockUsed[b];) {
             SceneRec *r = (SceneRec *)(s_blocks[b] + p);
             if (r->fileSlot < PS1_SCENE_FILESLOTS)
                 index[r->fileSlot] = r;
             else
                 g_ps1EntitiesDropped = g_ps1EntitiesDropped + 1;
-            p += sizeof(SceneRec) + r->payloadLen;
+            p += RecBytes(r);
         }
     }
 
-    // 7b: the classes that may go dormant this stage (matched by their Create)
+    // 7b: the classes that may go dormant this stage (the game's specs name them)
     memset(s_classSpec, 0, sizeof(s_classSpec));
     int32 candidates = 0;
-    for (int32 o = 1; o < sceneInfo.classCount && o < TYPE_COUNT; ++o) {
-        ObjectClass *oc = &objectClassList[stageObjectIDs[o]];
-        for (int32 k = 0; oc->create && k < PS1_DORMANT_SPECS && ps1DormantSpecs[k].create; ++k) {
-            if (ps1DormantSpecs[k].create == oc->create && Align4(oc->entityClassSize) <= PS1_DORMANT_SCRATCH)
-                s_classSpec[o] = (uint8)(k + 1);
-        }
+    for (int32 k = 0; k < PS1_DORMANT_SPECS && ps1DormantSpecs[k].name; ++k) {
+        bool walked = false; // a class of the stage walks or keeps this one's entities (foreach_all, pointers)
+        for (int32 u = 0; u < 3 && ps1DormantSpecs[k].unless[u]; ++u) walked |= StageClassOf(ps1DormantSpecs[k].unless[u]) != 0;
+        int32 o = walked ? 0 : StageClassOf(ps1DormantSpecs[k].name);
+        if (o && o < TYPE_COUNT && objectClassList[stageObjectIDs[o]].create
+            && Align4(objectClassList[stageObjectIDs[o]].entityClassSize) <= PS1_DORMANT_SCRATCH)
+            s_classSpec[o] = (uint8)(k + 1);
     }
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS; ++f)
         if (index[f] && index[f]->classID < TYPE_COUNT && s_classSpec[index[f]->classID])
@@ -620,7 +657,7 @@ void RSDK::PS1SceneEntitiesPlace()
     int32 uniqueRange[PS1_DORMANT_UNIQUES];
     const SceneRec *layoutRec[PS1_DORMANT_SPECS] = {};
     uint8 layoutN[PS1_DORMANT_SPECS]             = {};
-    int32 dormant    = 0;
+    int32 dormant    = 0, diffRecs = 0;
     uint32 blobBytes = 0, dormCap = 0, dormRange = 0;
 
     // capacities: reserved + scene (in final order) + temp + spare
@@ -643,11 +680,10 @@ void RSDK::PS1SceneEntitiesPlace()
             int32 children = s_childVars ? ChildCount(r) : 0;
             for (int32 c = slot + 1; c <= slot + children && c < ENTITY_COUNT; ++c) s_noDormant[c >> 5] |= 1u << (c & 31);
             uint8 spec = candidates && r->classID < TYPE_COUNT ? s_classSpec[r->classID] : 0;
-            uint32 raw = 0;
-            if (spec && !((s_noDormant[slot >> 5] >> (slot & 31)) & 1) && !HasString(r)
-                && SameLayout(r, layoutRec[spec - 1], &raw)) {
+            uint32 raw = r->payloadLen; // (one layout per class: every record of a class has it)
+            if (spec && !((s_noDormant[slot >> 5] >> (slot & 31)) & 1) && !HasString(r)) {
                 EntityBase *pre = (EntityBase *)s_dScratch;
-                FillEntity(pre, classBytes, r->classID, r->x, r->y, (const uint8 *)(r + 1), r->payloadLen);
+                FillEntity(pre, classBytes, r);
                 if (ps1DormantSpecs[spec - 1].eligible(pre)) {
                     int32 u = 0; // its payload among the distinct ones (pointers into the records until the arena exists)
                     for (; u < s_dUniques; ++u) {
@@ -667,16 +703,14 @@ void RSDK::PS1SceneEntitiesPlace()
                             blobBytes += sizeof(DormUnique) + Align4(raw);
                             if (!layoutRec[spec - 1]) {
                                 layoutRec[spec - 1] = r;
-                                for (const uint8 *q = (const uint8 *)(r + 1), *end = q + r->payloadLen; q < end; ++layoutN[spec - 1]) {
-                                    uint16 len;
-                                    memcpy(&len, q + 4, 2);
-                                    q += Align4(6 + len);
-                                }
+                                layoutN[spec - 1]   = (uint8)LayoutOf(r)->n;
                                 blobBytes += layoutN[spec - 1] * sizeof(DormVar);
                             }
                         }
                     }
                     if (u < s_dUniques) {
+                        if (ps1DormantSpecs[spec - 1].diffs)
+                            ++diffRecs;
                         r->pad = (uint8)(u + 1);
                         dormXY[2 * dormant]     = r->x >> 16;
                         dormXY[2 * dormant + 1] = r->y >> 16;
@@ -709,6 +743,7 @@ void RSDK::PS1SceneEntitiesPlace()
             pool = dormant;
         bytes += dormant * sizeof(DormRec) + blobBytes;
         bytes += pool * (2 * sizeof(EntityBase *) + sizeof(PS1EntityHeader) + dormCap) + Align4(pool * sizeof(uint16));
+        bytes += diffRecs * sizeof(DormDiff) + Align4(diffRecs * sizeof(uint16));
     }
     uint32 spareBytes = 8 * 1024; // GHZ1 play: 0 relocations (2.3m)
     bytes += spareBytes;
@@ -735,11 +770,11 @@ void RSDK::PS1SceneEntitiesPlace()
         s_dLayoutN[k] = layoutN[k];
         if (!layoutRec[k])
             continue;
-        DormVar *v = (DormVar *)p;
-        for (const uint8 *q = (const uint8 *)(layoutRec[k] + 1), *end = q + layoutRec[k]->payloadLen; q < end; ++v) {
-            memcpy(&v->offset, q, 2);
-            memcpy(&v->len, q + 4, 2);
-            q += Align4(6 + v->len);
+        DormVar *v         = (DormVar *)p;
+        const RecLayout *l = LayoutOf(layoutRec[k]);
+        for (int32 i = 0; i < layoutN[k]; ++i) {
+            v[i].offset = l->v[i].offset;
+            v[i].len    = l->v[i].len;
         }
         p += layoutN[k] * sizeof(DormVar);
     }
@@ -750,15 +785,8 @@ void RSDK::PS1SceneEntitiesPlace()
         d->spec           = (uint16)(s_classSpec[r->classID] - 1);
         d->pad            = 0;
         d->range          = uniqueRange[u];
-        uint8 *raw        = (uint8 *)(d + 1);
-        uint32 n          = 0;
-        for (const uint8 *q = (const uint8 *)(r + 1), *end = q + r->payloadLen; q < end;) {
-            uint16 len;
-            memcpy(&len, q + 4, 2);
-            memcpy(raw + n, q + 6, len);
-            n += len;
-            q += Align4(6 + len);
-        }
+        uint32 n          = r->payloadLen;
+        memcpy(d + 1, r + 1, n);
         d->len       = (uint16)n;
         s_dUnique[u] = d;
         p += sizeof(DormUnique) + Align4(n);
@@ -777,11 +805,13 @@ void RSDK::PS1SceneEntitiesPlace()
             d->unique  = (uint16)(r->pad - 1);
             d->x       = r->x;
             d->y       = r->y;
+            d->diff    = PS1_DORMANT_NODIFF;
+            d->pad     = 0;
         }
         else if (r->classID) {
             EntityBase *e = Carve(p, slot, Align4(objectClassList[stageObjectIDs[r->classID]].entityClassSize));
             objectEntityPtr[slot] = e;
-            FillEntity(e, PS1EntityCapacity(e), r->classID, r->x, r->y, (const uint8 *)(r + 1), r->payloadLen);
+            FillEntity(e, PS1EntityCapacity(e), r);
         }
         // classID 0 (a class this build does not have): the slot stays a ghost (stock: a blank entity with a position)
         ++slot;
@@ -791,8 +821,8 @@ void RSDK::PS1SceneEntitiesPlace()
         uint16 s           = TEMPENTITY_START + t;
         objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? maxCap : PS1_TEMP_SMALL_CAP);
     }
-    // 7b: the pool
-    SortRecs(s_dRec, s_dN);
+    // 7b: the pool (the records stay in slot order until InitObjects has run their Creates: PS1DormantLoadDone sorts)
+    s_dLoadNext = 0;
     s_dLo = s_dHi = 0;
     s_dPool = pool, s_dCap = dormCap, s_dRange = (int32)dormRange;
     s_dFree   = (EntityBase **)p;
@@ -801,6 +831,11 @@ void RSDK::PS1SceneEntitiesPlace()
     p += pool * 2 * sizeof(EntityBase *) + Align4(pool * sizeof(uint16));
     s_dFreeN = s_dMatN = 0;
     for (int32 k = 0; k < pool; ++k) s_dFree[s_dFreeN++] = Carve(p, 0, dormCap);
+    s_dDiff     = (DormDiff *)p;
+    p += diffRecs * sizeof(DormDiff);
+    s_dDiffFree = (uint16 *)p;
+    p += Align4(diffRecs * sizeof(uint16));
+    for (s_dDiffFreeN = 0; s_dDiffFreeN < diffRecs; ++s_dDiffFreeN) s_dDiffFree[s_dDiffFreeN] = (uint16)s_dDiffFreeN;
     g_ps1DormantRecords = s_dN;
     g_ps1DormantPool    = pool;
     g_ps1DormantLive    = 0;
@@ -841,6 +876,7 @@ void RSDK::PS1SceneChildVar(uint16 classID, uint16 offset, uint8 type)
 volatile uint32 RSDK::g_ps1DormantRecords = 0, RSDK::g_ps1DormantPool = 0, RSDK::g_ps1DormantLive = 0;
 volatile uint32 RSDK::g_ps1DormantPeak = 0, RSDK::g_ps1DormantFail = 0, RSDK::g_ps1DormantCreated = 0;
 volatile uint32 RSDK::g_ps1DormantReturned = 0, RSDK::g_ps1DormantGone = 0, RSDK::g_ps1DormantDropped = 0;
+volatile uint32 RSDK::g_ps1DormantDiffs = 0, RSDK::g_ps1DormantBadActive = 0;
 
 namespace
 {
@@ -866,41 +902,57 @@ void DormCreate(const DormRec *r, EntityBase *e)
             memcpy((uint8 *)e + dv->offset, raw, dv->len);
         raw += dv->len;
     }
+    // the Create runs as at the load: on the slot's entity (the slot points at `e` meanwhile: a block, with its header)
+    uint16 slot          = r->slot & ~PS1_DORMANT_GONE;
+    PS1EntityHeader *h   = (PS1EntityHeader *)e - 1;
+    h->slot              = slot;
+    h->capacity          = (uint16)s_dCap;
+    EntityBase *was      = objectEntityPtr[slot];
+    objectEntityPtr[slot] = e;
     Entity *curEnt       = sceneInfo.entity;
     int32 curSlot        = sceneInfo.entitySlot;
     sceneInfo.entity     = e;
-    sceneInfo.entitySlot = r->slot & ~PS1_DORMANT_GONE;
+    sceneInfo.entitySlot = slot;
     e->interaction       = true; // InitObjects' create loop
-    ps1DormantSpecs[u->spec].create(NULL);
+    objectClassList[stageObjectIDs[u->classID]].create(NULL);
     sceneInfo.entity     = curEnt;
     sceneInfo.entitySlot = curSlot;
+    if (objectEntityPtr[slot] == e) // (a Create that moved its slot elsewhere: counted by the caller's checks)
+        objectEntityPtr[slot] = was;
 }
 
-// Is the live entity `e` what record `r`'s Create makes (its spec's transient fields aside)?
-bool DormPristine(const DormRec *r, const EntityBase *e)
+// May the live entity `e` go back to record `r`? Out of range and in its bounds mode (ACTIVE_BOUNDS: out of reach it
+// would not run), and what its Create makes (a scratch Create, compared word by word, the spec's transient bytes aside)
+// but for at most PS1_DORMANT_DIFF_WORDS words a diff spec keeps in `diff` (none may be its class, position or
+// range: the record's box test reads those). Returns false if not.
+bool DormCompare(const DormRec *r, const EntityBase *e, DormDiff *diff)
 {
-    if (e->inRange || e->onScreen)
+    if (e->inRange || e->onScreen || e->active != ACTIVE_BOUNDS)
         return false;
     EntityBase *f = (EntityBase *)s_dScratch;
     DormCreate(r, f);
-    const uint16 *t = ps1DormantSpecs[s_dUnique[r->unique]->spec].transient;
-    uint32 o[2] = { t[0], t[2] }, n[2] = { t[1], t[3] };
-    if (n[1] && (!n[0] || o[1] < o[0])) { // in offset order
-        uint32 sw = o[0];
-        o[0] = o[1], o[1] = sw;
-        sw = n[0];
-        n[0] = n[1], n[1] = sw;
-    }
-    const uint8 *a = (const uint8 *)e, *b = (const uint8 *)f;
-    uint32 at = 0;
-    for (int32 k = 0; k < 2; ++k) {
-        if (!n[k])
+    const PS1DormantSpec *sp = &ps1DormantSpecs[s_dUnique[r->unique]->spec];
+    const uint32 *a = (const uint32 *)e, *b = (const uint32 *)f;
+    diff->n = 0;
+    for (uint32 w = 0; w < s_dCap / 4; ++w) {
+        uint32 m = 0xFFFFFFFF; // the word's bytes that count (the transient ones do not)
+        for (int32 k = 0; k < 4; k += 2) {
+            uint32 o = sp->transient[k], n = sp->transient[k + 1];
+            for (uint32 i = 0; i < 4; ++i)
+                if (n && 4 * w + i >= o && 4 * w + i < o + n)
+                    m &= ~(0xFFu << (8 * i));
+        }
+        if (!((a[w] ^ b[w]) & m))
             continue;
-        if (memcmp(a + at, b + at, o[k] - at))
-            return false;
-        at = o[k] + n[k];
+        uint32 at = 4 * w;
+        if (!sp->diffs || diff->n == PS1_DORMANT_DIFF_WORDS || at < offsetof(EntityBase, scale)
+            || (at >= offsetof(EntityBase, updateRange) && at < offsetof(EntityBase, updateRange) + sizeof(Vector2)))
+            return false; // (position: the record's; updateRange: the box test's)
+        diff->word[diff->n]  = (uint8)w;
+        diff->value[diff->n] = a[w];
+        ++diff->n;
     }
-    return !memcmp(a + at, b + at, s_dCap - at);
+    return true;
 }
 
 // Back to a record: the slot reads as a ghost, the block returns to the pool, the record leaves the live list
@@ -941,13 +993,57 @@ void DormReturn(const int32 (*box)[4])
             s_dMatRec[k] = s_dMatRec[s_dMatN];
             s_dMatBlk[k] = s_dMatBlk[s_dMatN];
         }
-        else if (!InBoxes(box, s_dCams, r->x, r->y, s_dUnique[r->unique]->range) && DormPristine(r, e)) {
-            g_ps1DormantReturned = g_ps1DormantReturned + 1;
-            DormRelease(k, true);
+        else if (!InBoxes(box, s_dCams, r->x, r->y, s_dUnique[r->unique]->range)) {
+            DormDiff d;
+            if (DormCompare(r, e, &d) && (!d.n || s_dDiffFreeN)) {
+                if (d.n) { // its changed words wait in a diff
+                    r->diff          = s_dDiffFree[--s_dDiffFreeN];
+                    s_dDiff[r->diff] = d;
+                    g_ps1DormantDiffs = g_ps1DormantDiffs + 1;
+                }
+                g_ps1DormantReturned = g_ps1DormantReturned + 1;
+                DormRelease(k, true);
+            }
         }
     }
 }
 } // namespace
+
+// InitObjects' create loop at slot `slot`: a dormant record there runs its Create now, as stock creates every scene
+// entity at the load (its side effects: ShopWindow's on the bumpers it covers), into the scratch block. One its Create
+// destroys (InvisibleBlock outside time attack) is gone; one not in its bounds mode stays an entity (counted: the
+// game's spec must not let it go dormant). Returns whether the slot had a record.
+bool RSDK::PS1DormantLoadCreate(int32 slot)
+{
+    if (s_dLoadNext >= s_dN || s_dRec[s_dLoadNext].slot != slot)
+        return false;
+    DormRec *r    = &s_dRec[s_dLoadNext++];
+    EntityBase *f = (EntityBase *)s_dScratch;
+    DormCreate(r, f);
+    if (!f->classID) {
+        r->slot |= PS1_DORMANT_GONE;
+        g_ps1DormantGone = g_ps1DormantGone + 1;
+    }
+    else if (f->active != ACTIVE_BOUNDS) {
+        g_ps1DormantBadActive = g_ps1DormantBadActive + 1;
+        if (s_dFreeN) { // an entity for good, from the pool
+            EntityBase *e = s_dFree[--s_dFreeN];
+            ((PS1EntityHeader *)e - 1)->slot = (uint16)slot;
+            memcpy(e, f, s_dCap);
+            objectEntityPtr[slot] = e;
+            --s_dPool;
+        }
+        r->slot |= PS1_DORMANT_GONE;
+    }
+    return true;
+}
+
+// After InitObjects: the records sorted by x for the creation band
+void RSDK::PS1DormantLoadDone()
+{
+    SortRecs(s_dRec, s_dN);
+    s_dLo = s_dHi = 0;
+}
 
 void RSDK::PS1DormantUpdate()
 {
@@ -995,6 +1091,12 @@ void RSDK::PS1DormantUpdate()
         EntityBase *e         = s_dFree[--s_dFreeN];
         ((PS1EntityHeader *)e - 1)->slot = r->slot;
         DormCreate(r, e);
+        if (r->diff != PS1_DORMANT_NODIFF) { // as it was when it went back to a record
+            const DormDiff *d = &s_dDiff[r->diff];
+            for (int32 w = 0; w < d->n; ++w) ((uint32 *)e)[d->word[w]] = d->value[w];
+            s_dDiffFree[s_dDiffFreeN++] = r->diff;
+            r->diff                     = PS1_DORMANT_NODIFF;
+        }
         objectEntityPtr[r->slot] = e;
         s_dMatRec[s_dMatN]       = (uint16)i;
         s_dMatBlk[s_dMatN++]     = e;

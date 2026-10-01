@@ -749,9 +749,9 @@ void RSDK::LoadSceneAssets()
 
             uint16 entityCount = ReadInt16(&info);
             {
-                // this object's records, exactly: a 16-byte header per entity + each active variable (6-byte item header,
-                // its bytes, 4-byte aligned; a string at most 0x100 characters)
-                uint32 perEntity = 16;
+                // this object's records, exactly: a 16-byte header per entity + each active variable's raw bytes (a
+                // string: its count + at most 0x100 characters), 4-byte aligned; its layout (PS1SceneObjectVar) first
+                uint32 perEntity = 16, vars = 0;
                 for (int32 v = 1; v < varCount; ++v) {
                     if (!varList[v].active)
                         continue;
@@ -762,12 +762,28 @@ void RSDK::LoadSceneAssets()
                         case VAR_UINT16:
                         case VAR_INT16: len = 2; break;
                         case VAR_VECTOR2: len = 8; break;
-                        case VAR_STRING: len = 0x100 * sizeof(uint16); break;
+                        case VAR_STRING: len = 2 + 0x100 * sizeof(uint16); break;
                         default: len = 4; break;
                     }
-                    perEntity += (6 + len + 3) & ~3u;
+                    perEntity += len;
+                    ++vars;
                 }
-                PS1SceneObjectBegin(entityCount * perEntity);
+                PS1SceneObjectBegin(entityCount * ((perEntity + 3) & ~3u), (uint16)classID, (uint16)vars);
+                for (int32 v = 1; v < varCount; ++v) {
+                    if (!varList[v].active)
+                        continue;
+                    uint32 len = 4;
+                    switch (varList[v].type) {
+                        case VAR_UINT8:
+                        case VAR_INT8: len = 1; break;
+                        case VAR_UINT16:
+                        case VAR_INT16: len = 2; break;
+                        case VAR_VECTOR2: len = 8; break;
+                        case VAR_STRING: len = 0; break;
+                        default: break;
+                    }
+                    PS1SceneObjectVar(varList[v].offset, varList[v].type, (uint16)len);
+                }
             }
             for (int32 e = 0; e < entityCount; ++e) {
                 uint16 slotID = ReadInt16(&info);
