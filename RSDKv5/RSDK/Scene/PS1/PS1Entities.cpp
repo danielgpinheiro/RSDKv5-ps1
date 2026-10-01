@@ -558,6 +558,7 @@ void RSDK::PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16
         return;
     }
     uint8 *p = s_rec + s_recUsed;
+    memset(p, 0, item); // 7b: the padding too (payloads are compared byte for byte: the block holds an earlier scene's bytes)
     memcpy(p, &offset, 2);
     p[2] = type;
     p[3] = 0;
