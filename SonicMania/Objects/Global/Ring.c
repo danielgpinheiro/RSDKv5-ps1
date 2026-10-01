@@ -1090,6 +1090,11 @@ const PS1DormantSpec ps1DormantSpecs[] = {
     // launchers (FBZ): a Platform without children (only direction is editable: a fixed platform, 128 px); a launch ends
     // back at the start, idle (ACTIVE_BOUNDS)
     { "Launcher", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    // PSZ (7b.4): ice blocks (Create reads only globals and the player's character; Player.c's foreach_all destroys
+    // only the frozen-player blocks, temp entities; a broken block is gone) and petal piles (Init sets the hitbox and
+    // state on the first update: diffs; a scattered pile's tiles go with its state)
+    { "Ice", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "PetalPile", PS1Always, TO_FIXED(16), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
     { "Technosqueek", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
     { "Clucker", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },

@@ -227,12 +227,39 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 'FBZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('FBZ/BigSqueeze.bin', None), ('FBZ/SpiderMobile.bin', None), ('Eggman/EggmanFBZ.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
-                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('FBZ/HangGlider.bin', None)]}}
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('FBZ/HangGlider.bin', None)]},
+                # 7b: PSZ1's Shiversaw, PSZ2's Heavy Shinobi (PSZ1's hang glider is its intro, under the stage music:
+                # level frames; PSZ2's outro art too, unless VRAM needs it)
+                'PSZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('PSZ1/Shiversaw.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'PSZ2': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('PSZ2/Shinobi.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
 # scope), by file name or by the sheets an animation's frames use
 CHAR_NAMES = {'sonic': 'Sonic', 'tails': 'Tails', 'knux': 'Knux'}
 ALL_CHAR_NAMES = ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray')
+
+
+# 7b.4: files whose animations are per character by name ("<Char> Idle", "Super Sonic Left": Ice.c picks
+# ICEANI_<char>IDLE from the player's character and Super state): other characters' animations stay out, Super Sonic's
+# go to the player region's Super group
+CHAR_ANIM_FILES = {'PSZ1/Ice.bin', 'PSZ2/Ice.bin'}
+CHAR_ANIM_PREFIX = {'Sonic': 'Sonic', 'Tails': 'Tails', 'Knux': 'Knux', 'Knuckles': 'Knux', 'Mighty': 'Mighty', 'Ray': 'Ray'}
+
+
+def char_anim_place(path, anim_name, character):
+    """(handled, place) for a per-character animation of a CHAR_ANIM_FILES file."""
+    if path not in CHAR_ANIM_FILES:
+        return False, None
+    if anim_name.startswith('Super Sonic'):
+        return True, ('player', 'super') if character == 'sonic' else None
+    for word, c in CHAR_ANIM_PREFIX.items():
+        if anim_name == word or anim_name.startswith(word + ' '):
+            return True, (None if c != CHAR_NAMES[character] else 'resident')
+    return False, None
 
 
 def other_character(name, character):
@@ -254,7 +281,7 @@ BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bi
 HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'CPZ/AmoebaDroid.bin', 'Eggman/EggmanCPZ.bin', 'CPZ/MBMSonic.bin', 'CPZ/MBMTails.bin', 'CPZ/MBMKnux.bin',  # 7b
              'SPZ2/WeatherMobile.bin', 'Eggman/EggMobile.bin', 'SPZ2/EggTV.bin',  # 7b
-             'FBZ/BigSqueeze.bin', 'FBZ/SpiderMobile.bin', 'Eggman/EggmanFBZ.bin',  # 7b
+             'FBZ/BigSqueeze.bin', 'FBZ/SpiderMobile.bin', 'Eggman/EggmanFBZ.bin', 'PSZ1/Shiversaw.bin',  # 7b
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
@@ -276,7 +303,9 @@ HALF_SUPER = {'Players/SuperSonic.bin'}
 HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin', 'SPZ1/PopcornMachine.bin',
               'SPZ1/Decoration.bin', 'SPZ1/SPZParallax.bin', 'SPZ1/SpinSign.bin',
               'SPZ2/CableWarp.bin', 'SPZ2/LottoMachine.bin', 'SPZ2/FilmReel.bin', 'SPZ2/LottoBall.bin',
-              'SPZ2/GreenScreen.bin', 'SPZ2/TVPole.bin'}
+              'SPZ2/GreenScreen.bin', 'SPZ2/TVPole.bin',
+              # 7b.4: Press Garden's ice (pillars up to 110 px and their 12-frame glint; blocks are ~50 px)
+              'PSZ1/Ice.bin', 'PSZ2/Ice.bin'}
 # 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
@@ -494,6 +523,10 @@ def select(folder, scene_id, character, files):
             fr = spr['anims'][ai]['frames']
             if fr and all(f['sheet'] < len(spr['sheets']) and other_character(spr['sheets'][f['sheet']], character) for f in fr):
                 place.append(None) # 7b: an animation drawn only from another character's sheets
+                continue
+            handled, cplace = char_anim_place(path, spr['anims'][ai]['name'], character)
+            if handled and cplace != 'resident':
+                place.append(cplace)
                 continue
             where = 'resident'
             if path in PLAYER_EXTRA:
