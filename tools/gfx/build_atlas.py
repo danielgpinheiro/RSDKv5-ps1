@@ -213,12 +213,13 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                                  ('CPZ/MBMSonic.bin', None), ('CPZ/MBMTails.bin', None), ('CPZ/MBMKnux.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
-                # 7b: SPZ1's Heavy Gunner, SPZ2's Weather Mobile (Eggman's mobile, the Egg TV); the act-2 end's TV picture
+                # 7b: SPZ1's Heavy Gunner, SPZ2's Weather Mobile (Eggman's mobile); the act-2 end's TV picture (the Egg TVs
+                # stand in the level: normal group)
                 'SPZ1': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('SPZ1/Boss.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'SPZ2': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None), ('SPZ2/EggTV.bin', None),
+                         'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None),
                                   ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None),
                                  ('SPZ2/TVFlyingBattery.bin', None)]}}

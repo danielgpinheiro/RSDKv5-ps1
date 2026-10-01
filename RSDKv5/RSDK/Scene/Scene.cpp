@@ -66,14 +66,20 @@ volatile uint32 RSDK::g_ps1ScrollInfoDropped   = 0; // scroll infos past the PS1
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 (docs/32 2.3g, choice 29): the scene's layout chunks (Scene.hpp).
 uint16 *RSDK::ps1ChunkPool                   = NULL;
+uint16 *RSDK::ps1RowPool                     = NULL;
+uint32 RSDK::ps1RowShared                    = 0;
+uint32 RSDK::ps1RowNext                      = 0;
+uint32 RSDK::ps1RowCap                       = 0;
 uint32 RSDK::ps1ChunkShared                  = 0;
 uint32 RSDK::ps1ChunkNext                    = 0;
 uint32 RSDK::ps1ChunkCap                     = 0;
 volatile uint32 RSDK::g_ps1ChunkOverflow     = 0;
 volatile uint32 RSDK::g_ps1ChunkPrivatePeak  = 0;
 
-#define PS1_CHUNK_BYTES   (16 * sizeof(uint16))
-#define PS1_CHUNK_PRIVATE (128) // chunks for writes per scene (4 KB): GHZ1 play uses 6 (g_ps1ChunkPrivatePeak)
+#define PS1_CHUNK_BYTES   (4 * sizeof(uint16)) // 7b.3: 4 row indices
+#define PS1_CHUNK_PRIVATE (128) // chunks for writes per scene (1 KB): GHZ1 play uses 6 (g_ps1ChunkPrivatePeak)
+#define PS1_ROW_PRIVATE   (256) // rows for writes per scene (2 KB)
+#define PS1_ROW_BYTES     (4 * sizeof(uint16))
 
 namespace
 {
@@ -103,6 +109,10 @@ void PS1ReadChunkPool(FileInfo *info)
     ps1ChunkShared = bytes / PS1_CHUNK_BYTES;
     ps1ChunkNext   = ps1ChunkShared;
     ps1ChunkCap    = ps1ChunkShared + PS1_CHUNK_PRIVATE;
+    bytes          = PS1ReadRawBlock(info, (void **)&ps1RowPool, DATASET_STG, PS1_ROW_PRIVATE * PS1_ROW_BYTES);
+    ps1RowShared   = bytes / PS1_ROW_BYTES;
+    ps1RowNext     = ps1RowShared;
+    ps1RowCap      = ps1RowShared + PS1_ROW_PRIVATE;
 }
 } // namespace
 
@@ -117,8 +127,8 @@ void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
         return;
     }
     uint16 *index = &layer->layout[cx + cy * layer->ps1ChunkStride];
-    uint32 in     = ((ty & 3) << 2) + (tx & 3);
-    if (ps1ChunkPool[((uint32)*index << 4) + in] == tile)
+    uint32 r = ty & 3, c = tx & 3;
+    if (ps1RowPool[((uint32)ps1ChunkPool[((uint32)*index << 2) + r] << 2) + c] == tile)
         return;
     PS1TileSolidDrop((int32)(layer - tileLayers)); // its one-colour lines were computed from the file's layout
     if (*index < ps1ChunkShared) {
@@ -127,12 +137,22 @@ void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
             g_ps1ChunkOverflow = g_ps1ChunkOverflow + 1;
             return;
         }
-        memcpy(&ps1ChunkPool[ps1ChunkNext << 4], &ps1ChunkPool[(uint32)*index << 4], PS1_CHUNK_BYTES);
+        memcpy(&ps1ChunkPool[ps1ChunkNext << 2], &ps1ChunkPool[(uint32)*index << 2], PS1_CHUNK_BYTES);
         *index = (uint16)ps1ChunkNext++;
         if (ps1ChunkNext - ps1ChunkShared > g_ps1ChunkPrivatePeak)
             g_ps1ChunkPrivatePeak = ps1ChunkNext - ps1ChunkShared;
     }
-    ps1ChunkPool[((uint32)*index << 4) + in] = tile;
+    // 7b.3: and a row from the file may stand for other chunks: this (private) chunk gets its own copy of it
+    uint16 *row = &ps1ChunkPool[((uint32)*index << 2) + r];
+    if (*row < ps1RowShared) {
+        if (ps1RowNext >= ps1RowCap) {
+            g_ps1ChunkOverflow = g_ps1ChunkOverflow + 1;
+            return;
+        }
+        memcpy(&ps1RowPool[ps1RowNext << 2], &ps1RowPool[(uint32)*row << 2], PS1_ROW_BYTES);
+        *row = (uint16)ps1RowNext++;
+    }
+    ps1RowPool[((uint32)*row << 2) + c] = tile;
 }
 #endif
 
@@ -177,6 +197,8 @@ void RSDK::LoadSceneFolder()
     // the layout chunks go with the layers (cleared below): the next compaction reclaims them
     ps1ChunkPool   = NULL;
     ps1ChunkShared = ps1ChunkNext = ps1ChunkCap = 0;
+    ps1RowPool     = NULL;
+    ps1RowShared = ps1RowNext = ps1RowCap = 0;
 #endif
 
 #if RETRO_REV02

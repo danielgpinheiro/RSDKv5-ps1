@@ -97,6 +97,9 @@ def walk_scene(r):
 # columns / rows past the layer as chunk 0, the stock padding), and one pool of the scene's distinct chunks (16 u16 each, chunk 0 = all 0xFFFF, the stock
 # padding value) follows the last layer as one more raw block. The engine reads tiles through the index (Scene.hpp
 # PS1TilePtr); writes copy a shared chunk first.
+# 7b.3: two levels: a chunk is 4 u16 row indices (8 bytes) into one pool of the scene's distinct 4-tile rows (8 bytes; row 0 =
+# all 0xFFFF, chunk 0 = four row 0s): SPZ2's pool 218 -> 146 KB, SPZ1's 171 -> 103 KB. The chunk pool block, then the row
+# pool block; writes copy a shared chunk, then a shared row.
 CHUNK = 4
 
 
@@ -150,9 +153,19 @@ def chunk_scene(data):
             index = struct.pack('<%dH' % len(idx), *idx)
         out += raw_block(index)
     assert len(pool) < 0x8000, 'chunk pool too big for u16 indices with room for private chunks'
-    out += raw_block(b''.join(struct.pack('<16H', *c) for c in pool))
+    rows, row_ids, chunks = [(0xFFFF,) * CHUNK], {(0xFFFF,) * CHUNK: 0}, []
+    for c in pool:
+        for y in range(CHUNK):
+            k = c[y * CHUNK:(y + 1) * CHUNK]
+            if k not in row_ids:
+                row_ids[k] = len(rows)
+                rows.append(k)
+            chunks.append(row_ids[k])
+    assert chunks[:CHUNK] == [0] * CHUNK and len(rows) < 0xFF00, 'row pool too big for u16 indices with room for private rows'
+    out += raw_block(struct.pack('<%dH' % len(chunks), *chunks))
+    out += raw_block(b''.join(struct.pack('<4H', *k) for k in rows))
     out += data[r.p:]
-    return bytes(out), len(pool)
+    return bytes(out), len(pool), len(rows)
 
 
 def objects_first(data):
@@ -167,7 +180,7 @@ def objects_first(data):
         for _ in range(r.u16()):
             r.u16(); r.u16(); r.u8(); r.u8()
         r.compressed(); r.compressed()
-    r.compressed()  # the chunk pool
+    r.compressed(); r.compressed()  # the chunk pool, the row pool
     return data[:head] + data[r.p:] + data[head:r.p]
 
 
@@ -273,7 +286,7 @@ def unchunk_check(orig_raw, chunked):
         assert dims[0] == dims[1]
         assert r0.compressed() == r1.compressed()
         pending.append((dims[0], r0.compressed(), r1.compressed()))
-    pool = r1.compressed()
+    pool, rows = r1.compressed(), r1.compressed()
     assert r0.d[r0.p:] == r1.d[r1.p:], 'objects section changed'
     for (xsize, ysize), layout, index in pending:
         if not (xsize or ysize):
@@ -285,7 +298,8 @@ def unchunk_check(orig_raw, chunked):
             for x in range(1 << layer_shift(xsize)):
                 cx, cy = x >> 2, min(y >> 2, ch)  # the engine: a column past the layer reads chunk 0, a row the zero row
                 ci = struct.unpack_from('<H', index, 2 * (cx + cy * cw))[0] if cx < cw else 0
-                t = struct.unpack_from('<H', pool, 2 * ((ci << 4) + ((y & 3) << 2) + (x & 3)))[0]
+                ri = struct.unpack_from('<H', pool, 2 * ((ci << 2) + (y & 3)))[0]
+                t = struct.unpack_from('<H', rows, 2 * ((ri << 2) + (x & 3)))[0]
                 want = struct.unpack_from('<H', layout, 2 * (y * xsize + x))[0] if x < xsize and y < ysize else 0xFFFF
                 assert t == want, (x, y, t, want)
 
@@ -531,12 +545,13 @@ def main():
                 out, baked = bake_relations(out)
                 if baked:
                     print('data_disc: %s: %d CircleBumpers baked low (ShopWindow)' % (os.path.relpath(s, src), baked))
-                chunked, chunks = chunk_scene(out)
+                chunked, chunks, nrows = chunk_scene(out)
                 unchunk_check(out, chunked)
                 ordered = objects_first(chunked)
                 assert len(ordered) == len(chunked)
                 open(d, 'wb').write(ordered); n['scene'] += 1; n['blocks'] += b
                 n['chunks'] = max(n.get('chunks', 0), chunks)
+                n['pool'] = max(n.get('pool', 0), 8 * (chunks + nrows))
             elif top == 'Game' and f == 'GameConfig.bin':
                 out, kept, dropped = convert_gameconfig(s)
                 open(d, 'wb').write(out); n['copied'] += 1
@@ -588,8 +603,8 @@ def main():
             else:
                 shutil.copyfile(s, d); n['copied'] += 1
             size_out += os.path.getsize(d)
-    print('data_disc: scene layouts as 4x4-tile chunk indices + one chunk pool per scene (largest pool %d chunks, '
-          'every tile self-checked)' % n.get('chunks', 0))
+    print('data_disc: scene layouts as 4x4-tile chunk indices + chunk and row pools per scene (largest %d chunks, '
+          'largest pools %d bytes, every tile self-checked)' % (n.get('chunks', 0), n.get('pool', 0)))
     print('data_disc: %(scene)d scenes + %(tileconfig)d tile configs rewritten (%(blocks)d blocks raw, self-checked), '
           '%(pal)d tileset palettes, %(copied)d files copied, %(skipped)d source/media files left out' % n)
     print('data_disc: %.1f MB of kept source -> %.1f MB on the disc tree (%s)' % (size_in / 1048576, size_out / 1048576, dst))

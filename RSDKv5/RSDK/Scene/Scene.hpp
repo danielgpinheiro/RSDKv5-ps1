@@ -176,10 +176,12 @@ extern volatile uint32 g_ps1ScrollInfoDropped;
 // PS1 (docs/32 2.3g, choice 29): a layer's `layout` is an index of 4x4-tile chunks (the stock power-of-two padded size in
 // chunks) into the scene's chunk pool: the scene file's distinct chunks (tools/data_disc.py; chunk 0 = all 0xFFFF, the
 // stock padding) then private chunks for writes. A write into a shared chunk copies it first (PS1SetTile).
-extern uint16 *ps1ChunkPool;
+extern uint16 *ps1ChunkPool; // 7b.3: a chunk = 4 row indices into ps1RowPool (tools/data_disc.py)
+extern uint16 *ps1RowPool;   // a row = 4 tiles
 extern uint32 ps1ChunkShared; // chunks [0, shared) come from the file and may be shared
 extern uint32 ps1ChunkNext;   // next private chunk
 extern uint32 ps1ChunkCap;
+extern uint32 ps1RowShared, ps1RowNext, ps1RowCap; // the same for rows
 extern volatile uint32 g_ps1ChunkOverflow; // writes lost for want of a private chunk (GDB; must stay 0)
 extern volatile uint32 g_ps1ChunkPrivatePeak;
 
@@ -190,10 +192,12 @@ inline const uint16 *PS1ChunkRow(const TileLayer *layer, uint32 cy)
     return &layer->layout[(cy < layer->ps1ChunkRows ? cy : layer->ps1ChunkRows) * layer->ps1ChunkStride];
 }
 inline uint32 PS1ChunkAt(const TileLayer *layer, const uint16 *row, uint32 cx) { return cx < layer->ps1ChunkStride ? row[cx] : 0; }
+// the 4 tiles of a chunk's row: rowSel = ps1ChunkPool + (ty & 3), the chunk's index
+inline const uint16 *PS1ChunkTiles(const uint16 *rowSel, uint32 chunk) { return ps1RowPool + ((uint32)rowSel[chunk << 2] << 2); }
 inline uint16 *PS1TilePtr(TileLayer *layer, int32 tx, int32 ty)
 {
     uint32 chunk = PS1ChunkAt(layer, PS1ChunkRow(layer, (uint32)ty >> 2), (uint32)tx >> 2);
-    return &ps1ChunkPool[(chunk << 4) + ((ty & 3) << 2) + (tx & 3)];
+    return &ps1RowPool[((uint32)ps1ChunkPool[(chunk << 2) + (ty & 3)] << 2) + (tx & 3)];
 }
 void PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile);
 #define PS1_LAYOUT(layer, tx, ty) (*PS1TilePtr(layer, tx, ty))

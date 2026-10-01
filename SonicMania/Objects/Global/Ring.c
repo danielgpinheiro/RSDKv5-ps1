@@ -933,8 +933,23 @@ void Ring_Serialize(void)
 // Create has no side effect a second run would change (it runs at the load as stock, and again when its record is
 // re-created), no other object keeps a pointer to it, out of range (ACTIVE_BOUNDS) nothing runs it.
 // Rings: a fixed ring's update (Ring_State_Normal) writes only animator.frameID (= Zone->ringFrame) before its draw sets
-// direction from it: both rewritten before any read. Moving rings stay entities.
-static int Ring_PS1Eligible(const void *e) { return ((const EntityRing *)e)->moveType == RING_MOVE_FIXED; }
+// direction from it: both rewritten before any read. Linear and circular rings (7b.3) set drawPos from position and
+// Zone->timer at the start of their update (Ring_Collect and the draw read it after): transient with the animator's
+// frames pointer (set in Create) between it and frameID. Track rings stay entities (their update reads direction,
+// which the draw rewrites), path rings too (they move by velocity).
+static int Ring_PS1Eligible(const void *e)
+{
+    int32 t = ((const EntityRing *)e)->moveType;
+    return t == RING_MOVE_FIXED || t == RING_MOVE_LINEAR || t == RING_MOVE_CIRCLE;
+}
+static int Ring_PS1Range(const void *e)
+{
+    const EntityRing *r = (const EntityRing *)e; // (the scene's amplitude: Create shifts it by 10)
+    if (r->moveType == RING_MOVE_FIXED)
+        return TO_FIXED(64);
+    int32 x = (abs(r->amplitude.x >> 10) + 0x1000) << 10, y = (abs(r->amplitude.y >> 10) + 0x1000) << 10;
+    return x > y ? x : y;
+}
 
 // Plane switches: their update only switches the players' planes (and shows them in debug mode, which is off); their
 // range follows size and angle (PlaneSwitch_Create).
@@ -992,8 +1007,10 @@ static int CircleBumper_PS1Range(const void *e)
 // `unless`: the stages' classes that walk or keep these entities (foreach_all, stored pointers: their whole object
 // files reviewed for each class; a ring another object creates is a temp entity, never a record)
 const PS1DormantSpec ps1DormantSpecs[] = {
-    { "Ring", Ring_PS1Eligible, TO_FIXED(64), NULL,
-      { offsetof(EntityRing, animator.frameID), sizeof(int32), offsetof(EntityRing, direction), sizeof(uint8) }, false,
+    { "Ring", Ring_PS1Eligible, 0, Ring_PS1Range,
+      { offsetof(EntityRing, drawPos), offsetof(EntityRing, animator.frameID) + sizeof(int32) - offsetof(EntityRing, drawPos),
+        offsetof(EntityRing, direction), sizeof(uint8) },
+      false,
       { "ERZOutro", "RingField", "LaundroMobile" } },
     { "PlaneSwitch", PS1Always, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 }, false, { "HeavyRider", "RollerMKII", NULL } },
     { "ShopWindow", PS1Always, 0, ShopWindow_PS1Range, { offsetof(EntityShopWindow, animator.frameID), sizeof(int32), 0, 0 },

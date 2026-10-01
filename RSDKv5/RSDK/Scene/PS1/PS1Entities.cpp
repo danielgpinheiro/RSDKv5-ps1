@@ -680,6 +680,7 @@ void RSDK::PS1SceneEntitiesPlace()
     int32 dormant    = 0, diffRecs = 0, movedRecs = 0;
     uint32 blobBytes = 0, dormRange = 0;
     uint16 capK[PS1_DORMANT_SPECS]  = {};
+    uint32 rangeK[PS1_DORMANT_SPECS] = {}; // each class's largest range (its band's pool bound)
     int32 poolK[PS1_DORMANT_BANDS]  = {};
     uint16 bandCap[PS1_DORMANT_BANDS] = {};
 
@@ -746,6 +747,8 @@ void RSDK::PS1SceneEntitiesPlace()
                             capK[spec - 1] = (uint16)classBytes;
                         if ((uint32)uniqRange[u] > dormRange)
                             dormRange = uniqRange[u];
+                        if ((uint32)uniqRange[u] > rangeK[spec - 1])
+                            rangeK[spec - 1] = uniqRange[u];
                     }
                 }
             }
@@ -765,10 +768,15 @@ void RSDK::PS1SceneEntitiesPlace()
     if (dormant) {
         // each class's pool: the most of its records a camera box reaches (its points alone through BoxBound) + 2
         int32 ox = screens[0].center.x ? screens[0].center.x : 160, oy = screens[0].center.y ? screens[0].center.y : 120;
-        int32 m  = (int32)(dormRange >> 16) + FROM_FIXED(PS1_DORMANT_RETURN) + PS1_DORMANT_SPREAD;
-        for (int32 k = 0; k < PS1_DORMANT_SPECS; ++k)
+        uint32 bandRange[PS1_DORMANT_BANDS] = {}; // a band's pool: its own classes' largest range (7b.3)
+        for (int32 k = 0; k < PS1_DORMANT_SPECS; ++k) {
+            if (!capK[k])
+                continue;
             if (capK[k] > bandCap[PS1_DORMANT_BAND(capK[k])])
                 bandCap[PS1_DORMANT_BAND(capK[k])] = capK[k];
+            if (rangeK[k] > bandRange[PS1_DORMANT_BAND(capK[k])])
+                bandRange[PS1_DORMANT_BAND(capK[k])] = rangeK[k];
+        }
         for (int32 band = 0; band < PS1_DORMANT_BANDS; ++band) {
             int32 n = 0;
             for (int32 i = 0; i < dormant; ++i)
@@ -776,6 +784,7 @@ void RSDK::PS1SceneEntitiesPlace()
                     dormYs[2 * n] = dormXY[3 * i], dormYs[2 * n + 1] = dormXY[3 * i + 1], ++n;
             if (!n)
                 continue;
+            int32 m     = (int32)(bandRange[band] >> 16) + FROM_FIXED(PS1_DORMANT_RETURN) + PS1_DORMANT_SPREAD;
             poolK[band] = BoxBound(dormYs, dormYs + 2 * n, n, 2 * (ox + m), 2 * (oy + m)) + 3;
             if (poolK[band] > n)
                 poolK[band] = n;

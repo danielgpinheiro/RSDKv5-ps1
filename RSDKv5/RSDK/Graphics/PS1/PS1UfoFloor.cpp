@@ -482,14 +482,14 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             continue;
         int32 txa = xmin >> 6, txb = xmax >> 6;
         const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
-        const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
+        const uint16 *rowSel   = ps1ChunkPool + (ty & 3);
         while (txa <= txb) {
             uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(txa & wMask) >> 2);
             if (!ch) { // chunk 0: all empty
                 txa = (txa | 3) + 1;
                 continue;
             }
-            if (pool[(ch << 4) + (txa & 3)] != 0xFFFF)
+            if (PS1ChunkTiles(rowSel, ch)[txa & 3] != 0xFFFF)
                 break;
             ++txa;
         }
@@ -499,7 +499,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
                 txb = (txb & ~3) - 1;
                 continue;
             }
-            if (pool[(ch << 4) + (txb & 3)] != 0xFFFF)
+            if (PS1ChunkTiles(rowSel, ch)[txb & 3] != 0xFFFF)
                 break;
             --txb;
         }
@@ -542,7 +542,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const uint16 *tZ = topZ + (txa - topA), *bZ = botZ + (txa - botA);
         // the row's tiles through their 4x4 chunks (a whole empty chunk at once)
         const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
-        const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
+        const uint16 *rowSel   = ps1ChunkPool + (ty & 3);
         const int32 n          = txb - txa + 1;
         for (int32 i = 0, tx = txa; i < n;) {
             uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(tx & wMask) >> 2);
@@ -550,8 +550,10 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             k         = k > n - i ? n - i : k;
             if (!ch)
                 for (int32 e = 0; e < k; ++e) s_t[i + e] = 0xFFFF;
-            else
-                for (int32 e = 0, q = (int32)(ch << 4) + (tx & 3); e < k; ++e) s_t[i + e] = pool[q + e];
+            else {
+                const uint16 *q = PS1ChunkTiles(rowSel, ch) + (tx & 3);
+                for (int32 e = 0; e < k; ++e) s_t[i + e] = q[e];
+            }
             i += k, tx += k;
         }
         // the quads; each tile takes the bank of its centre's forward distance (x 1024)
