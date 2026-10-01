@@ -337,7 +337,7 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
     int32 ty = ly >> 4, v0 = ly & 15;
     int32 tx = x >> 4, sx = -(x & 15);
     int32 xsize            = layer->xsize;
-    const uint16 *chunkRow = &layer->layout[(ty >> 2) << layer->ps1ChunkShift];
+    const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
     const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
     const uint16 *chunk    = pool + ((uint32)chunkRow[tx >> 2] << 4);
     int32 sub              = tx & 3;
@@ -447,7 +447,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         tx += xsize;
     else if (tx >= xsize)
         tx -= xsize;
-    const uint16 *chunkRow = &layer->layout[(ty >> 2) << layer->ps1ChunkShift];
+    const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
     const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
     const uint16 *chunk    = pool + ((uint32)chunkRow[tx >> 2] << 4);
     int32 sub              = tx & 3;
@@ -995,7 +995,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
             ly = scrollY + cy; // ProcessParallax's rows: scrollY on line 0, then one further per line, wrapping
             while (ly >= heightPx)
                 ly -= heightPx;
-            x = xOf[layer->lineScroll[ly]];
+            x = xOf[layer->lineScroll ? layer->lineScroll[ly] : layer->ps1LineScrollOne]; // 7b: no table: one value
         }
         else {
             x = FROM_FIXED(sl->position.x);
@@ -1017,7 +1017,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
         int32 rowEnd = TILE_SIZE - (ly & 15);
         while (h < rowEnd && cy + h < y2) {
             if constexpr (Direct) { // rows ly + h stay in this tile row: no wrap, always consecutive
-                if (xOf[layer->lineScroll[ly + h]] != x || (!oneBank && gfxLineBuffer[cy + h] != bank))
+                if ((layer->lineScroll && xOf[layer->lineScroll[ly + h]] != x) || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
             else {

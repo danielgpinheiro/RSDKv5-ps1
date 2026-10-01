@@ -134,12 +134,15 @@ struct TileLayer {
     uint16 *layout;
     uint8 *lineScroll;
 #if RETRO_PLATFORM == RETRO_PS1
-    uint8 ps1ChunkShift; // PS1 (docs/32 2.3g): layout is a chunk index, 1 << ps1ChunkShift chunks per row (engine-only field)
+    uint8 ps1ChunkUnused; // (was ps1ChunkShift: 7b stores the layout at the layer's own size)
     // PS1 (3.3c): the scroll info every line uses when lineScroll is one value (0xFF: several; set at the scene load:
     // nothing writes lineScroll later), and this frame's uniform scroll when ProcessParallax found no per-line work
     uint8 ps1LineScrollOne, ps1Uniform;
     uint8 ps1Direct; // 3.3h: this frame's lines come from lineScroll and the scroll infos (no deformation), from row ps1UniformY
     int16 ps1UniformX, ps1UniformY;
+    // PS1 (docs/32 2.3g, 7b): layout is a chunk index of ps1ChunkRows rows of ps1ChunkStride chunks (the layer's size in
+    // 4x4-tile chunks), then a row of chunk 0: columns / rows past the layer read chunk 0 (the stock padding)
+    uint16 ps1ChunkStride, ps1ChunkRows;
 #endif
 };
 
@@ -177,9 +180,16 @@ extern uint32 ps1ChunkCap;
 extern volatile uint32 g_ps1ChunkOverflow; // writes lost for want of a private chunk (GDB; must stay 0)
 extern volatile uint32 g_ps1ChunkPrivatePeak;
 
+// 7b: chunk row cy of the layer's index (past the last: the row of chunk 0), and column cx of such a row (past the
+// layer: chunk 0)
+inline const uint16 *PS1ChunkRow(const TileLayer *layer, uint32 cy)
+{
+    return &layer->layout[(cy < layer->ps1ChunkRows ? cy : layer->ps1ChunkRows) * layer->ps1ChunkStride];
+}
+inline uint32 PS1ChunkAt(const TileLayer *layer, const uint16 *row, uint32 cx) { return cx < layer->ps1ChunkStride ? row[cx] : 0; }
 inline uint16 *PS1TilePtr(TileLayer *layer, int32 tx, int32 ty)
 {
-    uint32 chunk = layer->layout[(tx >> 2) + ((ty >> 2) << layer->ps1ChunkShift)];
+    uint32 chunk = PS1ChunkAt(layer, PS1ChunkRow(layer, (uint32)ty >> 2), (uint32)tx >> 2);
     return &ps1ChunkPool[(chunk << 4) + ((ty & 3) << 2) + (tx & 3)];
 }
 void PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile);

@@ -251,15 +251,15 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
         PS1RotoPt *bot = up; // this row's bottom corners go into the other buffer
         PS1RotoSolveRow(L, n, rx, ry, txa << 20, (ty + 1) << 20, cn, bot, x1, y1);
         // the row's tiles walked through its 4x4 chunks (one chunk index per four tiles), wrapping on the map's width
-        const uint16 *chunkRow = &layer->layout[((ty & hMask) >> 2) << layer->ps1ChunkShift];
+        const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
         const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
         int32 tx               = txa & wMask;
-        const uint16 *chunk    = pool + ((uint32)chunkRow[tx >> 2] << 4);
+        const uint16 *chunk    = pool + (PS1ChunkAt(layer, chunkRow, (uint32)tx >> 2) << 4);
         for (int32 i = 0; i < cn - 1; ++i) {
             uint16 t = chunk[tx & 3];
             tx       = (tx + 1) & wMask;
             if (!(tx & 3))
-                chunk = pool + ((uint32)chunkRow[tx >> 2] << 4);
+                chunk = pool + (PS1ChunkAt(layer, chunkRow, (uint32)tx >> 2) << 4);
             if (t == 0xFFFF)
                 continue;
             const PS1RotoPt &a = top[i], &b = top[i + 1], &c = bot[i], &d = bot[i + 1];

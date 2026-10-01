@@ -112,6 +112,12 @@ void ChemicalPool_Create(void *data)
 
         self->leftEdge         = (self->position.x - (self->size.x >> 1)) >> 20;
         self->rightEdge        = (self->position.x + (self->size.x >> 1)) >> 20;
+#if defined RETRO_PS1_BUILD
+        if (self->rightEdge >= CHEMICALPOOL_COLUMNS - 1) // the tables' columns (ChemicalPool.h): never in CPZ's acts
+            self->rightEdge = CHEMICALPOOL_COLUMNS - 2;
+        if (self->leftEdge > self->rightEdge)
+            self->leftEdge = self->rightEdge;
+#endif
         self->impactPower      = 0x80;
         self->impactPowerSides = 0x99;
         self->r                = 0x00;

@@ -201,7 +201,28 @@ PLAYER_EXTRA = {'Global/SuperSparkle.bin': 'super'}
 EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('GHZ/DDWrecker.bin', None), ('GHZ/DERobot.bin', None), ('Eggman/EggmanAll.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 7b: CPZ1's Amoeba Droid, CPZ2's Mean Bean Machine (Eggman, the Puyo beans, the player's MBM picture)
+                'CPZ': {'start': [('Global/TitleCard.bin', None)],
+                        'boss': [('CPZ/AmoebaDroid.bin', None), ('Eggman/EggmanCPZ.bin', None), ('Puyo/PuyoBeans.bin', None),
+                                 ('Puyo/Combos.bin', None), ('Puyo/PuyoIndicator.bin', None), ('Puyo/PuyoUI.bin', None),
+                                 ('CPZ/MBMSonic.bin', None), ('CPZ/MBMTails.bin', None), ('CPZ/MBMKnux.bin', None),
+                                 ('Global/Explosions.bin', {2, 3})],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
+# 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
+# CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
+# scope), by file name or by the sheets an animation's frames use
+CHAR_NAMES = {'sonic': 'Sonic', 'tails': 'Tails', 'knux': 'Knux'}
+ALL_CHAR_NAMES = ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray')
+
+
+def other_character(name, character):
+    """True when a file / sheet name is another character's per-character art (<Char>Cutscene*, MBM<Char>)."""
+    base = os.path.basename(name).split('.')[0]
+    for c in ALL_CHAR_NAMES:
+        if (base.startswith(c + 'Cutscene') or base == 'MBM' + c) and c != CHAR_NAMES[character]:
+            return True
+    return False
 # Character art: 15 colours per frame, full resolution (user decision: players lossy; the title screen's big Sonic is
 # character art too: 687 KB at 8-bit, more than all the texture VRAM)
 PLAYER_LIKE = {'Title/Sonic.bin', 'SpecialBS/Sonic.bin', 'SpecialBS/Tails.bin', 'SpecialBS/Knuckles.bin'}
@@ -212,6 +233,7 @@ BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bi
 # end), then big effects, then presentation art, the always-visible HUD last; each step adds to the previous ones and
 # build_fit stops at the first that fits.
 HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
+             'CPZ/AmoebaDroid.bin', 'Eggman/EggmanCPZ.bin', 'CPZ/MBMSonic.bin', 'CPZ/MBMTails.bin', 'CPZ/MBMKnux.bin',  # 7b
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
@@ -352,6 +374,9 @@ def select(folder, scene_id, character, files):
         if drop is None:
             sel[path], why[path] = [None] * n, 'out of scope (base Mania)'
             continue
+        if other_character(path, character): # 7b
+            sel[path], why[path] = [None] * n, 'another character'
+            continue
         if path in BSS_PLAYER_FILES.values() and path != BSS_PLAYER_FILES[character]:
             sel[path], why[path] = [None] * n, 'another character'
             continue
@@ -382,6 +407,10 @@ def select(folder, scene_id, character, files):
         for ai in range(n):
             if (anims is not None and ai not in anims) or ai in drop:
                 place.append(None)
+                continue
+            fr = spr['anims'][ai]['frames']
+            if fr and all(f['sheet'] < len(spr['sheets']) and other_character(spr['sheets'][f['sheet']], character) for f in fr):
+                place.append(None) # 7b: an animation drawn only from another character's sheets
                 continue
             where = 'resident'
             if path in PLAYER_EXTRA:

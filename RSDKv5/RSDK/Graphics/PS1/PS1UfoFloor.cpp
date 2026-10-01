@@ -233,7 +233,6 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
     int32 minY = V[0][1], maxY = V[0][1];
     for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
     const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
-    const uint32 chunkRowStride = 1u << layer->ps1ChunkShift;
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 quads = 0;
     for (int32 cyy = minY >> 9; cyy <= maxY >> 9; ++cyy) {
@@ -249,14 +248,16 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
         const int32 badT = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyA, s_zA);
         for (int32 i = 0; i <= n; ++i) v[3 * i + 2] = (int16)(zq + 512);
         const int32 badB = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyB, s_zB);
-        const uint16 *chunkRow0 = &layer->layout[((((cyy << 3) & hMask) >> 2)) * chunkRowStride];
-        const uint16 *chunkRow1 = chunkRow0 + chunkRowStride;
+        const uint16 *chunkRow0 = PS1ChunkRow(layer, (uint32)((cyy << 3) & hMask) >> 2);
+        const uint16 *chunkRow1 = PS1ChunkRow(layer, ((uint32)((cyy << 3) & hMask) >> 2) + 1);
         const int32 my = (cyy << 3) & hMask;
         int32 fd = c.sA * (((ca << 9) + 256) - c.camX) + c.cA * (zq + 256);
         const int32 fStep = c.sA * 512;
         for (int32 i = 0; i < n; ++i, fd += fStep) {
             const int32 mx = ((ca + i) << 3) & wMask;
-            if (!(chunkRow0[mx >> 2] | chunkRow0[(mx >> 2) + 1] | chunkRow1[mx >> 2] | chunkRow1[(mx >> 2) + 1]))
+            const uint32 c0 = (uint32)mx >> 2;
+            if (!(PS1ChunkAt(layer, chunkRow0, c0) | PS1ChunkAt(layer, chunkRow0, c0 + 1) | PS1ChunkAt(layer, chunkRow1, c0)
+                  | PS1ChunkAt(layer, chunkRow1, c0 + 1)))
                 continue; // four empty chunks
             const int32 fc = fd >> 10;
             if (fc + 363 < fA || fc - 363 > f1)
@@ -473,7 +474,6 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
 
     // pass 1: each tile row's columns (the region's span less its empty ends: whole empty chunks skipped)
     const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
-    const uint32 chunkRowStride = 1u << layer->ps1ChunkShift;
     uint32 todo = 0;
     for (int32 r = 0; r < nRows; ++r) {
         int32 ty = ty0 + r, xmin, xmax;
@@ -481,10 +481,10 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         if (!PS1FloorSpan(V, ty << 6, (ty << 6) + 63, xmin, xmax))
             continue;
         int32 txa = xmin >> 6, txb = xmax >> 6;
-        const uint16 *chunkRow = &layer->layout[((ty & hMask) >> 2) * chunkRowStride];
+        const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
         const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
         while (txa <= txb) {
-            uint32 ch = chunkRow[(txa & wMask) >> 2];
+            uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(txa & wMask) >> 2);
             if (!ch) { // chunk 0: all empty
                 txa = (txa | 3) + 1;
                 continue;
@@ -494,7 +494,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             ++txa;
         }
         while (txb >= txa) {
-            uint32 ch = chunkRow[(txb & wMask) >> 2];
+            uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(txb & wMask) >> 2);
             if (!ch) {
                 txb = (txb & ~3) - 1;
                 continue;
@@ -541,11 +541,11 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const uint32 *tXY = topXY + (txa - topA), *bXY = botXY + (txa - botA);
         const uint16 *tZ = topZ + (txa - topA), *bZ = botZ + (txa - botA);
         // the row's tiles through their 4x4 chunks (a whole empty chunk at once)
-        const uint16 *chunkRow = &layer->layout[((ty & hMask) >> 2) * chunkRowStride];
+        const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
         const uint16 *pool     = ps1ChunkPool + ((ty & 3) << 2);
         const int32 n          = txb - txa + 1;
         for (int32 i = 0, tx = txa; i < n;) {
-            uint32 ch = chunkRow[(tx & wMask) >> 2];
+            uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(tx & wMask) >> 2);
             int32 k   = 4 - (tx & 3); // to the chunk's end
             k         = k > n - i ? n - i : k;
             if (!ch)

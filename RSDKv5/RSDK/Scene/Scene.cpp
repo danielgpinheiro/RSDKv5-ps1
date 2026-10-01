@@ -105,9 +105,17 @@ void PS1ReadChunkPool(FileInfo *info)
 }
 } // namespace
 
+extern "C" {
+volatile uint32 g_ps1SetTileOutside = 0; // 7b: SetTile past a layer's size (the PC writes its padding; total)
+}
 void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
 {
-    uint16 *index = &layer->layout[(tx >> 2) + ((ty >> 2) << layer->ps1ChunkShift)];
+    uint32 cx = (uint32)tx >> 2, cy = (uint32)ty >> 2;
+    if (cx >= layer->ps1ChunkStride || cy >= layer->ps1ChunkRows) { // past the layer (the PC's padding: never drawn)
+        g_ps1SetTileOutside = g_ps1SetTileOutside + 1;
+        return;
+    }
+    uint16 *index = &layer->layout[cx + cy * layer->ps1ChunkStride];
     uint32 in     = ((ty & 3) << 2) + (tx & 3);
     if (ps1ChunkPool[((uint32)*index << 4) + in] == tile)
         return;
@@ -613,6 +621,8 @@ void RSDK::LoadSceneAssets()
                     layer->ps1LineScrollOne = 0xFF;
             layer->ps1Uniform = 0;
             layer->ps1Direct  = 0;
+            if (layer->ps1LineScrollOne != 0xFF) // 7b: one value for every line: the table goes (STG)
+                RemoveStorageEntry((void **)&layer->lineScroll);
 #else
             memcpy(layer->lineScroll, scrollIndexes, TILE_SIZE * size * sizeof(uint8));
 #endif
@@ -623,7 +633,8 @@ void RSDK::LoadSceneAssets()
 
 #if RETRO_PLATFORM == RETRO_PS1
             // the chunk index, read straight into its STG block (no TMP copy of the layout)
-            layer->ps1ChunkShift = (layer->widthShift > 2 ? layer->widthShift : 2) - 2;
+            layer->ps1ChunkStride = (uint16)((layer->xsize + 3) >> 2); // 7b: the layer's own size (tools/data_disc.py)
+            layer->ps1ChunkRows   = (uint16)((layer->ysize + 3) >> 2);
             PS1ReadRawBlock(&info, (void **)&layer->layout, DATASET_STG);
             continue;
 #endif
@@ -1458,6 +1469,14 @@ void RSDK::ProcessParallaxAutoScroll()
         }
     }
 }
+#if RETRO_PLATFORM == RETRO_PS1
+// 7b: a layer whose lines all use one scroll info frees its lineScroll table at the load (ps1LineScrollOne holds it)
+#define PS1_LS_BASE(layer) ((layer)->lineScroll ? (layer)->lineScroll : &(layer)->ps1LineScrollOne)
+#define PS1_LS_STEP(layer) ((layer)->lineScroll ? 1 : 0)
+#else
+#define PS1_LS_BASE(layer) ((layer)->lineScroll)
+#define PS1_LS_STEP(layer) (1)
+#endif
 void RSDK::ProcessParallax(TileLayer *layer)
 {
     if (!layer->xsize || !layer->ysize)
@@ -1518,7 +1537,9 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 }
             }
 #endif
-            uint8 *lineScrollPtr = &layer->lineScroll[scrollPos];
+            uint8 *lsBase = PS1_LS_BASE(layer); // 7b: a one-value layer keeps no table (its value, not advanced)
+            const int32 lsStep = PS1_LS_STEP(layer);
+            uint8 *lineScrollPtr = lsBase + scrollPos * lsStep;
 
             // Above water
             int32 *deformationData = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
@@ -1531,11 +1552,11 @@ void RSDK::ProcessParallax(TileLayer *layer)
 
                 deformationData++;
                 if (scrollPos == pixelHeight) {
-                    lineScrollPtr = layer->lineScroll;
+                    lineScrollPtr = lsBase;
                     scrollPos     = 0;
                 }
                 else {
-                    ++lineScrollPtr;
+                    lineScrollPtr += lsStep;
                 }
                 scanline++;
             }
@@ -1551,11 +1572,11 @@ void RSDK::ProcessParallax(TileLayer *layer)
 
                 deformationData++;
                 if (scrollPos == pixelHeight) {
-                    lineScrollPtr = layer->lineScroll;
+                    lineScrollPtr = lsBase;
                     scrollPos     = 0;
                 }
                 else {
-                    ++lineScrollPtr;
+                    lineScrollPtr += lsStep;
                 }
                 scanline++;
             }
@@ -1575,7 +1596,9 @@ void RSDK::ProcessParallax(TileLayer *layer)
             if (scrollPos < 0)
                 scrollPos += pixelWidth;
 
-            uint8 *lineScrollPtr = &layer->lineScroll[scrollPos];
+            uint8 *lsBase = PS1_LS_BASE(layer); // 7b: a one-value layer keeps no table (its value, not advanced)
+            const int32 lsStep = PS1_LS_STEP(layer);
+            uint8 *lineScrollPtr = lsBase + scrollPos * lsStep;
 
             // Above water
             for (int32 i = 0; i < currentScreen->size.x; ++i) {
@@ -1583,11 +1606,11 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 scanline->position.y = layer->scrollInfo[*lineScrollPtr].tilePos;
 
                 if (scrollPos == pixelWidth) {
-                    lineScrollPtr = layer->lineScroll;
+                    lineScrollPtr = lsBase;
                     scrollPos     = 0;
                 }
                 else {
-                    ++lineScrollPtr;
+                    lineScrollPtr += lsStep;
                 }
 
                 scanline++;
@@ -1634,7 +1657,9 @@ void RSDK::ProcessParallax(TileLayer *layer)
             if (scrollPos < 0)
                 scrollPos += pixelHeight;
 
-            uint8 *lineScrollPtr = &layer->lineScroll[scrollPos];
+            uint8 *lsBase = PS1_LS_BASE(layer); // 7b: a one-value layer keeps no table (its value, not advanced)
+            const int32 lsStep = PS1_LS_STEP(layer);
+            uint8 *lineScrollPtr = lsBase + scrollPos * lsStep;
 
             // Above water
             for (int32 i = 0; i < currentScreen->waterDrawPos; ++i) {
@@ -1642,11 +1667,11 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 scanline->position.y = TO_FIXED(scrollPos++);
 
                 if (scrollPos == pixelHeight) {
-                    lineScrollPtr = layer->lineScroll;
+                    lineScrollPtr = lsBase;
                     scrollPos     = 0;
                 }
                 else {
-                    ++lineScrollPtr;
+                    lineScrollPtr += lsStep;
                 }
                 scanline++;
             }
@@ -1657,11 +1682,11 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 scanline->position.y = TO_FIXED(scrollPos++);
 
                 if (scrollPos == pixelHeight) {
-                    lineScrollPtr = layer->lineScroll;
+                    lineScrollPtr = lsBase;
                     scrollPos     = 0;
                 }
                 else {
-                    ++lineScrollPtr;
+                    lineScrollPtr += lsStep;
                 }
 
                 scanline++;

@@ -142,6 +142,12 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         enc = Encoder(src_sfx, tmp)
         for (folder, sid), names in sets.items():
+            # 7b: a name the game asks for that the data pack lacks (CPZ's Staircase: CPZ2HitBlocks.wav): on the PC its
+            # GetSfx finds nothing and nothing plays; left out of the bank the same way
+            missing = [n for n in names if not os.path.exists(os.path.join(src_sfx, n))]
+            for n in missing:
+                print('%s%s: %s not in the data (the PC plays nothing either)' % (folder, sid, n))
+            names = [n for n in names if n not in missing]
             info = {n: enc.info(n) for n in names}
             rate = choose_rates(names, info, budget)
             if rate is None:

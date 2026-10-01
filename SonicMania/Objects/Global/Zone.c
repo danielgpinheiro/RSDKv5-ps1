@@ -927,6 +927,9 @@ void Zone_State_FadeOut_Destroy(void)
 
 void Zone_HandlePlayerSwap(void)
 {
+#if defined RETRO_PS1_BUILD
+    return; // docs/32 7b: Encore's player swap (out of scope): entityStorage holds only entries 0-8 (Zone.h)
+#endif
     int32 playerBoundActiveB[PLAYER_COUNT];
     int32 playerBoundActiveT[PLAYER_COUNT];
     int32 playerBoundActiveR[PLAYER_COUNT];

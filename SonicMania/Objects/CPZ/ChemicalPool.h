@@ -10,9 +10,16 @@ struct ObjectChemicalPool {
     RSDK_OBJECT
     TABLE(color surfaceColorsFlash[4], { 0xF0F0F0, 0xF0F0F0, 0xE0E0E0, 0xE0E0E0 });
     uint16 aniFrames;
-    int32 surfaceDeformation[0x1000];
-    int32 deformTable[0x1000];
-    int32 impactTable[0x1000];
+#if defined RETRO_PS1_BUILD
+// PS1 port (docs/32 7b): indexed by the pools' tile columns, and CPZ (the only zone with pools) is 1200 / 512 tiles wide:
+// 0x500 columns (15 KB, not 48: CPZ1 was 21 KB short of STG); a pool past them is cut (ChemicalPool_Create)
+#define CHEMICALPOOL_COLUMNS (0x500)
+#else
+#define CHEMICALPOOL_COLUMNS (0x1000)
+#endif
+    int32 surfaceDeformation[CHEMICALPOOL_COLUMNS];
+    int32 deformTable[CHEMICALPOOL_COLUMNS];
+    int32 impactTable[CHEMICALPOOL_COLUMNS];
     uint16 unused; // exists, it's in the static object, but never used
     uint16 sfxChemYellow;
     uint16 sfxChemRed;

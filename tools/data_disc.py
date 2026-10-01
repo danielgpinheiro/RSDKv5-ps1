@@ -92,8 +92,9 @@ def walk_scene(r):
 
 
 # Scene layouts on the PS1 (docs/32 2.3g, choice 29): each layer's layout block becomes a chunk index (u16 per 4x4 tiles,
-# row-major over the stock power-of-two padded size: pitch 1 << (widthShift - 2), rows 1 << (heightShift - 2), the
-# padding pointing at chunk 0), and one pool of the scene's distinct chunks (16 u16 each, chunk 0 = all 0xFFFF, the stock
+# row-major over the layer's own size in chunks: pitch ceil(xsize / 4), ceil(ysize / 4) rows, then one row of chunk 0;
+# 7b: it was the stock power-of-two padded size, 64 KB a layer for CPZ1's 1200x192 where 29 KB hold it: the engine reads
+# columns / rows past the layer as chunk 0, the stock padding), and one pool of the scene's distinct chunks (16 u16 each, chunk 0 = all 0xFFFF, the stock
 # padding value) follows the last layer as one more raw block. The engine reads tiles through the index (Scene.hpp
 # PS1TilePtr); writes copy a shared chunk first.
 CHUNK = 4
@@ -134,11 +135,10 @@ def chunk_scene(data):
         tiles = struct.unpack('<%dH' % (xsize * ysize), layout)
         index = b''
         if xsize or ysize:
-            cws = max(layer_shift(xsize), 2) - 2
-            chs = max(layer_shift(ysize), 2) - 2
+            cw, ch = -(-xsize // CHUNK), -(-ysize // CHUNK)
             idx = []
-            for cy in range(1 << chs):
-                for cx in range(1 << cws):
+            for cy in range(ch):
+                for cx in range(cw):
                     k = tuple(tiles[(cy * CHUNK + y) * xsize + cx * CHUNK + x]
                               if cy * CHUNK + y < ysize and cx * CHUNK + x < xsize else 0xFFFF
                               for y in range(CHUNK) for x in range(CHUNK))
@@ -146,6 +146,7 @@ def chunk_scene(data):
                         pool_ids[k] = len(pool)
                         pool.append(k)
                     idx.append(pool_ids[k])
+            idx += [0] * cw  # the row past the last: chunk 0 (rows beyond the layer read it)
             index = struct.pack('<%dH' % len(idx), *idx)
         out += raw_block(index)
     assert len(pool) < 0x8000, 'chunk pool too big for u16 indices with room for private chunks'
@@ -179,10 +180,12 @@ def unchunk_check(orig_raw, chunked):
         if not (xsize or ysize):
             assert index == b''
             continue
-        cws = max(layer_shift(xsize), 2) - 2
+        cw, ch = -(-xsize // CHUNK), -(-ysize // CHUNK)
+        assert len(index) == 2 * cw * (ch + 1)
         for y in range(1 << layer_shift(ysize)):
             for x in range(1 << layer_shift(xsize)):
-                ci = struct.unpack_from('<H', index, 2 * ((x >> 2) + ((y >> 2) << cws)))[0]
+                cx, cy = x >> 2, min(y >> 2, ch)  # the engine: a column past the layer reads chunk 0, a row the zero row
+                ci = struct.unpack_from('<H', index, 2 * (cx + cy * cw))[0] if cx < cw else 0
                 t = struct.unpack_from('<H', pool, 2 * ((ci << 4) + ((y & 3) << 2) + (x & 3)))[0]
                 want = struct.unpack_from('<H', layout, 2 * (y * xsize + x))[0] if x < xsize and y < ysize else 0xFFFF
                 assert t == want, (x, y, t, want)
