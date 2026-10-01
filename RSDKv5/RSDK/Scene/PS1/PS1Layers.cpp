@@ -339,7 +339,7 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
     int32 xsize            = layer->xsize;
     const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
     const uint16 *rowSel   = ps1ChunkPool + (ty & 3); // 7b.3: the chunks' row ty & 3
-    const uint16 *chunk    = PS1ChunkTiles(rowSel, chunkRow[tx >> 2]);
+    const uint16 *chunk    = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
     int32 sub              = tx & 3;
     int32 pieces = 0, misses = 0;
     bool full   = h == TILE_SIZE;
@@ -352,11 +352,11 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
             tx = 0, sub = 0;
-            chunk = PS1ChunkTiles(rowSel, chunkRow[0]);
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, 0));
         }
         else if (++sub == 4) {
             sub   = 0;
-            chunk = PS1ChunkTiles(rowSel, chunkRow[tx >> 2]);
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
         }
         if (t == 0xFFFF)
             continue;
@@ -449,17 +449,17 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         tx -= xsize;
     const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
     const uint16 *rowSel   = ps1ChunkPool + (ty & 3); // 7b.3: the chunks' row ty & 3
-    const uint16 *chunk    = PS1ChunkTiles(rowSel, chunkRow[tx >> 2]);
+    const uint16 *chunk    = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
     int32 sub              = tx & 3;
     for (int32 k = 0; k < cols; ++k) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) {
             tx = 0, sub = 0;
-            chunk = PS1ChunkTiles(rowSel, chunkRow[0]);
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, 0));
         }
         else if (++sub == 4) {
             sub   = 0;
-            chunk = PS1ChunkTiles(rowSel, chunkRow[tx >> 2]);
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
         }
         PS1Col *col = &ct->col[k];
         if (t == 0xFFFF) {

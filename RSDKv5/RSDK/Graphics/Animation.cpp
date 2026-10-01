@@ -85,15 +85,16 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
         for (int32 h = 0; h < hitboxCount; ++h) {
             ReadString(&info, nameBuffer[h]);
         }
-#if RETRO_PLATFORM == RETRO_PS1
-        // the frames, then each frame's hitboxes (Animation.hpp)
-        Hitbox *hitboxList = NULL;
-        AllocateStorage((void **)&spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)), DATASET_STG, false);
-#endif
-
         spr->animCount = ReadInt16(&info);
         AllocateStorage((void **)&spr->animations, spr->animCount * sizeof(SpriteAnimationEntry), DATASET_STG, false);
 #if RETRO_PLATFORM == RETRO_PS1
+        // the frames, then their hitboxes (Animation.hpp); 7b.3c: frames whose hitboxes hold the same values share one copy
+        // (a player file: ~45 distinct pairs for ~550 frames), the block allocated last so its unused tail goes back
+        Hitbox *hbBase  = NULL;
+        uint32 hbSets   = 0;
+        Hitbox hbRead[8];
+        AllocateStorage((void **)&spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)), DATASET_STG, false);
+        hbBase = (Hitbox *)(spr->frames + frameCount);
         spr->ps1Frames      = (uint16)frameCount;
         spr->ps1Placeholder = 0xFFFF;
         if (drop) { // the placeholder: the last frame, blank, its hitboxes zero
@@ -102,8 +103,9 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
             memset(ph, 0, sizeof(SpriteFrame));
             ph->duration     = 1;
             ph->hitboxCount  = hitboxCount;
-            Hitbox *phBoxes  = (Hitbox *)(spr->frames + frameCount) + (frameCount - 1) * hitboxCount;
+            Hitbox *phBoxes  = hbBase; // the first set: all zero
             memset(phBoxes, 0, hitboxCount * sizeof(Hitbox));
+            hbSets           = hitboxCount ? 1 : 0;
             ph->hitboxOffset = (uint16)(((uint8 *)phBoxes - (uint8 *)ph) >> 1);
         }
         uint16 dropAt = 0; // the next dropped animation in the list
@@ -148,14 +150,19 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
                 frame->hitboxCount = hitboxCount;
 #if RETRO_PLATFORM == RETRO_PS1
-                hitboxList          = (Hitbox *)(spr->frames + frameCount) + (frameID - 1) * hitboxCount;
-                frame->hitboxOffset = (uint16)(((uint8 *)hitboxList - (uint8 *)frame) >> 1);
                 for (int32 h = 0; h < hitboxCount; ++h) {
-                    hitboxList[h].left   = ReadInt16(&info);
-                    hitboxList[h].top    = ReadInt16(&info);
-                    hitboxList[h].right  = ReadInt16(&info);
-                    hitboxList[h].bottom = ReadInt16(&info);
+                    hbRead[h].left   = ReadInt16(&info);
+                    hbRead[h].top    = ReadInt16(&info);
+                    hbRead[h].right  = ReadInt16(&info);
+                    hbRead[h].bottom = ReadInt16(&info);
                 }
+                uint32 set = 0;
+                for (; set < hbSets; ++set)
+                    if (!memcmp(&hbBase[set * hitboxCount], hbRead, hitboxCount * sizeof(Hitbox)))
+                        break;
+                if (set == hbSets && hitboxCount)
+                    memcpy(&hbBase[hbSets++ * hitboxCount], hbRead, hitboxCount * sizeof(Hitbox));
+                frame->hitboxOffset = (uint16)(((uint8 *)&hbBase[set * hitboxCount] - (uint8 *)frame) >> 1);
 #else
                 for (int32 h = 0; h < hitboxCount; ++h) {
                     frame->hitboxes[h].left   = ReadInt16(&info);
@@ -169,6 +176,8 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
         CloseFile(&info);
 #if RETRO_PLATFORM == RETRO_PS1
+        if (PS1StorageTrimLast((void **)&spr->frames, frameCount * sizeof(SpriteFrame) + hbSets * hitboxCount * sizeof(Hitbox), DATASET_STG))
+            g_ps1HitboxBytesSaved = g_ps1HitboxBytesSaved + (frameCount - hbSets) * hitboxCount * sizeof(Hitbox);
         PS1AtlasBind(id); // each frame's place in VRAM (docs/32 3.1c)
 #endif
 
@@ -180,6 +189,7 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
 #if RETRO_PLATFORM == RETRO_PS1
 Hitbox RSDK::ps1EmptyHitbox;
+volatile uint32 RSDK::g_ps1HitboxBytesSaved = 0; // 7b.3c: hitbox bytes the shared sets saved (total, GDB)
 #endif
 
 uint16 RSDK::CreateSpriteAnimation(const char *filename, uint32 frameCount, uint32 animCount, uint8 scope)

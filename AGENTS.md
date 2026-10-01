@@ -85,6 +85,14 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   folders in `tools/gen_overlays.py` SPLIT get one overlay per act (`<folder>_<scene>`; left-out classes counted apart).
   A new class the game puts in a reserved slot, or a new dormant class, goes in those tables; watch `relocations`,
   `ghostWrites`, `g_ps1DormantFail`, `g_ps1EntityCreateOverwrites`, `g_ps1StageObjectsMissing` (all must stay 0).
+  A dormant spec needs a review (Create sets only its own fields: no RNG, counters or children; no foreach_all / slot /
+  pointer use by other classes, else list them in `unless`); diffs only for state an update leaves (36 B a record).
+  Act overlays may leave out classes kept code names only in act-only or pointer-checked code (`FORCE_DROP`, reviewed).
+- **Layouts (7b.3)**: chunk index → 8-chunk segments → 4×4 chunks (4 row ids) → 4-tile rows, all deduplicated per scene
+  by `tools/data_disc.py` (self-checked); read tiles through `PS1ChunkRow` / `PS1ChunkIdx` / `PS1ChunkTiles` /
+  `PS1TilePtr`, write only through `PS1SetTile` (copy-on-write at each level).
+- **Load-time memory (7b.4)**: atlas bindings live in DATASET_TMP during the StageLoads; sprite frames share identical
+  hitbox sets (frame block trimmed); a group swap stages in STG's tail, else TMP.
 - **Golden rule**: no runtime asset decoding; converters decode their output back and compare.
 - Per-frame drawing is **DMA-chained** (`ps1/gpu_chain.hh`); fragments ≤ 14 words; immediate VRAM writes
   go to the other buffer (`../docs/29` §3). Clip primitives beyond the GPU limits. **One 60 KB arena** (3.3b; 50 → 60 KB in 7.1): a

@@ -222,7 +222,12 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None),
                                   ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None),
-                                 ('SPZ2/TVFlyingBattery.bin', None)]}}
+                                 ('SPZ2/TVFlyingBattery.bin', None)]},
+                # 7b: FBZ1's Big Squeeze, FBZ2's Spider Mobile (Eggman in both); act 2's end leaves on the hang glider
+                'FBZ': {'start': [('Global/TitleCard.bin', None)],
+                        'boss': [('FBZ/BigSqueeze.bin', None), ('FBZ/SpiderMobile.bin', None), ('Eggman/EggmanFBZ.bin', None),
+                                 ('Global/Explosions.bin', {2, 3})],
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('FBZ/HangGlider.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
 # scope), by file name or by the sheets an animation's frames use
@@ -249,6 +254,7 @@ BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bi
 HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'CPZ/AmoebaDroid.bin', 'Eggman/EggmanCPZ.bin', 'CPZ/MBMSonic.bin', 'CPZ/MBMTails.bin', 'CPZ/MBMKnux.bin',  # 7b
              'SPZ2/WeatherMobile.bin', 'Eggman/EggMobile.bin', 'SPZ2/EggTV.bin',  # 7b
+             'FBZ/BigSqueeze.bin', 'FBZ/SpiderMobile.bin', 'Eggman/EggmanFBZ.bin',  # 7b
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}

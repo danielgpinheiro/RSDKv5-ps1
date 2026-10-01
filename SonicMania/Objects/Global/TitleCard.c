@@ -114,8 +114,8 @@ void TitleCard_Create(void *data)
             if (player->speedShoesTimer > 0 || player->superState == SUPERSTATE_SUPER)
                 RSDK.ResetEntity(RSDK_GET_ENTITY(2 * Player->playerCount + RSDK.GetEntitySlot(player), ImageTrail), ImageTrail->classID, player);
 
-            memset(&Zone->entityStorage[0], 0, sizeof(EntityBase));
-            memset(&Zone->entityStorage[8], 0, sizeof(EntityBase));
+            memset(&Zone->entityStorage[0], 0, sizeof(Zone->entityStorage[0]));
+            memset(&Zone->entityStorage[8], 0, sizeof(Zone->entityStorage[0]));
         }
 #endif
     }

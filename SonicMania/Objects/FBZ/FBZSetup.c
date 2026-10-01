@@ -77,12 +77,20 @@ void FBZSetup_StageLoad(void)
     int32 ang       = -336;
     int32 scanlineY = 0;
     for (int32 i = 0; i < 0x400; ++i) {
+#if defined RETRO_PS1_BUILD
+        int32 positionYMove       = 32 * (abs(RSDK.Cos1024(ang >> 1)) + 0x800);
+        FBZSetup->ps1DeformSin[i] = (uint16)abs(RSDK.Sin1024(ang >> 1));
+        FBZSetup->ps1PosY[i]      = (uint16)((scanlineY & 0x1FF0000) >> 16);
+        ang += 3;
+        scanlineY += positionYMove;
+#else
         FBZSetup->scanlineDeformX[i] = 32 * (abs(RSDK.Sin1024(ang >> 1)) + 0x400);
         FBZSetup->positionYMove[i]   = 32 * (abs(RSDK.Cos1024(ang >> 1)) + 0x800);
 
         FBZSetup->scanlinePosY[i] = scanlineY & 0x1FF0000;
         ang += 3;
         scanlineY += FBZSetup->positionYMove[i];
+#endif
     }
 
     // Yeah, this is actually here in the original
@@ -189,10 +197,18 @@ void FBZSetup_Scanline_BGInside(ScanlineInfo *scanlines)
     ScanlineInfo *scanlinePtr = scanlines;
     for (int32 i = 0; i < SCREEN_YSIZE; ++i) {
         int32 pos               = (i + y) & 0x3FF;
+#if defined RETRO_PS1_BUILD
+        int32 deformX           = 32 * (FBZSetup->ps1DeformSin[pos] + 0x400);
+        scanlinePtr->deform.x   = deformX;
+        scanlinePtr->deform.y   = 0;
+        scanlinePtr->position.x = ((screen->position.x << 14) - deformX * screen->center.x) & 0xFFFF8000;
+        scanlinePtr->position.y = (int32)FBZSetup->ps1PosY[pos] << 16;
+#else
         scanlinePtr->deform.x   = FBZSetup->scanlineDeformX[pos];
         scanlinePtr->deform.y   = 0;
         scanlinePtr->position.x = ((screen->position.x << 14) - FBZSetup->scanlineDeformX[pos] * screen->center.x) & 0xFFFF8000;
         scanlinePtr->position.y = FBZSetup->scanlinePosY[pos];
+#endif
         ++scanlinePtr;
     }
 

@@ -70,6 +70,10 @@ uint16 *RSDK::ps1RowPool                     = NULL;
 uint32 RSDK::ps1RowShared                    = 0;
 uint32 RSDK::ps1RowNext                      = 0;
 uint32 RSDK::ps1RowCap                       = 0;
+uint16 *RSDK::ps1SegPool                     = NULL;
+uint32 RSDK::ps1SegShared                    = 0;
+uint32 RSDK::ps1SegNext                      = 0;
+uint32 RSDK::ps1SegCap                       = 0;
 uint32 RSDK::ps1ChunkShared                  = 0;
 uint32 RSDK::ps1ChunkNext                    = 0;
 uint32 RSDK::ps1ChunkCap                     = 0;
@@ -80,6 +84,8 @@ volatile uint32 RSDK::g_ps1ChunkPrivatePeak  = 0;
 #define PS1_CHUNK_PRIVATE (128) // chunks for writes per scene (1 KB): GHZ1 play uses 6 (g_ps1ChunkPrivatePeak)
 #define PS1_ROW_PRIVATE   (256) // rows for writes per scene (2 KB)
 #define PS1_ROW_BYTES     (4 * sizeof(uint16))
+#define PS1_SEG_PRIVATE   (64) // segments for writes per scene (1 KB)
+#define PS1_SEG_BYTES     (8 * sizeof(uint16))
 
 namespace
 {
@@ -113,6 +119,10 @@ void PS1ReadChunkPool(FileInfo *info)
     ps1RowShared   = bytes / PS1_ROW_BYTES;
     ps1RowNext     = ps1RowShared;
     ps1RowCap      = ps1RowShared + PS1_ROW_PRIVATE;
+    bytes          = PS1ReadRawBlock(info, (void **)&ps1SegPool, DATASET_STG, PS1_SEG_PRIVATE * PS1_SEG_BYTES);
+    ps1SegShared   = bytes / PS1_SEG_BYTES;
+    ps1SegNext     = ps1SegShared;
+    ps1SegCap      = ps1SegShared + PS1_SEG_PRIVATE;
 }
 } // namespace
 
@@ -126,11 +136,22 @@ void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
         g_ps1SetTileOutside = g_ps1SetTileOutside + 1;
         return;
     }
-    uint16 *index = &layer->layout[cx + cy * layer->ps1ChunkStride];
+    uint16 *seg   = &layer->layout[(cx >> 3) + cy * layer->ps1SegStride]; // 7b.3c: this place's segment
+    uint16 *index = &ps1SegPool[((uint32)*seg << 3) + (cx & 7)];
     uint32 r = ty & 3, c = tx & 3;
     if (ps1RowPool[((uint32)ps1ChunkPool[((uint32)*index << 2) + r] << 2) + c] == tile)
         return;
     PS1TileSolidDrop((int32)(layer - tileLayers)); // its one-colour lines were computed from the file's layout
+    if (*seg < ps1SegShared) {
+        // a segment from the file may stand for other places too: this place gets its own copy
+        if (ps1SegNext >= ps1SegCap) {
+            g_ps1ChunkOverflow = g_ps1ChunkOverflow + 1;
+            return;
+        }
+        memcpy(&ps1SegPool[ps1SegNext << 3], &ps1SegPool[(uint32)*seg << 3], PS1_SEG_BYTES);
+        *seg  = (uint16)ps1SegNext++;
+        index = &ps1SegPool[((uint32)*seg << 3) + (cx & 7)];
+    }
     if (*index < ps1ChunkShared) {
         // a chunk from the file may stand for other places too: this place gets its own copy
         if (ps1ChunkNext >= ps1ChunkCap) {
@@ -199,6 +220,8 @@ void RSDK::LoadSceneFolder()
     ps1ChunkShared = ps1ChunkNext = ps1ChunkCap = 0;
     ps1RowPool     = NULL;
     ps1RowShared = ps1RowNext = ps1RowCap = 0;
+    ps1SegPool     = NULL;
+    ps1SegShared = ps1SegNext = ps1SegCap = 0;
 #endif
 
 #if RETRO_REV02
@@ -675,6 +698,7 @@ void RSDK::LoadSceneAssets()
             // the chunk index, read straight into its STG block (no TMP copy of the layout)
             layer->ps1ChunkStride = (uint16)((layer->xsize + 3) >> 2); // 7b: the layer's own size (tools/data_disc.py)
             layer->ps1ChunkRows   = (uint16)((layer->ysize + 3) >> 2);
+            layer->ps1SegStride   = (uint8)((layer->ps1ChunkStride + 7) >> 3);
             PS1ReadRawBlock(&info, (void **)&layer->layout, DATASET_STG);
             continue;
 #endif

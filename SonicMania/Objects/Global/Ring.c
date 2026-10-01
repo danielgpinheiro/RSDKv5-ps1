@@ -1004,6 +1004,52 @@ static int CircleBumper_PS1Range(const void *e)
     return x > y ? x : y;
 }
 
+// FBZ (7b.3c), each reviewed: Create sets only the entity's own fields from its editor values (no random numbers, no
+// counters, no children); others reach them only with foreach_active (in range: live) or not at all; what their update
+// leaves (timers, animators, hitboxes it rewrites, the players it holds) comes back as diffs.
+// BG switches / generic triggers: the update only writes the object's statics or runs the zone's callback; range: size
+static int BGSwitch_PS1Range(const void *e)
+{
+    const EntityBGSwitch *b = (const EntityBGSwitch *)e;
+    return b->size.x > b->size.y ? b->size.x : b->size.y;
+}
+static int GenericTrigger_PS1Range(const void *e)
+{
+    const EntityGenericTrigger *t = (const EntityGenericTrigger *)e;
+    return t->size.x > t->size.y ? t->size.x : t->size.y;
+}
+// No diffs where a record that left changed is rare (it then stays an entity until it matches again): mines (a touch
+// arms one: ACTIVE_NORMAL, then it explodes: gone), triggers (no writes), fans (their trigger box's top / bottom are
+// rewritten first in each update: transient; activePlayers clears while the player is still near), propeller shafts
+// (their release timers run out in 30 frames), the badniks below (reset off screen)
+// propeller shafts: range max(64 px, size); hang points: max(64 px, length + 64 px); electromagnets: max(128 px, height
+// + 64 px) (their Create)
+static int PropellerShaft_PS1Range(const void *e)
+{
+    int32 r = ((const EntityPropellerShaft *)e)->size << 16;
+    return r > TO_FIXED(64) ? r : TO_FIXED(64);
+}
+static int HangPoint_PS1Range(const void *e)
+{
+    int32 r = (((const EntityHangPoint *)e)->length + 64) << 16;
+    return r > TO_FIXED(64) ? r : TO_FIXED(64);
+}
+static int ElectroMagnet_PS1Range(const void *e)
+{
+    int32 r = (((const EntityElectroMagnet *)e)->height + 64) << 16;
+    return r > TO_FIXED(128) ? r : TO_FIXED(128);
+}
+// currents: Create links the button (or pull chain) its tag names (foreach_all over classes that stay entities);
+// activation comes back as a diff; range: half the size
+static int Current_PS1Range(const void *e)
+{
+    const EntityCurrent *c = (const EntityCurrent *)e;
+    return (c->size.x > c->size.y ? c->size.x : c->size.y) >> 1;
+}
+
+// FBZ badniks: off screen they go back to their start and their Create state (Technosqueek_CheckOffScreen,
+// Clucker_CheckOffScreen), so the ones that leave that way return to records; a Clucker's Create reads the slot before
+// it (a Platform parent: never a record); eggs (data) are temp entities
 // `unless`: the stages' classes that walk or keep these entities (foreach_all, stored pointers: their whole object
 // files reviewed for each class; a ring another object creates is a temp entity, never a record)
 const PS1DormantSpec ps1DormantSpecs[] = {
@@ -1030,6 +1076,22 @@ const PS1DormantSpec ps1DormantSpecs[] = {
     { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL }, true },
     { "CollapsingPlatform", CollapsingPlatform_PS1Eligible, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL },
       true },
+    { "BGSwitch", PS1Always, 0, BGSwitch_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "GenericTrigger", PS1Always, 0, GenericTrigger_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "Mine", PS1Always, TO_FIXED(64), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "FBZFan", PS1Always, TO_FIXED(128), NULL,
+      { offsetof(EntityFBZFan, hitboxTrigger.top), sizeof(int16), offsetof(EntityFBZFan, hitboxTrigger.bottom), sizeof(int16) }, false, { NULL, NULL, NULL } },
+    { "PropellerShaft", PS1Always, 0, PropellerShaft_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "Propeller", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "HangPoint", PS1Always, 0, HangPoint_PS1Range, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "FlameSpring", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "ElectroMagnet", PS1Always, 0, ElectroMagnet_PS1Range, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "Current", PS1Always, 0, Current_PS1Range, { 0, 0, 0, 0 }, true, { "LaundroMobile", NULL, NULL } },
+    // launchers (FBZ): a Platform without children (only direction is editable: a fixed platform, 128 px); a launch ends
+    // back at the start, idle (ACTIVE_BOUNDS)
+    { "Launcher", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "Technosqueek", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "Clucker", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
 };
 #endif

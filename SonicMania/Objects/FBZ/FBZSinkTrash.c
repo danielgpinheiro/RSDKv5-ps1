@@ -201,8 +201,13 @@ void FBZSinkTrash_Draw(void)
 
     if (self->type < FBZSINKTRASH_SOLID) {
         for (int32 i = 0; i < 64; ++i) {
+#if defined RETRO_PS1_BUILD
+            drawPos.x = self->position.x + (self->ps1TrashX[i] << 16);
+            drawPos.y = self->position.y + (self->ps1TrashY[i] << 16);
+#else
             drawPos.x                   = self->position.x + self->trashPos[i].x;
             drawPos.y                   = self->position.y + self->trashPos[i].y;
+#endif
             self->trashAnimator.frameID = self->trashFrame[i];
             self->direction             = self->trashDir[i];
             RSDK.DrawSprite(&self->trashAnimator, &drawPos, false);
@@ -238,8 +243,13 @@ void FBZSinkTrash_Create(void *data)
         RSDK.SetSpriteAnimation(FBZSinkTrash->aniFrames, 11, &self->mainAnimator, true, 1);
 
         for (int32 i = 0; i < 64; ++i) {
+#if defined RETRO_PS1_BUILD
+            self->ps1TrashX[i] = (int16)(RSDK.Rand(-(self->size.x >> 1), self->size.x >> 1) >> 16);
+            self->ps1TrashY[i] = (int16)(RSDK.Rand(-(self->size.y >> 1), self->size.y >> 1) >> 16);
+#else
             self->trashPos[i].x = RSDK.Rand(-(self->size.x >> 1), self->size.x >> 1);
             self->trashPos[i].y = RSDK.Rand(-(self->size.y >> 1), self->size.y >> 1);
+#endif
             self->trashFrame[i] = RSDK.Rand(0, 22);
             self->trashDir[i]   = RSDK.Rand(FLIP_NONE, FLIP_XY + 1);
         }

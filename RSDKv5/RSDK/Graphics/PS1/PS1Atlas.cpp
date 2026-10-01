@@ -12,6 +12,7 @@ volatile uint32 g_ps1AtlasUnknownFiles = 0;
 volatile uint32 g_ps1AtlasLateBinds    = 0;
 volatile uint32 g_ps1AtlasGroupLoads   = 0;
 volatile uint32 g_ps1AtlasGroupErrors  = 0;
+volatile uint32 g_ps1AtlasGroupStageFallbacks = 0; // 7b.3c: swaps staged in DATASET_TMP (STG tail short)
 volatile int32 g_ps1AtlasGroupReq      = -1;
 }
 
@@ -47,6 +48,10 @@ struct PS1AtlasPatch {
 // STG block: file table, CLUTs, groups, then the sprite slot of each file (0xFF: not loaded)
 uint8 *s_ps1AtlasBlob = NULL;
 uint8 *s_ps1AtlasBind = NULL; // the STG tail from LoadSceneAssets' end to InitObjects' end
+uint8 *s_ps1AtlasBindTmp = NULL; // 7b.3c: or a DATASET_TMP block (its owner: a TMP compaction may move it)
+bool s_bindInTmp         = false;
+uint8 *s_groupStageTmp   = NULL; // 7b.3c: a group swap's staging in DATASET_TMP (when STG's tail is too small)
+inline const uint8 *BindData() { return s_bindInTmp ? s_ps1AtlasBindTmp : s_ps1AtlasBind; }
 uint16 s_fileCount = 0, s_clutCount = 0, s_groupCount = 0;
 uint32 s_clutOff = 0, s_groupOff = 0, s_slotOff = 0;
 int8 s_region[2] = { -1, -1 }; // the group each region holds
@@ -203,9 +208,17 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
 void RSDK::PS1AtlasLoadBindings()
 {
     s_ps1AtlasBind = NULL;
+    s_bindInTmp    = false;
     if (!s_atlasPath[0] || !s_bindBytes)
         return;
-    uint8 *t = (uint8 *)PS1StorageTailAlloc(DATASET_STG, s_bindBytes);
+    // 7b.3c: in DATASET_TMP (free while the StageLoads run: the atlas staging is done), else STG's tail: the load's STG
+    // peak comes with the StageLoads (FBZ2: 9.7 KB of bindings)
+    uint8 *t = NULL;
+    PS1TryAllocateStorage((void **)&s_ps1AtlasBindTmp, s_bindBytes, DATASET_TMP, false);
+    if (s_ps1AtlasBindTmp)
+        t = s_ps1AtlasBindTmp, s_bindInTmp = true;
+    else
+        t = (uint8 *)PS1StorageTailAlloc(DATASET_STG, s_bindBytes);
     FileInfo info;
     InitFileInfo(&info);
     if (!t || !LoadFile(&info, s_atlasPath, FMODE_RB)) {
@@ -226,7 +239,7 @@ uint32 RSDK::PS1AtlasSheetBinding(const uint32 *hash)
         return 0xFFFFFFFF;
     for (int32 fi = 0; fi < s_fileCount; ++fi)
         if (Files()[fi].frameCount == 1 && HASH_MATCH_MD5(Files()[fi].hash, hash)) {
-            const uint8 *b = s_ps1AtlasBind + Files()[fi].bindOffset;
+            const uint8 *b = BindData() + Files()[fi].bindOffset;
             return (uint32)b[0] | (uint32)b[1] << 8 | (uint32)(b[2] | b[3] << 8) << 16;
         }
     return 0xFFFFFFFF;
@@ -255,7 +268,7 @@ void RSDK::PS1AtlasBind(uint16 sprID)
         g_ps1AtlasLateBinds = g_ps1AtlasLateBinds + 1; // loaded after the scene start: phase 3.2 reads its bindings
         return;
     }
-    const uint8 *b = s_ps1AtlasBind + Files()[fi].bindOffset;
+    const uint8 *b = BindData() + Files()[fi].bindOffset;
     for (int32 f = 0; f < frameCount; ++f, b += 4) {
         SpriteFrame *fr = &spr->frames[f];
         fr->ps1U        = b[0];
@@ -270,9 +283,12 @@ void RSDK::PS1AtlasBind(uint16 sprID)
 
 void RSDK::PS1AtlasBindEnd()
 {
-    if (s_ps1AtlasBind)
+    if (s_bindInTmp)
+        RemoveStorageEntry((void **)&s_ps1AtlasBindTmp);
+    else if (s_ps1AtlasBind)
         PS1StorageTailRelease(DATASET_STG);
     s_ps1AtlasBind = NULL;
+    s_bindInTmp    = false;
 }
 
 bool RSDK::PS1AtlasLoadGroup(const char *name)
@@ -288,13 +304,26 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
     int32 r = Groups()[g].region;
     if (s_region[r] == g)
         return true;
-    // staging: the STG tail (a group swap happens in play, where DATASET_TMP may be in use)
+    // staging: the STG tail (a group swap happens in play, where DATASET_TMP may be in use); 7b.3c: a zone that leaves
+    // less STG free (FBZ2: ~7 KB) stages in a TMP block, else in a 4 KB tail (the pixels stream through it)
     uint32 stageBytes = 8 * 1024;
     uint8 *stage      = (uint8 *)PS1StorageTailAlloc(DATASET_STG, stageBytes);
+    uint8 *stageTmp   = NULL;
+    if (!stage) {
+        PS1TryAllocateStorage((void **)&s_groupStageTmp, stageBytes, DATASET_TMP, false);
+        stageTmp = stage = s_groupStageTmp;
+        g_ps1AtlasGroupStageFallbacks = g_ps1AtlasGroupStageFallbacks + 1;
+    }
+    if (!stage) {
+        stageBytes = 4 * 1024;
+        stage      = (uint8 *)PS1StorageTailAlloc(DATASET_STG, stageBytes);
+    }
     FileInfo info;
     InitFileInfo(&info);
     if (!stage || !LoadFile(&info, s_atlasPath, FMODE_RB)) {
-        if (stage)
+        if (stageTmp)
+            RemoveStorageEntry((void **)&s_groupStageTmp);
+        else if (stage)
             PS1StorageTailRelease(DATASET_STG);
         g_ps1AtlasGroupErrors = g_ps1AtlasGroupErrors + 1;
         return false;
@@ -310,7 +339,10 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
                    (stageBytes - ((tableBytes + 3) & ~3u)) & ~3u);
     PS1AtlasPatches(&info, gr, false, stage + ((tableBytes + 3) & ~3u), (stageBytes - ((tableBytes + 3) & ~3u)) & ~3u);
     CloseFile(&info);
-    PS1StorageTailRelease(DATASET_STG);
+    if (stageTmp)
+        RemoveStorageEntry((void **)&s_groupStageTmp);
+    else
+        PS1StorageTailRelease(DATASET_STG);
     s_region[r]         = (int8)g;
     g_ps1AtlasGroupLoads = g_ps1AtlasGroupLoads + 1;
     return true;

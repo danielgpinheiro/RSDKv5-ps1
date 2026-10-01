@@ -355,11 +355,13 @@ struct DormDiff {
     uint32 value[PS1_DORMANT_DIFF_WORDS];
 };
 #define PS1_DORMANT_GONE    0x8000
-#define PS1_DORMANT_SPECS   16
+#define PS1_DORMANT_SPECS   32
 #define PS1_DORMANT_SCRATCH 704 // the largest class a spec may name (bytes; CollapsingPlatform: 656)
 #define PS1_DORMANT_CREATE  TO_FIXED(32) // creation margin beyond the stock range (16.16)
 #define PS1_DORMANT_RETURN  TO_FIXED(64) // return margin (> creation: a ring at the edge does not flip every frame)
-#define PS1_DORMANT_SPREAD  64           // pool bound: cameras apart by up to this many pixels (each side)
+#define PS1_DORMANT_SPREAD  0 // pool bound: cameras apart by up to this many pixels (each side; 7b.3c: one camera in scope)
+#define PS1_DORMANT_MAX_RANGE TO_FIXED(512) // 7b.3c: an entity with a larger range stays one (its pool share would be big)
+#define PS1_DORMANT_EXTRA   16 // 7b.3c: blocks a band may add from the arena's spare when its pool is out (counted)
 #define PS1_DORMANT_CAMERAS 4
 struct DormUnique { // in the arena, then the variables' raw bytes (in its class's layout order)
     uint16 classID;
@@ -388,6 +390,8 @@ EntityBase **s_dMatBlk = NULL;
 inline int32 PS1_DORMANT_BAND(uint32 cap) { return cap <= 256 ? 0 : cap <= 448 ? 1 : 2; }
 EntityBase **s_dFreeK[PS1_DORMANT_BANDS];
 int32 s_dFreeNK[PS1_DORMANT_BANDS];
+int32 s_dExtraK[PS1_DORMANT_BANDS];     // blocks added from the spare (at most PS1_DORMANT_EXTRA)
+uint16 s_dBandCapK[PS1_DORMANT_BANDS];  // a band's block capacity
 uint8 s_dBandK[PS1_DORMANT_SPECS];
 uint16 s_dCapK[PS1_DORMANT_SPECS];
 uint16 *s_dMatRec = NULL;
@@ -680,7 +684,6 @@ void RSDK::PS1SceneEntitiesPlace()
     int32 dormant    = 0, diffRecs = 0, movedRecs = 0;
     uint32 blobBytes = 0, dormRange = 0;
     uint16 capK[PS1_DORMANT_SPECS]  = {};
-    uint32 rangeK[PS1_DORMANT_SPECS] = {}; // each class's largest range (its band's pool bound)
     int32 poolK[PS1_DORMANT_BANDS]  = {};
     uint16 bandCap[PS1_DORMANT_BANDS] = {};
 
@@ -719,8 +722,8 @@ void RSDK::PS1SceneEntitiesPlace()
                     if (u == s_dUniques) {
                         const PS1DormantSpec *sp = &ps1DormantSpecs[spec - 1];
                         int32 range              = sp->rangeOf ? sp->rangeOf(pre) : sp->range;
-                        if (range < 0 || range >= 0x10000000)
-                            u = s_dUniques + 1; // (never in the data: such an entity stays one)
+                        if (range < 0 || range > PS1_DORMANT_MAX_RANGE)
+                            u = s_dUniques + 1; // such an entity stays one
                         else {
                             uniqRange[s_dUniques] = range;
                             uniqRec[s_dUniques++] = r;
@@ -747,8 +750,6 @@ void RSDK::PS1SceneEntitiesPlace()
                             capK[spec - 1] = (uint16)classBytes;
                         if ((uint32)uniqRange[u] > dormRange)
                             dormRange = uniqRange[u];
-                        if ((uint32)uniqRange[u] > rangeK[spec - 1])
-                            rangeK[spec - 1] = uniqRange[u];
                     }
                 }
             }
@@ -768,31 +769,37 @@ void RSDK::PS1SceneEntitiesPlace()
     if (dormant) {
         // each class's pool: the most of its records a camera box reaches (its points alone through BoxBound) + 2
         int32 ox = screens[0].center.x ? screens[0].center.x : 160, oy = screens[0].center.y ? screens[0].center.y : 120;
-        uint32 bandRange[PS1_DORMANT_BANDS] = {}; // a band's pool: its own classes' largest range (7b.3)
-        for (int32 k = 0; k < PS1_DORMANT_SPECS; ++k) {
-            if (!capK[k])
-                continue;
+        for (int32 k = 0; k < PS1_DORMANT_SPECS; ++k)
             if (capK[k] > bandCap[PS1_DORMANT_BAND(capK[k])])
                 bandCap[PS1_DORMANT_BAND(capK[k])] = capK[k];
-            if (rangeK[k] > bandRange[PS1_DORMANT_BAND(capK[k])])
-                bandRange[PS1_DORMANT_BAND(capK[k])] = rangeK[k];
-        }
+        // 7b.3c: a band's records by range tier, each tier's box bound with its own largest range, summed (>= the max)
+        static const int32 tierPx[] = { 64, 128, 256, PS1_DORMANT_MAX_RANGE >> 16 };
         for (int32 band = 0; band < PS1_DORMANT_BANDS; ++band) {
-            int32 n = 0;
-            for (int32 i = 0; i < dormant; ++i)
-                if (capK[dormXY[3 * i + 2]] && PS1_DORMANT_BAND(capK[dormXY[3 * i + 2]]) == band)
-                    dormYs[2 * n] = dormXY[3 * i], dormYs[2 * n + 1] = dormXY[3 * i + 1], ++n;
-            if (!n)
+            int32 all = 0;
+            for (int32 t = 0; t < 4; ++t) {
+                int32 n = 0, lo = t ? tierPx[t - 1] : -1;
+                for (int32 i = 0; i < dormant; ++i) {
+                    int32 r = uniqRange[uniqOf[i]] >> 16;
+                    if (capK[dormXY[3 * i + 2]] && PS1_DORMANT_BAND(capK[dormXY[3 * i + 2]]) == band && r > lo && r <= tierPx[t])
+                        dormYs[2 * n] = dormXY[3 * i], dormYs[2 * n + 1] = dormXY[3 * i + 1], ++n;
+                }
+                if (!n)
+                    continue;
+                all += n;
+                int32 m = tierPx[t] + FROM_FIXED(PS1_DORMANT_RETURN) + PS1_DORMANT_SPREAD;
+                poolK[band] += BoxBound(dormYs, dormYs + 2 * n, n, 2 * (ox + m), 2 * (oy + m));
+            }
+            if (!all)
                 continue;
-            int32 m     = (int32)(bandRange[band] >> 16) + FROM_FIXED(PS1_DORMANT_RETURN) + PS1_DORMANT_SPREAD;
-            poolK[band] = BoxBound(dormYs, dormYs + 2 * n, n, 2 * (ox + m), 2 * (oy + m)) + 3;
-            if (poolK[band] > n)
-                poolK[band] = n;
+            poolK[band] += 3;
+            if (poolK[band] > all)
+                poolK[band] = all;
             pool += poolK[band];
             bytes += poolK[band] * (sizeof(PS1EntityHeader) + bandCap[band]);
         }
         bytes += dormant * sizeof(DormRec) + blobBytes + s_dUniques * sizeof(DormUnique *);
-        bytes += pool * 2 * sizeof(EntityBase *) + Align4(pool * sizeof(uint16));
+        int32 slots = pool + PS1_DORMANT_BANDS * PS1_DORMANT_EXTRA; // free stacks and the live list: room for extra blocks
+        bytes += slots * 2 * sizeof(EntityBase *) + Align4(slots * sizeof(uint16));
         bytes += diffRecs * sizeof(DormDiff) + Align4(diffRecs * sizeof(uint16)) + movedRecs * 2 * sizeof(int32);
     }
     uint32 spareBytes = 8 * 1024; // GHZ1 play: 0 relocations (2.3m)
@@ -885,19 +892,22 @@ void RSDK::PS1SceneEntitiesPlace()
     s_dLoadNext = 0;
     s_dLo = s_dHi = 0;
     s_dPool = pool, s_dRange = (int32)dormRange;
+    int32 slots         = pool + PS1_DORMANT_BANDS * PS1_DORMANT_EXTRA;
     EntityBase **stacks = (EntityBase **)p;
-    s_dMatBlk = stacks + pool;
-    s_dMatRec = (uint16 *)(s_dMatBlk + pool);
-    p += pool * 2 * sizeof(EntityBase *) + Align4(pool * sizeof(uint16));
+    s_dMatBlk = stacks + slots;
+    s_dMatRec = (uint16 *)(s_dMatBlk + slots);
+    p += slots * 2 * sizeof(EntityBase *) + Align4(slots * sizeof(uint16));
     s_dMatN = 0;
     for (int32 k = 0; k < PS1_DORMANT_SPECS; ++k) {
         s_dCapK[k]  = capK[k];
         s_dBandK[k] = (uint8)PS1_DORMANT_BAND(capK[k]);
     }
     for (int32 band = 0; band < PS1_DORMANT_BANDS; ++band) {
-        s_dFreeK[band]  = stacks;
-        s_dFreeNK[band] = 0;
-        stacks += poolK[band];
+        s_dFreeK[band]    = stacks;
+        s_dFreeNK[band]   = 0;
+        s_dExtraK[band]   = 0;
+        s_dBandCapK[band] = bandCap[band];
+        stacks += poolK[band] + PS1_DORMANT_EXTRA;
         for (int32 b = 0; b < poolK[band]; ++b) s_dFreeK[band][s_dFreeNK[band]++] = Carve(p, 0, bandCap[band]);
     }
     s_dDiff     = (DormDiff *)p;
@@ -941,6 +951,7 @@ void RSDK::PS1SceneChildVar(uint16 classID, uint16 offset, uint8 type)
 // ---- 7b: dormant entities at run time ----
 volatile uint32 RSDK::g_ps1DormantRecords = 0, RSDK::g_ps1DormantPool = 0, RSDK::g_ps1DormantLive = 0;
 volatile uint32 RSDK::g_ps1DormantPeak = 0, RSDK::g_ps1DormantFail = 0, RSDK::g_ps1DormantCreated = 0;
+volatile uint32 RSDK::g_ps1DormantExtra = 0; // 7b.3c: pool blocks added from the spare (total)
 volatile uint32 RSDK::g_ps1DormantReturned = 0, RSDK::g_ps1DormantGone = 0, RSDK::g_ps1DormantDropped = 0;
 volatile uint32 RSDK::g_ps1DormantDiffs = 0, RSDK::g_ps1DormantBadActive = 0;
 
@@ -1186,6 +1197,12 @@ void RSDK::PS1DormantUpdate()
         int32 band = s_dBandK[s_dUnique[r->unique]->spec];
         if (!s_dFreeNK[band]) // its pool is out: the live ones beyond the creation boxes go first
             DormReturn(s_dBoxC);
+        if (!s_dFreeNK[band] && s_dExtraK[band] < PS1_DORMANT_EXTRA && s_spare
+            && s_spare + sizeof(PS1EntityHeader) + s_dBandCapK[band] <= s_spareEnd) { // 7b.3c: then a block from the spare
+            s_dFreeK[band][s_dFreeNK[band]++] = Carve(s_spare, 0, s_dBandCapK[band]);
+            ++s_dExtraK[band];
+            g_ps1DormantExtra = g_ps1DormantExtra + 1;
+        }
         if (!s_dFreeNK[band]) {
             g_ps1DormantFail = g_ps1DormantFail + 1;
             continue;

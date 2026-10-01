@@ -134,14 +134,15 @@ struct TileLayer {
     uint16 *layout;
     uint8 *lineScroll;
 #if RETRO_PLATFORM == RETRO_PS1
-    uint8 ps1ChunkUnused; // (was ps1ChunkShift: 7b stores the layout at the layer's own size)
+    uint8 ps1SegStride; // 7b.3c: segments per chunk row (layout = a segment table, tools/data_disc.py)
     // PS1 (3.3c): the scroll info every line uses when lineScroll is one value (0xFF: several; set at the scene load:
     // nothing writes lineScroll later), and this frame's uniform scroll when ProcessParallax found no per-line work
     uint8 ps1LineScrollOne, ps1Uniform;
     uint8 ps1Direct; // 3.3h: this frame's lines come from lineScroll and the scroll infos (no deformation), from row ps1UniformY
     int16 ps1UniformX, ps1UniformY;
-    // PS1 (docs/32 2.3g, 7b): layout is a chunk index of ps1ChunkRows rows of ps1ChunkStride chunks (the layer's size in
-    // 4x4-tile chunks), then a row of chunk 0: columns / rows past the layer read chunk 0 (the stock padding)
+    // PS1 (docs/32 2.3g, 7b): the layer's chunk index has ps1ChunkRows rows of ps1ChunkStride chunks (the layer's size in
+    // 4x4-tile chunks), then a row of chunk 0: columns / rows past the layer read chunk 0 (the stock padding); 7b.3c:
+    // layout holds it as ps1SegStride segments a row, each a u16 into ps1SegPool (8 chunk indices)
     uint16 ps1ChunkStride, ps1ChunkRows;
 #endif
 };
@@ -182,6 +183,8 @@ extern uint32 ps1ChunkShared; // chunks [0, shared) come from the file and may b
 extern uint32 ps1ChunkNext;   // next private chunk
 extern uint32 ps1ChunkCap;
 extern uint32 ps1RowShared, ps1RowNext, ps1RowCap; // the same for rows
+extern uint16 *ps1SegPool; // 7b.3c: a segment = 8 chunk indices of a chunk row
+extern uint32 ps1SegShared, ps1SegNext, ps1SegCap;
 extern volatile uint32 g_ps1ChunkOverflow; // writes lost for want of a private chunk (GDB; must stay 0)
 extern volatile uint32 g_ps1ChunkPrivatePeak;
 
@@ -189,9 +192,14 @@ extern volatile uint32 g_ps1ChunkPrivatePeak;
 // layer: chunk 0)
 inline const uint16 *PS1ChunkRow(const TileLayer *layer, uint32 cy)
 {
-    return &layer->layout[(cy < layer->ps1ChunkRows ? cy : layer->ps1ChunkRows) * layer->ps1ChunkStride];
+    return &layer->layout[(cy < layer->ps1ChunkRows ? cy : layer->ps1ChunkRows) * layer->ps1SegStride];
 }
-inline uint32 PS1ChunkAt(const TileLayer *layer, const uint16 *row, uint32 cx) { return cx < layer->ps1ChunkStride ? row[cx] : 0; }
+// chunk cx of such a row (cx inside the layer), through its segment
+inline uint32 PS1ChunkIdx(const uint16 *row, uint32 cx) { return ps1SegPool[((uint32)row[cx >> 3] << 3) + (cx & 7)]; }
+inline uint32 PS1ChunkAt(const TileLayer *layer, const uint16 *row, uint32 cx)
+{
+    return cx < layer->ps1ChunkStride ? PS1ChunkIdx(row, cx) : 0;
+}
 // the 4 tiles of a chunk's row: rowSel = ps1ChunkPool + (ty & 3), the chunk's index
 inline const uint16 *PS1ChunkTiles(const uint16 *rowSel, uint32 chunk) { return ps1RowPool + ((uint32)rowSel[chunk << 2] << 2); }
 inline uint16 *PS1TilePtr(TileLayer *layer, int32 tx, int32 ty)

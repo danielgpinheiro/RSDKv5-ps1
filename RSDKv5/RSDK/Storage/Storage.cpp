@@ -191,6 +191,21 @@ void *RSDK::PS1StorageTailAlloc(StorageDataSets set, uint32 size)
     return (uint8 *)st->memoryTable + st->storageLimit;
 }
 
+bool32 RSDK::PS1StorageTrimLast(void **dataPtr, uint32 size, StorageDataSets set)
+{
+    DataStorage *st = &dataStorage[set];
+    uint32 *data    = (uint32 *)*dataPtr;
+    size            = (size + 3) & ~3u;
+    if (!data)
+        return false;
+    uint32 old = HEADER(data, HEADER_DATA_LENGTH);
+    if (size > old || data + old / sizeof(uint32) != st->memoryTable + st->usedStorage)
+        return false;
+    HEADER(data, HEADER_DATA_LENGTH) = size;
+    st->usedStorage -= (old - size) / sizeof(uint32);
+    return true;
+}
+
 void RSDK::PS1StorageTailRelease(StorageDataSets set)
 {
     dataStorage[set].storageLimit += s_ps1TailBytes[set];

@@ -95,8 +95,9 @@ struct ObjectZone {
 #if MANIA_USE_PLUS
 #if defined RETRO_PS1_BUILD
     // PS1 port (docs/32 7b): base Mania uses entries 0 (the player) and 8 (its camera: TitleCard / Zone keep them over a
-    // restart); 1-7 and 9-15 are Encore's player swap, out of scope: 9 entries (10 KB of STG, not 18)
-    EntityBase entityStorage[9];
+    // restart), 1 (Player.c: the player at its death); the rest are Encore's player swap, out of scope: 9 entries;
+    // 7b.3c: each the size of the largest class stored there (a player; a slot-less CopyEntity copies its class size)
+    struct { int32 words[144]; } entityStorage[9];
 #else
     EntityBase entityStorage[16];
 #endif

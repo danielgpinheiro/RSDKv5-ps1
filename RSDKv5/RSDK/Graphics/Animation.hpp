@@ -141,6 +141,7 @@ inline SpriteFrame *GetFrame(uint16 aniFrames, uint16 anim, int32 frame)
 
 #if RETRO_PLATFORM == RETRO_PS1
 extern Hitbox ps1EmptyHitbox; // Animation.cpp: a hitbox the file does not have reads as zero (stock: stale bytes)
+extern volatile uint32 g_ps1HitboxBytesSaved; // 7b.3c: bytes the shared hitbox sets saved (total)
 inline Hitbox *GetHitbox(Animator *animator, uint8 hitboxID)
 {
     if (animator && animator->frames) {

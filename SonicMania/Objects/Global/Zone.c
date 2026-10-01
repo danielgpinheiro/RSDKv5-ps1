@@ -355,6 +355,8 @@ volatile int32 ps1AtlDropped = 0; // entities an act transition could not store 
 // docs/32 7b.3: the stored entities sit PS1_ATL_STRIDE ints apart (stock 0x200: 2 KB each); 4 of them end where SaveGame's
 // recall table starts (0x200 + RESERVE_ENTITY_COUNT), the other 4 share it as stock's entry 1 does (never both in use)
 #define PS1_ATL_STRIDE   0x90
+_Static_assert(sizeof(EntityPlayer) <= sizeof(Zone->entityStorage[0]) && sizeof(EntityCamera) <= sizeof(Zone->entityStorage[0]),
+               "Zone.h entityStorage: a stored player / camera outgrows an entry");
 #define PS1_ATL_ENTITIES 8
 _Static_assert(sizeof(EntityPlayer) <= PS1_ATL_STRIDE * 4 && sizeof(EntitySignPost) <= PS1_ATL_STRIDE * 4
                    && sizeof(EntityItemBox) <= PS1_ATL_STRIDE * 4,
@@ -1096,10 +1098,10 @@ void Zone_HandlePlayerSwap(void)
             cam->position.y = player->position.y;
         }
 
-        memset(&Zone->entityStorage[0 + p], 0, sizeof(EntityBase));
-        memset(&Zone->entityStorage[4 + p], 0, sizeof(EntityBase));
-        memset(&Zone->entityStorage[8 + p], 0, sizeof(EntityBase));
-        memset(&Zone->entityStorage[12 + p], 0, sizeof(EntityBase));
+        memset(&Zone->entityStorage[0 + p], 0, sizeof(Zone->entityStorage[0]));
+        memset(&Zone->entityStorage[4 + p], 0, sizeof(Zone->entityStorage[0]));
+        memset(&Zone->entityStorage[8 + p], 0, sizeof(Zone->entityStorage[0]));
+        memset(&Zone->entityStorage[12 + p], 0, sizeof(Zone->entityStorage[0]));
     }
 #else
     for (int32 p = 0; p < Player->playerCount; ++p) {

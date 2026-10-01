@@ -132,4 +132,5 @@ void PS1DormantLoadDone();             // after InitObjects
 extern volatile uint32 g_ps1DormantDiffs, g_ps1DormantBadActive;
 extern volatile uint32 g_ps1DormantRecords, g_ps1DormantPool, g_ps1DormantLive, g_ps1DormantPeak;
 extern volatile uint32 g_ps1DormantFail;      // a creation with no pool block left (the entity stayed dormant: must be 0)
+extern volatile uint32 g_ps1DormantExtra;     // 7b.3c: pool blocks a band added from the arena spare (total)
 extern volatile uint32 g_ps1DormantCreated, g_ps1DormantReturned, g_ps1DormantGone, g_ps1DormantDropped;

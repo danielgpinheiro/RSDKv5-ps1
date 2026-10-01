@@ -100,7 +100,11 @@ def walk_scene(r):
 # 7b.3: two levels: a chunk is 4 u16 row indices (8 bytes) into one pool of the scene's distinct 4-tile rows (8 bytes; row 0 =
 # all 0xFFFF, chunk 0 = four row 0s): SPZ2's pool 218 -> 146 KB, SPZ1's 171 -> 103 KB. The chunk pool block, then the row
 # pool block; writes copy a shared chunk, then a shared row.
+# 7b.3c: a layer's chunk index is a table of segments (u16 each: SEG chunk indices in a row, the row padded with chunk 0)
+# into one pool of the scene's distinct segments (SEG u16 each; segment 0 = chunk 0 everywhere), the third block after the
+# layers: FBZ2's three 1008x496 layers 187 -> ~94 KB (mostly empty or repeated spans). Writes copy a shared segment first.
 CHUNK = 4
+SEG = 8
 
 
 def layer_shift(size):
@@ -123,6 +127,7 @@ def chunk_scene(data):
     out = bytearray(data[:r.p])
     pool, pool_ids = [(0xFFFF,) * (CHUNK * CHUNK)], {}
     pool_ids[pool[0]] = 0
+    segs, seg_ids = [(0,) * SEG], {(0,) * SEG: 0}
     layer_count = r.u8()
     out.append(layer_count)
     for _ in range(layer_count):
@@ -150,7 +155,17 @@ def chunk_scene(data):
                         pool.append(k)
                     idx.append(pool_ids[k])
             idx += [0] * cw  # the row past the last: chunk 0 (rows beyond the layer read it)
-            index = struct.pack('<%dH' % len(idx), *idx)
+            sw, tab = -(-cw // SEG), []
+            for cy in range(ch + 1):
+                row = idx[cy * cw:(cy + 1) * cw] + [0] * (sw * SEG - cw)
+                for i in range(sw):
+                    k = tuple(row[i * SEG:(i + 1) * SEG])
+                    if k not in seg_ids:
+                        seg_ids[k] = len(segs)
+                        segs.append(k)
+                    tab.append(seg_ids[k])
+            assert sw < 0x100, 'segment stride is a u8 (TileLayer.ps1SegStride)'
+            index = struct.pack('<%dH' % len(tab), *tab)
         out += raw_block(index)
     assert len(pool) < 0x8000, 'chunk pool too big for u16 indices with room for private chunks'
     rows, row_ids, chunks = [(0xFFFF,) * CHUNK], {(0xFFFF,) * CHUNK: 0}, []
@@ -164,8 +179,10 @@ def chunk_scene(data):
     assert chunks[:CHUNK] == [0] * CHUNK and len(rows) < 0xFF00, 'row pool too big for u16 indices with room for private rows'
     out += raw_block(struct.pack('<%dH' % len(chunks), *chunks))
     out += raw_block(b''.join(struct.pack('<4H', *k) for k in rows))
+    assert len(segs) < 0xFF00, 'segment pool too big for u16 indices with room for private segments'
+    out += raw_block(b''.join(struct.pack('<%dH' % SEG, *k) for k in segs))
     out += data[r.p:]
-    return bytes(out), len(pool), len(rows)
+    return bytes(out), len(pool), len(rows), len(segs)
 
 
 def objects_first(data):
@@ -180,7 +197,7 @@ def objects_first(data):
         for _ in range(r.u16()):
             r.u16(); r.u16(); r.u8(); r.u8()
         r.compressed(); r.compressed()
-    r.compressed(); r.compressed()  # the chunk pool, the row pool
+    r.compressed(); r.compressed(); r.compressed()  # the chunk, row and segment pools
     return data[:head] + data[r.p:] + data[head:r.p]
 
 
@@ -286,18 +303,20 @@ def unchunk_check(orig_raw, chunked):
         assert dims[0] == dims[1]
         assert r0.compressed() == r1.compressed()
         pending.append((dims[0], r0.compressed(), r1.compressed()))
-    pool, rows = r1.compressed(), r1.compressed()
+    pool, rows, segs = r1.compressed(), r1.compressed(), r1.compressed()
     assert r0.d[r0.p:] == r1.d[r1.p:], 'objects section changed'
     for (xsize, ysize), layout, index in pending:
         if not (xsize or ysize):
             assert index == b''
             continue
         cw, ch = -(-xsize // CHUNK), -(-ysize // CHUNK)
-        assert len(index) == 2 * cw * (ch + 1)
+        sw = -(-cw // SEG)
+        assert len(index) == 2 * sw * (ch + 1)
         for y in range(1 << layer_shift(ysize)):
             for x in range(1 << layer_shift(xsize)):
                 cx, cy = x >> 2, min(y >> 2, ch)  # the engine: a column past the layer reads chunk 0, a row the zero row
-                ci = struct.unpack_from('<H', index, 2 * (cx + cy * cw))[0] if cx < cw else 0
+                si = struct.unpack_from('<H', index, 2 * ((cx >> 3) + cy * sw))[0] if cx < cw else 0
+                ci = struct.unpack_from('<H', segs, 2 * ((si << 3) + (cx & 7)))[0]
                 ri = struct.unpack_from('<H', pool, 2 * ((ci << 2) + (y & 3)))[0]
                 t = struct.unpack_from('<H', rows, 2 * ((ri << 2) + (x & 3)))[0]
                 want = struct.unpack_from('<H', layout, 2 * (y * xsize + x))[0] if x < xsize and y < ysize else 0xFFFF
@@ -545,13 +564,13 @@ def main():
                 out, baked = bake_relations(out)
                 if baked:
                     print('data_disc: %s: %d CircleBumpers baked low (ShopWindow)' % (os.path.relpath(s, src), baked))
-                chunked, chunks, nrows = chunk_scene(out)
+                chunked, chunks, nrows, nsegs = chunk_scene(out)
                 unchunk_check(out, chunked)
                 ordered = objects_first(chunked)
                 assert len(ordered) == len(chunked)
                 open(d, 'wb').write(ordered); n['scene'] += 1; n['blocks'] += b
                 n['chunks'] = max(n.get('chunks', 0), chunks)
-                n['pool'] = max(n.get('pool', 0), 8 * (chunks + nrows))
+                n['pool'] = max(n.get('pool', 0), 8 * (chunks + nrows) + 2 * SEG * nsegs)
             elif top == 'Game' and f == 'GameConfig.bin':
                 out, kept, dropped = convert_gameconfig(s)
                 open(d, 'wb').write(out); n['copied'] += 1
@@ -603,7 +622,7 @@ def main():
             else:
                 shutil.copyfile(s, d); n['copied'] += 1
             size_out += os.path.getsize(d)
-    print('data_disc: scene layouts as 4x4-tile chunk indices + chunk and row pools per scene (largest %d chunks, '
+    print('data_disc: scene layouts as 4x4-tile chunk indices in segments + segment, chunk and row pools per scene (largest %d chunks, '
           'largest pools %d bytes, every tile self-checked)' % (n.get('chunks', 0), n.get('pool', 0)))
     print('data_disc: %(scene)d scenes + %(tileconfig)d tile configs rewritten (%(blocks)d blocks raw, self-checked), '
           '%(pal)d tileset palettes, %(copied)d files copied, %(skipped)d source/media files left out' % n)

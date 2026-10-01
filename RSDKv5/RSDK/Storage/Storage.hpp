@@ -132,6 +132,8 @@ inline void PS1TryAllocateStorage(void **dataPtr, uint32 size, StorageDataSets d
 void *PS1StorageTailAlloc(StorageDataSets set, uint32 size);
 extern uint32 ps1StgCapacity; // STG's memory, which ends at the fixed top (Storage.cpp 2.4a)
 void PS1StorageTailRelease(StorageDataSets set);
+// 7b.3c: the newest block of a dataset gives its tail back (true; false when another block came after it)
+bool32 PS1StorageTrimLast(void **dataPtr, uint32 size, StorageDataSets set);
 #endif
 void DefragmentAndGarbageCollectStorage(StorageDataSets set);
 void RemoveStorageEntry(void **dataPtr);

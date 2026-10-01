@@ -53,7 +53,13 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
 # classes that only another act's scene places and that no code of the act's overlay or of the resident names (their
 # pointer variable or a function). The scene load takes the act's overlay when the resident lists it (ps1OvlUnits); a
 # change of overlay between two acts of one folder is a full stage load (ps1/overlay.cpp PS1OverlayUnitChanges).
-SPLIT = {'CPZ'}
+SPLIT = {'CPZ', 'FBZ'}
+# 7b.3c: classes an act's overlay leaves out although kept code names them, each reviewed: every such use is in code
+# the act never runs or behind a check of the class's pointer (a left-out class's pointer stays NULL in the resident):
+# FBZ2: FBZSetup finds FBZ1Outro only when CutsceneRules_IsAct1(); Ring.c tests `if (BigSqueeze)`; FBZ1Outro, BigSqueeze
+# and FBZTrash name only each other. Their StageLoads load their own sprites / sounds only (BigSqueeze's Soundboard
+# rumble plays while it crushes, never in act 2).
+FORCE_DROP = {('FBZ', '2'): {'FBZ1Outro', 'BigSqueeze', 'FBZTrash'}}
 
 
 def units():
@@ -433,6 +439,8 @@ def unit_members(fo, sid, names, res_undef):
     undef = {c: set(nm_syms([obj[c]], '-u')) for c in names}
     defs = {c: set(nm_syms([obj[c]], '--defined-only')) | {c} for c in names}
 
+    force = FORCE_DROP.get((fo, sid), set())
+
     def reach(roots, extra_refs):
         got, refs, changed = set(roots), set(extra_refs), True
         while changed:
@@ -440,7 +448,7 @@ def unit_members(fo, sid, names, res_undef):
             for k in list(got):
                 refs |= undef[k]
             for c in names:
-                if c not in got and defs[c] & refs:
+                if c not in got and c not in force and defs[c] & refs:
                     got.add(c)
                     changed = True
         return got
@@ -448,7 +456,7 @@ def unit_members(fo, sid, names, res_undef):
     keep = reach({c for c in names if c in placed[sid]}, res_undef)
     other = {c for c in names if c in anywhere and c not in keep}
     helpers = reach(other, set()) - keep - anywhere
-    drop = other | helpers
+    drop = other | helpers | (force & set(names))
     keep = {c for c in names if c not in drop}
     return [c for c in names if c in keep], sorted(drop)
 

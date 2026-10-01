@@ -28,9 +28,16 @@ struct ObjectFBZSetup {
     int32 propellerShaftAniFrame;
     int32 spiralPlatformAniFrame;
     int32 propellerShaftAniFrameUnused;
+#if defined RETRO_PS1_BUILD
+    // PS1 (docs/32 7b.3c): the same tables in 4 KB (12): the deformation's |sin| (the value is 32 * (it + 0x400)) and
+    // the line's y in whole pixels (the value is it << 16); positionYMove is the setup loop's own
+    uint16 ps1DeformSin[0x400];
+    uint16 ps1PosY[0x400];
+#else
     int32 scanlineDeformX[0x400];
     int32 positionYMove[0x400];
     int32 scanlinePosY[0x400];
+#endif
     uint16 aniTiles;
     uint16 backgroundOutside;
     EntityFBZ1Outro *outro;
