@@ -66,7 +66,7 @@ POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase
 # tree's trunk, the pillars' caps, the fish's fins, the flowers' stems), so those have none
 LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.3 lost its stripes
 # docs/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
-NORMALS = {'Global/SpecialRing.bin'}
+NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
 # docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
 # faces); the decorations are open (palm leaves, wings: the PC shows both sides), as SSZ / TMZ until checked
 CULLED = {p for p in MESHES if p.startswith('Special/')} | {'Global/SpecialRing.bin'}

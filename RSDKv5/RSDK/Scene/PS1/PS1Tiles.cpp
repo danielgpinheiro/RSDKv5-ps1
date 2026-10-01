@@ -22,7 +22,7 @@ struct PS1TileHeader {
     uint16 hflipCount; // (tile, image) pairs: the H-flipped copies of the per-line rows' tiles (3.3b)
     uint16 lodFirst;   // 7.4: a UFO floor's minimap: its first image (0: none) and pages across / down
     uint8 lodPagesW, lodPagesH;
-    uint8 pad2[2];
+    uint16 patternImage; // 7.5: a "3D Floor" / "3D Roof" layer's 256x256 texture (0: none)
 };
 struct PS1TileSheet {
     char name[32];
@@ -43,6 +43,7 @@ uint16 s_solidHeight[LAYER_COUNT];
 uint32 s_solidMaskOff = 0;
 uint32 s_hflipOff = 0, s_hflipCount = 0; // (tile, image) pairs, sorted by tile
 uint32 s_lodInfo = 0;                    // 7.4: lodFirst | pagesW << 16 | pagesH << 24 (0: no minimap)
+uint16 s_patternImage = 0;               // 7.5: the 3D floor / roof texture's image (0: none)
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
 
 inline uint16 *TileTable() { return (uint16 *)s_ps1TileBlob; }
@@ -53,6 +54,7 @@ inline const uint16 *Cells() { return (const uint16 *)(s_ps1TileBlob + s_cellOff
 uint16 RSDK::PS1TileImageOf(uint16 tile) { return s_ps1TileBlob && tile < 1024 ? TileTable()[tile] : PS1_TILE_NONE; }
 const uint16 *RSDK::PS1TileImageTable() { return s_ps1TileBlob ? TileTable() : NULL; }
 uint32 RSDK::PS1TileLodInfo() { return s_ps1TileBlob ? s_lodInfo : 0; }
+uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; }
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
@@ -179,6 +181,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     s_hflipOff   = s_cellOff + s_cellCount * 2 + h.solidBytes;
     s_hflipCount = h.hflipCount;
     s_lodInfo    = h.lodFirst && h.lodFirst < h.imageCount ? h.lodFirst | (uint32)h.lodPagesW << 16 | (uint32)h.lodPagesH << 24 : 0;
+    s_patternImage = h.patternImage < h.imageCount ? h.patternImage : 0;
     PS1HFlipCacheClear();
 
     // The blocks' table, then their pixels through DATASET_TMP's memory (empty: LoadSceneAssets just reset it)

@@ -23,6 +23,8 @@
 
 using namespace RSDK;
 
+extern volatile uint32_t g_ps1PerfFrames; // ps1/rsdk5_main.cpp: frames run
+
 extern "C" {
 extern volatile uint32 g_ps1FadeCalls, g_ps1FadeOpaque, g_ps1TintGrey; // RSDK/Scene/PS1/PS1Layers.cpp
 volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
@@ -95,8 +97,10 @@ void PS1FloorClutsReset()
     memset(s_imgClut, PS1_FLOOR_KNONE, sizeof(s_imgClut));
     s_lod           = PS1TileLodInfo();
     const int32 lod = s_lod & 0xFFFF, lodN = (int32)((s_lod >> 16) & 0xFF) * (int32)(s_lod >> 24);
-    for (int32 t = 0; table && t < 1024 + lodN; ++t) { // the tiles' images, then the minimap's
-        uint32 img = t < 1024 ? table[t] : (uint32)(lod + t - 1024);
+    for (int32 t = 0; table && t < 1024 + lodN + 1; ++t) { // the tiles' images, the minimap's, the floor / roof texture
+        uint32 img = t < 1024 ? table[t] : t < 1024 + lodN ? (uint32)(lod + t - 1024) : PS1TilePatternImage();
+        if (!img && t >= 1024)
+            continue;
         if (img == PS1_TILE_NONE || img >= 1024)
             continue;
         uint32 clut = im[img].clut;
@@ -298,6 +302,83 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
         PS1ChainBulkEnd((int)((w - bulk) / 10));
     return quads;
 }
+// 7.5: a "3D Floor" / "3D Roof" layer (the Dreamcast's texture: its 16x16 tiles pre-rendered into one 256x256 page,
+// PS1TilePatternImage) as cells of the whole pattern (1024 quarter pixels), repeated, over the forward distances its clip
+// lines see (a roof: above the camera, hq < 0) up to g_ps1FloorLodFar; each cell the bank of its centre's distance
+// (bank shift / bias from scanlines[2].position.y). The GTE is set up.
+__attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx &c, int32 f0, int32 f1, uint32 bankInfo)
+{
+    const uint32 img = PS1TilePatternImage();
+    if (!img || f1 <= f0) {
+        g_ps1FloorTodo = g_ps1FloorTodo + !img;
+        return;
+    }
+    const PS1TileImage &ti = PS1TileImages()[img];
+    const int32 shift = (bankInfo & 0xFF) ? (int32)(bankInfo & 0xFF) + 4 : 19, bias = (int32)((bankInfo >> 8) & 0xFF);
+    int32 V[4][2];
+    PS1FloorRegion(c, f0, f1, V);
+    int32 minY = V[0][1], maxY = V[0][1];
+    for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
+    uint32 *w = NULL, *wend = NULL, *bulk = NULL;
+    uint32 quads = 0;
+    for (int32 cyy = minY >> 10; cyy <= maxY >> 10; ++cyy) {
+        int32 xmin, xmax;
+        if (!PS1FloorSpan(V, cyy << 10, (cyy << 10) + 1023, xmin, xmax))
+            continue;
+        int32 ca = xmin >> 10, cb = xmax >> 10;
+        if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
+            cb = ca + PS1_FLOOR_MAX_COLS - 1;
+        const int32 n = cb - ca + 1, zq = (cyy << 10) - c.camY;
+        int16 v[3 * (PS1_FLOOR_MAX_COLS + 2)];
+        for (int32 i = 0; i <= n; ++i) v[3 * i] = (int16)(((ca + i) << 10) - c.camX), v[3 * i + 1] = (int16)c.hq, v[3 * i + 2] = (int16)zq;
+        const int32 badT = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyA, s_zA);
+        for (int32 i = 0; i <= n; ++i) v[3 * i + 2] = (int16)(zq + 1024);
+        const int32 badB = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyB, s_zB);
+        const uint32 vv = 0, vB = 255;
+        int32 fd = c.sA * (((ca << 10) + 512) - c.camX) + c.cA * (zq + 512);
+        const int32 fStep = c.sA * 1024;
+        for (int32 i = 0; i < n; ++i, fd += fStep) {
+            if ((badT || badB) && (!s_zA[i] || !s_zA[i + 1] || !s_zB[i] || !s_zB[i + 1]))
+                continue;
+            int32 fc = fd >> 10;
+            if (fc < f0 - 725 || fc > f1 + 725)
+                continue;
+            int32 bank = (fd >> shift) - bias;
+            bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
+            uint32 clut = s_attr[PS1_FLOOR_K8][bank];
+            if (!clut) {
+                if (w) {
+                    PS1ChainBulkEnd((int)((w - bulk) / 10));
+                    w = wend = NULL;
+                }
+                clut = PS1FloorClutFill(PS1_FLOOR_K8, bank, 0xFFFF);
+            }
+            const uint32 u = 0, uR = 255;
+            if (w == wend) {
+                if (w)
+                    PS1ChainBulkEnd(32);
+                w = bulk = (uint32 *)PS1ChainBulkBegin(32, 9);
+                if (!w)
+                    return;
+                wend = w + 32 * 10;
+            }
+            w[0] = 0x2C808080;
+            w[1] = s_xyA[i];
+            w[2] = clut << 16 | vv << 8 | u;
+            w[3] = s_xyA[i + 1];
+            w[4] = (uint32)ti.tpage << 16 | vv << 8 | uR;
+            w[5] = s_xyB[i];
+            w[6] = vB << 8 | u;
+            w[7] = s_xyB[i + 1];
+            w[8] = vB << 8 | uR;
+            w += 10;
+            ++quads;
+        }
+    }
+    if (w && w != bulk)
+        PS1ChainBulkEnd((int)((w - bulk) / 10));
+    g_ps1FloorLodQuads = g_ps1FloorLodQuads + quads;
+}
 } // namespace
 
 __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
@@ -309,21 +390,51 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     const int32 x2 = currentScreen->clipBound_X2, y2 = currentScreen->clipBound_Y2;
     const int32 cx = currentScreen->center.x, cy = currentScreen->center.y;
     const uint16 *table = PS1TileImageTable();
-    if (!table || x2 <= x1 || y2 <= y1 || hq <= 0 || hq > 0x7000 || !layer->xsize) {
+    const uint32 minor = (uint32)sl[0].deform.y;
+    const bool pattern = minor == SCANLINE_MINOR_MAGIC_UFO_FLOOR || minor == SCANLINE_MINOR_MAGIC_ROOF;
+    if (!table || x2 <= x1 || y2 <= y1 || (!pattern && hq <= 0) || !hq || hq > 0x7000 || hq < -0x7000 || !layer->xsize) {
         g_ps1FloorTodo = g_ps1FloorTodo + 1;
         return;
     }
     uint16 t0 = PS1_HBL();
     if (s_cl != PS1TileCluts() || s_loads != g_ps1TileLoads || s_lod != PS1TileLodInfo())
         PS1FloorClutsReset();
-    if (s_frame != (uint32)g_ps1FloorDraws) { // a new frame: the CLUT attributes checked again
-        s_frame = (uint32)g_ps1FloorDraws;
+    if (s_frame != (uint32)g_ps1PerfFrames) { // a new frame (not a new draw: UFO2 / 4 / 6 draw two floor layers a
+        s_frame = (uint32)g_ps1PerfFrames;    // frame, and the second would miss the re-upload after a fade)
         memset(s_attr, 0, sizeof(s_attr));
         uint32 fades = g_ps1FadeCalls + g_ps1FadeOpaque + g_ps1TintGrey; // the last frame recoloured its CLUT uploads
         s_force      = fades != s_fadeSeen || g_ps1VramGen != s_vramGen;
         s_fadeSeen = fades, s_vramGen = g_ps1VramGen;
     }
 
+    if (pattern) { // 7.5: the forward distances its two clip lines see (a line past the horizon: to the draw distance)
+        const PS1FloorCtx pc = { sA, cA, sX, cX, camX, camY, hq, x1, y1, x2, y2, cx - x1 > x2 - cx ? cx - x1 : x2 - cx };
+        int32 fa = 0x7FFF, fb = 0, lines = 0;
+        for (int32 e = 0; e < 2; ++e) {
+            int32 i = (e ? y2 : y1) - cy, den = i * cX + 256 * sX;
+            if (!den || (den > 0) != (hq > 0))
+                continue;
+            int64 f = (int64)hq * (256 * cX - sX * i) / den;
+            if (f <= 0)
+                continue;
+            int32 fi = f > 0x7FFF ? 0x7FFF : (int32)f;
+            fa = fi < fa ? fi : fa, fb = fi > fb ? fi : fb, ++lines;
+        }
+        if (!lines)
+            return;
+        int32 lodFar = g_ps1FloorLodFar * 64;
+        lodFar       = lodFar > 0x6400 ? 0x6400 : lodFar;
+        int32 f1     = lines == 2 ? (fb + 64 < lodFar ? fb + 64 : lodFar) : lodFar;
+        int32 f0     = fa - 64 > 0 ? fa - 64 : 0;
+        int32 R[9] = { -cA * 4, 0, sA * 4, -(sX * sA) >> 8, cX * 4, -(sX * cA) >> 8, (cX * sA) >> 8, sX * 4, (cX * cA) >> 8 };
+        PS1Gte3DSetup((const int32_t *)R, 0, 0, 0, 256, cx << 16, cy << 16);
+        PS1ChainDrawArea(x1, y1, x2, y2);
+        PS1FloorPattern(pc, f0, f1, (uint32)sl[2].position.y);
+        PS1ChainDrawAreaReset();
+        g_ps1FloorDraws = g_ps1FloorDraws + 1;
+        g_ps1FloorHbl   = g_ps1FloorHbl + (uint16)(PS1_HBL() - t0);
+        return;
+    }
     // forward distances seen (quarter pixels): the bottom clip line's, up to the top line's (the horizon's clip); real
     // tiles up to g_ps1FloorFar, the minimap up to g_ps1FloorLodFar
     int32 iB = y2 - cy, iT = y1 - cy;

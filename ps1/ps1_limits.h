@@ -17,5 +17,7 @@
    engine draws as 3D tiles (the UFO stages' playfield: RSDK/Graphics/PS1/PS1UfoFloor.cpp) */
 #define SCANLINE_MAJOR_MAGIC_3DTILES (0xFEDCBA09u)
 #define SCANLINE_MINOR_MAGIC_UFO     (0x90ABCDEFu)
+#define SCANLINE_MINOR_MAGIC_UFO_FLOOR (0x2345678Bu) /* 7.5: a "3D Floor" layer (UFO2, UFO6) */
+#define SCANLINE_MINOR_MAGIC_ROOF      (0x56789ABCu) /* 7.5: a "3D Roof" layer (UFO4) */
 
 #endif /* PS1_LIMITS_H */

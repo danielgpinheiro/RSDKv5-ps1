@@ -74,6 +74,79 @@ __attribute__((optimize("O2"), always_inline)) static inline void PS1S3DFaces(co
         kmax            = kk > kmax ? kk : kmax;
     }
 }
+// 7.5: S3D_WIREFRAME_SHADED_SCREEN (the UFO item box) as stock: positions through the matrix, projected (a face with a
+// corner nearer than 0x100 left out), each face's edges as lines in the entity's colour lit by its corners' mean normal y
+// (the mesh keeps its normals: PMD6 flag bit3). Faces in mesh order (lines: the sort changes nothing seen).
+static int32 PS1WireLit(int32 ny, uint32 colour, int32 shift, int32 diffuse, int32 intensity, int32 specularIntensity)
+{
+    int32 normalVal = (ny >> 2) * (abs(ny) >> 2);
+    int32 specular  = (normalVal >> 6) >> specularIntensity;
+    specular        = specular < 0 ? 0 : specular > 0xFF ? 0xFF : specular;
+    int32 c         = specular + ((int32)((colour >> shift) & 0xFF) * ((ny >> 10) + diffuse) >> intensity);
+    return c < 0 ? 0 : c > 0xFF ? 0xFF : c;
+}
+static void PS1Scene3DWire(uint16 sceneID)
+{
+    Scene3D *scn   = &scene3DList[sceneID];
+    Entity *entity = sceneInfo.entity;
+    for (int32 i = 0; i < g_ps1S3DCount; ++i) {
+        const PS1S3DItem &it = g_ps1S3DItems[i];
+        if (it.scene != sceneID)
+            continue;
+        const Model *mdl = &modelList[it.model];
+        const int32 fvc  = mdl->faceVertCount;
+        if (mdl->vertCount > 64) {
+            g_ps1S3DTodo = g_ps1S3DTodo + 1;
+            continue;
+        }
+        const uint8 *data = PS1MeshData(mdl);
+        const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
+        const uint8 *pos  = data + 6 * mdl->indexCount; // frame 0
+        const int8 *nrm   = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) : NULL;
+        const Matrix &m   = it.m;
+        int32 sx[64], sy[64], sz[64];
+        for (int32 v = 0; v < mdl->vertCount; ++v) {
+            int32 x, y, z;
+            if (mdl->flags & PS1_MESH_POS16) {
+                const int16 *p = (const int16 *)pos + 3 * v;
+                x = p[0], y = p[1], z = p[2];
+            }
+            else {
+                const int8 *p = (const int8 *)pos + 3 * v;
+                x = p[0] * mdl->ps1Scale >> 8, y = p[1] * mdl->ps1Scale >> 8, z = p[2] * mdl->ps1Scale >> 8;
+            }
+            int32 wx = m.values[0][3] + (z * m.values[0][2] >> 8) + (m.values[0][0] * x >> 8) + (m.values[0][1] * y >> 8);
+            int32 wy = m.values[1][3] + (y * m.values[1][1] >> 8) + (z * m.values[1][2] >> 8) + (m.values[1][0] * x >> 8);
+            sz[v]    = m.values[2][3] + ((x * m.values[2][0]) >> 8) + ((m.values[2][2] * z >> 8) + (m.values[2][1] * y >> 8));
+            if (sz[v] >= 0x100) {
+                sx[v] = currentScreen->center.x + (wx << scn->projectionX) / sz[v];
+                sy[v] = currentScreen->center.y - (wy << scn->projectionY) / sz[v];
+            }
+        }
+        for (int32 f = 0; f < mdl->indexCount; f += fvc) {
+            const uint16 *c = idx + f;
+            int32 ny = 0, v = 0;
+            for (; v < fvc && sz[c[v]] >= 0x100; ++v) {
+                if (nrm) {
+                    const int8 *n = nrm + 4 * (f + v);
+                    ny += (n[1] * 0x10000 / 127 * it.n1[1] >> 8) + (n[2] * 0x10000 / 127 * it.n1[2] >> 8) + (n[0] * 0x10000 / 127 * it.n1[0] >> 8);
+                }
+            }
+            if (v < fvc)
+                continue;
+            ny /= fvc;
+            uint32 colour = (uint32)PS1WireLit(ny, it.colour, 16, scn->diffuseX, scn->diffuseIntensityX, scn->specularIntensityX) << 16
+                            | (uint32)PS1WireLit(ny, it.colour, 8, scn->diffuseY, scn->diffuseIntensityY, scn->specularIntensityY) << 8
+                            | (uint32)PS1WireLit(ny, it.colour, 0, scn->diffuseZ, scn->diffuseIntensityZ, scn->specularIntensityZ);
+            for (v = 0; v < fvc; ++v) {
+                int32 w = v + 1 < fvc ? v + 1 : 0;
+                DrawLine(sx[c[v]], sy[c[v]], sx[c[w]], sy[c[w]], colour, entity->alpha, entity->inkEffect, true);
+            }
+        }
+    }
+    g_ps1S3DDraws = g_ps1S3DDraws + 1;
+}
+
 __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
 {
     if (sceneID >= SCENE3D_COUNT)
@@ -90,6 +163,10 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     }
     if (!n)
         return;
+    if (scn->drawMode == S3D_WIREFRAME_SHADED_SCREEN) { // 7.5: the item box
+        PS1Scene3DWire(sceneID);
+        return;
+    }
     bool flat = scn->drawMode == S3D_SOLIDCOLOR_SCREEN;
     if (!flat && scn->drawMode != S3D_SOLIDCOLOR_SHADED_SCREEN && scn->drawMode != S3D_SOLIDCOLOR_SHADED_BLENDED_SCREEN) {
         g_ps1S3DTodo = g_ps1S3DTodo + 1;

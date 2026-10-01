@@ -242,6 +242,26 @@ void UFO_Setup_Scanline_3DFloor(ScanlineInfo *scanlines)
 
     RSDK.SetClipBounds(0, 0, camera->clipY + 24, ScreenInfo->size.x, ScreenInfo->size.y);
 
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32 7.5), as the Dreamcast port: the camera for the engine's floor texture (PS1UfoFloor.cpp), 256
+    // pixels under the playfield; its fog 8 banks further (scanlines[2].position.y: bank shift 15 | bias 8 << 8)
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_UFO_FLOOR;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = RSDK.Sin1024(camera->angle);
+    scanlines->deform.y   = RSDK.Cos1024(camera->angle);
+    scanlines->position.x = RSDK.Sin1024(-camera->angleX);
+    scanlines->position.y = RSDK.Cos1024(-camera->angleX);
+    scanlines++;
+    scanlines->deform.x   = camera->position.x;
+    scanlines->deform.y   = camera->height + 0x1000000;
+    scanlines->position.x = camera->position.y;
+    scanlines->position.y = 15 | 8 << 8;
+    return;
+#endif
+
     int32 sin  = RSDK.Sin1024(camera->angle) >> 2;
     int32 cos  = RSDK.Cos1024(camera->angle) >> 2;
     int32 sinX = RSDK.Sin1024(-camera->angleX) >> 2;
@@ -273,6 +293,26 @@ void UFO_Setup_Scanline_3DRoof(ScanlineInfo *scanlines)
     EntityUFO_Camera *camera = RSDK_GET_ENTITY(SLOT_UFO_CAMERA, UFO_Camera);
 
     RSDK.SetClipBounds(0, 0, 0, ScreenInfo->size.x, camera->clipY - 48);
+
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32 7.5), as the Dreamcast port: the roof's camera (above: a negative height; it moves at 1/8 of the
+    // camera; its fog twice as fast: bank shift 14)
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_ROOF;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = RSDK.Sin1024(camera->angle);
+    scanlines->deform.y   = RSDK.Cos1024(camera->angle);
+    scanlines->position.x = RSDK.Sin1024(-camera->angleX);
+    scanlines->position.y = RSDK.Cos1024(-camera->angleX);
+    scanlines++;
+    scanlines->deform.x   = camera->position.x >> 3;
+    scanlines->deform.y   = (camera->height >> 2) - 0x600000;
+    scanlines->position.x = camera->position.y >> 3;
+    scanlines->position.y = 14;
+    return;
+#endif
 
     int32 sin  = RSDK.Sin1024(camera->angle) >> 2;
     int32 cos  = RSDK.Cos1024(camera->angle) >> 2;

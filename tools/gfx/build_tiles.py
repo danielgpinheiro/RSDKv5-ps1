@@ -38,7 +38,9 @@ Dreamcast port's LOD texture: one texel per tile of the Playfield layer, its mos
 real tiles' distance): lodPagesW x lodPagesH 4-bit texture pages (256 x 256 texels each: map tile (x, y) at page
 (x >> 8, y >> 8), texel (x & 255, y & 255); blocks in the tile columns after the images'), images lodFirst.. (row-major,
 u = v = 0, the page's texpage, CLUT = the last CLUT: the 15 most used colours; the other tiles' colours take the nearest
-of them). lodFirst 0: none.
+of them). lodFirst 0: none. Then (7.5) u16 patternImage (0: none): a UFO stage's "3D Floor" / "3D Roof" layer (16x16 tiles)
+pre-rendered as one 256x256 8-bit texture page (the Dreamcast port's floor / roof texture; blocks after the minimap's),
+drawn repeated; its image: u = v = 0, the page, CLUT 0xFFFF (the palette bank's).
 
 Usage: build_tiles.py DATA_DIR OUT_DIR FOLDER SCENE_ID... [--report]
 """
@@ -56,7 +58,7 @@ TILE = 16
 ANI_SHEETS = {'GHZ': ['GHZ/AniTiles.gif']}
 # Texture columns for tiles (column, page row), filled in this order: the right end of page row 1 first
 TILE_COLUMNS = [(15, 1), (14, 1), (13, 1), (12, 1), (11, 1), (10, 1)]
-LOD_COLUMNS = TILE_COLUMNS + [(9, 1), (8, 1)]  # 7.4: a UFO floor's minimap pages go after the tile images
+LOD_COLUMNS = TILE_COLUMNS + [(9, 1), (8, 1), (7, 1), (6, 1)]  # 7.4: a UFO floor's minimap pages go after the tile images
 
 
 SOLID_MIN = 16  # one-colour lines a layer needs for its table
@@ -358,6 +360,44 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         lod_first = len(images)
         lod_dims = (pw, ph)
 
+    # 7.5: a "3D Floor" / "3D Roof" layer as one 256x256 8-bit page (two columns, the first even, after the minimap's)
+    pattern_page, pattern_image = None, 0
+    pl = [L for L in layers if L['name'] in ('3D Floor', '3D Roof') and L['type'] == 2] if folder.startswith('UFO') else []
+    if pl:
+        L = pl[0]
+        if L['xsize'] * TILE > V.PAGE or L['ysize'] * TILE > V.PAGE:
+            raise TileError('%s%s: %s is %dx%d tiles' % (folder, scene_id, L['name'], L['xsize'], L['ysize']))
+        pat = np.zeros((V.PAGE, V.PAGE), np.uint8)
+        t = L['tiles']
+        for ty in range(L['ysize']):
+            for tx in range(L['xsize']):
+                v = t[ty * L['xsize'] + tx]
+                if v == 0xFFFF:
+                    continue
+                px = gif[(v & 0x3FF) * TILE:((v & 0x3FF) + 1) * TILE]
+                if v & 0x400:
+                    px = px[:, ::-1]
+                if v & 0x800:
+                    px = px[::-1, :]
+                pat[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = px
+        # the pattern repeats: a map smaller than 16x16 tiles is tiled to fill the page
+        h, w = L['ysize'] * TILE, L['xsize'] * TILE
+        if (V.PAGE % h) or (V.PAGE % w):
+            raise TileError('%s%s: %s does not tile 256 px' % (folder, scene_id, L['name']))
+        pat = np.tile(pat[:h, :w], (V.PAGE // h, V.PAGE // w))
+        taken = set(used_cols) | set(lod_pages)
+        cands = [(c, r) for (c, r) in LOD_COLUMNS if c % 2 == 0 and (c, r) not in taken and (c + 1, r) not in taken]
+        if not cands:
+            raise TileError('%s%s: no two free columns for the %s texture' % (folder, scene_id, L['name']))
+        col, row = cands[0]
+        words = pat[:, 0::2].astype(np.uint16) | (pat[:, 1::2].astype(np.uint16) << 8)
+        vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128] = words
+        back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128].astype(np.int32)
+        if not np.array_equal(np.stack([back & 0xFF, back >> 8], -1).reshape(V.PAGE, V.PAGE), pat.astype(np.int32)):
+            raise TileError('%s%s: the %s texture does not decode back' % (folder, scene_id, L['name']))
+        pattern_page = (col, row)
+        pattern_image = len(images) + len(lod_pages)
+
     blocks = []
     for (col, row) in used_cols:
         n = lines.get((col, row), 0)
@@ -365,6 +405,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, n))
     for (col, row) in lod_pages:
         blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, V.PAGE))
+    if pattern_page:
+        blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 128, V.PAGE))
     out = bytearray()
     img_tab = bytearray()
     for i in range(len(images)):
@@ -373,6 +415,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                                V.clut_attr(*V.TILE_CLUT_SLOTS[clut_of[i]]) if d == 4 else 0xFFFF)
     for (col, row) in lod_pages:
         img_tab += struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[lod_clut]))
+    if pattern_page:
+        img_tab += struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 8), 0xFFFF)
     clut_tab = b''.join(struct.pack('<HH', *V.TILE_CLUT_SLOTS[g]) + bytes(m) for g, m in enumerate(clut_maps))
     sheet_tab = b''.join(struct.pack('<32sHHH', n.encode()[:31], w, h, f) for n, w, h, f in sheets)
     cell_tab = struct.pack('<%dH' % len(cells), *cells)
@@ -383,9 +427,9 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     head = (32 + 2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)
             + len(blk_tab))
     data_off = (head + 2047) // 2048 * 2048
-    out += struct.pack('<4sHHHHHHIIHHBB2x', b'PTL2', len(images) + len(lod_pages), len(clut_maps), len(sheets), len(cells),
-                       len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
-                       lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0)
+    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL2', len(images) + len(lod_pages) + (1 if pattern_page else 0), len(clut_maps),
+                       len(sheets), len(cells), len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
+                       lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0, pattern_image)
     out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + blk_tab
     out += bytes(data_off - len(out)) + pixels
 
@@ -397,7 +441,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                   solid_count, sum(1 for c in solid_tabs if c is not None), len(hflip), len(out),
                   2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab),
                   '; minimap %dx%d pages (%s), CLUT %d' % (lod_dims[0], lod_dims[1], ' '.join('%d/%d' % c for c in lod_pages), lod_clut)
-                  if lod_pages else ''))
+                  if lod_pages else '') + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else ''))
     return bytes(out), report, vram, blocks
 
 
