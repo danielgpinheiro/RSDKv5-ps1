@@ -926,3 +926,28 @@ void Ring_Serialize(void)
     RSDK_EDITABLE_VAR(Ring, VAR_ENUM, speed);
     RSDK_EDITABLE_VAR(Ring, VAR_INT32, angle);
 }
+
+#if defined RETRO_PS1_BUILD
+// PS1 port (docs/32 7b, choice 113): static rings go dormant (ps1_limits.h PS1DormantSpec). A fixed ring's update
+// (Ring_State_Normal) writes only animator.frameID (= Zone->ringFrame) before its draw sets direction from it: both
+// rewritten before any read, so a ring re-created with them 0 behaves as the one that stayed. Moving rings stay entities.
+static int Ring_PS1Eligible(const void *e) { return ((const EntityRing *)e)->moveType == RING_MOVE_FIXED; }
+
+// Plane switches: their update only switches the players' planes (and shows them in debug mode, which is off), so one
+// out of reach is as its Create left it; its range follows its size and angle (PlaneSwitch_Create).
+static int PlaneSwitch_PS1Eligible(const void *e) { return true; }
+static int PlaneSwitch_PS1Range(const void *e)
+{
+    const EntityPlaneSwitch *ps = (const EntityPlaneSwitch *)e;
+    int32 x = TO_FIXED(32) + abs(ps->size * RSDK.Sin256(ps->angle) << 11);
+    int32 y = TO_FIXED(32) + abs(ps->size * RSDK.Cos256(ps->angle) << 11);
+    return x > y ? x : y;
+}
+
+const PS1DormantSpec ps1DormantSpecs[] = {
+    { Ring_Create, Ring_PS1Eligible, TO_FIXED(64), NULL,
+      { offsetof(EntityRing, animator.frameID), sizeof(int32), offsetof(EntityRing, direction), sizeof(uint8) } },
+    { PlaneSwitch_Create, PlaneSwitch_PS1Eligible, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 } },
+    { NULL, NULL, 0, NULL, { 0, 0, 0, 0 } },
+};
+#endif

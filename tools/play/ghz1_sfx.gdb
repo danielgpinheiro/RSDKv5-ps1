@@ -40,6 +40,7 @@ if g_ps1PerfFrames % 15 == 0
 end
 if g_ps1PerfFrames >= 900
   printf "CLUT full=%u rows=%u splices=%u\n", *(unsigned *)&g_ps1ClutFullUploads, *(unsigned *)&g_ps1ClutRowUploads, *(unsigned *)&g_ps1ClutSplices
+  printf "DORMANT playerCount=%d records=%u pool=%u live=%u peak=%u fail=%u created=%u returned=%u gone=%u dropped=%u arena=%u\n", ((ObjectPlayer *)Player)->playerCount, RSDK::g_ps1DormantRecords, RSDK::g_ps1DormantPool, RSDK::g_ps1DormantLive, RSDK::g_ps1DormantPeak, RSDK::g_ps1DormantFail, RSDK::g_ps1DormantCreated, RSDK::g_ps1DormantReturned, RSDK::g_ps1DormantGone, RSDK::g_ps1DormantDropped, RSDK::g_ps1EntityArenaBytes
   printf "GUARDS stageObjectsMissing=%u stubs=%u createSkips=%u relocations=%u spareFail=%u ghostWrites=%u chunkOverflow=%u chunkPrivate=%u forcedDefrag=%u atl=%d\n", RSDK::g_ps1StageObjectsMissing, g_ps1UnlinkedCalls, RSDK::g_ps1EntityCreateSkips, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntitySpareFail, RSDK::g_ps1EntityGhostWrites, RSDK::g_ps1ChunkOverflow, RSDK::g_ps1ChunkPrivatePeak, g_ps1StorageForcedDefrags[0], ps1AtlDropped
   printf "L SFX banks=%u bytes=%u err=%u plays=%u unloaded=%u last=%d verifyBytes=%u verifyFail=%u\n", g_ps1SfxBanks, g_ps1SfxBankBytes, g_ps1SfxBankErrors, g_ps1SfxPlays, g_ps1SfxUnloaded, g_ps1SfxUnloadedLast, g_ps1SfxVerifyBytes, g_ps1SfxVerifyFail
   quit

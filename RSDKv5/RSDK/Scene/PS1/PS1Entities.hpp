@@ -25,8 +25,13 @@ struct PS1EntityHeader {
 // class's size, so CreateEntity's 16-slot search meets one wherever createSlot is.
 #define PS1_TEMP_BLOCKS      (0x70)
 #define PS1_TEMP_LARGE_EVERY (7)
-#define PS1_TEMP_IS_LARGE(t) ((t) % PS1_TEMP_LARGE_EVERY == PS1_TEMP_LARGE_EVERY - 1)
+#define PS1_TEMP_IS_LARGE(t) ((t) % ps1TempLargeEvery == ps1TempLargeEvery - 1)
 #define PS1_TEMP_LARGE_COUNT (PS1_TEMP_BLOCKS / PS1_TEMP_LARGE_EVERY)
+// 7b: a stage with the game's ps1TempStageMarker class (the Mean Bean Machine: up to ~150 beans, temp entities that fit
+// a small block) gets PS1_TEMP_BLOCKS_MANY, the same large ones spread over them (every ps1TempLargeEvery-th)
+#define PS1_TEMP_BLOCKS_MANY (0x90)
+extern int32 ps1TempBlocks, ps1TempLargeEvery; // this stage's
+extern volatile uint32 g_ps1EntityCreateOverwrites; // CreateEntity found no free block in its search: it reset a live one
 
 extern EntityBase *objectEntityPtr[ENTITY_COUNT];
 extern uint8 ps1EntityGhosts[];
@@ -113,3 +118,14 @@ void PS1SceneObjectBegin(uint32 bytes); // a DATASET_TMP block for one object's 
 void PS1SceneEntityBegin(uint16 fileSlot, uint16 classID, int32 x, int32 y);
 void PS1SceneEntityVar(uint16 offset, uint8 type, const void *data, uint16 len);
 void PS1SceneEntitiesPlace();
+// 7b: class `classID` has a "childCount" variable at `offset` (the slots after such an entity never go dormant)
+void PS1SceneChildVar(uint16 classID, uint16 offset, uint8 type);
+
+// 7b (choice 113): dormant entities (ps1_limits.h PS1DormantSpec). The update passes call this first (after the cameras'
+// union): it creates the dormant entities the cameras' boxes (grown by the class range + a margin) reach and returns to
+// records the ones out of reach that are as their Create left them. The rest of the engine sees a dormant slot as an
+// empty one (a ghost).
+void PS1DormantUpdate();
+extern volatile uint32 g_ps1DormantRecords, g_ps1DormantPool, g_ps1DormantLive, g_ps1DormantPeak;
+extern volatile uint32 g_ps1DormantFail;      // a creation with no pool block left (the entity stayed dormant: must be 0)
+extern volatile uint32 g_ps1DormantCreated, g_ps1DormantReturned, g_ps1DormantGone, g_ps1DormantDropped;

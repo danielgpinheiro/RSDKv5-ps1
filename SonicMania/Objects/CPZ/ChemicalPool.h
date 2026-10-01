@@ -45,7 +45,11 @@ struct EntityChemicalPool {
     int32 impactPower;
     int32 impactPowerSides;
     Hitbox hitbox;
+#if defined RETRO_PS1_BUILD
+    int32 vertexY[66]; // PS1 port (docs/32 7b): the vertices' y; their x stay Create's grid (ChemicalPool.c VX): 264 B a pool
+#else
     Vector2 vertices[66];
+#endif
     color surfaceColors[4];
     Animator animator;
 };

@@ -167,7 +167,9 @@ $(patsubst %.c,%.o,$(wildcard SonicMania/Objects/UFO/*.c)): CPPFLAGS += '-Dabs(n
 # function resident code or another overlay names.
 OVL_FOLDERS = $(shell cat build/gen/ovl/folders.txt 2>/dev/null)
 OVL_OBJS    = $(foreach f,$(OVL_FOLDERS),$(patsubst %.c,%.o,$(shell cat build/gen/ovl/$(f).srcs)))
-OVL_BINS    = $(foreach f,$(OVL_FOLDERS),build/ovl/$(f).bin)
+# docs/32 7b: one overlay per folder, or per act for the folders tools/gen_overlays.py SPLIT names (<folder>_<scene>)
+OVL_UNITS   = $(shell cut -d' ' -f1 build/gen/ovl/units.txt 2>/dev/null)
+OVL_BINS    = $(foreach f,$(OVL_UNITS),build/ovl/$(f).bin)
 STUBS = build/gen/ovl_resident
 LDFLAGS += $(STUBS).o -Wl,@build/gen/ovl_keep.txt
 $(TARGET).elf: $(STUBS).o
@@ -176,7 +178,7 @@ $(STUBS).c: $(OBJS) $(OVL_OBJS) tools/gen_overlays.py
 $(STUBS).o: $(STUBS).c
 	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<
 # a new folder's registration files are otherwise intermediate: make deletes them after the first build
-.SECONDARY: $(foreach f,$(OVL_FOLDERS),build/gen/ovl/$(f)_reg.c build/gen/ovl/$(f)_reg.o)
+.SECONDARY: $(foreach f,$(OVL_UNITS),build/gen/ovl/$(f)_reg.c build/gen/ovl/$(f)_reg.o)
 build/gen/ovl/%_reg.c: $(STUBS).c
 	@test -f $@
 # the resident image every overlay links against: one job builds it (parallel links used to rewrite it together)
@@ -238,7 +240,7 @@ meshes:
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
-	for f in $(OVL_FOLDERS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
+	for f in $(OVL_UNITS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
 	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi

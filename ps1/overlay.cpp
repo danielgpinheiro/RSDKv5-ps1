@@ -22,8 +22,10 @@ volatile uint32 g_ps1OvlLoads  = 0; // overlays read (GDB)
 volatile uint32 g_ps1OvlSize   = 0; // the loaded one's size
 volatile uint32 g_ps1OvlBase   = 0; // and address
 volatile uint32 g_ps1OvlErrors = 0; // a bad header or no room (must stay 0)
-char g_ps1OvlFolder[0x10];
+char g_ps1OvlFolder[0x18]; // the loaded overlay: a folder, or <folder>_<scene id> (7b)
 void PS1StorageExhausted(uint32 set, uint32 size); // RSDK/Storage/Storage.cpp: stops
+extern const char *const ps1OvlUnits[];  // 7b: the act overlays (generated: build/gen/ovl_resident.c)
+const char *const *g_ps1OvlLeftOut = NULL; // 7b: the loaded act overlay's left-out classes (its register sets it)
 }
 
 PS1VideoOps g_ps1VideoOps = {};
@@ -39,12 +41,40 @@ struct PS1OverlayHeader {
 int32 s_residentClasses = -1;
 } // namespace
 
-void RSDK::PS1LoadOverlay(const char *folder)
+// 7b: the overlay a scene loads: its act's when the build has one (ps1OvlUnits), else its folder's
+static void PS1OverlayUnit(const char *folder, const char *scene, char *unit)
 {
+    sprintf_s(unit, sizeof(g_ps1OvlFolder), "%s_%s", folder, scene);
+    for (const char *const *u = ps1OvlUnits; *u; ++u)
+        if (!strcmp(*u, unit))
+            return;
+    sprintf_s(unit, sizeof(g_ps1OvlFolder), "%s", folder);
+}
+
+bool32 RSDK::PS1OverlayUnitChanges(const char *folder, const char *scene)
+{
+    char unit[sizeof(g_ps1OvlFolder)];
+    PS1OverlayUnit(folder, scene, unit);
+    return g_ps1OvlLoads && strcmp(unit, g_ps1OvlFolder) != 0;
+}
+
+bool32 RSDK::PS1OverlayLeftOut(const char *name)
+{
+    for (const char *const *n = g_ps1OvlLeftOut; n && *n; ++n)
+        if (!strcmp(*n, name))
+            return true;
+    return false;
+}
+
+void RSDK::PS1LoadOverlay(const char *sceneFolder, const char *scene)
+{
+    char folder[sizeof(g_ps1OvlFolder)];
+    PS1OverlayUnit(sceneFolder, scene, folder);
     if (s_residentClasses < 0)
         s_residentClasses = objectClassCount; // the first scene load: every resident class is registered
     if (g_ps1OvlLoads && !strcmp(folder, g_ps1OvlFolder))
         return;
+    g_ps1OvlLeftOut = NULL;
 
     // the previous overlay's classes and functions go (its static variables were released by ClearStageObjects)
     objectClassCount = s_residentClasses;

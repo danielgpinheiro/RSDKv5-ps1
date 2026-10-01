@@ -1439,3 +1439,40 @@ void Zone_EditorLoad(void)
 #endif
 
 void Zone_Serialize(void) {}
+
+#if defined RETRO_PS1_BUILD
+// PS1 port (docs/32 7b): what the game puts in each reserved slot of a zone (ps1_limits.h PS1ReservedSpec). From the
+// game's resets / copies into these slots, with one character (Player->playerCount = 1: the scene's one player): the
+// player, its Shield / InvincibleStars / SuperSparkle (playerCount + slot) and ImageTrail (2 * playerCount + slot), a
+// second Player in MSZCutsceneK, TMZ2Outro's extra players at 4-5, Music (SLOT_MUSIC, the music stack), Zone,
+// CutsceneSeq, the pause menu / act clear / game over / TitleCard (HCZ1Intro reads one there), the pause menu's and the
+// dialogs' UI, MSZSetup's fades (17, 32), the replay recorder, the cameras. A class missed here moves its slot to a
+// spare block when it arrives (counted: relocations).
+const char *const ps1ReservedStageMarker = "Zone";
+// The Mean Bean Machine's beans are temp entities (up to ~150 on the two boards): its stage gets more temp blocks
+const char *const ps1TempStageMarker = "PuyoBean";
+const PS1ReservedSpec ps1ReservedSpecs[] = {
+    { SLOT_PLAYER1, SLOT_PLAYER1, NULL, { "Player" } },
+    { 1, 1, NULL, { "Shield", "InvincibleStars", "SuperSparkle" } },
+    { 1, 1, "MSZCutsceneK", { "Player" } },
+    { 2, 2, NULL, { "ImageTrail" } },
+    { 4, 5, "TMZ2Outro", { "Player" } },
+    { SLOT_MUSIC, SLOT_MUSIC, NULL, { "Music" } },
+    { SLOT_ZONE, SLOT_ZONE, NULL, { "Zone" } },
+    { SLOT_CUTSCENESEQ, SLOT_CUTSCENESEQ, NULL, { "CutsceneSeq" } },
+    { SLOT_PAUSEMENU, SLOT_PAUSEMENU, NULL, { "PauseMenu", "GameOver", "ActClear", "TitleCard" } },
+    { 17, 17, NULL, { "UIControl", "MSZSetup" } },
+    { 18, 20, NULL, { "UIButton" } },
+    { SLOT_DIALOG, SLOT_DIALOG, NULL, { "UIDialog" } },
+    { SLOT_DIALOG_UICONTROL, SLOT_DIALOG_UICONTROL, NULL, { "UIControl" } },
+    { SLOT_DIALOG_BUTTONS, SLOT_DIALOG_BUTTON3, NULL, { "UIButton" } },
+    { 26, 26, NULL, { "UIPopover" } },
+    { 27, 27, NULL, { "UIControl" } },
+    { 28, 31, NULL, { "UIButton" } },
+    { 32, 37, NULL, { "MSZSetup", "ReplayRecorder" } },
+    { 40, 48, NULL, { "Music" } },
+    { SLOT_CAMERA1, SLOT_CAMERA4, NULL, { "Camera" } },
+    { 3, 11, NULL, { NULL } }, // the other power-up slots (more players): no block
+    { 0xFFFF, 0xFFFF, NULL, { NULL } },
+};
+#endif

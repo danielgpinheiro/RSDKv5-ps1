@@ -9,6 +9,15 @@
 
 ObjectChemicalPool *ChemicalPool;
 
+// vertex k of a pool: pairs per column (top, bottom); every x is Create's column grid, which nothing changes after
+#if defined RETRO_PS1_BUILD
+#define VX(k) ((((k) >> 1) << 20) - (self->size.x >> 1))
+#define VY(k) (self->vertexY[k])
+#else
+#define VX(k) (self->vertices[k].x)
+#define VY(k) (self->vertices[k].y)
+#endif
+
 void ChemicalPool_Update(void)
 {
     RSDK_THIS(ChemicalPool);
@@ -35,16 +44,15 @@ void ChemicalPool_Draw(void)
     int32 screenY = screen->position.y << 16;
 
     Vector2 verts[4];
-    Vector2 *vertices = self->vertices;
-    for (int32 i = 0; i < self->tileSizeX; ++i) {
-        verts[0].x = vertices[0].x + screenX;
-        verts[0].y = vertices[0].y - screenY;
-        verts[1].x = vertices[2].x + screenX;
-        verts[1].y = vertices[2].y - screenY;
-        verts[2].x = vertices[3].x + screenX;
-        verts[2].y = vertices[3].y - screenY;
-        verts[3].x = vertices[1].x + screenX;
-        verts[3].y = vertices[1].y - screenY;
+    for (int32 i = 0, k = 0; i < self->tileSizeX; ++i) {
+        verts[0].x = VX(k) + screenX;
+        verts[0].y = VY(k) - screenY;
+        verts[1].x = VX(k + 2) + screenX;
+        verts[1].y = VY(k + 2) - screenY;
+        verts[2].x = VX(k + 3) + screenX;
+        verts[2].y = VY(k + 3) - screenY;
+        verts[3].x = VX(k + 1) + screenX;
+        verts[3].y = VY(k + 1) - screenY;
 
         color *surfaceColors = NULL;
         if (self->timer >= 1)
@@ -64,7 +72,7 @@ void ChemicalPool_Draw(void)
         else
             RSDK.DrawFace(verts, 4, self->r, self->g, self->b, 0xC0, INK_ALPHA);
 
-        vertices += 2;
+        k += 2;
     }
 
     if (self->type > CHEMICALPOOL_BLUE) { // da reflection
@@ -97,17 +105,16 @@ void ChemicalPool_Create(void *data)
         self->updateRange.y = self->size.y >> 1;
         self->tileSizeX     = self->size.x >> 20;
 
-        Vector2 *vertices = self->vertices;
-        for (int32 i = 0; i < 0x2100000; i += 0x100000) {
+        for (int32 i = 0, k = 0; i < 0x2100000; i += 0x100000, k += 2) {
+#if !defined RETRO_PS1_BUILD
             int32 x       = i - (self->size.x >> 1);
-            vertices[0].x = x;
-            vertices[1].x = x;
+            self->vertices[k].x     = x;
+            self->vertices[k + 1].x = x;
+#endif
 
-            int32 y       = self->position.y - (self->size.y >> 1);
-            vertices[0].y = y;
-            vertices[1].y = y + 0x80000;
-
-            vertices += 2;
+            int32 y   = self->position.y - (self->size.y >> 1);
+            VY(k)     = y;
+            VY(k + 1) = y + 0x80000;
         }
 
         self->leftEdge         = (self->position.x - (self->size.x >> 1)) >> 20;
@@ -183,19 +190,17 @@ void ChemicalPool_ProcessDeformations(void)
 
     self->maxDeform   = 0;
     int32 id          = self->leftEdge;
-    Vector2 *vertices = self->vertices;
-    for (int32 i = 0; i <= self->tileSizeX; ++i) {
+    for (int32 i = 0, k = 0; i <= self->tileSizeX; ++i, k += 2) {
         if (ChemicalPool->surfaceDeformation[id] > self->maxDeform)
             self->maxDeform = ChemicalPool->surfaceDeformation[id];
-        vertices[0].y = ChemicalPool->surfaceDeformation[id] + self->offsetY;
+        VY(k) = ChemicalPool->surfaceDeformation[id] + self->offsetY;
 
         int32 deform = 2 * ChemicalPool->surfaceDeformation[id] + 0x80000;
         if (deform < ChemicalPool->surfaceDeformation[id])
             deform = ChemicalPool->surfaceDeformation[id] + 0x10000;
-        vertices[1].y = deform + self->offsetY;
+        VY(k + 1) = deform + self->offsetY;
 
         ++id;
-        vertices += 2;
     }
 }
 

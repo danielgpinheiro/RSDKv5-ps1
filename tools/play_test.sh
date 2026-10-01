@@ -14,5 +14,5 @@ RUN="$OUT.run.gdb" # never the input script: cat into itself grows without end
 emu_start "$OUT"
 timeout -s INT ${TIMEOUT:-500} /opt/homebrew/bin/gdb --batch -x "$RUN" > "$OUT.log" 2>&1
 emu_stop
-grep -E "^(F |L |GUARDS|SAMPLES|CLUT )" "$OUT.log" | tee "$OUT.txt"
+grep -E "^(F |L |GUARDS|DORMANT|SAMPLES|CLUT )" "$OUT.log" | tee "$OUT.txt"
 echo "(log: $OUT.log)"

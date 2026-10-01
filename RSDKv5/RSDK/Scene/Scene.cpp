@@ -59,6 +59,7 @@ char RSDK::currentSceneID[0x10];
 SceneInfo RSDK::sceneInfo;
 #if RETRO_PLATFORM == RETRO_PS1
 volatile uint32 RSDK::g_ps1StageObjectsMissing = 0; // this scene's StageConfig objects not registered (GDB; must be 0)
+volatile uint32 RSDK::g_ps1StageObjectsLeftOut = 0; // 7b: of them, the ones the act's overlay leaves out on purpose
 volatile uint32 RSDK::g_ps1ScrollInfoDropped   = 0; // scroll infos past the PS1's 0x80 per layer (GDB; must be 0)
 #endif
 
@@ -194,7 +195,13 @@ void RSDK::LoadSceneFolder()
 
     SceneListInfo *list = &sceneInfo.listCategory[sceneInfo.activeCategory];
 #if RETRO_REV02
+#if RETRO_PLATFORM == RETRO_PS1
+    // 7b: two acts of a folder with an overlay each: the stage's objects change, a full load (as another folder)
+    if (strcmp(currentSceneFolder, sceneInfo.listData[sceneInfo.listPos].folder) == 0 && !forceHardReset
+        && !PS1OverlayUnitChanges(sceneInfo.listData[sceneInfo.listPos].folder, sceneInfo.listData[sceneInfo.listPos].id)) {
+#else
     if (strcmp(currentSceneFolder, sceneInfo.listData[sceneInfo.listPos].folder) == 0 && !forceHardReset) {
+#endif
         // Reload
 #if RETRO_PLATFORM == RETRO_PS1
         // PS1 (docs/32 4.3): a first load places the entity arena while the scene records sit in STG's tail and before
@@ -273,7 +280,7 @@ void RSDK::LoadSceneFolder()
     DefragmentAndGarbageCollectStorage(DATASET_SFX);
 #if RETRO_PLATFORM == RETRO_PS1
     // PS1 (docs/32 2.4): the stage folder's code overlay, at the top of STG (ps1/overlay.cpp)
-    PS1LoadOverlay(sceneInfo.listData[sceneInfo.listPos].folder);
+    PS1LoadOverlay(sceneInfo.listData[sceneInfo.listPos].folder, sceneInfo.listData[sceneInfo.listPos].id);
 #endif
 
     for (int32 s = 0; s < SCREEN_COUNT; ++s) {
@@ -329,6 +336,7 @@ void RSDK::LoadSceneFolder()
         uint8 objectCount = ReadInt8(&info);
 #if RETRO_PLATFORM == RETRO_PS1
         g_ps1StageObjectsMissing = 0;
+        g_ps1StageObjectsLeftOut = 0;
 #endif
         for (int32 o = 0; o < objectCount; ++o) {
             ReadString(&info, textBuffer);
@@ -349,8 +357,12 @@ void RSDK::LoadSceneFolder()
 #if RETRO_PLATFORM == RETRO_PS1
             // a StageConfig object this build does not register (`make objects STAGES=` without this stage): its
             // entities load as blank ones, the scene half-works (2.5: GHZ1 without its Bridge)
-            if (sceneInfo.classCount == before)
-                g_ps1StageObjectsMissing = g_ps1StageObjectsMissing + 1;
+            if (sceneInfo.classCount == before) {
+                if (PS1OverlayLeftOut(textBuffer)) // 7b: not this act's (its scene has none, no kept code names it)
+                    g_ps1StageObjectsLeftOut = g_ps1StageObjectsLeftOut + 1;
+                else
+                    g_ps1StageObjectsMissing = g_ps1StageObjectsMissing + 1;
+            }
 #endif
         }
 
@@ -668,6 +680,9 @@ void RSDK::LoadSceneAssets()
         // PS1 (docs/32 2.3): the entities go to compact records first (file slot, class, position, the active
         // variables), then PS1SceneEntitiesPlace compacts them as below and gives each slot a block of its class's size.
         PS1SceneEntitiesBegin();
+        // 7b: the "childCount" variables (Platform & co. move or read the next childCount slots: they never go dormant)
+        RETRO_HASH_MD5(ps1ChildHash);
+        GEN_HASH_MD5("childCount", ps1ChildHash);
 
         for (int32 i = 0; i < objectCount; ++i) {
             RETRO_HASH_MD5(objHash);
@@ -728,6 +743,8 @@ void RSDK::LoadSceneAssets()
                 }
 
                 editableVarList[varID].type = varList[e].type = ReadInt8(&info);
+                if (varList[e].active && HASH_MATCH_MD5(varHash, ps1ChildHash))
+                    PS1SceneChildVar((uint16)classID, varList[e].offset, varList[e].type);
             }
 
             uint16 entityCount = ReadInt16(&info);

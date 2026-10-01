@@ -626,6 +626,7 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
 
 PS1_HOT void PS1UpdatePass()
 {
+    PS1DormantUpdate(); // 7b: dormant entities the cameras reach become entities first (PS1Entities.cpp)
     PS1CameraUnion();
     EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
     int32 phase     = 0;
@@ -884,6 +885,7 @@ PS1_HOT void PS1PausedLatePass()
 // ones again
 PS1_HOT void PS1FrozenUpdatePass()
 {
+    PS1DormantUpdate(); // 7b
     PS1CameraUnion();
     EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
     int32 phase     = 0;
@@ -1875,7 +1877,7 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
 
         sceneInfo.createSlot++;
 #if RETRO_PLATFORM == RETRO_PS1
-        if (sceneInfo.createSlot == TEMPENTITY_START + PS1_TEMP_BLOCKS) { // PS1Entities.hpp: the temp slots with blocks
+        if (sceneInfo.createSlot == TEMPENTITY_START + ps1TempBlocks) { // PS1Entities.hpp: the temp slots with blocks
 #else
         if (sceneInfo.createSlot == ENTITY_COUNT) {
 #endif
@@ -1893,6 +1895,8 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
     }
 
 #if RETRO_PLATFORM == RETRO_PS1
+    if (entity->classID) // 7b: no free block in the search: the stock overwrite of a live entity (counted)
+        g_ps1EntityCreateOverwrites = g_ps1EntityCreateOverwrites + 1;
     {
         static EntityBase s_createOverflow; // no block at all (no spare room): counted, never a write through NULL
         Entity *e = PS1EntityEnsure((EntityBase *)entity, sceneInfo.createSlot, object->entityClassSize);

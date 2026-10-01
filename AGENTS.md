@@ -79,6 +79,12 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
 ## Invariants (from the Nexus, Sonic CD and Sonic 2 ports)
 - **2 MB RAM** (`RAM_SIZE=2M`); track heap high-water incl. load peaks. v5 needs per-zone code overlays and
   per-scene pools (`../docs/32`): nothing "stock" fits.
+- **Entity memory (docs/32 7b.2)**: static rings and plane switches go **dormant** out of the cameras' reach (records +
+  a pool; game specs `ps1DormantSpecs` in `Objects/Global/Ring.c`); reserved slots are sized by the game's table
+  `ps1ReservedSpecs` (`Objects/Global/Zone.c`, class names: a pointer reference would pin a class in every act overlay);
+  folders in `tools/gen_overlays.py` SPLIT get one overlay per act (`<folder>_<scene>`; left-out classes counted apart).
+  A new class the game puts in a reserved slot, or a new dormant class, goes in those tables; watch `relocations`,
+  `ghostWrites`, `g_ps1DormantFail`, `g_ps1EntityCreateOverwrites`, `g_ps1StageObjectsMissing` (all must stay 0).
 - **Golden rule**: no runtime asset decoding; converters decode their output back and compare.
 - Per-frame drawing is **DMA-chained** (`ps1/gpu_chain.hh`); fragments ≤ 14 words; immediate VRAM writes
   go to the other buffer (`../docs/29` §3). Clip primitives beyond the GPU limits. **One 60 KB arena** (3.3b; 50 → 60 KB in 7.1): a
