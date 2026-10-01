@@ -66,7 +66,6 @@ SHT CPZ/Enemies.gif
 SPR CPZ/Grabber.bin
 SPR CPZ/Sweep.bin
 SPR CPZ/CaterkillerJr.bin
-SPR CPZ/AmoebaDroid.bin
 SPR CPZ/ChemPool.bin
 SHT CPZ/ChemPool.gif
 SPR CPZ/Syringe.bin
@@ -79,12 +78,3 @@ SPR Puyo/Combos.bin
 SPR CPZ/Shutter.bin
 SPR Eggman/EggmanCPZ.bin
 SHT Eggman/EggmanMBM.gif
-SPR Players/CutsceneCPZ.bin
-SHT Players/SonicCutsceneCPZ.gif
-SHT Players/TailsCutsceneCPZ.gif
-SHT Players/KnuxCutsceneCPZ.gif
-SHT Players/MightyCutsceneCPZ.gif
-SHT Players/RayCutsceneCPZ.gif
-SPR CPZ/Particles.bin
-SPR Global/PhantomRuby.bin
-SHT Global/PhantomRuby.gif

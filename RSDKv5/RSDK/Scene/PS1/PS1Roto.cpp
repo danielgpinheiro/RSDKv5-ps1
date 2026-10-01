@@ -183,6 +183,20 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
     if (ok)
         L[n - 1].step = L[n - 2].step; // past the last line: the last pair's spacing (PS1RotoSolve only reads lo < n - 1)
     if (!ok) {
+        // 7b.6: lines that scale only horizontally (FBZ1's inside background: a cylinder whose rows wrap, no plane):
+        // drawn unscaled by the line drawer, each line's row as the PC picks it, centred where the PC centres it (the
+        // horizontal scale is not drawn: counted)
+        bool flat = true;
+        for (int32 k = 0; flat && k < n; ++k)
+            flat = !sl[k].deform.y && sl[k].deform.x > 0;
+        if (flat) {
+            int32 cx = currentScreen->center.x;
+            for (int32 k = 0; k < n; ++k) ((ScanlineInfo *)sl)[k].position.x += (sl[k].deform.x - 0x10000) * cx;
+            layer->ps1Uniform = layer->ps1Direct = 0;
+            g_ps1RotoFlat = g_ps1RotoFlat + 1;
+            PS1DrawLayerHScroll(layer);
+            return;
+        }
         g_ps1RotoTodo = g_ps1RotoTodo + 1;
         return;
     }

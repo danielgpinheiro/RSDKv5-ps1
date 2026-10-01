@@ -53,13 +53,51 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
 # classes that only another act's scene places and that no code of the act's overlay or of the resident names (their
 # pointer variable or a function). The scene load takes the act's overlay when the resident lists it (ps1OvlUnits); a
 # change of overlay between two acts of one folder is a full stage load (ps1/overlay.cpp PS1OverlayUnitChanges).
-SPLIT = {'CPZ', 'FBZ'}
+SPLIT = {'CPZ', 'FBZ', 'SSZ2'}
 # 7b.3c: classes an act's overlay leaves out although kept code names them, each reviewed: every such use is in code
 # the act never runs or behind a check of the class's pointer (a left-out class's pointer stays NULL in the resident):
 # FBZ2: FBZSetup finds FBZ1Outro only when CutsceneRules_IsAct1(); Ring.c tests `if (BigSqueeze)`; FBZ1Outro, BigSqueeze
 # and FBZTrash name only each other. Their StageLoads load their own sprites / sounds only (BigSqueeze's Soundboard
 # rumble plays while it crushes, never in act 2).
 FORCE_DROP = {('FBZ', '2'): {'FBZ1Outro', 'BigSqueeze', 'FBZTrash'}}
+# 7b.5: a class an act leaves out loses its StageLoad / StaticUpdate there: never left out are the zone setups and the
+# classes whose StageLoad reaches past their own statics (random numbers: the stock sequence; zone / trigger
+# callbacks; palettes, tiles, draw groups; an ACTIVE_ALWAYS / NORMAL object with a StaticUpdate). SAFE_DROP: reviewed
+# ones whose effect is nil without their entities: CPZBoss (sets objectDrawGroup[1] / +1 to the defaults nothing else
+# changes in CPZ), FBZStorm (stops a rain sound only its entities start), DNARiser (draw-list refs of its entities),
+# BigSqueeze (an empty StaticUpdate).
+STAGELOAD_EFFECTS = re.compile(r'\bRand\(|ZONE_RAND|callbacks\[|\bZone->\w+(\[[^]]*\])?\s*=[^=]|SetLimitedFade|LoadPalette|'
+                               r'SetActivePalette|CopyTileLayer|SetTile\(|SetDrawGroupProperties|'
+                               r'stageFinishCallback|Soundboard_LoadSfx\([^;]*Music')
+SAFE_DROP = {'CPZBoss', 'FBZStorm', 'DNARiser', 'BigSqueeze'}
+
+
+def keeps_effects(cfile, cls):
+    """The reason a class must stay in every act's overlay (None: its StageLoad / StaticUpdate act only on its own)."""
+    if cls.endswith('Setup'):
+        return 'setup'
+    if cls in SAFE_DROP:
+        return None
+    try:
+        src = open(cfile, errors='replace').read()
+    except OSError:
+        return None
+
+    def body(fn):
+        m = re.search(r'\nvoid %s_%s\(void\)\s*\{' % (cls, fn), src)
+        if not m:
+            return ''
+        depth, i = 1, m.end()
+        while depth and i < len(src):
+            depth += {'{': 1, '}': -1}.get(src[i], 0)
+            i += 1
+        return src[m.end():i - 1]
+    sl, su = body('StageLoad'), body('StaticUpdate')
+    if STAGELOAD_EFFECTS.search(sl):
+        return 'StageLoad: ' + STAGELOAD_EFFECTS.search(sl).group(0)
+    if re.search(r'->active\s*=\s*ACTIVE_(ALWAYS|NORMAL)', sl) and su.strip():
+        return 'StaticUpdate'
+    return None
 
 
 def units():
@@ -456,7 +494,21 @@ def unit_members(fo, sid, names, res_undef):
     keep = reach({c for c in names if c in placed[sid]}, res_undef)
     other = {c for c in names if c in anywhere and c not in keep}
     helpers = reach(other, set()) - keep - anywhere
-    drop = other | helpers | (force & set(names))
+    # 7b.5: the classes no act places and no other act's class explains (setups: SSZ2Setup writes GenericTrigger's
+    # callbacks in both acts) are roots too, so what they name stays
+    keep = reach({c for c in names if c in placed[sid]} | ({c for c in names if c not in anywhere} - helpers), res_undef)
+    other = {c for c in names if c in anywhere and c not in keep}
+    helpers = helpers - keep
+    drop = other | helpers
+    cfile = {os.path.basename(p)[:-2]: p for p in open(os.path.join(OVL, fo + '.srcs')).read().split()}
+    for c in sorted(drop - force):
+        why = keeps_effects(cfile.get(c, ''), c)
+        if why:
+            drop.discard(c)
+            print('gen_overlays: %s_%s keeps %s (%s)' % (fo, sid, c, why))
+    drop |= force & set(names)
+    keep = reach({c for c in names if c not in drop}, res_undef) - force
+    drop = {c for c in names if c not in keep}
     keep = {c for c in names if c not in drop}
     return [c for c in names if c in keep], sorted(drop)
 

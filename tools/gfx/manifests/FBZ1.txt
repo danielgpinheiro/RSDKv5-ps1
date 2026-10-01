@@ -48,6 +48,7 @@ SHT UI/PauseEN.gif
 SHT UI/TextPlusEN.gif
 SPR UI/WaitSpinner.bin
 SPR Global/SuperSparkle.bin
+SHT FBZ/AniTiles.gif
 SPR FBZ/FBZParallax.bin
 SHT FBZ/FGClouds.gif
 SPR FBZ/Decoration.bin
@@ -83,3 +84,5 @@ SHT Eggman/EggmanButton.gif
 SHT Eggman/EggmanGHZCutt.gif
 SPR FBZ/Current.bin
 SHT FBZ/Objects2.gif
+SPR FBZ/HangGlider.bin
+SHT FBZ/SpiderMobile.gif

@@ -87,7 +87,10 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   `ghostWrites`, `g_ps1DormantFail`, `g_ps1EntityCreateOverwrites`, `g_ps1StageObjectsMissing` (all must stay 0).
   A dormant spec needs a review (Create sets only its own fields: no RNG, counters or children; no foreach_all / slot /
   pointer use by other classes, else list them in `unless`); diffs only for state an update leaves (36 B a record).
-  Act overlays may leave out classes kept code names only in act-only or pointer-checked code (`FORCE_DROP`, reviewed).
+  Act overlays may leave out classes kept code names only in act-only or pointer-checked code (`FORCE_DROP`, reviewed);
+  they never leave out setups or classes whose StageLoad has global effects (`keeps_effects`, `SAFE_DROP` reviewed).
+  Review each overlay's left-out list (boot log `ACTOVL`, `build/gen/ovl/<unit>_reg.c`): pictures cannot show a
+  missing StageLoad (FBZ1 once ran without FBZSetup).
 - **Layouts (7b.3)**: chunk index → 8-chunk segments → 4×4 chunks (4 row ids) → 4-tile rows, all deduplicated per scene
   by `tools/data_disc.py` (self-checked); read tiles through `PS1ChunkRow` / `PS1ChunkIdx` / `PS1ChunkTiles` /
   `PS1TilePtr`, write only through `PS1SetTile` (copy-on-write at each level).

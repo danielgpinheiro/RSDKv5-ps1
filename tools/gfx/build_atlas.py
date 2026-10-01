@@ -92,10 +92,15 @@ def md5_words(text):
 
 def read_manifest(folder, scene_id):
     path = os.path.join(HERE, 'manifests', '%s%s.txt' % (folder, scene_id))
+    data = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data', 'Sprites')
     out = []
     for line in open(path):
         t = line.split()
         if t and not t[0].startswith('#'):
+            # 7b.5: a file the game asks for that the data pack lacks (SSZ's Global/MonarchPlans.bin): the engine's load
+            # fails and the game draws nothing from it
+            if t[0] == 'SPR' and not os.path.exists(os.path.join(data, t[1])):
+                continue
             out.append((t[0], t[1]))
     return out
 
@@ -235,6 +240,12 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'PSZ2': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('PSZ2/Shinobi.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 7b: SSZ1's Hotaru Hi-Watt; SSZ2M is the Metal Sonic fight from its start (level frames, halvable)
+                'SSZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('SSZ1/HotaruHiWatt.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'SSZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
@@ -282,6 +293,7 @@ HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'CPZ/AmoebaDroid.bin', 'Eggman/EggmanCPZ.bin', 'CPZ/MBMSonic.bin', 'CPZ/MBMTails.bin', 'CPZ/MBMKnux.bin',  # 7b
              'SPZ2/WeatherMobile.bin', 'Eggman/EggMobile.bin', 'SPZ2/EggTV.bin',  # 7b
              'FBZ/BigSqueeze.bin', 'FBZ/SpiderMobile.bin', 'Eggman/EggmanFBZ.bin', 'PSZ1/Shiversaw.bin',  # 7b
+             'SSZ1/HotaruHiWatt.bin', 'SSZ2/MetalSonic.bin', 'SSZ2/GigaMetal.bin', 'SSZ2/MSFactory.bin', 'Eggman/EggmanSSZ.bin',
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}

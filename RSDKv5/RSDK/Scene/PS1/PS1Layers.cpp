@@ -31,6 +31,7 @@ volatile uint32 g_ps1LayerUniform   = 0; // layers drawn from their uniform scro
 volatile uint32 g_ps1LayerDirect    = 0; // layers drawn from lineScroll and their scroll infos, no scanlines (3.3h, total)
 volatile uint32 g_ps1RotoLayers     = 0; // rotozoom layers drawn (4.1d, PS1Roto.cpp; total)
 volatile uint32 g_ps1RotoQuads      = 0; // their tile quads (this frame)
+volatile uint32 g_ps1RotoFlat       = 0; // 7b.6: rotozoom layers drawn unscaled per line (horizontal-only scaling: total)
 volatile uint32 g_ps1RotoTodo       = 0; // rotozoom draws not done: lines on several palette banks, a region too big (total)
 volatile uint32 g_ps1RotoHbl        = 0; // hblanks spent in them (this frame)
 volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
