@@ -241,7 +241,7 @@ meshes:
 disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
 	for f in $(OVL_UNITS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
-	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
+	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl $$d*.pda build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
 	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi
 	if [ -d build/video/Video ]; then mkdir -p build/iso/Data/Video && cp build/video/Video/*.str build/video/Video/*.sti build/video/Video/PS1Video.bin build/iso/Data/Video/; fi

@@ -539,6 +539,12 @@ void RSDK::LoadSceneAssets()
         uint8 strLen = ReadInt8(&info);
         Seek_Cur(&info, strLen + 1);
 
+#if RETRO_PLATFORM == RETRO_PS1
+        // PS1 (docs/32 7b): the disc's scene files hold the objects before the layers (tools/data_disc.py): the entities
+        // are placed while STG holds no layout yet (SPZ1: 250 KB of chunk pool + layouts beside the records and the
+        // arena did not fit). The layers load after them, here as in the file.
+        auto ps1Layers = [&]() {
+#endif
         // Tile Layers
         uint8 layerCount = ReadInt8(&info);
         for (int32 l = 0; l < layerCount; ++l) {
@@ -669,6 +675,7 @@ void RSDK::LoadSceneAssets()
 
 #if RETRO_PLATFORM == RETRO_PS1
         PS1ReadChunkPool(&info);
+        };
 #endif
 
         // Objects
@@ -837,6 +844,7 @@ void RSDK::LoadSceneAssets()
         }
 
         PS1SceneEntitiesPlace();
+        ps1Layers(); // 7b: the layers after the entities (the file's order on the PS1)
         PS1AtlasLoadBindings(); // the tail is free again: the frame bindings for the StageLoads to come (3.1c)
 #else
 #if RETRO_REV02

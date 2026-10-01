@@ -102,11 +102,36 @@ void PS1AtlasPatches(FileInfo *info, const PS1AtlasGroup *g, bool clear, uint8 *
 const PS1AtlasClut *RSDK::PS1AtlasCluts() { return s_ps1AtlasBlob ? (const PS1AtlasClut *)(s_ps1AtlasBlob + s_clutOff) : NULL; }
 uint16 RSDK::PS1AtlasClutCount() { return s_clutCount; }
 
+// 7b: the scene's dropped animations (Scene<N>.pda, tools/gfx/build_atlas.py dropped_animations)
+uint8 *s_ps1Pda = NULL;
+uint32 s_ps1PdaCount = 0;
+extern "C" {
+volatile uint32 g_ps1AnimDroppedSets = 0;
+volatile uint32 g_ps1AnimDroppedFrames = 0; // (the frames the last load did not store)
+}
+
+const uint8 *RSDK::PS1AtlasDropped(const uint32 *hash)
+{
+    const uint8 *e = s_ps1Pda;
+    for (uint32 i = 0; e && i < s_ps1PdaCount; ++i) {
+        uint16 n;
+        memcpy(&n, e + 18, 2);
+        if (!memcmp(e, hash, 16))
+            return e;
+        e += 20 + 4 * n;
+    }
+    return NULL;
+}
+
 void RSDK::PS1AtlasRelease()
 {
     if (s_ps1AtlasBlob)
         RemoveStorageEntry((void **)&s_ps1AtlasBlob);
     s_ps1AtlasBlob = NULL;
+    if (s_ps1Pda)
+        RemoveStorageEntry((void **)&s_ps1Pda);
+    s_ps1Pda      = NULL;
+    s_ps1PdaCount = 0;
 }
 
 bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
@@ -117,8 +142,22 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
     s_bindBytes                = 0;
     g_ps1AtlasBound = g_ps1AtlasUnplaced = 0;
 
-    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.atl", folder, sceneID);
     FileInfo info;
+    // 7b: the dropped animations first (kept until the next load: LoadSpriteAnimation reads them)
+    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.pda", folder, sceneID);
+    InitFileInfo(&info);
+    if (LoadFile(&info, s_atlasPath, FMODE_RB)) {
+        uint32 head[2];
+        ReadBytes(&info, head, sizeof(head));
+        uint32 bytes = (uint32)info.fileSize - sizeof(head);
+        if (head[0] == ('P' | 'D' << 8 | 'A' << 16 | (uint32)'1' << 24) && bytes) {
+            AllocateStorage((void **)&s_ps1Pda, bytes, DATASET_STG, false);
+            ReadBytes(&info, s_ps1Pda, bytes);
+            s_ps1PdaCount = head[1];
+        }
+        CloseFile(&info);
+    }
+    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.atl", folder, sceneID);
     InitFileInfo(&info);
     if (!LoadFile(&info, s_atlasPath, FMODE_RB)) {
         s_atlasPath[0] = 0;
@@ -196,8 +235,7 @@ uint32 RSDK::PS1AtlasSheetBinding(const uint32 *hash)
 void RSDK::PS1AtlasBind(uint16 sprID)
 {
     SpriteAnimation *spr = &spriteAnimationList[sprID];
-    int32 frameCount     = 0;
-    for (int32 a = 0; a < spr->animCount; ++a) frameCount += spr->animations[a].frameCount;
+    int32 frameCount     = spr->ps1Frames; // 7b: the stored frames (a dropped animation's placeholder last)
     for (int32 f = 0; f < frameCount; ++f) {
         spr->frames[f].ps1U = spr->frames[f].ps1V = 0xFF;
         spr->frames[f].ps1Attr                     = PS1_ATLAS_MISSING;

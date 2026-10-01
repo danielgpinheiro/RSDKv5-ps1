@@ -965,6 +965,30 @@ static int InvisibleBlock_PS1Range(const void *e)
     return x > y ? x : y;
 }
 
+// Spikes: the moving ones stay entities; range: their count (Spikes_Create)
+static int Spikes_PS1Eligible(const void *e) { return !((const EntitySpikes *)e)->moving; }
+static int Spikes_PS1Range(const void *e)
+{
+    int32 r = (((const EntitySpikes *)e)->count + 6) << 20;
+    return r > TO_FIXED(96) ? r : TO_FIXED(96);
+}
+// Collapsing platforms: Create aligns them (movesInCreate) and copies their layer's tiles, which only their own
+// collapse changes: one that collapses is destroyed; the respawning ones stay entities
+static int CollapsingPlatform_PS1Eligible(const void *e) { return !((const EntityCollapsingPlatform *)e)->respawn; }
+
+// Circle bumpers (SPZ): fixed, linear and circular ones (their update sets drawPos from position and Zone->timer before
+// the collision and the draw read it: transient); a hit changes their animation and hit count (diffs). ShopWindow's
+// draw-group change on them is baked into the scene on the PS1 (CircleBumper.ps1Low). Range: CircleBumper_Create.
+static int CircleBumper_PS1Eligible(const void *e) { return ((const EntityCircleBumper *)e)->type <= CIRCLEBUMPER_CIRCLE; }
+static int CircleBumper_PS1Range(const void *e)
+{
+    const EntityCircleBumper *b = (const EntityCircleBumper *)e;
+    if (b->type == CIRCLEBUMPER_FIXED)
+        return 0x400000;
+    int32 x = (abs(b->amplitude.x >> 10) + 0x1000) << 10, y = (abs(b->amplitude.y >> 10) + 0x1000) << 10;
+    return x > y ? x : y;
+}
+
 // `unless`: the stages' classes that walk or keep these entities (foreach_all, stored pointers: their whole object
 // files reviewed for each class; a ring another object creates is a temp entity, never a record)
 const PS1DormantSpec ps1DormantSpecs[] = {
@@ -980,6 +1004,15 @@ const PS1DormantSpec ps1DormantSpecs[] = {
     // their changed words
     { "Spring", PS1Always, TO_FIXED(96), NULL, { 0, 0, 0, 0 }, true, { "PopOut", "MetalSonic", NULL } },
     { "Decoration", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { "AIZSetup", "MSZSetup", "EncoreGoodEnd" } },
+    { "Spikes", Spikes_PS1Eligible, 0, Spikes_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    // SPZ: TV vans / satellites / TVs (the radio signals find them with foreach_active: in range only; a TV broken
+    // comes back with its changed words); Rock'em Sock'em bumpers (raised in Create; back to their start after a hit)
+    { "CircleBumper", CircleBumper_PS1Eligible, 0, CircleBumper_PS1Range, { offsetof(EntityCircleBumper, drawPos), sizeof(Vector2), 0, 0 },
+      true, { NULL, NULL, NULL } },
+    { "TVVan", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL }, true },
+    { "CollapsingPlatform", CollapsingPlatform_PS1Eligible, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL },
+      true },
     { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
 };
 #endif

@@ -30,7 +30,13 @@ struct EntityCircleBumper {
     int32 speed;
     Vector2 drawPos;
     Animator animator;
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/32 7b): a variable tools/data_disc.py bakes into the scene: a ShopWindow created after this bumper
+    // touches it (ShopWindow_Create's foreach_all: a dormant bumper is out of its reach on the PS1)
+    uint8 ps1Low;
+#else
     int32 unused;
+#endif
 };
 
 // Object Struct

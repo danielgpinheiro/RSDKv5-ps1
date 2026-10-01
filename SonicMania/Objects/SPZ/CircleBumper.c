@@ -35,6 +35,10 @@ void CircleBumper_Create(void *data)
 
     self->visible   = true;
     self->drawGroup = Zone->objectDrawGroup[1];
+#if defined RETRO_PS1_BUILD
+    if (self->ps1Low) // (docs/32 7b: what ShopWindow_Create's loop does on the PC, baked)
+        self->drawGroup = Zone->objectDrawGroup[0];
+#endif
     self->drawPos   = self->position;
     self->active    = ACTIVE_BOUNDS;
     self->amplitude.x >>= 10;
@@ -398,4 +402,7 @@ void CircleBumper_Serialize(void)
     RSDK_EDITABLE_VAR(CircleBumper, VAR_VECTOR2, amplitude);
     RSDK_EDITABLE_VAR(CircleBumper, VAR_ENUM, speed);
     RSDK_EDITABLE_VAR(CircleBumper, VAR_INT32, angle);
+#if defined RETRO_PS1_BUILD
+    RSDK_EDITABLE_VAR(CircleBumper, VAR_UINT8, ps1Low);
+#endif
 }

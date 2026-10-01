@@ -141,7 +141,7 @@ void LinkGameLogicDLL(EngineInfo info)
 #if defined RETRO_PS1_BUILD
 // PS1 port (docs/32 2.3): tools/data_disc.py remaps GameConfig's global-variable offsets with GV_REGIONS; the compiled
 // GlobalVariables must be exactly that layout.
-#define PS1_GV_SHIFT_ATL  (0x4000 - 0x200 * 8)
+#define PS1_GV_SHIFT_ATL  (0x4000 - 0xA40)
 #define PS1_GV_SHIFT_SAVE (PS1_GV_SHIFT_ATL + 0x4000 - 0xD00)
 #define PS1_GV_SHIFT_MENU (0x4000 - 0x80)
 #define PS1_GV_SHIFT_COMP (0x4000 - 0x80)

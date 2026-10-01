@@ -56,6 +56,21 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
         memcpy(spr->hash, hash, 4 * sizeof(uint32));
 
         uint32 frameCount = ReadInt32(&info, false);
+#if RETRO_PLATFORM == RETRO_PS1
+        // 7b: the animations the scene's atlas places nowhere (Scene<N>.pda) store no frames: one placeholder for all
+        const uint8 *drop  = PS1AtlasDropped(hash);
+        uint16 dropN       = 0;
+        const uint8 *dropL = NULL;
+        uint32 fileFrames  = frameCount;
+        if (drop) {
+            uint16 kept;
+            memcpy(&kept, drop + 16, 2);
+            memcpy(&dropN, drop + 18, 2);
+            dropL      = drop + 20;
+            frameCount = kept + 1;
+        }
+        (void)fileFrames;
+#endif
 #if RETRO_PLATFORM != RETRO_PS1
         AllocateStorage((void **)&spr->frames, frameCount * sizeof(SpriteFrame), DATASET_STG, false);
 #endif
@@ -78,6 +93,21 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
         spr->animCount = ReadInt16(&info);
         AllocateStorage((void **)&spr->animations, spr->animCount * sizeof(SpriteAnimationEntry), DATASET_STG, false);
+#if RETRO_PLATFORM == RETRO_PS1
+        spr->ps1Frames      = (uint16)frameCount;
+        spr->ps1Placeholder = 0xFFFF;
+        if (drop) { // the placeholder: the last frame, blank, its hitboxes zero
+            spr->ps1Placeholder = (uint16)(frameCount - 1);
+            SpriteFrame *ph     = &spr->frames[frameCount - 1];
+            memset(ph, 0, sizeof(SpriteFrame));
+            ph->duration     = 1;
+            ph->hitboxCount  = hitboxCount;
+            Hitbox *phBoxes  = (Hitbox *)(spr->frames + frameCount) + (frameCount - 1) * hitboxCount;
+            memset(phBoxes, 0, hitboxCount * sizeof(Hitbox));
+            ph->hitboxOffset = (uint16)(((uint8 *)phBoxes - (uint8 *)ph) >> 1);
+        }
+        uint16 dropAt = 0; // the next dropped animation in the list
+#endif
 
         int32 frameID = 0;
         for (int32 a = 0; a < spr->animCount; ++a) {
@@ -90,6 +120,18 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
             animation->animationSpeed  = ReadInt16(&info);
             animation->loopIndex       = ReadInt8(&info);
             animation->rotationStyle   = ReadInt8(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+            uint16 dropAnim = 0xFFFF;
+            if (dropAt < dropN)
+                memcpy(&dropAnim, dropL + 4 * dropAt, 2);
+            if (dropAnim == a) { // its frames skipped; it shows the placeholder
+                ++dropAt;
+                Seek_Cur(&info, animation->frameCount * (1 + 8 * 2 + hitboxCount * 4 * 2)); // (a frame: u8 sheet, 8 i16, hitboxes)
+                animation->frameCount      = 1;
+                animation->frameListOffset = spr->ps1Placeholder;
+                continue;
+            }
+#endif
 
             for (int32 f = 0; f < animation->frameCount; ++f) {
                 SpriteFrame *frame = &spr->frames[frameID++];
@@ -172,6 +214,8 @@ uint16 RSDK::CreateSpriteAnimation(const char *filename, uint32 frameCount, uint
 
     AllocateStorage((void **)&spr->frames, sizeof(SpriteFrame) * MIN(frameCount, SPRITEFRAME_COUNT), DATASET_STG, true);
 #if RETRO_PLATFORM == RETRO_PS1
+    spr->ps1Frames      = (uint16)MIN(frameCount, SPRITEFRAME_COUNT);
+    spr->ps1Placeholder = 0xFFFF;
     for (uint32 f = 0; f < MIN(frameCount, SPRITEFRAME_COUNT); ++f) spr->frames[f].ps1Attr = PS1_ATLAS_MISSING; // not in the atlas
 #endif
     AllocateStorage((void **)&spr->animations, sizeof(SpriteAnimationEntry) * MIN(animCount, SPRITEANIM_COUNT), DATASET_STG, true);

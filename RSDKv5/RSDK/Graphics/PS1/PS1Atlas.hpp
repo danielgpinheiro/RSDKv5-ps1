@@ -33,7 +33,8 @@ extern void (*g_ps1DeformDraw)(uint16 sheetID, int32 inkEffect, int32 alpha); //
 void PS1AtlasBindEnd();                                      // after InitObjects: the table goes
 bool PS1AtlasLoadGroup(const char *name);                    // a group into its region (a CD read: where the music changes)
 void PS1AtlasServiceRequests();                              // frame() start: a GDB-requested group load (g_ps1AtlasGroupReq)
-void PS1AtlasMusicGroups(const char *track); // 7b: the groups a music track brings (AudioDevice::FrameInit, before its XA)
+void PS1AtlasMusicGroups(const char *track);
+const uint8 *PS1AtlasDropped(const uint32 *hash); // 7b: a sprite file's dropped animations (Scene<N>.pda entry), or NULL // 7b: the groups a music track brings (AudioDevice::FrameInit, before its XA)
 const PS1AtlasClut *PS1AtlasCluts();
 uint16 PS1AtlasClutCount();
 

@@ -155,6 +155,105 @@ def chunk_scene(data):
     return bytes(out), len(pool)
 
 
+def objects_first(data):
+    """7b: a chunked scene with its objects section moved before the layers (the PS1 loader places the entities before
+    any layout is in STG: Scene.cpp LoadSceneAssets)."""
+    r = raw_blocks(data)
+    assert r.bytes(4) == b'SCN\0'
+    r.bytes(16); r.string(); r.u8()
+    head = r.p
+    for _ in range(r.u8()):
+        r.u8(); r.string(); r.u8(); r.u8(); r.u16(); r.u16(); r.u16(); r.u16()
+        for _ in range(r.u16()):
+            r.u16(); r.u16(); r.u8(); r.u8()
+        r.compressed(); r.compressed()
+    r.compressed()  # the chunk pool
+    return data[:head] + data[r.p:] + data[head:r.p]
+
+
+# 7b: object relations the PS1 bakes into the scene file (the engine may keep a class's entities as records, which another
+# object's Create can no longer reach): each one appends a PS1-only variable the game registers on the PS1.
+# CircleBumper.ps1Low: ShopWindow_Create (SPZ) sets the CircleBumpers its hitboxItem touches to the low object draw group
+# (RSDK.CheckObjectCollisionTouchBox: pixel positions, the bumper's hitbox -7,-6,7,6, not flipped); a bumper's own Create
+# sets the high group: the window wins when it comes later in slot order (the scene entities' file-slot order).
+def objects_section(data):
+    """(offset of the objects section, parsed objects) of a raw-block scene (convert_blocks' output)."""
+    r = raw_blocks(data)
+    assert r.bytes(4) == b'SCN\0'
+    r.bytes(16); r.string(); r.u8()
+    for _ in range(r.u8()):
+        r.u8(); r.string(); r.u8(); r.u8(); r.u16(); r.u16(); r.u16(); r.u16()
+        for _ in range(r.u16()):
+            r.u16(); r.u16(); r.u8(); r.u8()
+        r.compressed(); r.compressed()
+    start = r.p
+    objs = []
+    for _ in range(r.u8()):
+        h = r.bytes(16)
+        var_count = r.u8()
+        vars_ = [(r.bytes(16), r.u8()) for _ in range(var_count - 1)]
+        ents = []
+        for _ in range(r.u16()):
+            slot, x, y = r.u16(), r.i32(), r.i32()
+            vals = []
+            for _, vt in vars_:
+                if vt == 8:
+                    n = r.u16(); vals.append(struct.pack('<H', n) + r.bytes(2 * n))
+                else:
+                    vals.append(r.bytes(8 if vt == 9 else F.VAR_SIZES[vt]))
+            ents.append([slot, x, y, vals])
+        objs.append([h, vars_, ents])
+    assert r.p == len(r.d)
+    return start, objs
+
+
+def bake_relations(data, scene_filter=3):
+    """The scene with the PS1's baked relations (see above); unchanged if it has none."""
+    start, objs = objects_section(data)
+    by = {o[0]: o for o in objs}
+    bumper, window = by.get(F.name_hash('CircleBumper')), by.get(F.name_hash('ShopWindow'))
+    if not bumper:
+        return data, 0
+
+    def var(o, e, name):
+        for (vh, vt), v in zip(o[1], e[3]):
+            if vh == F.name_hash(name):
+                return v
+        return None
+
+    def present(o, e):
+        f = var(o, e, 'filter')
+        return (f[0] if f is not None else 0xFF) & scene_filter
+
+    wins = []
+    for e in (window[2] if window else []):
+        if not present(window, e):
+            continue
+        sx, sy = struct.unpack('<ii', var(window, e, 'size'))
+        sx, sy = sx >> 16, sy >> 16
+        wins.append((e[0], e[1] >> 16, e[2] >> 16, (-8 - sx, -8 - sy, sx + 8, sy + 8)))
+    low = 0
+    bumper[1].append((F.name_hash('ps1Low'), 0))  # VAR_UINT8
+    for e in bumper[2]:
+        bx, by_ = e[1] >> 16, e[2] >> 16
+        v = 0
+        for slot, wx, wy, (l, t, r, b) in wins:
+            if slot > e[0] and bx - 7 < wx + r and bx + 7 > wx + l and by_ - 6 < wy + b and by_ + 6 > wy + t:
+                v = 1
+        e[3].append(bytes([v]))
+        low += v
+    out = bytearray(data[:start])
+    out.append(len(objs))
+    for h, vars_, ents in objs:
+        out += h + bytes([len(vars_) + 1])
+        for vh, vt in vars_:
+            out += vh + bytes([vt])
+        out += struct.pack('<H', len(ents))
+        for slot, x, y, vals in ents:
+            out += struct.pack('<Hii', slot, x, y) + b''.join(vals)
+    return bytes(out), low
+
+
 def unchunk_check(orig_raw, chunked):
     """Self-check: every layer's tiles read back through index + pool equal the original layout (padding = 0xFFFF)."""
     r0, r1 = raw_blocks(orig_raw), raw_blocks(chunked)
@@ -217,7 +316,7 @@ def convert_blocks(src, walk):
 # written for the PC layout: offsets after a shortened array move down, writes into dropped elements go. SonicMania/Game.c
 # checks the same numbers against the compiled layout (_Static_assert).
 GV_REGIONS = [
-    (40, 0x4000, 0x200 * 8),                # atlEntityData: 8 stored entities (Zone.c counts the rest)
+    (40, 0x4000, 0xA40),                    # atlEntityData: 8 stored entities + SaveGame's recall table (Zone.c)
     (16425, 0x4000, 0xD00),                 # saveRAM: the offsets the game indexes (slots, time attack, progress, encore)
     (33834, 0x4000, 0x80),                  # menuParam: only MenuParam_GetParam's EntityMenuParam (432 B)
     (50221, 0x4000, 0x80),                  # competitionSession: only CompetitionSession_GetSession (380 B)
@@ -429,9 +528,14 @@ def main():
             size_in += os.path.getsize(s)
             if top == 'Stages' and f.startswith('Scene') and ext == '.bin':
                 out, b = convert_blocks(s, walk_scene)
+                out, baked = bake_relations(out)
+                if baked:
+                    print('data_disc: %s: %d CircleBumpers baked low (ShopWindow)' % (os.path.relpath(s, src), baked))
                 chunked, chunks = chunk_scene(out)
                 unchunk_check(out, chunked)
-                open(d, 'wb').write(chunked); n['scene'] += 1; n['blocks'] += b
+                ordered = objects_first(chunked)
+                assert len(ordered) == len(chunked)
+                open(d, 'wb').write(ordered); n['scene'] += 1; n['blocks'] += b
                 n['chunks'] = max(n.get('chunks', 0), chunks)
             elif top == 'Game' and f == 'GameConfig.bin':
                 out, kept, dropped = convert_gameconfig(s)

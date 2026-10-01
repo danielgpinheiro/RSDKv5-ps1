@@ -352,6 +352,15 @@ int32 Zone_GetZoneID(void)
 
 #if defined RETRO_PS1_BUILD
 volatile int32 ps1AtlDropped = 0; // entities an act transition could not store (GDB; must stay 0)
+// docs/32 7b.3: the stored entities sit PS1_ATL_STRIDE ints apart (stock 0x200: 2 KB each); 4 of them end where SaveGame's
+// recall table starts (0x200 + RESERVE_ENTITY_COUNT), the other 4 share it as stock's entry 1 does (never both in use)
+#define PS1_ATL_STRIDE   0x90
+#define PS1_ATL_ENTITIES 8
+_Static_assert(sizeof(EntityPlayer) <= PS1_ATL_STRIDE * 4 && sizeof(EntitySignPost) <= PS1_ATL_STRIDE * 4
+                   && sizeof(EntityItemBox) <= PS1_ATL_STRIDE * 4,
+               "a stored entity outgrows PS1_ATL_STRIDE");
+_Static_assert(PS1_ATL_ENTITIES * PS1_ATL_STRIDE <= sizeof(globals->atlEntityData) / sizeof(int32), "atlEntityData");
+_Static_assert(0x200 + RESERVE_ENTITY_COUNT + SCENEENTITY_COUNT <= sizeof(globals->atlEntityData) / sizeof(int32), "recall");
 #endif
 
 void Zone_StoreEntities(int32 xOffset, int32 yOffset)
@@ -364,7 +373,7 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
     foreach_active(Player, player)
     {
 #if defined RETRO_PS1_BUILD
-        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+        if (count >= PS1_ATL_ENTITIES) {
             ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
             continue;
         }
@@ -374,13 +383,17 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(player);
         RSDK.CopyEntity(&globals->atlEntityData[dataPos], player, false);
         count++;
+#if defined RETRO_PS1_BUILD
+        dataPos += PS1_ATL_STRIDE;
+#else
         dataPos += 0x200;
+#endif
     }
 
     foreach_active(SignPost, signPost)
     {
 #if defined RETRO_PS1_BUILD
-        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+        if (count >= PS1_ATL_ENTITIES) {
             ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
             continue;
         }
@@ -390,13 +403,17 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(signPost);
         RSDK.CopyEntity(&globals->atlEntityData[dataPos], signPost, false);
         count++;
+#if defined RETRO_PS1_BUILD
+        dataPos += PS1_ATL_STRIDE;
+#else
         dataPos += 0x200;
+#endif
     }
 
     foreach_active(ItemBox, itemBox)
     {
 #if defined RETRO_PS1_BUILD
-        if (count >= (int32)(sizeof(globals->atlEntityData) / sizeof(int32) / 0x200)) {
+        if (count >= PS1_ATL_ENTITIES) {
             ++ps1AtlDropped; // GameVariables.h: 8 stored entities on the PS1
             continue;
         }
@@ -406,7 +423,11 @@ void Zone_StoreEntities(int32 xOffset, int32 yOffset)
         globals->atlEntitySlot[count] = RSDK.GetEntitySlot(itemBox);
         RSDK.CopyEntity(&globals->atlEntityData[dataPos], itemBox, false);
         count++;
+#if defined RETRO_PS1_BUILD
+        dataPos += PS1_ATL_STRIDE;
+#else
         dataPos += 0x200;
+#endif
     }
 
     // store any relevant info about the player
@@ -422,7 +443,11 @@ void Zone_ReloadStoredEntities(int32 xOffset, int32 yOffset, bool32 setATLBounds
 {
     // reload any stored entities we have
     for (int32 e = 0; e < globals->atlEntityCount; ++e) {
+#if defined RETRO_PS1_BUILD
+        Entity *storedEntity = (Entity *)&globals->atlEntityData[e * PS1_ATL_STRIDE];
+#else
         Entity *storedEntity = (Entity *)&globals->atlEntityData[e << 9];
+#endif
         Entity *entity       = NULL;
 
         // only players & powerups get to be overridden, everything else is just added to the temp area

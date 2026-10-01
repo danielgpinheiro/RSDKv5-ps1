@@ -941,8 +941,12 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     patches = {w: bytearray() for w in group_images}
     counts = {'placed': 0, 'unplaced': 0}
     for fi, (path, s, keys) in enumerate(files):
-        file_tab += struct.pack('<4IIH2x', *md5_words(path), len(bind), len(keys))
-        for k, (ai, (sh, x, y, w, h)) in enumerate(keys):
+        # 7b: an animation placed nowhere keeps no frames on the PS1 (Scene<N>.pda): the file's bindings and patches
+        # count the stored frames (the kept ones in order, then one placeholder: Animation.cpp LoadSpriteAnimation)
+        dropped = {ai for ai in range(len(s['anims'])) if sel[path][ai] is None and s['anims'][ai]['frames']}
+        stored = [k for k in range(len(keys)) if keys[k][0] not in dropped]
+        file_tab += struct.pack('<4IIH2x', *md5_words(path), len(bind), len(stored) + (1 if dropped else 0))
+        for k, (ai, (sh, x, y, w, h)) in enumerate(keys[kk] for kk in stored):
             where = sel[path][ai]
             if where is None or sh is None or w <= 0 or h <= 0:
                 bind += MISSING
@@ -960,6 +964,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             bind += bd if where in ('resident', ('player', 'normal'), ('event', 'start')) else MISSING
             if where != 'resident':
                 patches[where] += struct.pack('<HH', fi, k) + bd
+        if dropped:
+            bind += MISSING  # the placeholder frame of the dropped animations
 
     for sh in deform[:4]: # 7.5: a file entry per deform sheet (its md5 = the path LoadSpriteSheet gets), one binding
         file_tab += struct.pack('<4IIH2x', *md5_words(sh), len(bind), 1)
@@ -1063,7 +1069,33 @@ def main():
         sys.exit(1)
     if '--report' not in sys.argv:
         os.makedirs(os.path.join(outdir, folder), exist_ok=True)
-        open(os.path.join(outdir, folder, 'Scene%s%s.atl' % (sid, '' if character == 'sonic' else '_' + character)), 'wb').write(blob)
+        suffix = '' if character == 'sonic' else '_' + character
+        open(os.path.join(outdir, folder, 'Scene%s%s.atl' % (sid, suffix)), 'wb').write(blob)
+        pda, dropped = dropped_animations(disc, folder, sid, sel)
+        open(os.path.join(outdir, folder, 'Scene%s%s.pda' % (sid, suffix)), 'wb').write(pda)
+        print('  animations never placed (their frames not loaded): %d frames' % dropped)
+
+
+def dropped_animations(disc, folder, sid, sel):
+    """7b: Scene<N>.pda: the animations the atlas places nowhere (none of their frames in any region or group), per
+    sprite file: the PS1's LoadSpriteAnimation stores only the other animations' frames (one placeholder frame for
+    the dropped ones). 'PDA1', u32 count, then per file: u32 md5[4], u16 frames kept, u16 animations dropped, then
+    (u16 animation, u16 frames) each."""
+    out, n, frames = bytearray(), 0, 0
+    for kind, path in read_manifest(folder, sid):
+        if kind != 'SPR' or path not in sel:
+            continue
+        s = F.read_sprite(os.path.join(disc, 'Sprites', path))
+        drop = [(ai, len(a['frames'])) for ai, a in enumerate(s['anims']) if sel[path][ai] is None and a['frames']]
+        if not drop:
+            continue
+        kept = sum(len(a['frames']) for a in s['anims']) - sum(c for _, c in drop)
+        out += struct.pack('<4IHH', *md5_words(path), kept, len(drop))
+        for ai, c in drop:
+            out += struct.pack('<HH', ai, c)
+        n += 1
+        frames += sum(c for _, c in drop)
+    return b'PDA1' + struct.pack('<I', n) + bytes(out), frames
 
 
 if __name__ == '__main__':

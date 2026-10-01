@@ -24,6 +24,17 @@
    entity block while it is out of every camera's reach and still as its Create left it: the engine keeps its scene
    record, creates it when the cameras come near and returns it to a record when they leave
    (RSDK/Scene/PS1/PS1Entities.cpp). */
+/* docs/32 7b: SaveGame's checkpoint recall and dormant entities (RSDK/Scene/PS1/PS1Entities.cpp) */
+#ifdef __cplusplus
+extern "C" {
+#endif
+void PS1DormantStoreDisabled(int *table, int disabled);
+int PS1EntitySlotIsGhost(int slot);
+void PS1DormantRecallDisabled(int slot);
+#ifdef __cplusplus
+}
+#endif
+
 typedef struct {
     const char *name;                /* the class (its name: no reference from the resident to an overlay's class) */
     int (*eligible)(const void *e);  /* the entity as the scene file sets it, before Create: may it go dormant */
@@ -33,6 +44,8 @@ typedef struct {
     unsigned char diffs;             /* may go back to a record with up to 7 changed words, restored when re-created
                                         (an animation's phase, a spring's last frame): exact, as if it had stayed */
     const char *unless[3];           /* not in a stage with one of these classes (they walk or keep this one's entities) */
+    unsigned char movesInCreate;     /* its Create moves it: the camera boxes use the created position, Create the
+                                        scene file's */
 } PS1DormantSpec;
 
 /* docs/32 7b: reserved slots sized by what the game puts there. In a stage with a Zone object (the zones) a reserved

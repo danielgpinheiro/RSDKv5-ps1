@@ -81,7 +81,15 @@ struct SpriteAnimation {
     SpriteAnimationEntry *animations;
     uint16 animCount;
     uint8 scope;
+#if RETRO_PLATFORM == RETRO_PS1
+    // 7b: the frames stored (the animations the scene's atlas places nowhere keep none: they share one placeholder
+    // frame, at ps1Placeholder, or 0xFFFF: Scene<N>.pda)
+    uint16 ps1Frames, ps1Placeholder;
+#endif
 };
+#if RETRO_PLATFORM == RETRO_PS1
+extern "C" volatile uint32 g_ps1AnimDroppedSets; // SetSpriteAnimation on a dropped animation (the atlas's analysis missed it: must be 0)
+#endif
 
 struct Animator {
     SpriteFrame *frames;
@@ -182,6 +190,12 @@ inline void SetSpriteAnimation(uint16 aniFrames, uint16 animationID, Animator *a
     SpriteFrame *frames        = &spr->frames[anim->frameListOffset];
     if (animator->frames == frames && !forceApply)
         return;
+#if RETRO_PLATFORM == RETRO_PS1
+    if (anim->frameListOffset == spr->ps1Placeholder) { // (counted; its one placeholder frame)
+        g_ps1AnimDroppedSets = g_ps1AnimDroppedSets + 1;
+        frameID              = 0;
+    }
+#endif
 
     animator->frames          = frames;
     animator->timer           = 0;
