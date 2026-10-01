@@ -51,6 +51,7 @@ void RSDK::PS1LoadOverlay(const char *folder)
     for (uint32 k = 0; k < ps1OvlCount; ++k) ps1OvlTable[k] = ps1OvlMiss[k];
     g_ps1VideoOps = PS1VideoOps{}; // docs/32 6.2: the video player goes with the overlay that had it
     g_ps1S3DOps   = PS1Scene3DOps{}; // 7.3: and the 3D draw
+    g_ps1DeformDraw = NULL;           // 7.5: and the deformed-sprite draw
     (void)ps1OvlStubsRef;
     strncpy(g_ps1OvlFolder, folder, sizeof(g_ps1OvlFolder) - 1);
     g_ps1OvlLoads = g_ps1OvlLoads + 1;

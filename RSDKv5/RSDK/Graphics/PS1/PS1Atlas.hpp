@@ -28,6 +28,8 @@ bool PS1AtlasLoad(const char *folder, const char *sceneID); // LoadSceneAssets s
 void PS1AtlasRelease(); // 4.3: a same-folder reload drops the tables before its STG compaction (PS1AtlasLoad reloads them)
 void PS1AtlasLoadBindings();                                 // LoadSceneAssets end: the bindings, in the STG tail
 void PS1AtlasBind(uint16 sprID);                             // LoadSpriteAnimation: its frames' bindings
+uint32 PS1AtlasSheetBinding(const uint32 *hash);             // 7.5: a deform sheet's place (u | v << 8 | attr << 16)
+extern void (*g_ps1DeformDraw)(uint16 sheetID, int32 inkEffect, int32 alpha); // 7.5: DrawDeformedSprite (overlay extra)
 void PS1AtlasBindEnd();                                      // after InitObjects: the table goes
 bool PS1AtlasLoadGroup(const char *name);                    // a group into its region (a CD read: where the music changes)
 void PS1AtlasServiceRequests();                              // frame() start: a GDB-requested group load (g_ps1AtlasGroupReq)

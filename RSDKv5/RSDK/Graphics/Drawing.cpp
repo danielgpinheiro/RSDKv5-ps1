@@ -3994,8 +3994,23 @@ void RSDK::DrawSpriteRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int3
     }
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+void (*RSDK::g_ps1DeformDraw)(uint16 sheetID, int32 inkEffect, int32 alpha) = NULL;
+extern "C" {
+volatile uint32 g_ps1DeformTodo = 0; // DrawDeformedSprite calls not drawn (no drawer linked, or a sheet not in VRAM)
+}
+#endif
 void RSDK::DrawDeformedSprite(uint16 sheetID, int32 inkEffect, int32 alpha)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    // 7.5: the sheet whole in VRAM (the atlas), drawn line by line through the GPU's texture window (RSDK/Graphics/PS1/
+    // PS1Deform.cpp, linked into the overlays of the folders that call this)
+    if (g_ps1DeformDraw && sheetID < SURFACE_COUNT)
+        g_ps1DeformDraw(sheetID, inkEffect, alpha);
+    else
+        g_ps1DeformTodo = g_ps1DeformTodo + 1;
+    return;
+#endif
 #if RETRO_PS1_HEADLESS
     return; // PS1 phase 2: headless (docs/32)
 #endif

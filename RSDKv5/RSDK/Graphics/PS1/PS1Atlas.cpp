@@ -179,6 +179,20 @@ void RSDK::PS1AtlasLoadBindings()
     s_ps1AtlasBind = t;
 }
 
+// 7.5: a sheet DrawDeformedSprite draws (the atlas's file entry with its path's md5 and one binding): u | v << 8 |
+// attr << 16, 0xFFFFFFFF when the atlas has none (LoadSpriteSheet, while the bindings are loaded)
+uint32 RSDK::PS1AtlasSheetBinding(const uint32 *hash)
+{
+    if (!s_ps1AtlasBlob || !s_ps1AtlasBind)
+        return 0xFFFFFFFF;
+    for (int32 fi = 0; fi < s_fileCount; ++fi)
+        if (Files()[fi].frameCount == 1 && HASH_MATCH_MD5(Files()[fi].hash, hash)) {
+            const uint8 *b = s_ps1AtlasBind + Files()[fi].bindOffset;
+            return (uint32)b[0] | (uint32)b[1] << 8 | (uint32)(b[2] | b[3] << 8) << 16;
+        }
+    return 0xFFFFFFFF;
+}
+
 void RSDK::PS1AtlasBind(uint16 sprID)
 {
     SpriteAnimation *spr = &spriteAnimationList[sprID];

@@ -45,7 +45,8 @@ MAGIC = 0x314C564F         # 'OVL1'
 EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o'], 'PS1VideoLink'),
           's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o',
                                                              'ps1/gte3d.o'],
-                  'PS1Scene3DLink')}
+                  'PS1Scene3DLink'),
+          'deform': ({'UFO_Plasma', 'Smog'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Deform.o'], 'PS1DeformLink')}  # 7.5
 
 
 def extra_folders(name):

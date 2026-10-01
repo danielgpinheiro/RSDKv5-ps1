@@ -22,6 +22,7 @@ RSDKv5/RSDK/Graphics/Drawing.cpp \
 RSDKv5/RSDK/Graphics/Scene3D.cpp \
 RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.cpp \
 RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.cpp \
+RSDKv5/RSDK/Graphics/PS1/PS1Deform.cpp \
 RSDKv5/RSDK/Graphics/Animation.cpp \
 RSDKv5/RSDK/Graphics/Sprite.cpp \
 RSDKv5/RSDK/Graphics/Palette.cpp \

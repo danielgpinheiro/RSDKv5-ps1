@@ -940,6 +940,9 @@ uint16 RSDK::LoadSpriteSheet(const char *filename, uint8 scope)
     surface->lineSize = 0;
     surface->pixels   = NULL;
     memcpy(surface->hash, hash, 4 * sizeof(int32));
+    uint32 deform = PS1AtlasSheetBinding((const uint32 *)hash); // 7.5: a sheet drawn whole (DrawDeformedSprite)
+    if (deform != 0xFFFFFFFF)
+        surface->width = surface->height = 128, surface->lineSize = (int32)deform;
     return id;
 #endif
     ImageGIF image;

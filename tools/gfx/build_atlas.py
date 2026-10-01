@@ -29,6 +29,8 @@ Output <out>/<Folder>/Scene<N>.atl (little-endian):
            u32 pixelBytes                                                                       (28 B)
   file   : u32 md5[4] of the path LoadSpriteAnimation gets, u32 bindingOffset (from bindOffset), u16 frameCount, pad
                                                                                                 (24 B)
+           (7.5: then one entry per DEFORM_SHEETS sheet the scene loads, the md5 of the path LoadSpriteSheet gets, one
+           binding: the whole 128x128 sheet, 4-bit, 128-aligned in the last free column, for the texture window)
   clut   : u16 x, y, u8 map[16]                                                                 (20 B)
   block  : u16 x, y, w, h (VRAM halfwords), u32 offset at dataOffset                            (12 B)
   bindings at bindOffset: per file, per frame record in the file's order (animations, then frames): u8 u, v,
@@ -57,6 +59,8 @@ KEEP_TEXT = True
 # 4.3 (user: the pause menu's CONTINUE / RESTART read blocky): animations never halved while the text is kept (the
 # pause buttons' text, UI/TextEN.bin list 10; a scene that can't fit them falls back with the other text: GHZ2)
 NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
+# 7.5: sheets drawn by DrawDeformedSprite (UFO7's plasma, OOZ's smog): whole, in VRAM, 128x128 4-bit
+DEFORM_SHEETS = {'SpecialUFO/Plasma.gif', 'OOZ/Smog.gif'}
 
 
 def halve(px):
@@ -664,8 +668,13 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     # regions: resident, then the player region (its alternates share it), then the event region
     if columns is None:
         _, _, _, tblocks = T.build(data, folder, scene_id)
-        tcols = {(x // V.COL_HW, y // V.PAGE) for (x, y, w, h) in tblocks}
+        tcols = {(c, y // V.PAGE) for (x, y, w, h) in tblocks for c in range(x // V.COL_HW, (x + w - 1) // V.COL_HW + 1)}
         columns = [(c, r) for r in (0, 1) for c in V.TEX_COLUMNS if (c, r) not in tcols]
+    # 7.5: sheets DrawDeformedSprite draws (whole, 128x128, repeated by the GPU's texture window) get the last free column
+    deform = [p for (k, p) in man if k == 'SHT' and p in DEFORM_SHEETS]
+    dcol = None
+    if deform:
+        dcol, columns = columns[-1], columns[:-1]
     places = {}
     for c in clusters:
         places.setdefault(c['where'], []).append(c)
@@ -705,6 +714,31 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     default = [c for c in clusters if c['where'] in ('resident', ('player', 'normal'), ('event', 'start'))]
     vram, blocks = render(default, work, clut_maps)
     checked = decode_check(default, vram, work, clut_maps, name)
+    # 7.5: the deform sheets: 4-bit, 128-aligned in their column (two across, two down), each its own CLUT
+    deform_bind = {}
+    for i, sh in enumerate(deform[:4]):
+        im = sheets.get(sh)
+        if im.shape != (128, 128):
+            raise AtlasError('%s: deform sheet %s is %s' % (name, sh, im.shape))
+        cs = sorted(set(np.unique(im).tolist()) - {0})
+        if len(cs) > 15 or len(clut_maps) >= V.SPRITE_CLUT_USABLE:
+            raise AtlasError('%s: deform sheet %s: %d colours' % (name, sh, len(cs)))
+        clut_maps.append([0] + cs + [0] * (15 - len(cs)))
+        ci = len(clut_maps) - 1
+        lut = np.zeros(256, np.uint16)
+        for n, p_ in enumerate(cs):
+            lut[p_] = n + 1
+        q = lut[im]
+        words = q[:, 0::4] | (q[:, 1::4] << 4) | (q[:, 2::4] << 8) | (q[:, 3::4] << 12)
+        X, Y = dcol[0] * V.COL_HW + (i % 2) * 32, dcol[1] * PAGE + (i // 2) * 128
+        vram[Y:Y + 128, X:X + 32] = words
+        w_ = vram[Y:Y + 128, X:X + 32].astype(np.int32)
+        nib = np.stack([(w_ >> s_) & 0xF for s_ in (0, 4, 8, 12)], -1).reshape(128, 128)
+        if not np.array_equal(np.array(clut_maps[ci], np.int32)[nib], im.astype(np.int32)):
+            raise AtlasError('%s: deform sheet %s does not decode back' % (name, sh))
+        blocks.append((X, Y, 32, 128))
+        deform_bind[sh] = struct.pack('<BBH', (i % 2) * 128, (i // 2) * 128, (dcol[0] & 15) | (dcol[1] & 1) << 4 | ci << 7)
+        checked += 128 * 128
     group_images = {}
     for w in sorted((k for k in places if k != 'resident'), key=str):
         gv, gb = render(places[w], work, clut_maps)
@@ -755,6 +789,9 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             if where != 'resident':
                 patches[where] += struct.pack('<HH', fi, k) + bd
 
+    for sh in deform[:4]: # 7.5: a file entry per deform sheet (its md5 = the path LoadSpriteSheet gets), one binding
+        file_tab += struct.pack('<4IIH2x', *md5_words(sh), len(bind), 1)
+        bind += deform_bind[sh]
     clut_tab = b''.join(struct.pack('<HH', *V.SPRITE_CLUT_SLOTS[i]) + bytes(m) for i, m in enumerate(clut_maps))
 
     def blocks_bytes(img, bl):
@@ -795,7 +832,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                             nb, len(patches[w]) // 8, 0, g_offsets[i][0], p_offsets[i], pix_off, len(px))
         body_px += px + bytes((-len(px)) % 2048)
         pix_off += (len(px) + 2047) // 2048 * 2048
-    out = bytearray(struct.pack('<4sHHHHIIII4x', b'ATL5', len(files), len(clut_maps), len(blocks), len(gnames), bind_off,
+    out = bytearray(struct.pack('<4sHHHHIIII4x', b'ATL5', len(files) + len(deform[:4]), len(clut_maps), len(blocks), len(gnames), bind_off,
                                 len(bind), data_off, len(pixels)))
     out += file_tab + clut_tab + blk_tab + grec + tables + bind
     assert len(out) == bind_off + len(bind), (len(out), bind_off, len(bind))
