@@ -58,8 +58,10 @@ SPLIT = {'CPZ', 'FBZ', 'SSZ2', 'HCZ', 'MSZ', 'MMZ'}
 # the act never runs or behind a check of the class's pointer (a left-out class's pointer stays NULL in the resident):
 # FBZ2: FBZSetup finds FBZ1Outro only when CutsceneRules_IsAct1(); Ring.c tests `if (BigSqueeze)`; FBZ1Outro, BigSqueeze
 # and FBZTrash name only each other. Their StageLoads load their own sprites / sounds only (BigSqueeze's Soundboard
-# rumble plays while it crushes, never in act 2).
-FORCE_DROP = {('FBZ', '2'): {'FBZ1Outro', 'BigSqueeze', 'FBZTrash'}}
+# rumble plays while it crushes, never in act 2). 8.5 (FBZ2's load after phase 8): PlatformControl (named only by
+# Platform_State_PathReact: FBZ2 places no PATH / PATH_REACT platforms, types 0/2/3/7/9/10 only), SpiralPlatform and
+# TilePlatform (placed in act 1 only, named by nothing else); their StageLoads touch only their own statics.
+FORCE_DROP = {('FBZ', '2'): {'FBZ1Outro', 'BigSqueeze', 'FBZTrash', 'PlatformControl', 'SpiralPlatform', 'TilePlatform'}}
 # 7b.5: a class an act leaves out loses its StageLoad / StaticUpdate there: never left out are the zone setups and the
 # classes whose StageLoad reaches past their own statics (random numbers: the stock sequence; zone / trigger
 # callbacks; palettes, tiles, draw groups; an ACTIVE_ALWAYS / NORMAL object with a StaticUpdate). SAFE_DROP: reviewed

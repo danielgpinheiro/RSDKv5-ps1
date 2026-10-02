@@ -1291,7 +1291,7 @@ bool32 PS1CardSaveStaged(const char *filename, void *buffer, uint32 raw)
 // The resident copy of the card file (phase 8.4): a load or save reads the card only the first time (a short read: the
 // file's first sectors), every save rewrites the file from it in the background (a write is 2.5 s, a read 2.4 s: a
 // blocking read + write stood the game still ~5 s). A file bigger than the copy goes the staged way.
-#define PS1_CARD_CACHE (2048) // the copy's container room (a typical file: ~200 B; a time-attack row packs to ~60 B)
+#define PS1_CARD_CACHE (1536) // the copy's container room (a typical file: ~200 B; a time-attack row packs to ~60 B)
 uint32 s_ps1CardCache[(PS1_CARD_HEADER + PS1_CARD_CACHE) / 4]; // ps1/memcard's header room, then the container
 uint32 s_ps1CardCacheLen   = 0;                               // its container bytes
 bool s_ps1CardCacheValid   = false;                           // it holds the card's file (or the empty one: none there)

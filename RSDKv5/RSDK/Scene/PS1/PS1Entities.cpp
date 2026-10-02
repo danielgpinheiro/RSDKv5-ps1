@@ -844,7 +844,7 @@ void RSDK::PS1SceneEntitiesPlace()
         bytes += slots * 2 * sizeof(EntityBase *) + Align4(slots * sizeof(uint16));
         bytes += diffRecs * sizeof(DormDiff) + Align4(diffRecs * sizeof(uint16)) + movedRecs * 2 * sizeof(int32);
     }
-    uint32 spareBytes = 8 * 1024; // GHZ1 play: 0 relocations (2.3m)
+    uint32 spareBytes = 6 * 1024; // GHZ1 play: 0 relocations (2.3m); 8.5: 8 -> 6 KB (0 relocations / extra blocks in every boot)
     bytes += spareBytes;
 
     s_arena = NULL;
