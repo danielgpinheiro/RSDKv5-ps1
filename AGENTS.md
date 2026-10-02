@@ -106,6 +106,9 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   PTL2: tiles + one-colour line tables + H-flipped copies for per-line rows; `SetTile` / `DrawAniTile` on their tiles
   switch those off. The scratchpad (1 KB) belongs to the layer drawer. After `make gfx`, rebuild the disc before
   comparing with `layer_reference.sh` (the host reads `build/gfx`).
+- **Sprite bindings (7b.12)**: a frame is stored full, half or quarter resolution (`PS1_ATLAS_SHIFT`; quarter = half bit +
+  CLUT field from 0x140, build_atlas `QUARTER`, for backdrops no plan step fits: TMZ's Monarch). Frames past the GPU's
+  primitive size are drawn as their on-screen part (`PS1DrawFrame`).
 - **Pads = `psyqo::AdvancedPad`**. **One CD action at a time**. CLUT index 0 = transparent; visible black
   = 0x8000. Hardware access in `start()` / `frame()`, not `prepare()`.
 - Real hardware (`../docs/31`): keep `ps1/irq_guard`, the CPU-driven MDEC, bounded CD waits.

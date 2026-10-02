@@ -68,9 +68,11 @@ void SceneCapsBegin()
 {
     memset(s_growCap, 0, sizeof(s_growCap));
     for (const PS1GrowSpec *g = ps1GrowSpecs; g->from; ++g) {
-        int32 a = StageClassOf(g->from), b = StageClassOf(g->to);
+        int32 a = StageClassOf(g->from), b = g->to ? StageClassOf(g->to) : 0;
         if (a && b)
             s_growCap[a] = (uint16)Align4(objectClassList[stageObjectIDs[b]].entityClassSize);
+        else if (a && !g->to)
+            s_growCap[a] = (uint16)sizeof(EntityBase);
     }
 }
 inline uint32 SceneCap(uint16 classID)
@@ -195,6 +197,9 @@ void RSDK::PS1TypeGroupsBegin()
 }
 
 volatile uint32 g_ps1TypeGroupOverflow = 0;
+// 7b.12: an entity whose group is past the type groups (a corrupt header; stock would write out of the table): counted,
+// the first one recorded (slot | class << 16, its group), and it joins no extra group
+volatile uint32 g_ps1BadGroups = 0, g_ps1BadGroupWho = 0, g_ps1BadGroupValue = 0;
 
 void RSDK::PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group)
 {
@@ -238,6 +243,14 @@ void RSDK::PS1TypeGroupsBuild()
         g_ps1TypeGroupPeak = s_tgCount;
     for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
     for (int32 n = 0; n < s_tgCount; ++n) {
+        if (s_tgGroup[n] >= TYPEGROUP_COUNT || s_tgClass[n] >= TYPE_COUNT) {
+            if (!g_ps1BadGroups)
+                g_ps1BadGroupWho = s_tgSlot[n] | (uint32)s_tgClass[n] << 16, g_ps1BadGroupValue = s_tgGroup[n];
+            g_ps1BadGroups = g_ps1BadGroups + 1;
+            s_tgGroup[n]   = 0;
+            if (s_tgClass[n] >= TYPE_COUNT)
+                s_tgClass[n] = 0;
+        }
         typeGroups[GROUP_ALL].entryCount++;
         typeGroups[s_tgClass[n]].entryCount++;
         if (s_tgGroup[n] >= TYPE_COUNT)

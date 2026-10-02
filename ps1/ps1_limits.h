@@ -61,7 +61,8 @@ typedef struct {
 } PS1ReservedSpec;
 
 /* docs/32 7b.7: a scene entity whose Create resets it into another class (HCZ's DCEvent bubbles become Water) gets a block
-   for the larger of the two (the game's table, Zone.c, by class names; NULL-terminated) */
+   for the larger of the two (the game's table, Zone.c, by class names; NULL-terminated). 7b.12: `to` NULL = a whole stock
+   slot (sizeof(EntityBase)): for a class that writes past its struct, which the PC's uniform slots absorb */
 typedef struct {
     const char *from, *to;
 } PS1GrowSpec;

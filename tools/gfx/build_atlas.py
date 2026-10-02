@@ -35,7 +35,8 @@ Output <out>/<Folder>/Scene<N>.atl (little-endian):
   block  : u16 x, y, w, h (VRAM halfwords), u32 offset at dataOffset                            (12 B)
   bindings at bindOffset: per file, per frame record in the file's order (animations, then frames): u8 u, v,
            u16 attr = texture column (bits 0-3) | page row (bit 4) | 8-bit (bit 5) | half resolution (bit 6) |
-           CLUT slot << 7 (0x1FF = the bank's CLUT); u, v = 0xFF, attr 0xFFFF: not in the atlas
+           CLUT slot << 7 (0x1FF = the bank's CLUT); u, v = 0xFF, attr 0xFFFF: not in the atlas. 7b.12: quarter
+           resolution (QUARTER files, 4-bit only) = bit 6 set and CLUT field = slot + 0x140 (slots < 0xBF)
   pixels : at dataOffset (a sector boundary)
 
 Usage: build_atlas.py DATA_DIR DISC_DATA_DIR OUT_DIR FOLDER SCENE_ID [--report]
@@ -276,6 +277,14 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 'LRZ3': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: MMZ1's Egg Pistons MKII, MMZ2's Gachapandora (Eggman in each)
+                # 7b: TMZ1's Crimson Eye; TMZ2 has no boss; TMZ3 is the Phantom Egg fight from its start (level frames)
+                'TMZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('TMZ1/CrimsonEye.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'TMZ2': {'start': [('Global/TitleCard.bin', None)],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'TMZ3': {'start': [('Global/TitleCard.bin', None)],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'MMZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('MMZ/EggPistonsMKII.bin', None), ('Eggman/EggmanMMZ1.bin', None), ('MMZ/Gachapandora.bin', None),
                                  ('Eggman/EggmanMMZ2.bin', None), ('Global/Explosions.bin', {2, 3})],
@@ -330,12 +339,15 @@ HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'HCZ/ScrewMobile.bin', 'HCZ/DiveEggman.bin', 'Eggman/EggmanHCZ1.bin', 'HCZ/LaundroMobile.bin', 'Eggman/EggmanHCZ2.bin',
              'OOZ/MeterDroid.bin', 'OOZ/MegaOctus.bin', 'Eggman/EggmanOOZ.bin',
              'LRZ1/Drillerdroid.bin', 'MMZ/EggPistonsMKII.bin', 'Eggman/EggmanMMZ1.bin', 'MMZ/Gachapandora.bin',
-             'Eggman/EggmanMMZ2.bin',
+             'Eggman/EggmanMMZ2.bin', 'TMZ1/CrimsonEye.bin', 'Phantom/PhantomEgg.bin', 'Phantom/PhantomHand.bin',
+             'Phantom/PhantomGunner.bin', 'Phantom/PhantomShinobi.bin', 'Phantom/PhantomMystic.bin', 'Phantom/PhantomRider.bin',
+             'Eggman/EggmanTMZ.bin',
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
 HALF_EFFECT = {'Global/Explosions.bin', 'Global/Shields.bin', 'Global/Water.bin', 'Global/SpecialRing.bin',
-               'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin'}
+               'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin',
+               'TMZ1/Portal.bin'}  # 7b.12: the ruby portal (TMZ2 / TMZ3: 20 frames of 126 x 126, 229 KB at 4-bit)
 HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison.bin', 'UI/TextEN.bin', 'UI/SaveSelect.bin',
                 'UI/UIElements.bin', 'UI/SmallFont.bin', 'Title/Logo.bin', 'Title/PlusLogo.bin', 'Title/Background.bin',
                 'Title/Electricity.bin', 'Logos/Logos.bin',
@@ -355,7 +367,10 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
               'SPZ2/GreenScreen.bin', 'SPZ2/TVPole.bin',
               # 7b.4: Press Garden's ice (pillars up to 110 px and their 12-frame glint; blocks are ~50 px)
               'PSZ1/Ice.bin', 'PSZ2/Ice.bin',
-              'MSZ/Sandworm.bin'}  # 7b.8: Mirage Saloon's sandworm (a set piece of big segments)
+              'MSZ/Sandworm.bin',  # 7b.8: Mirage Saloon's sandworm (a set piece of big segments)
+              # 7b.12: Titanic Monarch's mist (shares the ruby portal's sheet clusters) and big set pieces
+              'TMZ1/Decoration.bin', 'TMZ1/LargeGear.bin', 'TMZ1/MetalArm.bin', 'TMZ1/CrashTest.bin', 'TMZ1/MagnetSphere.bin',
+              'TMZ1/JacobsLadder.bin'}
 # 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
@@ -364,6 +379,10 @@ HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (LOSSY, 0), (HAL
              (HALF_EFFECT, 48),
              (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_LEVEL, 96), (HALF_LEVEL, 64),
              (HALF_SUPER, 32), (HALF_HUD, 48), (HALF_HUD, 32), (HALF_LEVEL, 48), (HALF_LEVEL, 32), (HALF_BOSS, 16)]
+# 7b.12: backdrops far larger than VRAM allows at any plan step, stored at quarter resolution (each texel drawn 4x4) at
+# 15 colours whatever the step: Titanic Monarch's sky backdrop (the Monarch, two 1024 x 1024 frames drawn mirrored)
+QUARTER = {'TMZ1/MonarchBG.bin'}
+QUARTER_CLUT = 0x140
 HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HALF_LEVEL | HALF_SUPER  # files, and (HALF_PICTURE) sheets
 # reviewed by hand (the literal analysis can't follow a handle stored in an entity): in a stage, UIButton_Create sets
 # list 0 before PauseMenu (10) / UIDialog (9) set theirs; 7 = a disabled button
@@ -781,6 +800,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     rects = {}                                  # (placement, sheet) -> set(rect)
     halvable, charart, textish = {}, set(), {}
     always_halvable = {}                        # every frame using the rect comes from a HALVABLE file (any plan step)
+    quarter = {}                                # 7b.12: every frame using the rect comes from a QUARTER file
     for path, _, keys in files:
         for ai, (sh, x, y, w, h) in keys:
             where = sel[path][ai]
@@ -799,6 +819,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                     # short strip is not text
                     textish[k] = textish.get(k, False) or path in HALF_PRESENT or path in HALF_HUD
                     always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
+                    quarter[k] = quarter.get(k, True) and path in QUARTER
                     if path in PLAYER_LIKE or path.startswith('Players/'):
                         charart.add(sh)
             if where is None or sh is None or w <= 0 or h <= 0:
@@ -870,7 +891,18 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             # step, when every frame using it may be (else the error below)
             if max(w, h) > PAGE and inner and all(always_halvable[k] for k in inner):
                 half = True
-            px = halve(im[y:y + h, x:x + w]) if half else im[y:y + h, x:x + w]
+            q = bool(inner) and all(quarter[k] for k in inner)
+            if q:  # 7b.12: quarter resolution, 15 colours (its own merge)
+                half = 'q'
+                px = halve(halve(im[y:y + h, x:x + w]))
+                if len(set(np.unique(px).tolist()) - {0}) > 15:
+                    mp = merge_colours([px], sheets.pal[sh])
+                    lut = np.arange(256, dtype=np.uint8)
+                    for a_, b_ in mp.items():
+                        lut[a_] = b_
+                    px = lut[px]  # (the self-check decodes against px; the host reference marks quarter frames approximate)
+            else:
+                px = halve(im[y:y + h, x:x + w]) if half else im[y:y + h, x:x + w]
             if px.shape[0] > PAGE or px.shape[1] > 4 * PAGE:
                 raise AtlasError('%s %s is larger than a texture page' % (sh, r))
             # 4.2b: wider than a page (the menu dioramas' 512 / 1024-texel strips): pack() gives it adjacent pages from
@@ -1017,9 +1049,13 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             cx, cy, cw, ch = c['rect']
             if cx <= x and cy <= y and x + w <= cx + cw and y + h <= cy + ch:
                 b = c['bin']
-                d = 2 if c['half'] else 1
+                d = 4 if c['half'] == 'q' else 2 if c['half'] else 1
                 u, v = c['u'] + (x - cx) // d, c['v'] + (y - cy) // d
                 clut = c['clut'] if c['depth'] == 4 else BANK_CLUT
+                if c['half'] == 'q':
+                    if c['depth'] != 4 or clut >= 0x1FF - QUARTER_CLUT:
+                        raise AtlasError('%s: quarter-resolution %s needs a 4-bit CLUT slot < %d' % (name, sh, 0x1FF - QUARTER_CLUT))
+                    clut += QUARTER_CLUT
                 if u > 255 or v > 255:
                     raise AtlasError('%s: binding past its page: %s %s' % (name, sh, (x, y)))
                 return struct.pack('<BBH', u, v, (c['page_col'] & 15) | (b.row & 1) << 4 | (1 if c['depth'] == 8 else 0) << 5

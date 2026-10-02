@@ -11,13 +11,18 @@
 #define PS1_ATLAS_MISSING (0xFFFF) // ps1Attr of a frame the atlas does not hold (or whose group is not loaded)
 #define PS1_ATLAS_OUTSIDE (0xFE)   // ps1U / ps1V with PS1_ATLAS_MISSING: the frame lies wholly outside its sheet (4.2d)
 // ps1Attr: bits 0-3 texture column (X / 64), 4 page row (Y / 256), 5 8-bit (else 4-bit), 6 half resolution (the frame is
-// stored halved and drawn 2x), 7-15 CLUT slot (tools/gfx/vram_plan.py SPRITE_CLUT_SLOTS; 0x1FF = the palette bank's)
-#define PS1_ATLAS_COLUMN(attr) ((attr) & 15)
-#define PS1_ATLAS_ROW(attr)    (((attr) >> 4) & 1)
-#define PS1_ATLAS_8BIT(attr)   (((attr) >> 5) & 1)
-#define PS1_ATLAS_HALF(attr)   (((attr) >> 6) & 1)
-#define PS1_ATLAS_CLUT(attr)   ((attr) >> 7)
-#define PS1_ATLAS_BANK_CLUT    (0x1FF)
+// stored halved and drawn 2x), 7-15 CLUT slot (tools/gfx/vram_plan.py SPRITE_CLUT_SLOTS; 0x1FF = the palette bank's).
+// 7b.12: quarter resolution (stored at a quarter, drawn 4x: build_atlas QUARTER, 4-bit only) = bit 6 with the CLUT field
+// slot + PS1_ATLAS_QUARTER_CLUT (the field's values 0x140-0x1FE are no slot)
+#define PS1_ATLAS_COLUMN(attr)    ((attr) & 15)
+#define PS1_ATLAS_ROW(attr)       (((attr) >> 4) & 1)
+#define PS1_ATLAS_8BIT(attr)      (((attr) >> 5) & 1)
+#define PS1_ATLAS_HALF(attr)      (((attr) >> 6) & 1)
+#define PS1_ATLAS_BANK_CLUT       (0x1FF)
+#define PS1_ATLAS_QUARTER_CLUT    (0x140)
+#define PS1_ATLAS_QUARTER(attr)   (PS1_ATLAS_HALF(attr) && ((attr) >> 7) >= PS1_ATLAS_QUARTER_CLUT && ((attr) >> 7) != PS1_ATLAS_BANK_CLUT)
+#define PS1_ATLAS_CLUT(attr)      (PS1_ATLAS_QUARTER(attr) ? ((attr) >> 7) - PS1_ATLAS_QUARTER_CLUT : (attr) >> 7)
+#define PS1_ATLAS_SHIFT(attr)     (PS1_ATLAS_QUARTER(attr) ? 2 : PS1_ATLAS_HALF(attr)) // texel = 1 << shift pixels
 
 struct PS1AtlasClut {
     uint16 x, y;

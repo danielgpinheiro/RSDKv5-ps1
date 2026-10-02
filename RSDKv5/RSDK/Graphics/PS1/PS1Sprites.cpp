@@ -56,6 +56,7 @@ namespace RSDK
 {
 // PS1LayersFrameBegin: this frame's counters (and the draw log) start over
 volatile uint32 g_ps1SpriteWidePieces = 0; // 4.2b: frames drawn as pieces of several texture pages (GDB)
+volatile uint32 g_ps1SpriteBigClips   = 0; // 7b.12: frames past the GPU primitive size drawn as their on-screen part (GDB)
 volatile uint32 g_ps1SpriteOutside    = 0; // 4.2d: frames wholly outside their sheet (drawn as nothing; GDB)
 
 void PS1SpritesFrameBegin()
@@ -252,8 +253,8 @@ bool PS1OffScreen(int32 x0, int32 y0, int32 x1, int32 y1) // [x0, x1) x [y0, y1)
 }
 
 // Texels [u, u + tw) x [v, v + th) of a page drawn as the w x h screen rectangle at (x, y), flipped as `direction`
-// (half: the texels are the w x h picture halved). False: culled / nothing chained
-bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpage, uint32 clut, int32 direction, bool half,
+// (shift 1 / 2: the texels are the w x h picture halved / quartered). False: culled / nothing chained
+bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpage, uint32 clut, int32 direction, int32 shift,
                 const PS1Ink &ink)
 {
     if (PS1OffScreen(x, y, x + w, y + h))
@@ -263,7 +264,7 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
         tpage |= (uint32)ink.mode << 5, semi = 0x02000000;
     bool fx = direction & FLIP_X, fy = direction & FLIP_Y;
 
-    if (!fx && !fy && !half) {
+    if (!fx && !fy && !shift) {
         for (int32 p = 0; p < ink.passes; ++p) {
             uint32_t *wr = PS1ChainSpanBegin(6);
             if (!wr)
@@ -278,19 +279,19 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
         return true;
     }
     // texels per axis (halved frames: ceil(w / 2)); a flipped axis runs from its last texel to one before its first
-    int32 tw = half ? (w + 1) >> 1 : w, th = half ? (h + 1) >> 1 : h;
+    int32 m = (1 << shift) - 1, tw = (w + m) >> shift, th = (h + m) >> shift;
     int32 uL = fx ? u + tw - 1 : u, uR = fx ? u - 1 : u + tw;
     int32 vT = fy ? v + th - 1 : v, vB = fy ? v - 1 : v + th;
     // an edge one past the page (u / v -1, or 256) can't be addressed: that column / row becomes its own strip
     int32 qw = w, uEdge = -1, qh = h, vEdge = -1;
     if (uR < 0 || uR > 255) {
-        if (half) // halved: the texture edge is inside the last pair of pixels; clamp (the frame is approximate)
+        if (shift) // halved: the texture edge is inside the last pair of pixels; clamp (the frame is approximate)
             uR = uR < 0 ? 0 : 255;
         else
             qw = w - 1, uEdge = uR < 0 ? 0 : 255, uR = uR < 0 ? 0 : 255;
     }
     if (vB < 0 || vB > 255) {
-        if (half)
+        if (shift)
             vB = vB < 0 ? 0 : 255;
         else
             qh = h - 1, vEdge = vB < 0 ? 0 : 255, vB = vB < 0 ? 0 : 255;
@@ -332,7 +333,7 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
 // (FLIP_X: [-pivotX - w, -pivotX), texels mirrored), scale 0x200 = 1, rotation 512 per turn. cx / cy: the corners
 // A B C D (for the log). False: culled / too big for the GPU
 bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32 h, int32 u, int32 v, uint32 tpage, uint32 clut,
-                    bool half, int32 scaleX, int32 scaleY, int32 direction, int32 rotation, const PS1Ink &ink, int32 *cx, int32 *cy)
+                    int32 shift, int32 scaleX, int32 scaleY, int32 direction, int32 rotation, const PS1Ink &ink, int32 *cx, int32 *cy)
 {
     int32 angle = 0x200 - (rotation & 0x1FF);
     if (!(rotation & 0x1FF))
@@ -358,7 +359,7 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
         return false;
     }
     // texels: the far edges one texel in (nothing from the neighbours when the quad is not axis-aligned)
-    int32 tw = half ? (w + 1) >> 1 : w, th = half ? (h + 1) >> 1 : h;
+    int32 m = (1 << shift) - 1, tw = (w + m) >> shift, th = (h + m) >> shift;
     int32 u0 = fx ? u + tw - 1 : u, u1 = fx ? u : u + tw - 1;
     int32 tu[4] = { u0, u1, u0, u1 }, tv[4] = { v, v, v + th - 1, v + th - 1 };
     uint32 semi = 0, colour = ink.mod | ink.mod << 8 | ink.mod << 16;
@@ -412,7 +413,7 @@ inline int32 PS1LineBank(int32 y)
 }
 
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
-bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &half)
+bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &shift)
 {
     PS1FadeRestore(); // a FillScreen earlier this frame faded the CLUTs
     uint16 attr = frame->ps1Attr;
@@ -436,7 +437,7 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, bool &ha
     tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7;
     uint32 slot = PS1_ATLAS_CLUT(attr);
     clut = slot == PS1_ATLAS_BANK_CLUT ? (uint32)(240 << 6) : (slot % PS1_SPRITE_CLUTS_PER_ROW) | (496 + slot / PS1_SPRITE_CLUTS_PER_ROW) << 6;
-    half = PS1_ATLAS_HALF(attr);
+    shift = PS1_ATLAS_SHIFT(attr);
     return true;
 }
 
@@ -461,12 +462,36 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
 {
     int32 w = frame->width, h = frame->height;
     uint32 tpage, clut;
-    bool half;
+    int32 shift, u = frame->ps1U, v = frame->ps1V;
     PS1Ink ink;
     if (w <= 0 || h <= 0 || !PS1PcDraws(inkEffect, alpha) || !PS1PcClip(x, y, w, h))
         return;
-    if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
+    if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    int32 m = (1 << shift) - 1, tw = (w + m) >> shift;
+    if ((w > 1023 || h > 511) && u + tw <= 256) {
+        // 7b.12: past the GPU's primitive size (TMZ's 1024 x 1024 Monarch backdrop): only the screen's part, its edges on
+        // whole texels (frame columns [a, b) / rows [c, d); a flipped axis counts from the frame's far edge)
+        int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+        int32 a = x < 0 ? -x : 0, b = x + w > sw ? sw - x : w, c = y < 0 ? -y : 0, d = y + h > sh ? sh - y : h;
+        if (a >= b || c >= d)
+            return;
+        if (direction & FLIP_X) {
+            int32 t = w - b;
+            b = w - a, a = t;
+        }
+        if (direction & FLIP_Y) {
+            int32 t = h - d;
+            d = h - c, c = t;
+        }
+        a &= ~m, c &= ~m, b = (b + m) & ~m, d = (d + m) & ~m;
+        b = b > w ? w : b, d = d > h ? h : d;
+        x += (direction & FLIP_X) ? w - b : a;
+        y += (direction & FLIP_Y) ? h - d : c;
+        u += a >> shift, v += c >> shift;
+        w = b - a, h = d - c, tw = (w + m) >> shift;
+        g_ps1SpriteBigClips = g_ps1SpriteBigClips + 1;
+    }
     if (int32 bank = PS1LineBank(y)) {
         clut = PS1BankClut(frame->ps1Attr, bank);
         if (!clut)
@@ -475,22 +500,21 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
     if (ink.maskTest) // 4.1b: INK_MASKED: only over bit-15-clear pixels (the mask colour's)
         PS1ChainMaskControl(false, true);
     bool drawn;
-    int32 tw = half ? (w + 1) >> 1 : w;
-    if (frame->ps1U + tw <= 256) {
-        drawn = PS1TexRect(x, y, w, h, frame->ps1U, frame->ps1V, tpage, clut, direction, half, ink);
+    if (u + tw <= 256) {
+        drawn = PS1TexRect(x, y, w, h, u, v, tpage, clut, direction, shift, ink);
     }
     else {
         // 4.2b: wider than a texture page (the menu diorama's 1024-pixel terrain): the atlas stored it from u 0 over
         // adjacent pages (tools/gfx/build_atlas.py pack): one piece of 256 texels per page, the next page 1 column
         // (4-bit) or 2 (8-bit) to the right
-        int32 d = half ? 2 : 1, step = (tpage & 0x80) ? 2 : 1;
+        int32 d = 1 << shift, step = (tpage & 0x80) ? 2 : 1;
         drawn = false;
         for (int32 k = 0, t0 = 0; t0 < tw; ++k, t0 += 256) {
             int32 sx0 = t0 * d, sw = (tw - t0 < 256 ? tw - t0 : 256) * d;
             if (sx0 + sw > w)
                 sw = w - sx0;
             int32 sx = (direction & FLIP_X) ? x + w - sx0 - sw : x + sx0;
-            drawn |= PS1TexRect(sx, y, sw, h, 0, frame->ps1V, tpage + (uint32)(k * step), clut, direction, half, ink);
+            drawn |= PS1TexRect(sx, y, sw, h, 0, v, tpage + (uint32)(k * step), clut, direction, shift, ink);
         }
         g_ps1SpriteWidePieces = g_ps1SpriteWidePieces + 1;
     }
@@ -502,7 +526,7 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
 #if PS1_DEBUG_BIGRAM
     { // 7b.7: the top line's palette bank (bits 4-6: the bank the frame took) and bit 7 when its lines span banks
         int32 bt = PS1LineBank(y), bb = PS1LineBank(y + h - 1);
-        PS1DrawLogAdd(1, (uint8)(direction | bt << 4 | (bt != bb) << 7), (uint8)inkEffect, PS1LogAlpha(alpha), frame->ps1U, frame->ps1V,
+        PS1DrawLogAdd(1, (uint8)(direction | bt << 4 | (bt != bb) << 7), (uint8)inkEffect, PS1LogAlpha(alpha), (uint8)u, (uint8)v,
                       frame->ps1Attr, x, y, w, h);
     }
 #endif
@@ -514,13 +538,13 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
 {
     int32 w = frame->width, h = frame->height;
     uint32 tpage, clut;
-    bool half;
+    int32 shift;
     PS1Ink ink;
     int32 cx[4], cy[4];
     if (w <= 0 || h <= 0 || scaleX <= 0 || scaleY <= 0 || !PS1PcDraws(inkEffect, alpha)
         || !PS1PcClipRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, scaleX, scaleY, direction, rotation))
         return;
-    if (!PS1FrameTex(frame, tpage, clut, half) || !PS1InkOf(inkEffect, alpha, ink))
+    if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
     if (int32 bank = PS1LineBank(y)) {
         clut = PS1BankClut(frame->ps1Attr, bank);
@@ -529,7 +553,7 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
     }
     if (ink.maskTest)
         PS1ChainMaskControl(false, true);
-    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, half, scaleX, scaleY,
+    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, shift, scaleX, scaleY,
                                 direction, rotation, ink, cx, cy);
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
@@ -561,7 +585,7 @@ void RSDK::PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alp
     if (PS1LineBank(y))
         g_ps1BankTodo = g_ps1BankTodo + 1;
     int32 direction = (tile >> 10) & 3;
-    if (!PS1TexRect(x, y, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, direction, false, ink))
+    if (!PS1TexRect(x, y, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, direction, 0, ink))
         return;
     g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
     g_ps1TileDraws   = g_ps1TileDraws + 1;
@@ -588,7 +612,7 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
         g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
         return;
     }
-    if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, false, scaleX, scaleY, direction, rotation, ink, cx,
+    if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, 0, scaleX, scaleY, direction, rotation, ink, cx,
                         cy))
         return;
     g_ps1SpriteDraws   = g_ps1SpriteDraws + 1;

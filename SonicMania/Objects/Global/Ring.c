@@ -1067,15 +1067,17 @@ const PS1DormantSpec ps1DormantSpecs[] = {
     // their changed words
     { "Spring", PS1Always, TO_FIXED(96), NULL, { 0, 0, 0, 0 }, true, { "PopOut", "MetalSonic", NULL } },
     { "Decoration", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { "AIZSetup", "MSZSetup", "EncoreGoodEnd" } },
-    { "Spikes", Spikes_PS1Eligible, 0, Spikes_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    // (7b.12: PopOut reads its spring / spikes from the next slot: a stage with PopOut keeps them entities)
+    { "Spikes", Spikes_PS1Eligible, 0, Spikes_PS1Range, { 0, 0, 0, 0 }, false, { "PopOut", NULL, NULL } },
     // SPZ: TV vans / satellites / TVs (the radio signals find them with foreach_active: in range only; a TV broken
     // comes back with its changed words); Rock'em Sock'em bumpers (raised in Create; back to their start after a hit)
     { "CircleBumper", CircleBumper_PS1Eligible, 0, CircleBumper_PS1Range, { offsetof(EntityCircleBumper, drawPos), sizeof(Vector2), 0, 0 },
       true, { NULL, NULL, NULL } },
     { "TVVan", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
     { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL }, true },
-    { "CollapsingPlatform", CollapsingPlatform_PS1Eligible, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL },
-      true },
+    // (7b.12: Blastoid / DiveEggman / EggPistonsMKII read their collapsing platforms by slot: those stages keep them)
+    { "CollapsingPlatform", CollapsingPlatform_PS1Eligible, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false,
+      { "Blastoid", "DiveEggman", "EggPistonsMKII" }, true },
     { "BGSwitch", PS1Always, 0, BGSwitch_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
     { "GenericTrigger", PS1Always, 0, GenericTrigger_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
     { "Mine", PS1Always, TO_FIXED(64), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },

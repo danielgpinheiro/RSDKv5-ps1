@@ -119,6 +119,14 @@ def modulate(f, m):
     return out
 
 
+def attr_shift_slot(attr):
+    """(texel shift, CLUT slot) of a binding: 0 full, 1 half, 2 quarter resolution (7b.12: half bit + CLUT field 0x140+)."""
+    half, field = (attr >> 6) & 1, attr >> 7
+    if half and 0x140 <= field < 0x1FF:
+        return 2, field - 0x140
+    return half, field
+
+
 def draw_sprite(out, mask, e, vram, cluts, colours):
     """One draw-log sprite onto out (BGR555 | STP); mask marks its pixels (half-resolution frames: 2). The log's direction
     carries the palette bank the frame took (bits 4-6) and whether its lines span banks (bit 7: the PC changes bank per
@@ -132,13 +140,15 @@ def draw_sprite(out, mask, e, vram, cluts, colours):
     if im is None:
         return
     mode, passes, mod = im
-    col, row, bit8, half, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, (attr >> 6) & 1, attr >> 7
+    col, row, bit8 = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1
+    half, slot = attr_shift_slot(attr)  # (half: the texel shift, 1 or 2)
     if half and mode != -2:  # the GPU's 2x sampling decides which edge pixels a halved frame covers: its whole rectangle
         # is approximate (a masked frame: only the pixels it draws, so a draw outside the mask colour's pixels counts)
         mask[max(0, y):max(0, min(240, y + h)), max(0, x):max(0, min(320, x + w))] = 2
     px0, py0 = col * 64, row * 256
     fx, fy = direction & 1, direction & 2
-    tw, th = ((w + 1) >> 1, (h + 1) >> 1) if half else (w, h)
+    m = (1 << half) - 1
+    tw, th = (w + m) >> half, (h + m) >> half
     for j in range(h):
         sy = y + j
         if sy < 0 or sy >= 240:
@@ -176,7 +186,8 @@ def draw_sprite(out, mask, e, vram, cluts, colours):
 
 
 def texel_atlas(vram, cluts, attr, tu, tv):
-    col, row, bit8, slot = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1, attr >> 7
+    col, row, bit8 = attr & 15, (attr >> 4) & 1, (attr >> 5) & 1
+    slot = attr_shift_slot(attr)[1]
     if bit8:
         return (int(vram[row * 256 + tv, col * 64 + (tu >> 1)]) >> (8 * (tu & 1))) & 0xFF
     nib = (int(vram[row * 256 + tv, col * 64 + (tu >> 2)]) >> (4 * (tu & 3))) & 15
@@ -357,8 +368,8 @@ def render(cap, folder, scene_id):
             w, h, direction = a[9], a[10], a[1]
             if a[0] == 3:
                 attr, u, v = a[6], a[4], a[5]
-                half = (attr >> 6) & 1
-                tw, th = ((w + 1) >> 1, (h + 1) >> 1) if half else (w, h)
+                half = attr_shift_slot(attr)[0]
+                tw, th = (w + (1 << half) - 1) >> half, (h + (1 << half) - 1) >> half
                 fetch = lambda tu, tv, attr=attr: texel_atlas(vram, cluts, attr, tu, tv)
             else:
                 img = table[a[6] & 0x3FF]
