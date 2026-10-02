@@ -63,6 +63,14 @@ void DummyUserStorage::ProcessFileLoadTime()
         if (!file->storageTime) {
             int32 status   = 0;
             bool32 success = false;
+#if RETRO_PLATFORM == RETRO_PS1
+            if (file->ps1Status) { // done at the request: only the callback is deferred
+                if (file->callback)
+                    file->callback(file->ps1Status);
+                fileList.Remove(f);
+                continue;
+            }
+#endif
             switch (file->type) {
                 case 1:
                     success = LoadUserFile(file->path, file->fileBuffer, file->fileSize);
@@ -125,6 +133,11 @@ bool32 DummyUserStorage::TryLoadUserFile(const char *filename, void *buffer, uin
         file->type       = 1;
         strncpy(file->path, filename, sizeof(file->path));
         file->storageTime = GetAPIValue(GetAPIValueID("SYSTEM_USERSTORAGE_STORAGE_LOAD_TIME", 0));
+#if RETRO_PLATFORM == RETRO_PS1
+        // phase 8: the load now, while `buffer` is valid (the game's globals live in STG: a compaction before the
+        // deferred load moved them and the load landed 0x54 bytes off); the callback still comes later, as stock
+        file->ps1Status = LoadUserFile(file->path, buffer, size) ? STATUS_OK : STATUS_NOTFOUND;
+#endif
 
         success = true;
     }
@@ -169,6 +182,9 @@ bool32 DummyUserStorage::TrySaveUserFile(const char *filename, void *buffer, uin
             file->fileBuffer = buffer;
             file->fileSize   = size;
         }
+#if RETRO_PLATFORM == RETRO_PS1
+        file->ps1Status = SaveUserFile(file->path, buffer, size) ? STATUS_OK : STATUS_ERROR; // phase 8: now (see the load)
+#endif
 
         success = true;
     }
@@ -194,6 +210,9 @@ bool32 DummyUserStorage::TryDeleteUserFile(const char *filename, void (*callback
         file->fileBuffer = NULL;
         file->fileSize   = 0;
         file->type       = 3;
+#if RETRO_PLATFORM == RETRO_PS1
+        file->ps1Status = 0; // (deletes stay deferred: no buffer)
+#endif
         strncpy(file->path, filename, sizeof(file->path));
         file->storageTime = GetAPIValue(GetAPIValueID("SYSTEM_USERSTORAGE_STORAGE_DELETE_TIME", 0));
     }

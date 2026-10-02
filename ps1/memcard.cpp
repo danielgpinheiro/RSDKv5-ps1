@@ -39,6 +39,9 @@ uint32_t crc32(const uint8_t *p, uint32_t n) { // zlib CRC-32 (reflected 0xEDB88
 
 bool ready() { return s_fs && g_ps1GPU; }
 
+bool s_async = false;                      // PS1McSaveInPlaceAsync running
+void (*s_asyncDone)(PS1McError) = nullptr;
+
 } // namespace
 
 void PS1McPrepare() {
@@ -76,6 +79,7 @@ PS1McError PS1McExists(PS1McPort port, const char *file, bool *outExists) {
 }
 
 PS1McError PS1McList(PS1McPort port, psyqo::MemoryCardFileSystem::FileEntry *out, uint32_t max, uint32_t *outCount) {
+    PS1McWaitIdle();
     return ready() ? s_fs->listFilesBlocking(*g_ps1GPU, port, out, max, outCount) : PS1McError::Unconnected;
 }
 
@@ -147,4 +151,81 @@ PS1McError PS1McLoad(PS1McPort port, const char *file, void *buf, uint32_t maxLe
     }
     psyqo_free(tmp);
     return e;
+}
+
+bool PS1McBusy() { return s_async; }
+
+void PS1McWaitIdle() {
+    while (ready() && (s_async || !s_fs->isIdle())) g_ps1GPU->pumpCallbacks();
+}
+
+PS1McError PS1McSaveInPlaceAsync(PS1McPort port, const char *file, const char *title, const PS1McIcon &icon, uint8_t *buf,
+                                 uint32_t len, uint16_t version, void (*done)(PS1McError)) {
+    if (!ready())
+        return PS1McError::Unconnected;
+    PS1McWaitIdle();
+    Header h;
+    memcpy(h.magic, "RSDK", 4);
+    h.version  = version;
+    h.reserved = 0;
+    h.length   = len;
+    h.crc      = crc32(buf + PS1_MC_HEADER_SIZE, len);
+    memcpy(buf, &h, sizeof(h));
+    s_async     = true;
+    s_asyncDone = done;
+    // writeFile replaces a file of the same name (data first, the directory last)
+    s_fs->writeFile(port, file, title, icon, buf, PS1_MC_HEADER_SIZE + len, [](PS1McError e) {
+        s_async = false;
+        if (s_asyncDone)
+            s_asyncDone(e);
+    });
+    return PS1McError::OK;
+}
+
+PS1McError PS1McSaveInPlace(PS1McPort port, const char *file, const char *title, const PS1McIcon &icon, uint8_t *buf,
+                            uint32_t len, uint16_t version) {
+    if (!ready())
+        return PS1McError::Unconnected;
+    PS1McWaitIdle();
+    Header h;
+    memcpy(h.magic, "RSDK", 4);
+    h.version  = version;
+    h.reserved = 0;
+    h.length   = len;
+    h.crc      = crc32(buf + PS1_MC_HEADER_SIZE, len);
+    memcpy(buf, &h, sizeof(h));
+    PS1McError e = s_fs->writeFileBlocking(*g_ps1GPU, port, file, title, icon, buf, PS1_MC_HEADER_SIZE + len);
+    if (e == PS1McError::OutOfSpace) { // the replacement needs room beside the old copy: the old one goes first
+        bool exists = false;
+        if (s_fs->fileExistsBlocking(*g_ps1GPU, port, file, &exists) == PS1McError::OK && exists
+            && s_fs->deleteFileBlocking(*g_ps1GPU, port, file) == PS1McError::OK)
+            e = s_fs->writeFileBlocking(*g_ps1GPU, port, file, title, icon, buf, PS1_MC_HEADER_SIZE + len);
+    }
+    return e;
+}
+
+PS1McError PS1McLoadInPlace(PS1McPort port, const char *file, uint8_t *buf, uint32_t cap, uint32_t *outLen,
+                            uint16_t *outVersion) {
+    if (outLen)
+        *outLen = 0;
+    if (!ready())
+        return PS1McError::Unconnected;
+    PS1McWaitIdle();
+    uint32_t got = 0;
+    PS1McError e = s_fs->readFileBlocking(*g_ps1GPU, port, file, buf, cap, &got);
+    if (e != PS1McError::OK)
+        return e;
+    Header h;
+    memcpy(&h, buf, sizeof(h));
+    if (got < sizeof(h) || memcmp(h.magic, "RSDK", 4))
+        return PS1McError::BadData;
+    if (sizeof(h) + h.length > cap)
+        return PS1McError::SerializeOverflow;
+    if (sizeof(h) + h.length > got || crc32(buf + sizeof(h), h.length) != h.crc)
+        return PS1McError::BadData;
+    if (outLen)
+        *outLen = h.length;
+    if (outVersion)
+        *outVersion = h.version;
+    return PS1McError::OK;
 }

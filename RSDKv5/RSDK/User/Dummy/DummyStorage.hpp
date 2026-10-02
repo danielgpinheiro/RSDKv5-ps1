@@ -9,6 +9,9 @@ struct DummyFileInfo {
     int32 fileSize;
     int32 storageTime;
     bool32 compressed;
+#if RETRO_PLATFORM == RETRO_PS1
+    int32 ps1Status; // phase 8: the I/O done at the request (the status the deferred callback gets), 0 = not yet
+#endif
 };
 
 // This is the "dummy" struct, it serves as the base in the event a suitable API isn't loaded (such as in this decomp)

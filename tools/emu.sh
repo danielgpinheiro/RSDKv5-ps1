@@ -46,8 +46,13 @@ emu_start() {
     local ram=-2mb
     if [ "$EMU_SP" != "0x801fff00" ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
     [ "$EMU_RAM" = 8mb ] && ram=-8mb
-    "$EMU_PCSX" -fastboot -interpreter -debugger -gdb -gdb-port 3333 $ram -iso build/game.cue -exe rsdkv5.ps-exe \
-      >/dev/null 2>&1 &
+    # phase 8: the game writes the memory card: every run gets its own formatted card images (never the shared
+    # memcard1/2.mcd of the default config); EMU_MC1=FILE keeps a card across runs (made if missing)
+    local mc1=${EMU_MC1:-$1.mc1.mcd} mc2=$1.mc2.mcd
+    [ -f "$mc1" ] || /usr/bin/python3 tools/memcard/mcd.py format "$mc1" >/dev/null
+    /usr/bin/python3 tools/memcard/mcd.py format "$mc2" >/dev/null
+    "$EMU_PCSX" -fastboot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
+      -iso build/game.cue -exe rsdkv5.ps-exe >/dev/null 2>&1 &
     EMU_PID=$!
     sleep 4
   fi

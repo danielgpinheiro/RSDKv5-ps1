@@ -424,6 +424,9 @@ inline void SetUserFileCallbacks(const char *userDir, void (*preCB)(), void (*po
 }
 
 bool32 LoadUserFile(const char *filename, void *buffer, uint32 bufSize);
+#if RETRO_PLATFORM == RETRO_PS1
+void PS1CardTestService(); // docs/32 phase 8: the GDB save / load hook (frame start)
+#endif
 bool32 SaveUserFile(const char *filename, void *buffer, uint32 bufSize);
 bool32 DeleteUserFile(const char *filename);
 

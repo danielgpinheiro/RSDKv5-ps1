@@ -106,6 +106,9 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   PTL2: tiles + one-colour line tables + H-flipped copies for per-line rows; `SetTile` / `DrawAniTile` on their tiles
   switch those off. The scratchpad (1 KB) belongs to the layer drawer. After `make gfx`, rebuild the disc before
   comparing with `layer_reference.sh` (the host reads `build/gfx`).
+- **Overlay objects have header dependencies** (`OVL_DEPS` in the Makefile, phase 8): before it, a header change left
+  overlay objects stale (the Menu read globals 5,888 B off). After touching a shared header, `make` must recompile the
+  overlay objects; check with the `.dep` files.
 - **Sprite bindings (7b.12)**: a frame is stored full, half or quarter resolution (`PS1_ATLAS_SHIFT`; quarter = half bit +
   CLUT field from 0x140, build_atlas `QUARTER`, for backdrops no plan step fits: TMZ's Monarch). Frames past the GPU's
   primitive size are drawn as their on-screen part (`PS1DrawFrame`).

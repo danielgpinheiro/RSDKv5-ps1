@@ -45,3 +45,17 @@ PS1McError PS1McSave(PS1McPort port, const char *file, const char *title, const 
 PS1McError PS1McLoad(PS1McPort port, const char *file, void *buf, uint32_t maxLen, uint32_t *outLen,
                      uint16_t *outVersion);
 PS1McError PS1McDelete(PS1McPort port, const char *file);
+
+// Mania (docs/32 phase 8): no heap copies (the heap is STG's at 2 MB). `buf` holds PS1_MC_HEADER_SIZE bytes of room,
+// then the data: the header is written in place, the file replaced by psyqo's writeFile (data first, directory last;
+// on OutOfSpace an existing file is deleted and the write retried). Load: the data lands at buf + PS1_MC_HEADER_SIZE.
+PS1McError PS1McSaveInPlace(PS1McPort port, const char *file, const char *title, const PS1McIcon &icon, uint8_t *buf,
+                            uint32_t len, uint16_t version);
+PS1McError PS1McLoadInPlace(PS1McPort port, const char *file, uint8_t *buf, uint32_t cap, uint32_t *outLen,
+                            uint16_t *outVersion);
+// In the background (TMC's PS1McSaveAsync, without its heap copy): `buf` (header room + data) must stay untouched until
+// `done` runs; one at a time. The blocking calls above wait for it first (PS1McWaitIdle).
+PS1McError PS1McSaveInPlaceAsync(PS1McPort port, const char *file, const char *title, const PS1McIcon &icon, uint8_t *buf,
+                                 uint32_t len, uint16_t version, void (*done)(PS1McError));
+bool PS1McBusy();
+void PS1McWaitIdle();

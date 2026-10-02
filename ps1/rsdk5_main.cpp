@@ -17,6 +17,7 @@
 #include "../ps1/loading.hh"
 #include "../ps1/video.hh" // PS1Hblanks
 #include "../ps1/vram.hh"  // PS1VramServiceDump (GDB VRAM dumps)
+void PS1McPrepare(); // ps1/memcard.hh (phase 8: the user files on the card; its psyqo headers stay out of here)
 
 #include "RSDK/Core/RetroEngine.hpp"
 
@@ -83,6 +84,7 @@ class ManiaPS1App final : public psyqo::Application {
                              .set(psyqo::GPU::MiscSetting::CLEAR_VRAM));
         g_ps1GPU = &gpu();
         m_cdrom.prepare();
+        PS1McPrepare(); // phase 8: the memory card's file system (before any card call)
     }
 
     void start() override {
@@ -197,6 +199,7 @@ class ManiaPS1App final : public psyqo::Application {
 
     void frame() override {
         PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/32 3.1c)
+        SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
 

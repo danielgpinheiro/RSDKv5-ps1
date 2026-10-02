@@ -1069,8 +1069,374 @@ void (*RSDK::SKU::preLoadSaveFileCB)();
 void (*RSDK::SKU::postLoadSaveFileCB)();
 char RSDK::SKU::userFileDir[0x100];
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 phase 8: Mania's user files live in one memory card file (ps1/user_card.cpp: "BAHBRW-00006MANIA", slot 1) as
+// packed sections: 'MSV1', u16 sections, u16 0, then per section its name (16 chars), raw bytes, packed bytes and the
+// packed words (u32 tokens: bit 31 set = that many zero words, else that many literal words follow: the save RAM is
+// mostly zeros). A load reads the file and unpacks one section; a save reads the file, replaces its section, writes it
+// back. The payload is staged in DATASET_TMP's tail (nothing lives there in play; no resident cache: the heap is STG's).
+extern "C" uint32_t PS1UserCardRoom();
+extern "C" uint32_t PS1UserCardRead(uint8_t *buf, uint32_t cap, uint32 *outLen); // (C linkage: uint32 = the same 32 bits)
+extern "C" uint32_t PS1UserCardWrite(uint8_t *buf, uint32_t len);
+extern "C" uint32_t PS1UserCardWriteAsync(uint8_t *buf, uint32_t len);
+extern "C" void PS1UserCardWait();
+extern "C" volatile uint32 g_ps1CardLastError; // (ps1/user_card.cpp: the last psyqo MemoryCard::Error)
+volatile uint32 g_ps1CardLoads = 0, g_ps1CardSaves = 0, g_ps1CardErrors = 0, g_ps1CardSkipped = 0, g_ps1CardStageFail = 0,
+                g_ps1CardTooBig = 0, g_ps1CardPayload = 0, g_ps1CardFresh = 0;
+volatile uint32 g_ps1CardOff = 0;
+volatile uint32 g_ps1CardStageInfo[5] = { 0 }; // the last staging: size, TMP used, limit, flags (1 in TMP, 2 owner, 4 compacted), used after // GDB: no card calls (loads find nothing, saves report failure)
+namespace
+{
+#define PS1_CARD_HEADER (16)               // ps1/memcard's header in front of the payload (PS1_MC_HEADER_SIZE)
+#define PS1_CARD_ROOM   (3 * 8192 - 256)   // the card file's room at most: 3 blocks less the title and icon frames
+#define PS1_CARD_MAGIC  (0x3156534D)       // 'MSV1'
+struct PS1CardSection {
+    char name[16];
+    uint32 raw, packed;
+};
+// the files kept (keep: bytes stored, 0 = all): SaveData = the save RAM's Mania part (slots 0-7, time attack 0x800,
+// progress 0x900; Encore's 0xA00-0xCFF out of scope). Others (Achievements.bin: no UI on the PS1; replays: out of
+// scope) are not written: counted, reported saved, never found
+struct PS1CardFile {
+    const char *name;
+    uint32 keep;
+};
+const PS1CardFile s_ps1CardFiles[] = { { "SaveData.bin", 0xA00 * sizeof(int32) }, { "Options.bin", 0 }, { "TimeAttackDB.bin", 0 } };
+
+const PS1CardFile *PS1CardFileOf(const char *name)
+{
+    for (const PS1CardFile &f : s_ps1CardFiles)
+        if (!strcmp(f.name, name))
+            return &f;
+    return NULL;
+}
+
+uint32 PS1CardWord(const uint8 *src, uint32 raw, uint32 w) // word w of src (bytes past raw read as 0)
+{
+    uint32 v = 0;
+    uint32 o = w * 4, n = raw - o < 4 ? raw - o : 4;
+    memcpy(&v, src + o, n);
+    return v;
+}
+
+uint32 PS1CardPack(const uint8 *src, uint32 raw, uint32 *dst) // -> packed bytes (at most raw + 8); dst NULL: count only
+{
+    uint32 words = (raw + 3) / 4, n = 0;
+    for (uint32 w = 0; w < words;) {
+        uint32 z = w;
+        while (z < words && !PS1CardWord(src, raw, z)) ++z;
+        if (z > w) {
+            if (dst)
+                dst[n] = 0x80000000u | (z - w);
+            ++n, w = z;
+            continue;
+        }
+        uint32 lit = w;
+        while (lit < words && (PS1CardWord(src, raw, lit) || (lit + 1 < words && PS1CardWord(src, raw, lit + 1)))) ++lit;
+        if (dst)
+            dst[n] = lit - w;
+        ++n;
+        for (; w < lit; ++w, ++n)
+            if (dst)
+                dst[n] = PS1CardWord(src, raw, w);
+    }
+    return n * 4;
+}
+
+bool PS1CardUnpack(const uint32 *src, uint32 packed, uint8 *dst, uint32 raw, uint32 cap) // cap: the bytes dst takes
+{
+    uint32 n = packed / 4, i = 0, o = 0, end = raw < cap ? raw : cap;
+    while (i < n) {
+        uint32 t = src[i++];
+        uint32 count = t & 0x7FFFFFFF;
+        for (uint32 k = 0; k < count; ++k, o += 4) {
+            uint32 v = 0;
+            if (!(t & 0x80000000u)) {
+                if (i >= n)
+                    return false;
+                v = src[i++];
+            }
+            if (o < end)
+                memcpy(dst + o, &v, end - o < 4 ? end - o : 4);
+        }
+    }
+    return o >= raw;
+}
+
+// the staging block (DATASET_TMP's tail). TMP's freed blocks stay until a compaction (the time-attack table's 21 KB read
+// buffer after its load): when the tail is short, TMP is compacted; the caller's buffer (*keep) may live in TMP (the
+// table's write buffer): it is followed through its owner pointer, which the compaction updates
+uint8 *PS1CardStage(uint32 size, void **keep)
+{
+    DataStorage *st = &dataStorage[DATASET_TMP];
+    uint8 *p        = (uint8 *)PS1StorageTailAlloc(DATASET_TMP, size);
+    g_ps1CardStageInfo[0] = size, g_ps1CardStageInfo[1] = st->usedStorage * 4, g_ps1CardStageInfo[2] = st->storageLimit;
+    g_ps1CardStageInfo[3] = 0;
+    if (!p) {
+        bool inTmp   = *keep >= (void *)st->memoryTable && *keep < (void *)((uint8 *)st->memoryTable + st->storageLimit);
+        void **owner = NULL;
+        for (uint32 e = 0; inTmp && e < st->entryCount && !owner; ++e)
+            if (st->storageEntries[e] == *keep && *st->dataEntries[e] == *keep)
+                owner = (void **)st->dataEntries[e];
+        g_ps1CardStageInfo[3] = (inTmp ? 1 : 0) | (owner ? 2 : 0);
+        if (!inTmp || owner) {
+            DefragmentAndGarbageCollectStorage(DATASET_TMP);
+            g_ps1CardStageInfo[3] |= 4;
+            g_ps1CardStageInfo[4] = st->usedStorage * 4;
+            if (owner)
+                *keep = *owner;
+            p = (uint8 *)PS1StorageTailAlloc(DATASET_TMP, size);
+        }
+    }
+    if (!p)
+        g_ps1CardStageFail = g_ps1CardStageFail + 1;
+    return p;
+}
+
+// the staged paths (a card file bigger than the resident copy): TMP stages it, a save reads it first, writes blocking
+bool32 PS1CardLoadStaged(const char *filename, void *buffer, uint32 bufSize)
+{
+    uint32 room = PS1UserCardRoom();
+    if (!room)
+        return false; // no file (or no card)
+    room       = room > PS1_CARD_ROOM ? PS1_CARD_ROOM : room;
+    uint8 *buf = PS1CardStage(room, &buffer);
+    if (!buf)
+        return false;
+    bool32 found = false;
+    uint32 len   = 0;
+    if (PS1UserCardRead(buf, room, &len)) {
+        g_ps1CardErrors = g_ps1CardErrors + 1;
+    }
+    else if (len >= 8 && ((uint32 *)(buf + PS1_CARD_HEADER))[0] == PS1_CARD_MAGIC) {
+        uint8 *p = buf + PS1_CARD_HEADER, *end = p + len;
+        uint32 count = ((uint32 *)p)[1] & 0xFFFF;
+        p += 8;
+        for (uint32 i = 0; i < count && p + sizeof(PS1CardSection) <= end; ++i) {
+            PS1CardSection *sec = (PS1CardSection *)p;
+            p += sizeof(PS1CardSection);
+            if (p + sec->packed > end)
+                break;
+            if (!strncmp(sec->name, filename, sizeof(sec->name))) {
+                found = PS1CardUnpack((uint32 *)p, sec->packed, (uint8 *)buffer, sec->raw, bufSize);
+                break;
+            }
+            p += sec->packed;
+        }
+        if (found)
+            g_ps1CardLoads = g_ps1CardLoads + 1;
+    }
+    PS1StorageTailRelease(DATASET_TMP);
+    return found;
+}
+
+bool32 PS1CardSaveStaged(const char *filename, void *buffer, uint32 raw)
+{
+    uint32 room = PS1UserCardRoom(); // the old file's (0: none)
+    room        = room > PS1_CARD_ROOM ? PS1_CARD_ROOM : room;
+    // the staging: the old file + this section packed (counted first: a table serializes to ~18 KB, mostly zeros)
+    uint32 packed = PS1CardPack((const uint8 *)buffer, raw, NULL);
+    uint32 cap    = (room > PS1_CARD_HEADER + 8 ? room : PS1_CARD_HEADER + 8) + sizeof(PS1CardSection) + packed;
+    uint8 *buf  = PS1CardStage(cap, &buffer);
+    if (!buf)
+        return false;
+    uint8 *c   = buf + PS1_CARD_HEADER;
+    uint32 len = 0;
+    if (!room || PS1UserCardRead(buf, room, &len) || len < 8 || ((uint32 *)c)[0] != PS1_CARD_MAGIC) {
+        g_ps1CardFresh = g_ps1CardFresh + 1; // no file, or one this build can't read: a new one
+        ((uint32 *)c)[0] = PS1_CARD_MAGIC;
+        ((uint32 *)c)[1] = 0;
+        len              = 8;
+    }
+    // drop this file's old section (the later ones move down)
+    uint32 count = ((uint32 *)c)[1] & 0xFFFF, kept = 0;
+    uint8 *p = c + 8, *end = c + len;
+    for (uint32 i = 0; i < count && p + sizeof(PS1CardSection) <= end; ++i) {
+        PS1CardSection *sec = (PS1CardSection *)p;
+        uint32 bytes        = sizeof(PS1CardSection) + sec->packed;
+        if (p + bytes > end)
+            break;
+        if (!strncmp(sec->name, filename, sizeof(sec->name))) {
+            memmove(p, p + bytes, end - (p + bytes));
+            end -= bytes;
+            continue;
+        }
+        p += bytes, ++kept;
+    }
+    // this file's section at the end
+    PS1CardSection *sec = (PS1CardSection *)p;
+    memset(sec->name, 0, sizeof(sec->name));
+    strncpy(sec->name, filename, sizeof(sec->name));
+    sec->raw    = raw;
+    sec->packed = PS1CardPack((const uint8 *)buffer, raw, (uint32 *)(p + sizeof(PS1CardSection)));
+    p += sizeof(PS1CardSection) + sec->packed;
+    ((uint32 *)c)[1] = kept + 1;
+    uint32 total     = (uint32)(p - c);
+    bool32 ok        = false;
+    if (PS1_CARD_HEADER + total > PS1_CARD_ROOM) {
+        g_ps1CardTooBig = g_ps1CardTooBig + 1; // the card keeps the last file
+    }
+    else if (PS1UserCardWrite(buf, total)) {
+        g_ps1CardErrors = g_ps1CardErrors + 1;
+    }
+    else {
+        g_ps1CardSaves   = g_ps1CardSaves + 1;
+        g_ps1CardPayload = total;
+        ok               = true;
+    }
+    PS1StorageTailRelease(DATASET_TMP);
+    return ok;
+}
+
+// The resident copy of the card file (phase 8.4): a load or save reads the card only the first time (a short read: the
+// file's first sectors), every save rewrites the file from it in the background (a write is 2.5 s, a read 2.4 s: a
+// blocking read + write stood the game still ~5 s). A file bigger than the copy goes the staged way.
+#define PS1_CARD_CACHE (2048) // the copy's container room (a typical file: ~200 B; a time-attack row packs to ~60 B)
+uint32 s_ps1CardCache[(PS1_CARD_HEADER + PS1_CARD_CACHE) / 4]; // ps1/memcard's header room, then the container
+uint32 s_ps1CardCacheLen   = 0;                               // its container bytes
+bool s_ps1CardCacheValid   = false;                           // it holds the card's file (or the empty one: none there)
+uint8 *PS1CardCacheC() { return (uint8 *)s_ps1CardCache + PS1_CARD_HEADER; }
+void PS1CardCacheEmpty()
+{
+    ((uint32 *)PS1CardCacheC())[0] = PS1_CARD_MAGIC;
+    ((uint32 *)PS1CardCacheC())[1] = 0;
+    s_ps1CardCacheLen              = 8;
+    s_ps1CardCacheValid            = true;
+}
+bool PS1CardCacheFill() // false: the card can't say (no card / unformatted) or its file is bigger than the copy
+{
+    if (s_ps1CardCacheValid)
+        return true;
+    if (!PS1UserCardRoom()) {
+        if (g_ps1CardLastError != 10) // FileNotFound: a card without our file
+            return false;
+        PS1CardCacheEmpty();
+        return true;
+    }
+    uint32 len = 0, e = PS1UserCardRead((uint8 *)s_ps1CardCache, sizeof(s_ps1CardCache), &len);
+    if (e == 14) // SerializeOverflow: bigger than the copy
+        return false;
+    if (e || len < 8 || ((uint32 *)PS1CardCacheC())[0] != PS1_CARD_MAGIC) {
+        if (e && e != 15) { // (BadData: a file this build can't read is replaced, as a missing one)
+            g_ps1CardErrors = g_ps1CardErrors + 1;
+            return false;
+        }
+        g_ps1CardFresh = g_ps1CardFresh + 1;
+        PS1CardCacheEmpty();
+        return true;
+    }
+    s_ps1CardCacheLen   = len;
+    s_ps1CardCacheValid = true;
+    return true;
+}
+
+bool32 PS1CardLoadUserFile(const char *filename, void *buffer, uint32 bufSize)
+{
+    if (!PS1CardFileOf(filename)) {
+        g_ps1CardSkipped = g_ps1CardSkipped + 1;
+        return false;
+    }
+    if (g_ps1CardOff)
+        return false;
+    if (!PS1CardCacheFill())
+        return g_ps1CardLastError == 14 ? PS1CardLoadStaged(filename, buffer, bufSize) : false;
+    uint8 *p = PS1CardCacheC(), *end = p + s_ps1CardCacheLen;
+    uint32 count = ((uint32 *)p)[1] & 0xFFFF;
+    p += 8;
+    for (uint32 i = 0; i < count && p + sizeof(PS1CardSection) <= end; ++i) {
+        PS1CardSection *sec = (PS1CardSection *)p;
+        p += sizeof(PS1CardSection);
+        if (p + sec->packed > end)
+            break;
+        if (!strncmp(sec->name, filename, sizeof(sec->name))) {
+            bool32 found = PS1CardUnpack((uint32 *)p, sec->packed, (uint8 *)buffer, sec->raw, bufSize);
+            if (found)
+                g_ps1CardLoads = g_ps1CardLoads + 1;
+            return found;
+        }
+        p += sec->packed;
+    }
+    return false;
+}
+
+bool32 PS1CardSaveUserFile(const char *filename, void *buffer, uint32 bufSize)
+{
+    const PS1CardFile *file = PS1CardFileOf(filename);
+    if (!file) {
+        g_ps1CardSkipped = g_ps1CardSkipped + 1;
+        return true;
+    }
+    if (g_ps1CardOff)
+        return false;
+    uint32 raw = file->keep && file->keep < bufSize ? file->keep : bufSize;
+    if (!PS1CardCacheFill())
+        return PS1CardSaveStaged(filename, buffer, raw);
+    PS1UserCardWait(); // the copy may still be on its way to the card
+    // drop this file's old section (the later ones move down), then this one at the end, if the copy holds it
+    uint8 *c = PS1CardCacheC(), *p = c + 8, *end = c + s_ps1CardCacheLen;
+    uint32 count = ((uint32 *)c)[1] & 0xFFFF, kept = 0;
+    for (uint32 i = 0; i < count && p + sizeof(PS1CardSection) <= end; ++i) {
+        PS1CardSection *sec = (PS1CardSection *)p;
+        uint32 bytes        = sizeof(PS1CardSection) + sec->packed;
+        if (p + bytes > end)
+            break;
+        if (!strncmp(sec->name, filename, sizeof(sec->name))) {
+            memmove(p, p + bytes, end - (p + bytes));
+            end -= bytes;
+            continue;
+        }
+        p += bytes, ++kept;
+    }
+    uint32 packed = PS1CardPack((const uint8 *)buffer, raw, NULL);
+    if ((uint32)(p - c) + sizeof(PS1CardSection) + packed > PS1_CARD_CACHE) {
+        s_ps1CardCacheValid = false; // too big for the copy from now on: the staged way (it reads the card's file)
+        return PS1CardSaveStaged(filename, buffer, raw);
+    }
+    PS1CardSection *sec = (PS1CardSection *)p;
+    memset(sec->name, 0, sizeof(sec->name));
+    strncpy(sec->name, filename, sizeof(sec->name));
+    sec->raw    = raw;
+    sec->packed = PS1CardPack((const uint8 *)buffer, raw, (uint32 *)(p + sizeof(PS1CardSection)));
+    p += sizeof(PS1CardSection) + sec->packed;
+    ((uint32 *)c)[1]  = kept + 1;
+    s_ps1CardCacheLen = (uint32)(p - c);
+    if (PS1UserCardWriteAsync((uint8 *)s_ps1CardCache, s_ps1CardCacheLen)) {
+        g_ps1CardErrors = g_ps1CardErrors + 1;
+        return false;
+    }
+    g_ps1CardSaves   = g_ps1CardSaves + 1;
+    g_ps1CardPayload = s_ps1CardCacheLen;
+    return true;
+}
+} // namespace
+
+// GDB test hook (tools/memcard/save_test.sh): at a frame start, g_ps1CardTest 1 = SaveUserFile, 2 = LoadUserFile of file
+// (3 = SaveUserDB of table g_ps1CardTestFile)
+// g_ps1CardTestFile (0 SaveData, 1 Options, 2 TimeAttackDB, 3 Achievements: skipped) with the buffer GDB points at
+// (g_ps1CardTestPtr: the game's own, e.g. &globals->saveRAM) and size; the result in g_ps1CardTestResult
+volatile uint32 g_ps1CardTest = 0, g_ps1CardTestFile = 0, g_ps1CardTestSize = 0, g_ps1CardTestResult = 0;
+void *volatile g_ps1CardTestPtr = NULL;
+void RSDK::SKU::PS1CardTestService()
+{
+    if (g_ps1CardTest == 3) { // SaveUserDB(table g_ps1CardTestFile): the UserDB path (TimeAttackDB)
+        g_ps1CardTestResult = SaveUserDB((uint16)g_ps1CardTestFile, NULL);
+        g_ps1CardTest       = 0;
+        return;
+    }
+    if (!g_ps1CardTest || !g_ps1CardTestPtr)
+        return;
+    const char *name = g_ps1CardTestFile < 3 ? s_ps1CardFiles[g_ps1CardTestFile].name : "Achievements.bin";
+    g_ps1CardTestResult = g_ps1CardTest == 1 ? SaveUserFile(name, g_ps1CardTestPtr, g_ps1CardTestSize)
+                                              : LoadUserFile(name, g_ps1CardTestPtr, g_ps1CardTestSize);
+    g_ps1CardTest = 0;
+}
+#endif
+
 bool32 RSDK::SKU::LoadUserFile(const char *filename, void *buffer, uint32 bufSize)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return PS1CardLoadUserFile(filename, buffer, bufSize); // phase 8: the memory card
+#endif
     if (preLoadSaveFileCB)
         preLoadSaveFileCB();
 
@@ -1112,6 +1478,9 @@ bool32 RSDK::SKU::LoadUserFile(const char *filename, void *buffer, uint32 bufSiz
 }
 bool32 RSDK::SKU::SaveUserFile(const char *filename, void *buffer, uint32 bufSize)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return PS1CardSaveUserFile(filename, buffer, bufSize); // phase 8: the memory card
+#endif
     if (preLoadSaveFileCB)
         preLoadSaveFileCB();
 

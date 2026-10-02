@@ -64,6 +64,7 @@ ps1/gte3d.cpp \
 ps1/fmv.cpp \
 ps1/loading.cpp \
 ps1/memcard.cpp \
+ps1/user_card.cpp \
 ps1/overlay.cpp \
 ps1/vram.cpp \
 
@@ -167,6 +168,13 @@ $(patsubst %.c,%.o,$(wildcard SonicMania/Objects/UFO/*.c)): CPPFLAGS += '-Dabs(n
 # function resident code or another overlay names.
 OVL_FOLDERS = $(shell cat build/gen/ovl/folders.txt 2>/dev/null)
 OVL_OBJS    = $(foreach f,$(OVL_FOLDERS),$(patsubst %.c,%.o,$(shell cat build/gen/ovl/$(f).srcs)))
+# Their header dependencies too (nugget's common.mk makes .dep files for SRCS only): without them 193 overlay objects kept
+# GlobalVariables' offsets from before 7b.3 (atlEntityData 0x1000 -> 0xA40 words) and the Menu read its load statuses
+# 5,888 bytes off, waiting forever behind its fade (found in phase 8, 2026-10-02)
+OVL_DEPS    = $(patsubst %.o,%.dep,$(OVL_OBJS))
+ifneq ($(MAKECMDGOALS), clean)
+-include $(OVL_DEPS)
+endif
 # docs/32 7b: one overlay per folder, or per act for the folders tools/gen_overlays.py SPLIT names (<folder>_<scene>)
 OVL_UNITS   = $(shell cut -d' ' -f1 build/gen/ovl/units.txt 2>/dev/null)
 OVL_BINS    = $(foreach f,$(OVL_UNITS),build/ovl/$(f).bin)

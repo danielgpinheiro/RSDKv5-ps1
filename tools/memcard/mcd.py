@@ -18,6 +18,7 @@ Usage:
                                         verify title, icon (vs tools/memcard/build_icons.py) and
                                         payload (header, CRC, N bytes of (i*7+3)&0xFF)
   mcd.py absent IMAGE NAME              succeed if NAME is not on the card
+  mcd.py msv IMAGE NAME [--dump DIR]    Mania's payload sections (docs/32 phase 8), each unpacked to DIR/<name>
 """
 import os, re, struct, sys, zlib
 
@@ -112,6 +113,37 @@ def payload_data(p):
     return ver, d
 
 
+def msv_sections(d):
+    """Mania's payload (docs/32 phase 8, RSDK/User/Core/UserStorage.cpp): 'MSV1', u16 count, u16 0, then per section
+    name[16], u32 raw, u32 packed, the packed words (u32 tokens: bit 31 = that many zero words, else that many literal
+    words follow). -> [(name, raw bytes, packed bytes, unpacked data)]"""
+    magic, count = struct.unpack_from('<4sH', d, 0)
+    if magic != b'MSV1':
+        raise SystemExit('not an MSV1 payload: %r' % magic)
+    out, p = [], 8
+    for _ in range(count):
+        name = d[p:p + 16].split(b'\0')[0].decode()
+        raw, packed = struct.unpack_from('<II', d, p + 16)
+        p += 24
+        words = struct.unpack_from('<%dI' % (packed // 4), d, p)
+        p += packed
+        data, i = bytearray(), 0
+        while i < len(words):
+            t = words[i]; i += 1
+            if t & 0x80000000:
+                data += bytes(4 * (t & 0x7FFFFFFF))
+            else:
+                for v in words[i:i + t]:
+                    data += struct.pack('<I', v)
+                i += t
+        if len(data) < raw:
+            raise SystemExit('%s: unpacks to %d of %d bytes' % (name, len(data), raw))
+        out.append((name, raw, packed, bytes(data[:raw])))
+    if p != len(d):
+        raise SystemExit('MSV1: %d bytes after the sections' % (len(d) - p))
+    return out
+
+
 def icon_png(f, path):
     from PIL import Image
     im = Image.new('RGBA', (16, 16))
@@ -162,6 +194,16 @@ def main():
         if opt('--data'):
             open(opt('--data'), 'wb').write(payload_data(f['payload'])[1])
         print('%s: title "%s", blocks %s' % (a[2], f['title'], f['blocks'])); return
+    if cmd == 'msv':  # Mania's sections; --dump DIR writes each section's bytes
+        ver, d = payload_data(f['payload'])
+        secs = msv_sections(d)
+        print('%s: title "%s", blocks %s, payload v%d %d B, CRC ok, %d section(s)' % (a[2], f['title'], f['blocks'], ver, len(d), len(secs)))
+        for name, raw, packed, data in secs:
+            print('  %-16s raw %6d B  packed %6d B' % (name, raw, packed))
+            if opt('--dump'):
+                os.makedirs(opt('--dump'), exist_ok=True)
+                open(os.path.join(opt('--dump'), name), 'wb').write(data)
+        return
     if cmd == 'check':
         ok = True
         if opt('--title') is not None and f['title'] != opt('--title'):
