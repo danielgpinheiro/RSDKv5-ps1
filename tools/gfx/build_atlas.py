@@ -259,6 +259,13 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('MSZ/HeavyMystic.bin', None), ('MSZ/Rogues.bin', None)],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'MSZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 7b: OOZ1's Meter Droid, OOZ2's Mega Octus
+                'OOZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('OOZ/MeterDroid.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'OOZ2': {'start': [('Global/TitleCard.bin', None)],
+                         'boss': [('OOZ/MegaOctus.bin', None), ('Eggman/EggmanOOZ.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
@@ -308,6 +315,7 @@ HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              'FBZ/BigSqueeze.bin', 'FBZ/SpiderMobile.bin', 'Eggman/EggmanFBZ.bin', 'PSZ1/Shiversaw.bin',  # 7b
              'SSZ1/HotaruHiWatt.bin', 'SSZ2/MetalSonic.bin', 'SSZ2/GigaMetal.bin', 'SSZ2/MSFactory.bin', 'Eggman/EggmanSSZ.bin',
              'HCZ/ScrewMobile.bin', 'HCZ/DiveEggman.bin', 'Eggman/EggmanHCZ1.bin', 'HCZ/LaundroMobile.bin', 'Eggman/EggmanHCZ2.bin',
+             'OOZ/MeterDroid.bin', 'OOZ/MegaOctus.bin', 'Eggman/EggmanOOZ.bin',
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
