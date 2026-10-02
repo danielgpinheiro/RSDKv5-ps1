@@ -53,7 +53,7 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
 # classes that only another act's scene places and that no code of the act's overlay or of the resident names (their
 # pointer variable or a function). The scene load takes the act's overlay when the resident lists it (ps1OvlUnits); a
 # change of overlay between two acts of one folder is a full stage load (ps1/overlay.cpp PS1OverlayUnitChanges).
-SPLIT = {'CPZ', 'FBZ', 'SSZ2', 'HCZ', 'MSZ'}
+SPLIT = {'CPZ', 'FBZ', 'SSZ2', 'HCZ', 'MSZ', 'MMZ'}
 # 7b.3c: classes an act's overlay leaves out although kept code names them, each reviewed: every such use is in code
 # the act never runs or behind a check of the class's pointer (a left-out class's pointer stays NULL in the resident):
 # FBZ2: FBZSetup finds FBZ1Outro only when CutsceneRules_IsAct1(); Ring.c tests `if (BigSqueeze)`; FBZ1Outro, BigSqueeze
