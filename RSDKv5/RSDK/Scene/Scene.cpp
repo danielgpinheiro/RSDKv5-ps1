@@ -60,6 +60,8 @@ SceneInfo RSDK::sceneInfo;
 #if RETRO_PLATFORM == RETRO_PS1
 volatile uint32 RSDK::g_ps1StageObjectsMissing = 0; // this scene's StageConfig objects not registered (GDB; must be 0)
 volatile uint32 RSDK::g_ps1StageObjectsLeftOut = 0; // 7b: of them, the ones the act's overlay leaves out on purpose
+volatile uint32 RSDK::g_ps1StageObjectsStock   = 0; // 7b.14: of them, names stock never registers (ps1StockAbsentObjects)
+extern "C" const char *const ps1StockAbsentObjects[]; // (the game, Zone.c: NULL-terminated)
 volatile uint32 RSDK::g_ps1ScrollInfoDropped   = 0; // scroll infos past the PS1's 0x80 per layer (GDB; must be 0)
 #endif
 
@@ -382,6 +384,7 @@ void RSDK::LoadSceneFolder()
 #if RETRO_PLATFORM == RETRO_PS1
         g_ps1StageObjectsMissing = 0;
         g_ps1StageObjectsLeftOut = 0;
+        g_ps1StageObjectsStock   = 0;
 #endif
         for (int32 o = 0; o < objectCount; ++o) {
             ReadString(&info, textBuffer);
@@ -403,7 +406,11 @@ void RSDK::LoadSceneFolder()
             // a StageConfig object this build does not register (`make objects STAGES=` without this stage): its
             // entities load as blank ones, the scene half-works (2.5: GHZ1 without its Bridge)
             if (sceneInfo.classCount == before) {
-                if (PS1OverlayLeftOut(textBuffer)) // 7b: not this act's (its scene has none, no kept code names it)
+                bool stock = false;
+                for (const char *const *n = ps1StockAbsentObjects; *n && !stock; ++n) stock = !strcmp(*n, textBuffer);
+                if (stock) // 7b.14: a name the PC skips too (Plus: SaveGame registers only its static variables)
+                    g_ps1StageObjectsStock = g_ps1StageObjectsStock + 1;
+                else if (PS1OverlayLeftOut(textBuffer)) // 7b: not this act's (its scene has none, no kept code names it)
                     g_ps1StageObjectsLeftOut = g_ps1StageObjectsLeftOut + 1;
                 else
                     g_ps1StageObjectsMissing = g_ps1StageObjectsMissing + 1;

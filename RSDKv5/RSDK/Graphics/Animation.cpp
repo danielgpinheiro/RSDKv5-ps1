@@ -131,6 +131,9 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
                 Seek_Cur(&info, animation->frameCount * (1 + 8 * 2 + hitboxCount * 4 * 2)); // (a frame: u8 sheet, 8 i16, hitboxes)
                 animation->frameCount      = 1;
                 animation->frameListOffset = spr->ps1Placeholder;
+                // 7b.14: and loops to it (its stock loopIndex points past the one frame: ProcessAnimation then read a
+                // zero duration past the block and never left its loop: MSZ1k's Knuckles on a Sonic-built atlas)
+                animation->loopIndex = 0;
                 continue;
             }
 #endif

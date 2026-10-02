@@ -1,0 +1,17 @@
+# Credits1: the sprite files (SPR) and sheets (SHT) the scene loads, in load order (tools/gfx/capture_manifests.sh, 2026-10-02)
+SPR UI/UIElements.bin
+SHT UI/UI.gif
+SPR UI/SaveSelect.bin
+SHT UI/SaveSelectEN.gif
+SHT UI/Zones.gif
+SPR UI/SmallFont.bin
+SHT UI/SmallFont1.gif
+SHT UI/SmallFont2.gif
+SPR UI/TextEN.bin
+SHT UI/TextEN.gif
+SHT UI/PauseEN.gif
+SHT UI/TextPlusEN.gif
+SPR UI/WaitSpinner.bin
+SPR UI/CreditsText.bin
+SHT UI/CreditsText.gif
+SHT Credits/Images.gif

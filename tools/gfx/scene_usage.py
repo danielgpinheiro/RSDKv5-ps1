@@ -113,10 +113,17 @@ def function_body(code, fname):
     return code[m.end():i]
 
 
+# 7b.14 (reviewed): stage objects with no entity whose StaticUpdate runs the scene (and creates what it draws): roots.
+# CreditsSetup_StaticUpdate loads the credits and creates their UICreditsText lines. (A general "every StaticUpdate is
+# a root" rule would change the zones' atlases: phase 9b reviews it.)
+STATIC_ROOTS = {'Credits': {'CreditsSetup'}}
+
+
 def active_objects(folder, scene_id, data=DATA):
     names, placed, scene = scene_objects(folder, scene_id, data)
     src = sources()
     known = set(names)
+    placed = set(placed) | (set(STATIC_ROOTS.get(folder, ())) & known)
     pat_create = re.compile(r'CREATE_ENTITY\(\s*(\w+)')
     pat_classid = re.compile(r'(?:CreateEntity|ResetEntity|ResetEntitySlot)\([^;]*?\b(\w+)->classID')
     pat_assign = re.compile(r'classID\s*=\s*(\w+)->classID')

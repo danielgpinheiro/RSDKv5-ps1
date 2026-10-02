@@ -30,6 +30,9 @@ struct PS1EntityHeader {
 // 7b: a stage with the game's ps1TempStageMarker class (the Mean Bean Machine: up to ~150 beans, temp entities that fit
 // a small block) gets PS1_TEMP_BLOCKS_MANY, the same large ones spread over them (every ps1TempLargeEvery-th)
 #define PS1_TEMP_BLOCKS_MANY (0x90)
+// 7b.14: a stage with the game's ps1TempLargeStageMarker class (the credits: their text lines are temp entities of ~1 KB,
+// ~15 live) gets this many temp blocks, every one large
+#define PS1_TEMP_BLOCKS_LARGE (0x30)
 extern int32 ps1TempBlocks, ps1TempLargeEvery; // this stage's
 extern volatile uint32 g_ps1EntityCreateOverwrites; // CreateEntity found no free block in its search: it reset a live one
 

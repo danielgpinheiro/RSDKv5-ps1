@@ -389,7 +389,10 @@ HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HA
 ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10},
                   # 7b: HUD_GetButtonFrame draws the pad's own set (the PS1 pad reports DEVICE_PS4: UIBUTTONPROMPT_PS4 = 3,
                   # RSDK/Input/PS1/PS1InputDevice.cpp) and the icon (0)
-                  'Global/SuperButtons.bin': {0, 3}}
+                  'Global/SuperButtons.bin': {0, 3},
+                  # 7b.14: the credits' fonts and emblems: CreditsSetup picks the animation from each line of Credits.txt
+                  # ("[T..": types 0-7, all used)
+                  'UI/CreditsText.bin': {0, 1, 2, 3, 4, 5, 6, 7}}
 # base Mania (user decision 2026-09-26: no Encore, Mighty, Ray, Competition): animations never placed (None: the whole file)
 SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
               'Players/Mighty.bin': None, 'Players/Ray.bin': None,

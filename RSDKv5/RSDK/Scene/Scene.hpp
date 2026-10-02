@@ -169,6 +169,7 @@ void PS1LoadOverlay(const char *folder, const char *scene); // ps1/overlay.cpp (
 bool32 PS1OverlayUnitChanges(const char *folder, const char *scene); // 7b: another act's overlay (a full stage load)
 bool32 PS1OverlayLeftOut(const char *name);                          // 7b: a StageConfig class the act's overlay leaves out
 extern volatile uint32 g_ps1StageObjectsLeftOut;
+extern volatile uint32 g_ps1StageObjectsStock;
 extern volatile uint32 g_ps1StageObjectsMissing;
 extern volatile uint32 g_ps1ScrollInfoDropped;
 #endif

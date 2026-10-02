@@ -1487,8 +1487,18 @@ const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" },
                                      { "Blank Object", "PhantomKing" },
                                      { "Blank Object", "ERZKing" },
                                      { NULL, NULL } };
+// 7b.14: StageConfig names stock never registers as objects (the engine counts them apart from missing ones): with Plus,
+// SaveGame registers only its static variables (Game.c), and Credits' StageConfig still lists it
+const char *const ps1StockAbsentObjects[] = {
+#if MANIA_USE_PLUS
+    "SaveGame",
+#endif
+    NULL
+};
 // The Mean Bean Machine's beans are temp entities (up to ~150 on the two boards): its stage gets more temp blocks
 const char *const ps1TempStageMarker = "PuyoBean";
+// 7b.14: the credits create their text lines as temp entities (CreditsSetup, PS1): every temp block large there
+const char *const ps1TempLargeStageMarker = "CreditsSetup";
 const PS1ReservedSpec ps1ReservedSpecs[] = {
     { SLOT_PLAYER1, SLOT_PLAYER1, NULL, { "Player" } },
     { 1, 1, NULL, { "Shield", "InvincibleStars", "SuperSparkle" } },

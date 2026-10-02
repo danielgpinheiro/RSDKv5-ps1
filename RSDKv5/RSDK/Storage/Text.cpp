@@ -408,7 +408,12 @@ void RSDK::InitStringList(String *stringList, int32 size)
 {
     uint16 *text = NULL;
 
+#if RETRO_PLATFORM == RETRO_PS1
+    // 7b.14: the strings dataset is 24 KB; a big list (Credits.txt: 38 KB as UTF-16) lives in STG (gone with the scene)
+    AllocateStorage((void **)&text, sizeof(uint16) * size, sizeof(uint16) * size > 8 * 1024 ? DATASET_STG : DATASET_STR, false);
+#else
     AllocateStorage((void **)&text, sizeof(uint16) * size, DATASET_STR, false);
+#endif
 
     for (int32 c = 0; c < size && c < stringList->length; ++c) text[c] = stringList->chars[c];
 

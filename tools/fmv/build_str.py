@@ -7,7 +7,9 @@ Mania's videos (Data/Video/*.ogv: Theora 1024x512, no audio) play over a music s
 (TitleSetup: IntroHP.ogg with Mania.ogv from 0 s, or IntroTee.ogg with the picture 1.8 s late; UIVideo in the Ending
 scenes: BadEnd.ogv then Bad<Character>.ogv from 14 s over BadEnd.ogg, GoodEnd.ogv over GoodEnd.ogg). The PS1 plays each
 *sequence* (pictures + that stream) as one STR, so picture and sound come off the disc together: SEQUENCES below.
-Base Mania only (MREnd / BadMighty / BadRay / BadSonic2 are Mighty / Ray / Encore).
+Base Mania only (MREnd / BadMighty / BadRay / BadSonic2 are Mighty / Ray / Encore). 7b.14: Knuckles' "True End?"
+(UIVideo with TrueEnd.png: LoadImage shows the still 32 s between 1 s fades over TrueEnd.ogg, then the scene goes on 2 s
+later) is a sequence too: the still with its fades baked in, the stream cut where the PC leaves the scene (36 s).
 
 Layout (Sonic CD's player, ps1/video.cpp, unchanged): at 2x CD speed psxavenc -t str with 8-bit 37.8 kHz stereo XA
 reserves 1 sector in 4 for audio; those slots carry XA channel 0 and 1 alternately (4-bit, 1 in 8 each). Mania has one
@@ -48,7 +50,8 @@ WIDTH, HEIGHT = 320, 160
 # The picture is scaled here, not by psxavenc: its own "fit within WxH" scaling left stray 8x8 blocks of bright colour
 # in flat areas (Sonic CD). 1024x512 -> 320x160 exactly.
 SCALE = 'scale=%d:%d:flags=lanczos' % (WIDTH, HEIGHT)
-# name: ([(video, start seconds)], stream, stream start seconds); + PS1Video.bin rows (video, audio, scene id)
+# name: ([(video, start seconds)], stream[, still]); + PS1Video.bin rows (video, audio, scene id). still (7b.14): the one
+# input is Data/Images/<png> shown for `show` s between `fade` s fades (LoadImage), the stream cut at `stream` s
 SEQUENCES = {
     'IntroHP': ([('Mania.ogv', 0.0)], 'IntroHP.ogg'),
     'IntroTee': ([('Mania.ogv', 1.8)], 'IntroTee.ogg'),  # LoadVideo(..., 1.8): the picture 1.8 s into the stream
@@ -56,25 +59,37 @@ SEQUENCES = {
     'EndBT': ([('BadEnd.ogv', 0.0), ('BadTails.ogv', 14.0)], 'BadEnd.ogg'),
     'EndBK': ([('BadEnd.ogv', 0.0), ('BadKnux.ogv', 14.0)], 'BadEnd.ogg'),
     'EndG': ([('GoodEnd.ogv', 0.0)], 'GoodEnd.ogg'),
+    'EndTK': ([('TrueEnd.png', 0.0)], 'TrueEnd.ogg', {'show': 32.0, 'fade': 1.0, 'stream': 36.0}),
 }
 LOOKUP = [('Mania.ogv', 'IntroHP.ogg', '', 'IntroHP'), ('Mania.ogv', 'IntroTee.ogg', '', 'IntroTee'),
           ('BadEnd.ogv', 'BadEnd.ogg', 'BS', 'EndBS'), ('BadEnd.ogv', 'BadEnd.ogg', 'BT', 'EndBT'),
           ('BadEnd.ogv', 'BadEnd.ogg', 'BK', 'EndBK'), ('BadSonic.ogv', '', '', ''), ('BadTails.ogv', '', '', ''),
-          ('BadKnux.ogv', '', '', ''), ('GoodEnd.ogv', 'GoodEnd.ogg', '', 'EndG')]
+          ('BadKnux.ogv', '', '', ''), ('GoodEnd.ogv', 'GoodEnd.ogg', '', 'EndG'),
+          ('TrueEnd.png', 'TrueEnd.ogg', 'TK', 'EndTK')]
 
 
 def compose(data, name, tmp):
     """one sequence -> a Matroska file: its pictures on a black 15 fps timeline + its stream (Sonic CD's input shape)"""
-    videos, stream = SEQUENCES[name]
+    videos, stream = SEQUENCES[name][:2]
+    still = SEQUENCES[name][2] if len(SEQUENCES[name]) > 2 else None
     out = os.path.join(tmp, name + '.mkv')
     cmd = [FFMPEG, '-v', 'error', '-y', '-threads', '1']
     for v, _ in videos:
-        cmd += ['-i', os.path.join(data, 'Video', v)]
+        if still:  # the image looped for its fades + display time
+            cmd += ['-loop', '1', '-framerate', '15', '-t', '%.3f' % (still['show'] + 2 * still['fade']),
+                    '-i', os.path.join(data, 'Images', v)]
+        else:
+            cmd += ['-i', os.path.join(data, 'Video', v)]
+    if still:
+        cmd += ['-t', '%.3f' % still['stream']]
     cmd += ['-i', os.path.join(data, 'Music', stream)]
     parts, chain = [], []
     for k, (v, t0) in enumerate(videos):
         # each video from its start time to the next one's (the last to its end), black before the first
         f = '[%d:v]fps=15,%s,setsar=1,format=yuv420p' % (k, SCALE)
+        if still:  # LoadImage's fades (dimMax 0 -> 1 -> 0 at fadeSpeed / 60 a frame): to and from black
+            f = '[%d:v]fps=15,%s,setsar=1,format=rgb24,fade=t=in:st=0:d=%.3f,fade=t=out:st=%.3f:d=%.3f,format=yuv420p' % (
+                k, SCALE, still['fade'], still['fade'] + still['show'], still['fade'])
         if k == 0 and t0 > 0:
             f += ',tpad=start_duration=%.3f:color=black' % t0
         if k + 1 < len(videos):

@@ -1001,7 +1001,10 @@ uint16 RSDK::LoadSpriteSheet(const char *filename, uint8 scope)
 bool32 RSDK::LoadImage(const char *filename, double displayLength, double fadeSpeed, bool32 (*skipCallback)())
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    return false; // PS1: no runtime PNG/TGA decoding (phase 3/6 convert the images at build time)
+    // PS1: no runtime PNG/TGA decoding. 7b.14: a still the game shows this way (UIVideo's TrueEnd.png) is an STR sequence
+    // built with its display time and fades (tools/fmv/build_str.py EndTK): it plays as a video (false: none on the disc)
+    (void)displayLength, (void)fadeSpeed;
+    return LoadVideo(filename, 0.0, skipCallback);
 #endif
     char fullFilePath[0x100];
     sprintf_s(fullFilePath, sizeof(fullFilePath), "Data/Images/%s", filename);

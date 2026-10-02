@@ -52,6 +52,7 @@ extern "C" const PS1ReservedSpec ps1ReservedSpecs[]; // the game (resident: Soni
 extern "C" const char *const ps1ReservedStageMarker;
 extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes whose Create becomes another class
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
+extern "C" const char *const ps1TempLargeStageMarker; // 7b.14: (Zone.c) a stage with this class: PS1_TEMP_BLOCKS_LARGE, all large
 __attribute__((noinline)) int32 StageClassOf(const char *name)
 {
     RETRO_HASH_MD5(hash);
@@ -800,6 +801,8 @@ void RSDK::PS1SceneEntitiesPlace()
     // 7b: the temp blocks (more in a stage with the game's ps1TempStageMarker class: the Mean Bean Machine's beans)
     ps1TempBlocks     = StageClassOf(ps1TempStageMarker) ? PS1_TEMP_BLOCKS_MANY : PS1_TEMP_BLOCKS;
     ps1TempLargeEvery = ps1TempBlocks / PS1_TEMP_LARGE_COUNT;
+    if (StageClassOf(ps1TempLargeStageMarker)) // 7b.14: every temp block large (the credits' text lines, ~1 KB each)
+        ps1TempBlocks = PS1_TEMP_BLOCKS_LARGE, ps1TempLargeEvery = 1;
     int32 tempLarge   = ps1TempBlocks / ps1TempLargeEvery;
     bytes += (ps1TempBlocks - tempLarge) * (sizeof(PS1EntityHeader) + PS1_TEMP_SMALL_CAP);
     bytes += tempLarge * (sizeof(PS1EntityHeader) + maxCap);

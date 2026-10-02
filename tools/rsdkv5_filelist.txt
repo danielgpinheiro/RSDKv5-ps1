@@ -5266,6 +5266,7 @@ Data/Stages/ZoneM/StageConfig.bin
 Data/Strings/Credits3.txt
 Data/Strings/CreditsK.txt
 Data/Strings/Formats.txt
+Data/Strings/Credits.txt
 Data/Strings/StringsEN.txt
 Data/Strings/StringsFR.txt
 Data/Strings/StringsGE.txt
