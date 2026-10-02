@@ -50,6 +50,7 @@ inline bool PS1ReservedUnused(int32 s) { return s == 13 || s == 14 || s == 38 ||
 // 7b: the stage class named `name` (the game's tables), 0 if none
 extern "C" const PS1ReservedSpec ps1ReservedSpecs[]; // the game (resident: SonicMania/Objects/Global/Zone.c)
 extern "C" const char *const ps1ReservedStageMarker;
+extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes whose Create becomes another class
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
 __attribute__((noinline)) int32 StageClassOf(const char *name)
 {
@@ -59,6 +60,23 @@ __attribute__((noinline)) int32 StageClassOf(const char *name)
         if (HASH_MATCH_MD5(objectClassList[stageObjectIDs[o]].hash, hash))
             return o;
     return 0;
+}
+
+// 7b.7: a scene entity's block: its class, or the larger class its Create turns it into (ps1GrowSpecs)
+uint16 s_growCap[TYPE_COUNT];
+void SceneCapsBegin()
+{
+    memset(s_growCap, 0, sizeof(s_growCap));
+    for (const PS1GrowSpec *g = ps1GrowSpecs; g->from; ++g) {
+        int32 a = StageClassOf(g->from), b = StageClassOf(g->to);
+        if (a && b)
+            s_growCap[a] = (uint16)Align4(objectClassList[stageObjectIDs[b]].entityClassSize);
+    }
+}
+inline uint32 SceneCap(uint16 classID)
+{
+    uint32 c = Align4(objectClassList[stageObjectIDs[classID]].entityClassSize);
+    return s_growCap[classID] > c ? s_growCap[classID] : c;
 }
 
 // 7b: each reserved slot's capacity: in a zone (the stage has the marker's class) the largest class the game's table
@@ -692,6 +710,7 @@ void RSDK::PS1SceneEntitiesPlace()
     uint32 bytes  = 0;
     uint16 resvCap[RESERVE_ENTITY_COUNT];
     ReservedCaps(maxCap, resvCap);
+    SceneCapsBegin();
     for (int32 s = 0; s < RESERVE_ENTITY_COUNT; ++s) bytes += resvCap[s] ? sizeof(PS1EntityHeader) + resvCap[s] : 0;
     int32 placed  = 0;
     for (int32 f = 0; index && f < PS1_SCENE_FILESLOTS && placed < SCENEENTITY_COUNT; ++f) {
@@ -702,7 +721,7 @@ void RSDK::PS1SceneEntitiesPlace()
             continue;
         int32 slot = RESERVE_ENTITY_COUNT + placed;
         if (r->classID) {
-            uint32 classBytes = Align4(objectClassList[stageObjectIDs[r->classID]].entityClassSize);
+            uint32 classBytes = SceneCap(r->classID);
             // 7b: the slots this entity's childCount covers stay entities
             int32 children = s_childVars ? ChildCount(r) : 0;
             for (int32 c = slot + 1; c <= slot + children && c < ENTITY_COUNT; ++c) s_noDormant[c >> 5] |= 1u << (c & 31);
@@ -876,7 +895,7 @@ void RSDK::PS1SceneEntitiesPlace()
             }
         }
         else if (r->classID) {
-            EntityBase *e = Carve(p, slot, Align4(objectClassList[stageObjectIDs[r->classID]].entityClassSize));
+            EntityBase *e = Carve(p, slot, SceneCap(r->classID));
             objectEntityPtr[slot] = e;
             FillEntity(e, PS1EntityCapacity(e), r);
         }

@@ -41,6 +41,9 @@ volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles
 }
 } // namespace RSDK
 
+void PS1ClutRow(const uint16 *row, int32 n, int16 x, int16 y); // (below)
+extern "C" volatile uint32 g_ps1BankTodo;
+
 namespace
 {
 #if PS1_PROFILE
@@ -329,8 +332,67 @@ __attribute__((noinline)) void EmitFlipped(PS1Emit &e, int32 sx, int32 sy, uint3
 // Screen lines [sy, sy + h) showing layer rows [ly, ly + h) (inside one tile row), the line's left edge at layer x.
 // Hot (hundreds of pieces a frame): -O2, the tiles fetched walking the 4x4 chunks (one chunk index per 4 tiles), the
 // tile image read as three halfwords (u | v << 8, texpage, CLUT), every piece written straight into the arena.
+// 7b.7: tiles on a palette bank other than 0 (water, flashes: SetActivePalette). A frame's one extra bank gets copies of
+// the scene's 4-bit tile CLUTs in rows 242-247, X 0-255 (the 256-entry rows of banks 2-7, tools/gfx/vram_plan.py; its own
+// row 240 + bank skipped) and its 256 entries at 240 + bank (8-bit tiles), uploaded into the chain the first time the
+// frame draws a tile row on it (the water hook sets the banks after the frame's start); another bank in the same frame,
+// or more CLUTs than the rows hold, stays bank 0 (counted: g_ps1BankTodo)
+uint32 s_layerFrame = 1, s_extraFrame = 0;
+int32 s_extraBank   = 0;
+bool s_extraOk      = false;
+uint8 s_attrSlot[16 * 20];  // a tile CLUT attribute (rows 240-255, X / 16 < 20) -> its index in PS1TileCluts()
+uint16 s_copyAttr[96];      // index -> its copy's attribute
+const void *s_attrSet = NULL;
+bool PS1BankTiles(int32 bank)
+{
+    if (s_extraFrame == s_layerFrame)
+        return s_extraOk && s_extraBank == bank;
+    s_extraFrame = s_layerFrame, s_extraBank = bank, s_extraOk = false;
+    const PS1TileClut *cl = PS1TileCluts();
+    int32 n               = cl ? PS1TileClutCount() : 0;
+    if (n > 80 || bank <= 0 || bank > 7)
+        return false;
+    if (cl != s_attrSet) {
+        memset(s_attrSlot, 0xFF, sizeof(s_attrSlot));
+        for (int32 c = 0; c < n; ++c)
+            if (cl[c].y >= 240 && cl[c].y < 256 && cl[c].x < 320)
+                s_attrSlot[(cl[c].y - 240) * 20 + (cl[c].x >> 4)] = (uint8)c;
+        s_attrSet = cl;
+    }
+    static uint16 s_row[256];
+    s_row[0] = 0;
+    for (int32 c = 0, r = 242; c < n; ++c) {
+        if (!(c & 15) && c) {
+            if (++r == 240 + bank)
+                ++r;
+        }
+        else if (!c && r == 240 + bank)
+            ++r;
+        for (int32 i = 1; i < 16; ++i) s_row[i] = cl[c].map[i] ? PS1Colour(fullPalette[bank][cl[c].map[i]]) : 0;
+        int16 x       = (int16)((c & 15) << 4);
+        s_copyAttr[c] = (uint16)((uint32)(x >> 4) | (uint32)r << 6);
+        PS1ClutRow(s_row, 16, x, (int16)r);
+    }
+    for (int32 i = 1; i < 256; ++i) s_row[i] = PS1Colour(fullPalette[bank][i]);
+    PS1ClutRow(s_row, 256, 0, (int16)(240 + bank));
+    PS1ChainFlushCache();
+    s_extraOk = true;
+    return true;
+}
+// (the bands only ask: PS1BankTiles uploads, outside any open span, at the layer's start)
+inline bool PS1BankReady(int32 bank) { return s_extraFrame == s_layerFrame && s_extraOk && s_extraBank == bank; }
+inline uint32 PS1BankTileClut(uint32 attr)
+{
+    uint32 y = attr >> 6, k = (y - 240) * 20 + (attr & 63);
+    uint8 c  = k < sizeof(s_attrSlot) ? s_attrSlot[k] : 0xFF;
+    return c < 96 ? s_copyAttr[c] : attr;
+}
+
 __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
+    bool banked = bank && PS1BankReady(bank);
+    if (bank && !banked)
+        g_ps1BankTodo = g_ps1BankTodo + 1;
     uint16 tg              = PS1T();
     const uint16 *tileImage = TileTable();
     const uint8 *images     = s_ps1TileBlob + s_imgOff; // PS1TileImage: u8 u, v; u16 tpage, clut
@@ -374,6 +436,8 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)
             clut = bankClut;
+        else if (banked)
+            clut = PS1BankTileClut(clut);
         tex |= clut << 16;
         ++pieces;
         if (t & 0xC00) {
@@ -442,6 +506,9 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     const uint16 *tileImage = TileTable();
     const uint8 *images     = s_ps1TileBlob + s_imgOff;
     uint32 bankClut         = (uint32)(0 | (240 + bands[0].bank) << 6);
+    bool banked             = bands[0].bank && PS1BankReady(bands[0].bank); // 7b.7
+    if (bands[0].bank && !banked)
+        g_ps1BankTodo = g_ps1BankTodo + 1;
     PS1ColTable *ct         = PS1_COL_TABLE;
     int32 tx                = c0 + dmin;
     if (tx < 0)
@@ -483,6 +550,8 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
         uint32 clut     = *(const uint16 *)(ti + 4);
         if (clut == 0xFFFF)
             clut = bankClut;
+        else if (banked)
+            clut = PS1BankTileClut(clut);
         col->tex   = *(const uint16 *)ti | clut << 16;
         col->pf    = *(const uint16 *)(ti + 2) | (uint32)(t & 0xC00) << 10; // 0x400 -> 0x10 (H), 0x800 -> 0x20 (V), << 16
     }
@@ -774,6 +843,7 @@ void PS1ClutSpliceFull()
 // The frame start of the draw lists: this frame's clear, the CLUTs whose palette entries changed (3.3e)
 void RSDK::PS1LayersFrameBegin()
 {
+    ++s_layerFrame; // 7b.7: this frame's extra bank is uploaded at its first use
     s_clutRecCount = s_colourRecCount = 0; // before the frame start: its clear may record a colour word (4.1b)
     s_ps1Faded = s_fadeRecsLost = false;
     PS1FrameStart(true);
@@ -1013,8 +1083,6 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
         }
         uint8 bank   = gfxLineBuffer[cy];
         int32 h      = 1;
-        if (bank)
-            g_ps1BankTodo = g_ps1BankTodo + 1;
         int32 rowEnd = TILE_SIZE - (ly & 15);
         while (h < rowEnd && cy + h < y2) {
             if constexpr (Direct) { // rows ly + h stay in this tile row: no wrap, always consecutive
@@ -1143,6 +1211,11 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     ScanlineInfo *sl    = &scanlines[y1];
+    for (int32 y = y1; y < y2; ++y) // 7b.7: the frame's extra bank's CLUTs, before any span opens
+        if (gfxLineBuffer[y]) {
+            PS1BankTiles(gfxLineBuffer[y]);
+            break;
+        }
     // 3.3i: every line of [y1, y2) on one palette bank (GHZ: no water): the bands skip the per-line bank checks. 3.3k:
     // the answer is kept until gfxLineBuffer is written again (SetActivePalette, the scene load: ps1LineBankGen)
     static uint32 s_oneBankGen = 0xFFFFFFFF;
@@ -1169,8 +1242,6 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         for (int32 cy = y1; cy < y2;) {
             int32 ly   = (layer->ps1UniformY + cy) % heightPx;
             uint8 bank = gfxLineBuffer[cy];
-            if (bank)
-                g_ps1BankTodo = g_ps1BankTodo + 1;
             int32 h = TILE_SIZE - (ly & 15);
             if (h > y2 - cy)
                 h = y2 - cy;

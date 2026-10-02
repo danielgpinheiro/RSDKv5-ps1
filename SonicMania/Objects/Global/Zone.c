@@ -1476,6 +1476,8 @@ void Zone_Serialize(void) {}
 // dialogs' UI, MSZSetup's fades (17, 32), the replay recorder, the cameras. A class missed here moves its slot to a
 // spare block when it arrives (counted: relocations).
 const char *const ps1ReservedStageMarker = "Zone";
+// 7b.7: scene entities that turn into another class in their Create (DCEvent_Create: a bubble becomes a Water)
+const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" }, { NULL, NULL } };
 // The Mean Bean Machine's beans are temp entities (up to ~150 on the two boards): its stage gets more temp blocks
 const char *const ps1TempStageMarker = "PuyoBean";
 const PS1ReservedSpec ps1ReservedSpecs[] = {

@@ -27,21 +27,21 @@ struct Vector2 {
 
 extern int32 sin1024LookupTable[0x400];
 extern int32 cos1024LookupTable[0x400];
+extern int32 sin512LookupTable[0x200];
+extern int32 cos512LookupTable[0x200];
+extern int32 sin256LookupTable[0x100];
+extern int32 cos256LookupTable[0x100];
+#if RETRO_PLATFORM != RETRO_PS1 // PS1 (docs/32 7b.7): no tan / asin / acos tables, see below
 extern int32 tan1024LookupTable[0x400];
 extern int32 asin1024LookupTable[0x400];
 extern int32 acos1024LookupTable[0x400];
-
-extern int32 sin512LookupTable[0x200];
-extern int32 cos512LookupTable[0x200];
 extern int32 tan512LookupTable[0x200];
 extern int32 asin512LookupTable[0x200];
 extern int32 acos512LookupTable[0x200];
-
-extern int32 sin256LookupTable[0x100];
-extern int32 cos256LookupTable[0x100];
 extern int32 tan256LookupTable[0x100];
 extern int32 asin256LookupTable[0x100];
 extern int32 acos256LookupTable[0x100];
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 // PS1 (docs/32 2.3j): ratio thresholds instead of the 64 KB table (tools/trig/gen_trig.c, checked against every entry)
@@ -56,6 +56,12 @@ void CalculateTrigAngles();
 
 inline int32 Sin1024(int32 angle) { return sin1024LookupTable[angle & 0x3FF]; }
 inline int32 Cos1024(int32 angle) { return cos1024LookupTable[angle & 0x3FF]; }
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 7b.7: neither the game nor the engine calls these (the function table keeps its entries): 0
+inline int32 Tan1024(int32 angle) { return 0; }
+inline int32 ASin1024(int32 angle) { return 0; }
+inline int32 ACos1024(int32 angle) { return 0; }
+#else
 inline int32 Tan1024(int32 angle) { return tan1024LookupTable[angle & 0x3FF]; }
 inline int32 ASin1024(int32 angle)
 {
@@ -73,9 +79,16 @@ inline int32 ACos1024(int32 angle)
         return -acos1024LookupTable[-angle];
     return acos1024LookupTable[angle];
 }
+#endif
 
 inline int32 Sin512(int32 angle) { return sin512LookupTable[angle & 0x1FF]; }
 inline int32 Cos512(int32 angle) { return cos512LookupTable[angle & 0x1FF]; }
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 7b.7: neither the game nor the engine calls these (the function table keeps its entries): 0
+inline int32 Tan512(int32 angle) { return 0; }
+inline int32 ASin512(int32 angle) { return 0; }
+inline int32 ACos512(int32 angle) { return 0; }
+#else
 inline int32 Tan512(int32 angle) { return tan512LookupTable[angle & 0x1FF]; }
 inline int32 ASin512(int32 angle)
 {
@@ -93,9 +106,16 @@ inline int32 ACos512(int32 angle)
         return -acos512LookupTable[-angle];
     return acos512LookupTable[angle];
 }
+#endif
 
 inline int32 Sin256(int32 angle) { return sin256LookupTable[angle & 0xFF]; }
 inline int32 Cos256(int32 angle) { return cos256LookupTable[angle & 0xFF]; }
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 7b.7: neither the game nor the engine calls these (the function table keeps its entries): 0
+inline int32 Tan256(int32 angle) { return 0; }
+inline int32 ASin256(int32 angle) { return 0; }
+inline int32 ACos256(int32 angle) { return 0; }
+#else
 inline int32 Tan256(int32 angle) { return tan256LookupTable[angle & 0xFF]; }
 inline int32 ASin256(int32 angle)
 {
@@ -113,6 +133,7 @@ inline int32 ACos256(int32 angle)
         return -acos256LookupTable[-angle];
     return acos256LookupTable[angle];
 }
+#endif
 
 // Get Arc Tan value
 uint8 ArcTanLookup(int32 x, int32 y);

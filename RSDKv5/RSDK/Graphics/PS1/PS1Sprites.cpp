@@ -500,7 +500,11 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         return;
     g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
 #if PS1_DEBUG_BIGRAM
-    PS1DrawLogAdd(1, (uint8)direction, (uint8)inkEffect, PS1LogAlpha(alpha), frame->ps1U, frame->ps1V, frame->ps1Attr, x, y, w, h);
+    { // 7b.7: the top line's palette bank (bits 4-6: the bank the frame took) and bit 7 when its lines span banks
+        int32 bt = PS1LineBank(y), bb = PS1LineBank(y + h - 1);
+        PS1DrawLogAdd(1, (uint8)(direction | bt << 4 | (bt != bb) << 7), (uint8)inkEffect, PS1LogAlpha(alpha), frame->ps1U, frame->ps1V,
+                      frame->ps1Attr, x, y, w, h);
+    }
 #endif
 }
 

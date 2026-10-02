@@ -60,4 +60,10 @@ typedef struct {
     const char *classes[8];     /* class names, NULL-terminated */
 } PS1ReservedSpec;
 
+/* docs/32 7b.7: a scene entity whose Create resets it into another class (HCZ's DCEvent bubbles become Water) gets a block
+   for the larger of the two (the game's table, Zone.c, by class names; NULL-terminated) */
+typedef struct {
+    const char *from, *to;
+} PS1GrowSpec;
+
 #endif /* PS1_LIMITS_H */

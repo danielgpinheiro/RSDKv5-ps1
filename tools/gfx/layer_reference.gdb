@@ -5,7 +5,7 @@ break RSDK::PS1LayersFrameBegin if g_ps1PerfFrames == REF_FRAME
 commands
 silent
 dump binary memory REF_DIR/mask.bin &RSDK::maskColor ((char*)&RSDK::maskColor)+4
-dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[0][256]
+dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[8][0]
 set $tb = (char*)'(anonymous namespace)::s_ps1TileBlob'
 if $tb != 0
   dump binary memory REF_DIR/tiletable.bin $tb $tb+2048
@@ -21,7 +21,7 @@ eval "dump binary memory REF_DIR/sl_%d_%d.bin (char*)RSDK::scanlines (char*)RSDK
 eval "dump binary memory REF_DIR/lb_%d.bin &RSDK::gfxLineBuffer[0] &RSDK::gfxLineBuffer[240]", $n
 eval "dump binary memory REF_DIR/clip_%d.bin &RSDK::currentScreen->clipBound_X1 ((char*)&RSDK::currentScreen->clipBound_X1)+16", $n
 if $n == 0
-  dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[0][256]
+  dump binary memory REF_DIR/pal.bin &RSDK::fullPalette[0][0] &RSDK::fullPalette[8][0]
   set $tb = (char*)'(anonymous namespace)::s_ps1TileBlob'
   dump binary memory REF_DIR/tiletable.bin $tb $tb+2048
 end

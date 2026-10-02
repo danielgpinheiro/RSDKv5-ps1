@@ -200,7 +200,7 @@ build/gen/trig_tables.inc: tools/trig/gen_trig.c
 RSDKv5/RSDK/Core/Math.o RSDKv5/RSDK/Core/Math.dep: build/gen/trig_tables.inc
 
 # The objects to link (writes ps1/rsdk5_objects.inc + build/gen/game_srcs.txt; rerun after changing STAGES).
-STAGES ?= Logos,Title,Menu,AIZ,GHZCutscene,GHZ,CPZ,SPZ1,SPZ2,FBZ,PSZ1,PSZ2,SSZ1,SSZ2,SpecialBS,UFO1,UFO2,UFO3,UFO4,UFO5,UFO6,UFO7
+STAGES ?= Logos,Title,Menu,AIZ,GHZCutscene,GHZ,CPZ,SPZ1,SPZ2,FBZ,PSZ1,PSZ2,SSZ1,SSZ2,HCZ,SpecialBS,UFO1,UFO2,UFO3,UFO4,UFO5,UFO6,UFO7
 objects:
 	/usr/bin/python3 tools/gen_overlays.py plan --stages $(STAGES)
 

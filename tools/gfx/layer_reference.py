@@ -119,9 +119,15 @@ def modulate(f, m):
     return out
 
 
-def draw_sprite(out, mask, e, vram, cluts, colour):
-    """One draw-log sprite onto out (BGR555 | STP); mask marks its pixels (half-resolution frames: 2)."""
+def draw_sprite(out, mask, e, vram, cluts, colours):
+    """One draw-log sprite onto out (BGR555 | STP); mask marks its pixels (half-resolution frames: 2). The log's direction
+    carries the palette bank the frame took (bits 4-6) and whether its lines span banks (bit 7: the PC changes bank per
+    line, the port per frame: approximate)."""
     _, direction, ink, alpha, u, v, attr, x, y, w, h = e
+    bank, spans, direction = (direction >> 4) & 7, direction & 0x80, direction & 3
+    colour = colours[bank] if bank < len(colours) else colours[0]
+    if spans:
+        mask[max(0, y):max(0, min(240, y + h)), max(0, x):max(0, min(320, x + w))] = 2
     im = ink_mode(ink, alpha)
     if im is None:
         return
@@ -243,7 +249,9 @@ def render(cap, folder, scene_id):
     def clut_colour(c):
         p = ps1_colour(c)
         return p & 0x7FFF if mask_c and c == mask_c and (p & 0x7FFF) else p
-    colour = np.array([0] + [clut_colour(int(c)) for c in pal[1:]], np.uint16)
+    # 7b.7: pal.bin holds the 8 banks (an older capture: bank 0 only); layers take each line's bank, sprites their logged one
+    colours = [np.array([0] + [clut_colour(int(c)) for c in b[1:]], np.uint16) for b in pal.reshape(-1, 256)]
+    colour = colours[0]
     global MASK_PS1
     MASK_PS1 = (ps1_colour(mask_c) & 0x7FFF) if mask_c else None
     # the frame's clear: black; while a mask colour is set the port forces bit 15 over it (4.1b)
@@ -284,7 +292,7 @@ def render(cap, folder, scene_id):
         vram, cluts = atlas_vram(os.path.join(HERE, '..', '..', 'build', 'iso', 'Data', 'Stages', folder, 'Scene%s.atl' % scene_id))
     for kind, path in order:
         if kind == 'sprite':
-            draw_sprite(out, mask, path, vram, cluts, colour)
+            draw_sprite(out, mask, path, vram, cluts, colours)
             continue
         if kind == 'tile':
             draw_tile(out, mask, path, imgs, table, colour)
@@ -419,6 +427,8 @@ def render(cap, folder, scene_id):
                 ly = (sl[y, 1] >> 16) % (ys * 16)
             lx = (x0 + np.arange(320)) % (xs * 16)
             t = tiles[ly >> 4, lx >> 4]
+            bank = 0 if basic else lb[y]  # 7b.7: the line's palette bank (LAYER_BASIC: bank 0, as the PC)
+            lcol = colours[bank] if bank < len(colours) else colour
             for sx in range(320):
                 tt = int(t[sx])
                 if tt == 0xFFFF:
@@ -433,7 +443,7 @@ def render(cap, folder, scene_id):
                     tyy = 15 - tyy
                 p = int(imgs[img][tyy, tx])
                 if p:
-                    out[y, sx] = colour[p]
+                    out[y, sx] = lcol[p]
                     mask[y, sx] = 0
     return out, len(calls), other_bank, mask, nsprites
 
