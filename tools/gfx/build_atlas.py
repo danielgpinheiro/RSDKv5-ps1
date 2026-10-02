@@ -252,7 +252,14 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('HCZ/ScrewMobile.bin', None), ('HCZ/DiveEggman.bin', None), ('Eggman/EggmanHCZ1.bin', None),
                                  ('HCZ/LaundroMobile.bin', None), ('Eggman/EggmanHCZ2.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
-                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 7b: MSZ's Heavy Magician and the Rogues it summons; the boss explosions stay level frames (MSZ1K's
+                # objects use them); Sonic's MSZ1 (the train) shows the Heavy Magician all along: no boss group
+                'MSZ': {'start': [('Global/TitleCard.bin', None)],
+                        'boss': [('MSZ/HeavyMystic.bin', None), ('MSZ/Rogues.bin', None)],
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'MSZ1': {'start': [('Global/TitleCard.bin', None)],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]}}
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
 # scope), by file name or by the sheets an animation's frames use
@@ -324,7 +331,8 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
               'SPZ2/CableWarp.bin', 'SPZ2/LottoMachine.bin', 'SPZ2/FilmReel.bin', 'SPZ2/LottoBall.bin',
               'SPZ2/GreenScreen.bin', 'SPZ2/TVPole.bin',
               # 7b.4: Press Garden's ice (pillars up to 110 px and their 12-frame glint; blocks are ~50 px)
-              'PSZ1/Ice.bin', 'PSZ2/Ice.bin'}
+              'PSZ1/Ice.bin', 'PSZ2/Ice.bin',
+              'MSZ/Sandworm.bin'}  # 7b.8: Mirage Saloon's sandworm (a set piece of big segments)
 # 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
@@ -483,7 +491,7 @@ def select(folder, scene_id, character, files):
     need = U.needed_files(names, active, [p for p, _, _ in files])
     keep_player, _ = U.player_anims(active, names, U.scene_objects(folder, scene_id)[2])
     handles_of = U.file_handles(names)
-    groups = EVENT_GROUPS.get(folder, {})
+    groups = EVENT_GROUPS.get(folder + scene_id, EVENT_GROUPS.get(folder, {}))  # 7b.8: a scene's own entry first
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
     sel, why = {}, {}
     present = folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))

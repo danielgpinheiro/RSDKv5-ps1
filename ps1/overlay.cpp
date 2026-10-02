@@ -45,9 +45,15 @@ int32 s_residentClasses = -1;
 static void PS1OverlayUnit(const char *folder, const char *scene, char *unit)
 {
     sprintf_s(unit, sizeof(g_ps1OvlFolder), "%s_%s", folder, scene);
-    for (const char *const *u = ps1OvlUnits; *u; ++u)
-        if (!strcmp(*u, unit))
+    for (const char *const *u = ps1OvlUnits; *u; ++u) {
+        // 7b.8: the units take the scene files' spelling (Scene1K.bin), GameConfig's ids may differ in case ("1k")
+        const char *a = *u, *b = unit;
+        while (*a && *b && ((*a | 0x20) == (*b | 0x20) || *a == *b)) ++a, ++b;
+        if (!*a && !*b) {
+            sprintf_s(unit, sizeof(g_ps1OvlFolder), "%s", *u);
             return;
+        }
+    }
     sprintf_s(unit, sizeof(g_ps1OvlFolder), "%s", folder);
 }
 
