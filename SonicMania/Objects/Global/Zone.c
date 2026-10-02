@@ -1478,7 +1478,15 @@ void Zone_Serialize(void) {}
 const char *const ps1ReservedStageMarker = "Zone";
 // 7b.7: scene entities that turn into another class in their Create (DCEvent_Create: a bubble becomes a Water)
 // 7b.12: TilePlatform_Create copies w x h tiles into tiles[0x100], past it for big platforms (TMZ1): a whole stock slot
-const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" }, { "TilePlatform", NULL }, { NULL, NULL } };
+// 7b.13: ERZ's bosses reset the blank objects next to them into their arms / hand (KleptoMobile_State_SetupArena: slots
+// -2, -1, +1; PhantomKing, ERZKing: -1, +1) and write through the pointer they took before the reset: the blank slots
+// hold the largest of them (only where the stage has that class)
+const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" },
+                                     { "TilePlatform", NULL },
+                                     { "Blank Object", "KleptoMobile" },
+                                     { "Blank Object", "PhantomKing" },
+                                     { "Blank Object", "ERZKing" },
+                                     { NULL, NULL } };
 // The Mean Bean Machine's beans are temp entities (up to ~150 on the two boards): its stage gets more temp blocks
 const char *const ps1TempStageMarker = "PuyoBean";
 const PS1ReservedSpec ps1ReservedSpecs[] = {

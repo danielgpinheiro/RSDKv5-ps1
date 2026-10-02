@@ -68,11 +68,16 @@ void SceneCapsBegin()
 {
     memset(s_growCap, 0, sizeof(s_growCap));
     for (const PS1GrowSpec *g = ps1GrowSpecs; g->from; ++g) {
-        int32 a = StageClassOf(g->from), b = g->to ? StageClassOf(g->to) : 0;
-        if (a && b)
-            s_growCap[a] = (uint16)Align4(objectClassList[stageObjectIDs[b]].entityClassSize);
-        else if (a && !g->to)
-            s_growCap[a] = (uint16)sizeof(EntityBase);
+        // 7b.13: "Blank Object" = the scene's blank entities (class 0: a ghost slot unless an entry here gives it a block)
+        bool blank = !strcmp(g->from, "Blank Object");
+        int32 a = blank ? 0 : StageClassOf(g->from), b = g->to ? StageClassOf(g->to) : 0;
+        uint32 cap = 0; // 7b.13: several entries for one class: the largest the stage has
+        if ((a || blank) && b)
+            cap = Align4(objectClassList[stageObjectIDs[b]].entityClassSize);
+        else if ((a || blank) && !g->to)
+            cap = sizeof(EntityBase);
+        if (cap > s_growCap[a])
+            s_growCap[a] = (uint16)cap;
     }
 }
 inline uint32 SceneCap(uint16 classID)
@@ -788,6 +793,8 @@ void RSDK::PS1SceneEntitiesPlace()
             if (!r->pad)
                 bytes += sizeof(PS1EntityHeader) + classBytes;
         }
+        else if (s_growCap[0]) // 7b.13: a blank entity the stage's grow entries give a block
+            bytes += sizeof(PS1EntityHeader) + SceneCap(0);
         ++placed;
     }
     // 7b: the temp blocks (more in a stage with the game's ps1TempStageMarker class: the Mean Bean Machine's beans)
@@ -907,12 +914,13 @@ void RSDK::PS1SceneEntitiesPlace()
                 d->flags                       = (uint16)((++scenePosN) << 1);
             }
         }
-        else if (r->classID) {
+        else if (r->classID || s_growCap[0]) { // (7b.13: blank entities too when the stage's grow entries say so)
             EntityBase *e = Carve(p, slot, SceneCap(r->classID));
             objectEntityPtr[slot] = e;
             FillEntity(e, PS1EntityCapacity(e), r);
         }
-        // classID 0 (a class this build does not have): the slot stays a ghost (stock: a blank entity with a position)
+        // classID 0 (a class this build does not have, or a blank entity): the slot stays a ghost (stock: a blank entity
+        // with a position)
         ++slot;
     }
 
