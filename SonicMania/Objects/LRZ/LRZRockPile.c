@@ -9,6 +9,15 @@
 
 ObjectLRZRockPile *LRZRockPile;
 
+#if defined RETRO_PS1_BUILD
+// PS1 (docs/32 7b.10): the debris table LRZRockPile_SetupDebris fills from constants (by type: at most 22 pieces x 6) and
+// LRZRockPile_SpawnRockDebris reads right after, in the same call: one table for every pile, not 768 B in each of them
+static int32 s_ps1RockDebris[22 * 6];
+#define LRZROCKPILE_DEBRIS s_ps1RockDebris
+#else
+#define LRZROCKPILE_DEBRIS self->rockDebrisInfo
+#endif
+
 void LRZRockPile_Update(void)
 {
     RSDK_THIS(LRZRockPile);
@@ -108,205 +117,205 @@ void LRZRockPile_SetupDebris(void)
         case LRZROCKPILE_WALL:
             self->debrisCount = 6;
 
-            self->rockDebrisInfo[0] = 3;
-            self->rockDebrisInfo[1] = 2;
-            self->rockDebrisInfo[2] = -0x10000;
-            self->rockDebrisInfo[3] = -0x190000;
-            self->rockDebrisInfo[4] = FLIP_NONE;
-            self->rockDebrisInfo[5] = 0;
+            LRZROCKPILE_DEBRIS[0] = 3;
+            LRZROCKPILE_DEBRIS[1] = 2;
+            LRZROCKPILE_DEBRIS[2] = -0x10000;
+            LRZROCKPILE_DEBRIS[3] = -0x190000;
+            LRZROCKPILE_DEBRIS[4] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[5] = 0;
 
-            self->rockDebrisInfo[6]  = 3;
-            self->rockDebrisInfo[7]  = 4;
-            self->rockDebrisInfo[8]  = 0;
-            self->rockDebrisInfo[9]  = 0x190000;
-            self->rockDebrisInfo[10] = FLIP_NONE;
-            self->rockDebrisInfo[11] = 0;
+            LRZROCKPILE_DEBRIS[6]  = 3;
+            LRZROCKPILE_DEBRIS[7]  = 4;
+            LRZROCKPILE_DEBRIS[8]  = 0;
+            LRZROCKPILE_DEBRIS[9]  = 0x190000;
+            LRZROCKPILE_DEBRIS[10] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[11] = 0;
 
-            self->rockDebrisInfo[12] = 2;
-            self->rockDebrisInfo[13] = 0;
-            self->rockDebrisInfo[14] = -0x80000;
-            self->rockDebrisInfo[15] = -0x100000;
-            self->rockDebrisInfo[16] = FLIP_NONE;
-            self->rockDebrisInfo[17] = 0;
+            LRZROCKPILE_DEBRIS[12] = 2;
+            LRZROCKPILE_DEBRIS[13] = 0;
+            LRZROCKPILE_DEBRIS[14] = -0x80000;
+            LRZROCKPILE_DEBRIS[15] = -0x100000;
+            LRZROCKPILE_DEBRIS[16] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[17] = 0;
 
-            self->rockDebrisInfo[18] = 2;
-            self->rockDebrisInfo[19] = 2;
-            self->rockDebrisInfo[20] = 0x80000;
-            self->rockDebrisInfo[21] = 0x200000;
-            self->rockDebrisInfo[22] = FLIP_NONE;
-            self->rockDebrisInfo[23] = 0;
+            LRZROCKPILE_DEBRIS[18] = 2;
+            LRZROCKPILE_DEBRIS[19] = 2;
+            LRZROCKPILE_DEBRIS[20] = 0x80000;
+            LRZROCKPILE_DEBRIS[21] = 0x200000;
+            LRZROCKPILE_DEBRIS[22] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[23] = 0;
 
-            self->rockDebrisInfo[24] = 3;
-            self->rockDebrisInfo[25] = 0;
-            self->rockDebrisInfo[26] = -0x10000;
-            self->rockDebrisInfo[27] = -0x20000;
-            self->rockDebrisInfo[28] = FLIP_NONE;
-            self->rockDebrisInfo[29] = 0;
+            LRZROCKPILE_DEBRIS[24] = 3;
+            LRZROCKPILE_DEBRIS[25] = 0;
+            LRZROCKPILE_DEBRIS[26] = -0x10000;
+            LRZROCKPILE_DEBRIS[27] = -0x20000;
+            LRZROCKPILE_DEBRIS[28] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[29] = 0;
 
-            self->rockDebrisInfo[30] = 3;
-            self->rockDebrisInfo[31] = 2;
-            self->rockDebrisInfo[32] = -0x10000;
-            self->rockDebrisInfo[33] = 0xC0000;
-            self->rockDebrisInfo[34] = FLIP_NONE;
-            self->rockDebrisInfo[35] = 0;
+            LRZROCKPILE_DEBRIS[30] = 3;
+            LRZROCKPILE_DEBRIS[31] = 2;
+            LRZROCKPILE_DEBRIS[32] = -0x10000;
+            LRZROCKPILE_DEBRIS[33] = 0xC0000;
+            LRZROCKPILE_DEBRIS[34] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[35] = 0;
             break;
 
         case LRZROCKPILE_FLOOR_TOPSOLID:
         case LRZROCKPILE_FLOOR_ALLSOLID:
             self->debrisCount       = 22;
-            self->rockDebrisInfo[0] = 3;
-            self->rockDebrisInfo[1] = 3;
-            self->rockDebrisInfo[2] = -0x2D0000;
-            self->rockDebrisInfo[3] = 0xB0000;
-            self->rockDebrisInfo[4] = FLIP_X;
-            self->rockDebrisInfo[5] = 9;
+            LRZROCKPILE_DEBRIS[0] = 3;
+            LRZROCKPILE_DEBRIS[1] = 3;
+            LRZROCKPILE_DEBRIS[2] = -0x2D0000;
+            LRZROCKPILE_DEBRIS[3] = 0xB0000;
+            LRZROCKPILE_DEBRIS[4] = FLIP_X;
+            LRZROCKPILE_DEBRIS[5] = 9;
 
-            self->rockDebrisInfo[6]  = 3;
-            self->rockDebrisInfo[7]  = 3;
-            self->rockDebrisInfo[8]  = 0x2D0000;
-            self->rockDebrisInfo[9]  = 0xB0000;
-            self->rockDebrisInfo[10] = FLIP_NONE;
-            self->rockDebrisInfo[11] = 9;
+            LRZROCKPILE_DEBRIS[6]  = 3;
+            LRZROCKPILE_DEBRIS[7]  = 3;
+            LRZROCKPILE_DEBRIS[8]  = 0x2D0000;
+            LRZROCKPILE_DEBRIS[9]  = 0xB0000;
+            LRZROCKPILE_DEBRIS[10] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[11] = 9;
 
-            self->rockDebrisInfo[12] = 3;
-            self->rockDebrisInfo[13] = 3;
-            self->rockDebrisInfo[14] = -0x200000;
-            self->rockDebrisInfo[15] = -0x100000;
-            self->rockDebrisInfo[16] = FLIP_X;
-            self->rockDebrisInfo[17] = 30;
+            LRZROCKPILE_DEBRIS[12] = 3;
+            LRZROCKPILE_DEBRIS[13] = 3;
+            LRZROCKPILE_DEBRIS[14] = -0x200000;
+            LRZROCKPILE_DEBRIS[15] = -0x100000;
+            LRZROCKPILE_DEBRIS[16] = FLIP_X;
+            LRZROCKPILE_DEBRIS[17] = 30;
 
-            self->rockDebrisInfo[18] = 3;
-            self->rockDebrisInfo[19] = 3;
-            self->rockDebrisInfo[20] = 0x200000;
-            self->rockDebrisInfo[21] = -0x100000;
-            self->rockDebrisInfo[22] = FLIP_NONE;
-            self->rockDebrisInfo[23] = 30;
+            LRZROCKPILE_DEBRIS[18] = 3;
+            LRZROCKPILE_DEBRIS[19] = 3;
+            LRZROCKPILE_DEBRIS[20] = 0x200000;
+            LRZROCKPILE_DEBRIS[21] = -0x100000;
+            LRZROCKPILE_DEBRIS[22] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[23] = 30;
 
-            self->rockDebrisInfo[24] = 2;
-            self->rockDebrisInfo[25] = 0;
-            self->rockDebrisInfo[26] = 0;
-            self->rockDebrisInfo[27] = 0x180000;
-            self->rockDebrisInfo[28] = FLIP_XY;
-            self->rockDebrisInfo[29] = 0;
+            LRZROCKPILE_DEBRIS[24] = 2;
+            LRZROCKPILE_DEBRIS[25] = 0;
+            LRZROCKPILE_DEBRIS[26] = 0;
+            LRZROCKPILE_DEBRIS[27] = 0x180000;
+            LRZROCKPILE_DEBRIS[28] = FLIP_XY;
+            LRZROCKPILE_DEBRIS[29] = 0;
 
-            self->rockDebrisInfo[30] = 2;
-            self->rockDebrisInfo[31] = 0;
-            self->rockDebrisInfo[32] = -0x370000;
-            self->rockDebrisInfo[33] = 0x10000;
-            self->rockDebrisInfo[34] = 0;
-            self->rockDebrisInfo[35] = 20;
+            LRZROCKPILE_DEBRIS[30] = 2;
+            LRZROCKPILE_DEBRIS[31] = 0;
+            LRZROCKPILE_DEBRIS[32] = -0x370000;
+            LRZROCKPILE_DEBRIS[33] = 0x10000;
+            LRZROCKPILE_DEBRIS[34] = 0;
+            LRZROCKPILE_DEBRIS[35] = 20;
 
-            self->rockDebrisInfo[36] = 2;
-            self->rockDebrisInfo[37] = 1;
-            self->rockDebrisInfo[38] = -0x300000;
-            self->rockDebrisInfo[39] = 0xF0000;
-            self->rockDebrisInfo[40] = FLIP_NONE;
-            self->rockDebrisInfo[41] = 14;
+            LRZROCKPILE_DEBRIS[36] = 2;
+            LRZROCKPILE_DEBRIS[37] = 1;
+            LRZROCKPILE_DEBRIS[38] = -0x300000;
+            LRZROCKPILE_DEBRIS[39] = 0xF0000;
+            LRZROCKPILE_DEBRIS[40] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[41] = 14;
 
-            self->rockDebrisInfo[42] = 2;
-            self->rockDebrisInfo[43] = 3;
-            self->rockDebrisInfo[44] = -0x220000;
-            self->rockDebrisInfo[45] = 0x180000;
-            self->rockDebrisInfo[46] = FLIP_X;
-            self->rockDebrisInfo[47] = 6;
+            LRZROCKPILE_DEBRIS[42] = 2;
+            LRZROCKPILE_DEBRIS[43] = 3;
+            LRZROCKPILE_DEBRIS[44] = -0x220000;
+            LRZROCKPILE_DEBRIS[45] = 0x180000;
+            LRZROCKPILE_DEBRIS[46] = FLIP_X;
+            LRZROCKPILE_DEBRIS[47] = 6;
 
-            self->rockDebrisInfo[48] = 1;
-            self->rockDebrisInfo[49] = 5;
-            self->rockDebrisInfo[50] = -0x160000;
-            self->rockDebrisInfo[51] = 0x130000;
-            self->rockDebrisInfo[52] = FLIP_NONE;
-            self->rockDebrisInfo[53] = 12;
+            LRZROCKPILE_DEBRIS[48] = 1;
+            LRZROCKPILE_DEBRIS[49] = 5;
+            LRZROCKPILE_DEBRIS[50] = -0x160000;
+            LRZROCKPILE_DEBRIS[51] = 0x130000;
+            LRZROCKPILE_DEBRIS[52] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[53] = 12;
 
-            self->rockDebrisInfo[54] = 2;
-            self->rockDebrisInfo[55] = 0;
-            self->rockDebrisInfo[56] = 3604480;
-            self->rockDebrisInfo[57] = 0x10000;
-            self->rockDebrisInfo[58] = FLIP_X;
-            self->rockDebrisInfo[59] = 20;
+            LRZROCKPILE_DEBRIS[54] = 2;
+            LRZROCKPILE_DEBRIS[55] = 0;
+            LRZROCKPILE_DEBRIS[56] = 3604480;
+            LRZROCKPILE_DEBRIS[57] = 0x10000;
+            LRZROCKPILE_DEBRIS[58] = FLIP_X;
+            LRZROCKPILE_DEBRIS[59] = 20;
 
-            self->rockDebrisInfo[60] = 2;
-            self->rockDebrisInfo[61] = 1;
-            self->rockDebrisInfo[62] = 0x300000;
-            self->rockDebrisInfo[63] = 0xF0000;
-            self->rockDebrisInfo[64] = FLIP_X;
-            self->rockDebrisInfo[65] = 14;
+            LRZROCKPILE_DEBRIS[60] = 2;
+            LRZROCKPILE_DEBRIS[61] = 1;
+            LRZROCKPILE_DEBRIS[62] = 0x300000;
+            LRZROCKPILE_DEBRIS[63] = 0xF0000;
+            LRZROCKPILE_DEBRIS[64] = FLIP_X;
+            LRZROCKPILE_DEBRIS[65] = 14;
 
-            self->rockDebrisInfo[66] = 2;
-            self->rockDebrisInfo[67] = 3;
-            self->rockDebrisInfo[68] = 0x220000;
-            self->rockDebrisInfo[69] = 0x180000;
-            self->rockDebrisInfo[70] = FLIP_NONE;
-            self->rockDebrisInfo[71] = 6;
+            LRZROCKPILE_DEBRIS[66] = 2;
+            LRZROCKPILE_DEBRIS[67] = 3;
+            LRZROCKPILE_DEBRIS[68] = 0x220000;
+            LRZROCKPILE_DEBRIS[69] = 0x180000;
+            LRZROCKPILE_DEBRIS[70] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[71] = 6;
 
-            self->rockDebrisInfo[72] = 1;
-            self->rockDebrisInfo[73] = 5;
-            self->rockDebrisInfo[74] = 0x160000;
-            self->rockDebrisInfo[75] = 0x130000;
-            self->rockDebrisInfo[76] = FLIP_X;
-            self->rockDebrisInfo[77] = 12;
+            LRZROCKPILE_DEBRIS[72] = 1;
+            LRZROCKPILE_DEBRIS[73] = 5;
+            LRZROCKPILE_DEBRIS[74] = 0x160000;
+            LRZROCKPILE_DEBRIS[75] = 0x130000;
+            LRZROCKPILE_DEBRIS[76] = FLIP_X;
+            LRZROCKPILE_DEBRIS[77] = 12;
 
-            self->rockDebrisInfo[78] = 2;
-            self->rockDebrisInfo[79] = 2;
-            self->rockDebrisInfo[80] = -0xA0000;
-            self->rockDebrisInfo[81] = 0x140000;
-            self->rockDebrisInfo[82] = FLIP_NONE;
-            self->rockDebrisInfo[83] = 8;
+            LRZROCKPILE_DEBRIS[78] = 2;
+            LRZROCKPILE_DEBRIS[79] = 2;
+            LRZROCKPILE_DEBRIS[80] = -0xA0000;
+            LRZROCKPILE_DEBRIS[81] = 0x140000;
+            LRZROCKPILE_DEBRIS[82] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[83] = 8;
 
-            self->rockDebrisInfo[84] = 2;
-            self->rockDebrisInfo[85] = 2;
-            self->rockDebrisInfo[86] = 0xA0000;
-            self->rockDebrisInfo[87] = 0x140000;
-            self->rockDebrisInfo[88] = FLIP_X;
-            self->rockDebrisInfo[89] = 7;
+            LRZROCKPILE_DEBRIS[84] = 2;
+            LRZROCKPILE_DEBRIS[85] = 2;
+            LRZROCKPILE_DEBRIS[86] = 0xA0000;
+            LRZROCKPILE_DEBRIS[87] = 0x140000;
+            LRZROCKPILE_DEBRIS[88] = FLIP_X;
+            LRZROCKPILE_DEBRIS[89] = 7;
 
-            self->rockDebrisInfo[90] = 3;
-            self->rockDebrisInfo[91] = 0;
-            self->rockDebrisInfo[92] = -0x310000;
-            self->rockDebrisInfo[93] = -0x110000;
-            self->rockDebrisInfo[94] = FLIP_NONE;
-            self->rockDebrisInfo[95] = 26;
+            LRZROCKPILE_DEBRIS[90] = 3;
+            LRZROCKPILE_DEBRIS[91] = 0;
+            LRZROCKPILE_DEBRIS[92] = -0x310000;
+            LRZROCKPILE_DEBRIS[93] = -0x110000;
+            LRZROCKPILE_DEBRIS[94] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[95] = 26;
 
-            self->rockDebrisInfo[96]  = 3;
-            self->rockDebrisInfo[97]  = 0;
-            self->rockDebrisInfo[98]  = 0xF0000;
-            self->rockDebrisInfo[99]  = -0x110000;
-            self->rockDebrisInfo[100] = FLIP_NONE;
-            self->rockDebrisInfo[101] = 24;
+            LRZROCKPILE_DEBRIS[96]  = 3;
+            LRZROCKPILE_DEBRIS[97]  = 0;
+            LRZROCKPILE_DEBRIS[98]  = 0xF0000;
+            LRZROCKPILE_DEBRIS[99]  = -0x110000;
+            LRZROCKPILE_DEBRIS[100] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[101] = 24;
 
-            self->rockDebrisInfo[102] = 3;
-            self->rockDebrisInfo[103] = 0;
-            self->rockDebrisInfo[104] = -0xF0000;
-            self->rockDebrisInfo[105] = -0x110000;
-            self->rockDebrisInfo[106] = FLIP_X;
-            self->rockDebrisInfo[107] = 24;
+            LRZROCKPILE_DEBRIS[102] = 3;
+            LRZROCKPILE_DEBRIS[103] = 0;
+            LRZROCKPILE_DEBRIS[104] = -0xF0000;
+            LRZROCKPILE_DEBRIS[105] = -0x110000;
+            LRZROCKPILE_DEBRIS[106] = FLIP_X;
+            LRZROCKPILE_DEBRIS[107] = 24;
 
-            self->rockDebrisInfo[108] = 3;
-            self->rockDebrisInfo[109] = 2;
-            self->rockDebrisInfo[110] = 0x310000;
-            self->rockDebrisInfo[111] = -0x110000;
-            self->rockDebrisInfo[112] = FLIP_NONE;
-            self->rockDebrisInfo[113] = 26;
+            LRZROCKPILE_DEBRIS[108] = 3;
+            LRZROCKPILE_DEBRIS[109] = 2;
+            LRZROCKPILE_DEBRIS[110] = 0x310000;
+            LRZROCKPILE_DEBRIS[111] = -0x110000;
+            LRZROCKPILE_DEBRIS[112] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[113] = 26;
 
-            self->rockDebrisInfo[114] = 3;
-            self->rockDebrisInfo[115] = 0;
-            self->rockDebrisInfo[116] = -0x210000;
-            self->rockDebrisInfo[117] = 0x20000;
-            self->rockDebrisInfo[118] = FLIP_NONE;
-            self->rockDebrisInfo[119] = 18;
+            LRZROCKPILE_DEBRIS[114] = 3;
+            LRZROCKPILE_DEBRIS[115] = 0;
+            LRZROCKPILE_DEBRIS[116] = -0x210000;
+            LRZROCKPILE_DEBRIS[117] = 0x20000;
+            LRZROCKPILE_DEBRIS[118] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[119] = 18;
 
-            self->rockDebrisInfo[120] = 3;
-            self->rockDebrisInfo[121] = 0;
-            self->rockDebrisInfo[122] = 0x210000;
-            self->rockDebrisInfo[123] = 0x20000;
-            self->rockDebrisInfo[124] = FLIP_X;
-            self->rockDebrisInfo[125] = 17;
+            LRZROCKPILE_DEBRIS[120] = 3;
+            LRZROCKPILE_DEBRIS[121] = 0;
+            LRZROCKPILE_DEBRIS[122] = 0x210000;
+            LRZROCKPILE_DEBRIS[123] = 0x20000;
+            LRZROCKPILE_DEBRIS[124] = FLIP_X;
+            LRZROCKPILE_DEBRIS[125] = 17;
 
-            self->rockDebrisInfo[126] = 3;
-            self->rockDebrisInfo[127] = 1;
-            self->rockDebrisInfo[128] = 0;
-            self->rockDebrisInfo[129] = 0x80000;
-            self->rockDebrisInfo[130] = FLIP_NONE;
-            self->rockDebrisInfo[131] = 16;
+            LRZROCKPILE_DEBRIS[126] = 3;
+            LRZROCKPILE_DEBRIS[127] = 1;
+            LRZROCKPILE_DEBRIS[128] = 0;
+            LRZROCKPILE_DEBRIS[129] = 0x80000;
+            LRZROCKPILE_DEBRIS[130] = FLIP_NONE;
+            LRZROCKPILE_DEBRIS[131] = 16;
             break;
     }
 }
@@ -323,12 +332,12 @@ void LRZRockPile_SpawnRockDebris(int32 x, int32 y, int32 velX, int32 velY)
     int32 destroyDelay = 0;
     if (RSDK.CheckSceneFolder("LRZ1")) {
         for (int32 i = 0; i < self->debrisCount; ++i) {
-            int32 animationID = self->rockDebrisInfo[(i * 6) + 0];
-            int32 frameID     = self->rockDebrisInfo[(i * 6) + 1];
-            int32 offsetX     = self->rockDebrisInfo[(i * 6) + 2];
-            int32 offsetY     = self->rockDebrisInfo[(i * 6) + 3];
-            int32 direction   = self->rockDebrisInfo[(i * 6) + 4];
-            int32 delay       = self->rockDebrisInfo[(i * 6) + 5];
+            int32 animationID = LRZROCKPILE_DEBRIS[(i * 6) + 0];
+            int32 frameID     = LRZROCKPILE_DEBRIS[(i * 6) + 1];
+            int32 offsetX     = LRZROCKPILE_DEBRIS[(i * 6) + 2];
+            int32 offsetY     = LRZROCKPILE_DEBRIS[(i * 6) + 3];
+            int32 direction   = LRZROCKPILE_DEBRIS[(i * 6) + 4];
+            int32 delay       = LRZROCKPILE_DEBRIS[(i * 6) + 5];
 
             if (!offsetX && !offsetY)
                 break;

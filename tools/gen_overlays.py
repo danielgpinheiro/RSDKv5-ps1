@@ -70,6 +70,11 @@ FORCE_DROP = {('FBZ', '2'): {'FBZ1Outro', 'BigSqueeze', 'FBZTrash'}}
 STAGELOAD_EFFECTS = re.compile(r'\bRand\(|ZONE_RAND|callbacks\[|\bZone->\w+(\[[^]]*\])?\s*=[^=]|SetLimitedFade|LoadPalette|'
                                r'SetActivePalette|CopyTileLayer|SetTile\(|SetDrawGroupProperties|'
                                r'stageFinishCallback|Soundboard_LoadSfx\([^;]*Music')
+# 7b.10: objects a folder's overlay links for their helper functions without registering the class (reviewed: the
+# helpers touch no state of their own object): LRZ1Setup checks the player's lava / conveyor tiles and LRZ1's conveyor
+# objects find their buttons through LRZ2Setup_GetTileInfo / LRZ2Setup_SetupTagLink (LRZ2Setup is no LRZ1 object: its
+# functions were unlinked stubs there)
+LINK_ONLY = {'LRZ1': ['LRZ2Setup']}
 SAFE_DROP = {'CPZBoss', 'FBZStorm', 'DNARiser', 'BigSqueeze', 'LaundroMobile', 'ScrewMobile'}
 
 
@@ -178,7 +183,8 @@ def plan(argv):
         objs = [o for o in F.read_stageconfig(p)['objects'] if o in srcs and o not in res] if os.path.exists(p) else []
         if objs:
             folders.append(st)
-            open(os.path.join(OVL, st + '.srcs'), 'w').write('\n'.join(srcs[o] for o in objs) + '\n')
+            link_only = [srcs[o] for o in LINK_ONLY.get(st, []) if o in srcs and o not in objs and o not in res]
+            open(os.path.join(OVL, st + '.srcs'), 'w').write('\n'.join([srcs[o] for o in objs] + link_only) + '\n')
             open(os.path.join(OVL, st + '.objs'), 'w').write('\n'.join(objs) + '\n')
     open(os.path.join(OVL, 'folders.txt'), 'w').write('\n'.join(folders) + '\n')
     with open(os.path.join(OVL, 'units.txt'), 'w') as f:
@@ -415,7 +421,7 @@ def stubs(argv):
         all_names = open(os.path.join(OVL, fo + '.objs')).read().split()
         objs_names, dropped = unit_members(fo, sid, all_names, res_undef)
         open(os.path.join(OVL, un + '.objs'), 'w').write('\n'.join(objs_names) + '\n')
-        keep_o = {o for o in ovl_def[fo] if os.path.basename(o)[:-2] in objs_names}
+        keep_o = {o for o in ovl_def[fo] if os.path.basename(o)[:-2] in objs_names or os.path.basename(o)[:-2] in LINK_ONLY.get(fo, [])}
         fills, syms = [], []
         for o, d in ovl_def[fo].items():
             if o not in keep_o:

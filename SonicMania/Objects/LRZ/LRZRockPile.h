@@ -33,7 +33,9 @@ struct EntityLRZRockPile {
 #if MANIA_USE_PLUS
     bool32 onlyMighty;
 #endif
+#if !defined RETRO_PS1_BUILD // PS1 (docs/32 7b.10): one static table (LRZRockPile.c): SpawnRockDebris fills and reads it
     int32 rockDebrisInfo[32 * 6];
+#endif
     uint8 debrisCount;
     int32 timer;
     int32 destroyTimer;

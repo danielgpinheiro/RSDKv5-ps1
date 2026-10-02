@@ -90,7 +90,8 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
   Act overlays may leave out classes kept code names only in act-only or pointer-checked code (`FORCE_DROP`, reviewed);
   they never leave out setups or classes whose StageLoad has global effects (`keeps_effects`, `SAFE_DROP` reviewed).
   Review each overlay's left-out list (boot log `ACTOVL`, `build/gen/ovl/<unit>_reg.c`): pictures cannot show a
-  missing StageLoad (FBZ1 once ran without FBZSetup).
+  missing StageLoad (FBZ1 once ran without FBZSetup). After a build, `tools/ovl_stub_check.py` lists calls an overlay
+  makes into functions it lacks (unfilled stubs: `g_ps1UnlinkedCalls`); link real ones with `LINK_ONLY` (LRZ1).
 - **Layouts (7b.3)**: chunk index → 8-chunk segments → 4×4 chunks (4 row ids) → 4-tile rows, all deduplicated per scene
   by `tools/data_disc.py` (self-checked); read tiles through `PS1ChunkRow` / `PS1ChunkIdx` / `PS1ChunkTiles` /
   `PS1TilePtr`, write only through `PS1SetTile` (copy-on-write at each level).
