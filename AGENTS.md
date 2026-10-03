@@ -109,6 +109,11 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
 - **Overlay objects have header dependencies** (`OVL_DEPS` in the Makefile, phase 8): before it, a header change left
   overlay objects stale (the Menu read globals 5,888 B off). After touching a shared header, `make` must recompile the
   overlay objects; check with the `.dep` files.
+- **foreach_all class ranges (9.4a)**: `GetAllEntities` walks only a class's [lo, hi] (`ps1ClassLo/Hi`, a superset kept by
+  `PS1ClassNote`). Any new code that writes an entity slot's `classID` outside the engine's create / reset / copy paths
+  (game code included) must call `PS1ClassNoteEntity(entity)` after the write; prove a change with
+  `make EXTRA_CPPFLAGS=-DPS1_CHECK_FOREACH=1` (touch `RSDKv5/RSDK/Scene/Object.cpp` first: the flag has no stamp) and
+  `g_ps1ForeachWrong` = 0 over the boots.
 - **Sprite bindings (7b.12)**: a frame is stored full, half or quarter resolution (`PS1_ATLAS_SHIFT`; quarter = half bit +
   CLUT field from 0x140, build_atlas `QUARTER`, for backdrops no plan step fits: TMZ's Monarch). Frames past the GPU's
   primitive size are drawn as their on-screen part (`PS1DrawFrame`).
