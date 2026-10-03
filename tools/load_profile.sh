@@ -60,7 +60,7 @@ cat <<GDBEOF
 break perfTick if g_ps1PerfFrames == $STOP
 commands
 silent
-printf "DONE vbl=%u frame=%u requests=%u sectors=%u streams=%u localHits=%u\n", g_ps1PerfVsyncs, g_ps1PerfFrames, g_ps1FsRequests, g_ps1FsSectors, g_ps1FsStreamStarts, g_ps1FsLocalHits
+printf "DONE vbl=%u frame=%u requests=%u sectors=%u streams=%u localHits=%u sfxBanks=%u sfxKept=%u sfxErrors=%u\n", g_ps1PerfVsyncs, g_ps1PerfFrames, g_ps1FsRequests, g_ps1FsSectors, g_ps1FsStreamStarts, g_ps1FsLocalHits, g_ps1SfxBanks, g_ps1SfxBanksKept, g_ps1SfxBankErrors
 quit
 end
 continue

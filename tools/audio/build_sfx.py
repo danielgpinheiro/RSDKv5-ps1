@@ -14,13 +14,14 @@ scene are logged to build/sfx_rates.txt (the listening check).
 Sources: Data/SoundFX/**/*.wav (8 / 16-bit PCM or float, mono or stereo), read here to mono 16-bit PCM; psxavenc encodes
 `-t vag` (48-byte header, data padded to 64 bytes with a trailing loop-trap block).
 
-Bank (little endian): 'PSF5', u16 count, u16 pad; count x (char name[40] (NUL-padded SFX path as LoadSfx gets it),
+Bank (little endian): 'PSF6', u16 count, u16 pad, u32 CRC-32 of the table and the data (docs/32 9.3: a bank equal to the
+one in SPU RAM is not uploaded again); count x (char name[40] (NUL-padded SFX path as LoadSfx gets it),
 u32 offset, u32 size, u32 rate, u32 frames at 44.1 kHz) (56 B each); then the sample data (each a multiple of 64 bytes:
 SPU DMA). Each bank is read back and compared.
 
 Usage: build_sfx.py SRC_DATA_DIR OUT_DATA_DIR [FOLDER ...]   (needs psxavenc; PS1_SFX_BANK_CAP=bytes)
 """
-import os, struct, subprocess, sys, tempfile
+import os, struct, subprocess, sys, tempfile, zlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -118,15 +119,16 @@ def write_bank(path, entries):
         assert len(nb) < NAME_LEN, name
         table += ENTRY.pack(nb, len(blob), len(data), rate, frames44)
         blob += data
-    out = b'PSF5' + struct.pack('<HH', len(entries), 0) + table + blob
+    out = b'PSF6' + struct.pack('<HHI', len(entries), 0, zlib.crc32(bytes(table + blob))) + table + blob
     os.makedirs(os.path.dirname(path), exist_ok=True)
     open(path, 'wb').write(out)
     back = open(path, 'rb').read()
     n = struct.unpack_from('<H', back, 4)[0]
-    base = 8 + ENTRY.size * n
+    base = 12 + ENTRY.size * n
+    assert struct.unpack_from('<I', back, 8)[0] == zlib.crc32(back[12:]), path
     assert n == len(entries)
     for k, (name, rate, frames44, data) in enumerate(entries):
-        nb, off, size, r2, f2 = ENTRY.unpack_from(back, 8 + ENTRY.size * k)
+        nb, off, size, r2, f2 = ENTRY.unpack_from(back, 12 + ENTRY.size * k)
         assert nb.rstrip(b'\0').decode() == name and (r2, f2) == (rate, frames44) and size % 64 == 0, path
         assert back[base + off:base + off + size] == data, path
     return len(blob)

@@ -105,9 +105,10 @@ def sets(data, folders=None):
         linked = set(objs)
         scenes = scene_objects(data, folder, objs)
         # base Mania's scenes only: GameConfig's entries with filter 0 (presentation) or the Mania bit (2)
-        inscope = {sc_['id'] for c in gc['categories'] for sc_ in c['scenes']
+        # (ids compare case-insensitively: GameConfig says MSZ "1k", the file is Scene1K.bin; the disc index ignores case)
+        inscope = {sc_['id'].lower() for c in gc['categories'] for sc_ in c['scenes']
                    if sc_['folder'] == folder and (sc_['filter'] == 0 or sc_['filter'] & 2)}
-        scenes = {k: v for k, v in scenes.items() if k in inscope}
+        scenes = {k: v for k, v in scenes.items() if k.lower() in inscope}
         placed_any = set().union(*scenes.values()) if scenes else set()
         # stage code that runs without entities: the folder's *Setup objects (the rest are created by live code)
         setup = {o for o in set(sc['objects']) - placed_any if o.endswith('Setup')}

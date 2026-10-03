@@ -11,6 +11,7 @@
 // channel stops.
 extern "C" {
 volatile uint32 g_ps1SfxBanks      = 0; // banks uploaded (total)
+volatile uint32 g_ps1SfxBanksKept  = 0; // of them: equal to the one in SPU RAM, not uploaded (docs/32 9.3)
 volatile uint32 g_ps1SfxBankBytes  = 0; // the last bank's sample bytes
 volatile uint32 g_ps1SfxBankErrors = 0; // a bank missing / bad / over SPU RAM
 volatile uint32 g_ps1SfxPlays      = 0; // voice key-ons (total)
@@ -35,6 +36,7 @@ int16 s_voiceSound[CHANNEL_COUNT]; // the SFX the voice plays (-1: none)
 uint32 s_voicePlay[CHANNEL_COUNT]; // its channel's playIndex
 uint32 s_voiceFrom[CHANNEL_COUNT]; // its SPU start address (a loop re-keys from its loop point)
 char s_bankPath[0x40];             // the bank in SPU RAM (a reload of the same scene keeps it: ~1.7 s of reading)
+uint32 s_bankCrc;                  // its contents' CRC-32 (docs/32 9.3: another scene's equal bank keeps the samples)
 
 // docs/32 5.2: the stream channel the CD-XA music follows (PlayStream -> LoadStream -> PS1StreamStart)
 int8 s_xaChannel = -1, s_xaTrack = -1;
@@ -101,14 +103,14 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
         g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
         return;
     }
-    uint32 head[2];
+    uint32 head[3];
     ReadBytes(&info, head, sizeof(head));
     uint32 count = head[1] & 0xFFFF;
     // the table, then the samples through DATASET_TMP's memory (empty at LoadSceneAssets' start, after the tiles)
     DataStorage *tmp     = &dataStorage[DATASET_TMP];
     PS1SfxEntry *table   = (PS1SfxEntry *)tmp->memoryTable;
     uint32 tableBytes    = count * sizeof(PS1SfxEntry);
-    if (head[0] != ('P' | 'S' << 8 | 'F' << 16 | (uint32)'5' << 24) || tableBytes + 4096 > tmp->storageLimit) {
+    if (head[0] != ('P' | 'S' << 8 | 'F' << 16 | (uint32)'6' << 24) || tableBytes + 4096 > tmp->storageLimit) {
         CloseFile(&info);
         g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
         return;
@@ -124,12 +126,17 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
         g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
         return;
     }
+    // docs/32 9.3: the same samples as the bank in SPU RAM (the Blue Spheres stages, a UFO's two acts, ...): bind only
+    bool same = head[2] && head[2] == s_bankCrc;
+    s_bankCrc = 0;
     uint8 *buf      = (uint8 *)tmp->memoryTable + ((tableBytes + 63) & ~63u);
     uint32 bufBytes = (tmp->storageLimit - ((tableBytes + 63) & ~63u)) & ~63u;
     bool verify = g_ps1SfxVerify != 0;
     if (verify)
         bufBytes = (bufBytes / 2) & ~63u;
-    for (uint32 done = 0; done < dataBytes; done += bufBytes) {
+    if (same)
+        g_ps1SfxBanksKept = g_ps1SfxBanksKept + 1;
+    for (uint32 done = same ? dataBytes : 0; done < dataBytes; done += bufBytes) {
         uint32 n = dataBytes - done < bufBytes ? dataBytes - done : bufBytes;
         ReadBytes(&info, buf, n);
         PS1SpuWrite(PS1_SPU_SAMPLE_START + done, buf, n);
@@ -156,6 +163,7 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
     g_ps1SfxBanks     = g_ps1SfxBanks + 1;
     g_ps1SfxBankBytes = dataBytes;
     strcpy(s_bankPath, path);
+    s_bankCrc = head[2];
 }
 
 void RSDK::PS1StreamQueue(int32 c)
