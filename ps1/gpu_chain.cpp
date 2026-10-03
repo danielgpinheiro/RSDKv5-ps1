@@ -81,7 +81,8 @@ struct VarFragment {
     size_t getActualFragmentSize() const { return words; }
 };
 
-uint32_t *s_arenaMem = nullptr; // s_arenaWords (heap), nullptr while suspended
+uint32_t *s_arenaMem = nullptr; // s_arenaMemWords (heap); kept while suspended: lent to the CD windows (docs/32 9.2)
+uint32_t s_arenaMemWords = 0;
 uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // smaller while an FMV plays (PS1ChainSetArenaWords)
 bool s_waitIdle = false; // the frame has not written the arena yet: the last frame's DMA may still read it
 void (*s_hook)() = nullptr;
@@ -198,8 +199,13 @@ static bool s_suspended = false;
 
 void PS1ChainBegin(psyqo::GPU &gpu) {
     s_gpu = &gpu;
+    if (s_arenaMem && s_arenaMemWords != s_arenaWords && !s_suspended) { // (an FMV's smaller arena: PS1ChainSetArenaWords)
+        psyqo_free(s_arenaMem);
+        s_arenaMem = nullptr;
+    }
     if (!s_arenaMem && !s_suspended) {
-        s_arenaMem = (uint32_t *)psyqo_malloc(s_arenaWords * 4);
+        s_arenaMem      = (uint32_t *)psyqo_malloc(s_arenaWords * 4);
+        s_arenaMemWords = s_arenaMem ? s_arenaWords : 0;
         PS1NoteAlloc(s_arenaMem, s_arenaWords * 4); // docs/32 4.2a: the heap headroom counter missed the arena
     }
     if (!s_arenaMem) {
@@ -252,11 +258,19 @@ void PS1ChainSuspend() {
     if (s_cur != s_base || s_inExtra) // this frame already chained something psyqo points at: keep the arenas
         return;
     PS1GpuImmediate(); // the previous frame's chain may still be DMA'd from the arena
-    psyqo_free(s_arenaMem);
-    s_arenaMem  = nullptr;
+    // docs/32 9.2: the arena is lent to the load's CD read-ahead windows (PS1ChainLent), not freed: freed, small
+    // allocations of the load (FILEs) landed between the windows in its hole and it could not come back (no chain)
     s_base = s_cur = s_end = nullptr;
     s_suspended = true;
     g_ps1ChainSuspends = g_ps1ChainSuspends + 1;
+}
+
+// The suspended arena's memory for the CD windows during a load (nullptr: none to lend)
+uint8_t *PS1ChainLent(uint32_t *bytes) {
+    if (!s_suspended || !s_arenaMem)
+        return nullptr;
+    *bytes = s_arenaMemWords * 4;
+    return (uint8_t *)s_arenaMem;
 }
 
 void PS1ChainSetArenaWords(uint32_t words) { s_arenaWords = words ? words : PS1_CHAIN_ARENA_WORDS; }

@@ -1,6 +1,9 @@
 #include "RSDK/Core/RetroEngine.hpp"
 
 using namespace RSDK;
+#if RETRO_PLATFORM == RETRO_PS1
+void PS1FsSetLoadFolder(const char *folder); // ps1/cdrom_fs.cpp (docs/32 9.2: stage-local copies)
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 #endif
@@ -190,6 +193,10 @@ void RSDK::LoadSceneFolder()
     RunModCallbacks(MODCB_ONSTAGEUNLOAD, NULL);
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+    // docs/32 9.2: the folder whose PS1Local copies this load reads (ps1/cdrom_fs.cpp)
+    PS1FsSetLoadFolder(sceneInfo.listData[sceneInfo.listPos].folder);
+#endif
     sceneInfo.timeCounter  = 0;
     sceneInfo.minutes      = 0;
     sceneInfo.seconds      = 0;

@@ -54,7 +54,11 @@ public:
     T *Append()
     {
         if (count == length) {
+#if RETRO_PLATFORM == RETRO_PS1
+            length += 8; // docs/32 9.2: the lists stay short (the user-file requests: 32 entries took 2.9 KB of the reserve)
+#else
             length += 32;
+#endif
             size_t len         = sizeof(T) * length;
             T *entries_realloc = (T *)realloc(entries, len);
 

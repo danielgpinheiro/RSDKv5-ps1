@@ -46,12 +46,13 @@ static uint8_t *s_sec;
  * as needed, freed after each load (PS1FsReleaseWindows from PS1LoadingEnd) or at fclose outside a
  * load. 16 sectors: with the stream a window no longer costs a request (R11A 6.93 s vs 6.69 s with
  * 32), and the load peak keeps 82 KB more heap. */
-#define WINDOW_SECTORS 16
-#define WINDOWS        3
+#define WINDOW_SECTORS 8 // Mania (docs/32 9.2): the load lends only the chain arenas' 60 KB: 16-sector windows left one, and
+#define WINDOWS        3 // the stream paused (and restarted: +0.2 s) at every window; three of 8 sectors let it run ahead
 struct Window {
     uint8_t *buf;
     volatile uint32_t lba, count, age; // lba/count also written by the load stream's IRQ
     volatile bool ahead;               // filled by the load stream, not yet read
+    bool lent;                         // a slice of the suspended chain arena (docs/32 9.2): never freed here
 };
 static Window s_win[WINDOWS];
 static bool readViaWindows(uint32_t lba, uint32_t bytes, uint8_t *dst);
@@ -59,6 +60,7 @@ static uint32_t s_winClock    = 0;
 static uint32_t s_volumeEnd   = 0; // sectors in the volume (PVD): read-ahead never goes past it
 volatile uint32_t g_ps1FsWindowHits  = 0; // buffered reads served from a window (GDB)
 volatile uint32_t g_ps1FsWindowFills = 0; // window misses (one CD request each)
+volatile uint32_t g_ps1FsWindowsUp   = 0; // window buffers allocated (GDB: how many a load gets)
 volatile uint32_t g_ps1FsFallbackReads = 0; // reads through the 1-sector fallback (no heap for a window)
 // When the heap can't hold a window (outside a load the renderer's chain arenas live there too,
 // ps1/gpu_chain), reads go through this one-sector buffer: slower, never short.
@@ -453,17 +455,25 @@ static void loadIndex() {
     uint32_t lba, size;
     if (!findEntry("PS1FILES.IDX", &lba, &size, false) || size < 16)
         return;
-    uint32_t sectors = (size + ISO_SECTOR - 1) / ISO_SECTOR;
-    uint8_t *buf     = (uint8_t *)malloc(sectors * ISO_SECTOR);
+    // docs/32 9.2: exactly `size` bytes (it stays for good in the init reserve, beside the chain arena): the whole sectors
+    // straight in, the last one's part through the directory cache
+    uint32_t whole = size / ISO_SECTOR, rest = size % ISO_SECTOR;
+    uint8_t *buf   = (uint8_t *)malloc(size);
     if (!buf)
         return;
     uint32_t count = 0;
-    if (!cdRead(lba, sectors, buf) || memcmp(buf, "FIX1", 4) || 16 + 12 * (count = le32(buf + 4)) > size) {
+    if ((whole && !cdRead(lba, whole, buf)) || (rest && !readSector(lba + whole))) {
+        free(buf);
+        return;
+    }
+    if (rest)
+        memcpy(buf + whole * ISO_SECTOR, s_sec, rest);
+    if (memcmp(buf, "FIX1", 4) || 16 + 12 * (count = le32(buf + 4)) > size) {
         free(buf);
         return;
     }
     memmove(buf, buf + 16, 12 * count);
-    s_index      = (IndexEntry *)buf; // the unused tail of the last sector stays allocated (< 2 KB)
+    s_index      = (IndexEntry *)buf;
     s_indexCount = count;
 }
 
@@ -552,6 +562,69 @@ int PS1FsPreloadDir(const char *dir, uint32_t maxSize) {
     return loaded;
 }
 
+/* Stage-local copies (docs/32 phase 9.2, tools/disc/stage_local.py; Sonic 2's scheme): while a folder loads, a shared
+ * file it opens (the Global / Players / UI sprites, the static-variable files, the strings, the meshes) is read from its
+ * copy in Data/Stages/<folder>/PS1Local/, laid out between the folder's own files in load order, instead of from its own
+ * place (a seek each). The copies are not in PS1FILES.IDX (it lives in RAM from boot: 1,544 more entries took the chain
+ * arena's room): the folder's PS1Local.idx ('FIX1', {FNV-1a 32 of the lowercase path the game opens, lba, size} sorted)
+ * is read at the load's start into the chain arena it lends (after the windows' slices) and searched there. */
+bool PS1LoadingActive(); // ps1/loading.cpp
+uint8_t *PS1ChainLent(uint32_t *bytes); // gpu_chain.cpp
+volatile uint32_t g_ps1FsFastLoad   = 1; // GDB A/B: 0 = no stage-local copies (initialised data: set before the game runs)
+volatile uint32_t g_ps1FsLocalHits  = 0; // opens served by a stage-local copy (GDB)
+volatile uint32_t g_ps1FsLocalTable = 0; // entries in the loading folder's table (GDB; 0: none / no room)
+static const uint32_t *s_localIdx = nullptr; // {hash, lba, size} sorted by hash, valid during the load only
+static uint32_t s_localCount      = 0;
+void PS1FsSetLoadFolder(const char *folder) {
+    s_localIdx = nullptr, s_localCount = 0, g_ps1FsLocalTable = 0;
+    char path[48];
+    uint32_t lba, size, lentBytes = 0;
+    uint8_t *lent = PS1ChainLent(&lentBytes);
+    uint32_t used = WINDOWS * WINDOW_SECTORS * ISO_SECTOR; // the windows' slices come first
+    if (!folder || !g_ps1FsFastLoad || !lent || lentBytes <= used
+        || snprintf(path, sizeof(path), "Data/Stages/%s/PS1Local.idx", folder) >= (int)sizeof(path)
+        || !findFile(path, &lba, &size) || size < 16 || size > lentBytes - used)
+        return;
+    FILE *f = fopen(path, "rb");
+    if (!f)
+        return;
+    uint8_t *buf = lent + used;
+    size_t got   = fread(buf, 1, size, f);
+    fclose(f);
+    if (got != size || memcmp(buf, "FIX1", 4))
+        return;
+    uint32_t n;
+    memcpy(&n, buf + 4, 4);
+    if (16 + 12 * n > size)
+        return;
+    s_localIdx = (const uint32_t *)(buf + 16), s_localCount = n, g_ps1FsLocalTable = n;
+}
+static bool findLocal(const char *path, uint32_t *lba, uint32_t *size) {
+    if (!s_localIdx || !PS1LoadingActive())
+        return false;
+    uint32_t h = 0x811C9DC5u;
+    for (const char *c = path; *c; ++c) {
+        uint8_t ch = (uint8_t)*c;
+        if (ch >= 'A' && ch <= 'Z')
+            ch += 'a' - 'A';
+        h = (h ^ ch) * 0x01000193u;
+    }
+    for (uint32_t lo = 0, hi = s_localCount; lo < hi;) {
+        uint32_t mid = (lo + hi) / 2;
+        const uint32_t *e = s_localIdx + 3 * mid;
+        if (e[0] == h) {
+            *lba = e[1], *size = e[2];
+            g_ps1FsLocalHits = g_ps1FsLocalHits + 1;
+            return true;
+        }
+        if (e[0] < h)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return false;
+}
+
 FILE *fopen(const char *path, const char *mode) {
     (void)mode;
     uint32_t lba, size;
@@ -580,7 +653,7 @@ FILE *fopen(const char *path, const char *mode) {
     // One CD action at a time: CD-XA music reads continuously; scripts stop it before loads,
     // this is the safety net (counted in g_ps1XaForcedStops).
     PS1XaStopForFileRead();
-    if (!findFile(path, &lba, &size))
+    if (!findLocal(path, &lba, &size) && !findFile(path, &lba, &size))
         return nullptr;
     FILE *f = (FILE *)malloc(sizeof(FILE));
     if (!f)
@@ -595,9 +668,12 @@ FILE *fopen(const char *path, const char *mode) {
 
 void PS1FsReleaseWindows() {
     lsClose();
+    s_localIdx = nullptr, s_localCount = 0; // (it lived in the lent arena: the load is over)
     s_curWin = -1;
     for (auto &w : s_win) {
-        free(w.buf);
+        if (!w.lent)
+            free(w.buf);
+        w.lent  = false;
         w.buf   = nullptr;
         w.lba   = 0;
         w.count = 0;
@@ -638,21 +714,43 @@ static bool readViaWindows(uint32_t lba, uint32_t bytes, uint8_t *dst) {
 }
 
 // One more window buffer for the load stream (its IRQ may move into it once it is visible).
-static void growWindows() {
-    for (auto &w : s_win) {
-        if (w.buf)
-            continue;
-        uint8_t *buf = (uint8_t *)malloc(WINDOW_SECTORS * ISO_SECTOR);
-        if (!buf)
-            return;
-        w.count = 0;
-        w.age   = 0;
-        w.ahead = false;
-        psyqo::Kernel::fastEnterCriticalSection();
-        w.buf = buf;
-        psyqo::Kernel::fastLeaveCriticalSection();
-        return;
+uint8_t *PS1ChainLent(uint32_t *bytes); // gpu_chain.cpp
+
+// docs/32 9.2: a window's buffer: during a load a slice of the chain arena it lends (one block, nothing freed: separate
+// allocations fragmented its hole and the arena could not come back), else the heap. False: none
+static bool windowAlloc(int i) {
+    Window &w = s_win[i];
+    if (w.buf)
+        return true;
+    uint32_t lentBytes = 0;
+    uint8_t *lent      = PS1LoadingActive() ? PS1ChainLent(&lentBytes) : nullptr;
+    uint8_t *buf       = nullptr;
+    bool fromLent      = false;
+    if (lent) {
+        if ((uint32_t)(i + 1) * WINDOW_SECTORS * ISO_SECTOR > lentBytes)
+            return false;
+        buf = lent + i * WINDOW_SECTORS * ISO_SECTOR, fromLent = true;
     }
+    else if (!(buf = (uint8_t *)malloc(WINDOW_SECTORS * ISO_SECTOR))) {
+        return false;
+    }
+    w.count = 0;
+    w.age   = 0;
+    w.ahead = false;
+    w.lent  = fromLent;
+    psyqo::Kernel::fastEnterCriticalSection();
+    w.buf = buf;
+    psyqo::Kernel::fastLeaveCriticalSection();
+    g_ps1FsWindowsUp = g_ps1FsWindowsUp + 1;
+    return true;
+}
+
+static void growWindows() {
+    for (int i = 0; i < WINDOWS; ++i)
+        if (!s_win[i].buf) {
+            windowAlloc(i);
+            return;
+        }
 }
 
 // During a load: the window holding `sector` from the load stream, waiting for it when the stream is
@@ -702,7 +800,7 @@ static Window *streamWindowFor(uint32_t sector) {
         for (int i = 0; i < WINDOWS; ++i)
             if (victim < 0 || s_win[i].age < s_win[victim].age)
                 victim = i;
-        if (!s_win[victim].buf && !(s_win[victim].buf = (uint8_t *)malloc(WINDOW_SECTORS * ISO_SECTOR))) {
+        if (!s_win[victim].buf && !windowAlloc(victim)) {
             victim = -1;
             for (int i = 0; i < WINDOWS; ++i)
                 if (s_win[i].buf && (victim < 0 || s_win[i].age < s_win[victim].age))
@@ -731,9 +829,11 @@ static Window *windowFor(uint32_t sector) {
         if (w.age < victim->age)
             victim = &w;
     }
-    if (!victim->buf && !(victim->buf = (uint8_t *)malloc(WINDOW_SECTORS * ISO_SECTOR))) {
-        if (s_fallback.count && sector == s_fallback.lba)
-            return &s_fallback;
+    // (the fallback's sector first: a small read loop asked malloc for a window once per call, 7,190 failed tries for
+    // the Menu's 7 KB strings reload at 2 MB, docs/32 9.2)
+    if (!victim->buf && s_fallback.count && sector == s_fallback.lba)
+        return &s_fallback;
+    if (!victim->buf && !windowAlloc((int)(victim - s_win))) {
         s_fallback.count = 0;
         if (!cdRead(sector, 1, s_fallback.buf))
             return nullptr;

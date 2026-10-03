@@ -184,9 +184,25 @@ def main():
         if name.upper() == build_disc.IDX_NAME:
             table = b''.join(user(el + k) for k in range((sz + 2047) // 2048))[:sz]
             real = lambda n: src_files[n.lower()].replace(os.sep, '/') if n.lower() in src_files else n
-            want = build_disc.index_bytes([(real(n), lba, s_) for n, lba, s_ in files if '/' in n])
+            local = lambda n: '/ps1local/' in n.lower()  # docs/32 9.2: the copies are in their folder's PS1Local.idx
+            want = build_disc.index_bytes([(real(n), lba, s_) for n, lba, s_ in files if '/' in n and not local(n)])
             if table != want:
                 err('%s does not match the directory tree' % name)
+            # each folder's table: its copies' (name hash, lba, size), sorted
+            folders = {}
+            for fn, flba, fsz in files:
+                if local(fn):
+                    folders.setdefault(os.path.dirname(os.path.dirname(fn)).lower(), []).append(
+                        (int(os.path.splitext(os.path.basename(fn))[0], 16), flba, fsz))
+            for folder, rows in folders.items():
+                ent = [e for e in files if e[0].lower() == folder + '/ps1local.idx']
+                if not ent:
+                    err('%s: no PS1Local.idx' % folder)
+                    continue
+                t = b''.join(user(ent[0][1] + k) for k in range((ent[0][2] + 2047) // 2048))[:ent[0][2]]
+                rows.sort()
+                if t != struct.pack('<4sIII', b'FIX1', len(rows), 0, 0) + b''.join(struct.pack('<III', *r) for r in rows):
+                    err('%s/PS1Local.idx does not match its copies' % folder)
             compared += 1
             continue
         if name.upper() == 'SYSTEM.CNF':

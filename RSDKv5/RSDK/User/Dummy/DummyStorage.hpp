@@ -4,7 +4,11 @@
 struct DummyFileInfo {
     void (*callback)(int32 status);
     int32 type;
+#if RETRO_PLATFORM == RETRO_PS1
+    char path[32]; // docs/32 9.2: the user files' names are 16 characters at most (TimeAttackDB.bin)
+#else
     char path[64];
+#endif
     void *fileBuffer;
     int32 fileSize;
     int32 storageTime;

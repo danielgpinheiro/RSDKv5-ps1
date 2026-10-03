@@ -205,7 +205,8 @@ def main():
     tree.append('\t\t\t<file name="PSX.EXE" source=%s date="%s"/>' % (quoteattr(exe), DISC_DATE))
     files, n_ordered = layout(iso_root)
     idx = os.path.join(work, IDX_NAME)
-    open(idx, 'wb').write(bytes(16 + 12 * len(files)))  # placeholder: final size, LBAs after mastering
+    is_local = lambda rel: '/ps1local/' in rel.replace(os.sep, '/').lower()  # docs/32 9.2: in the folders' own tables
+    open(idx, 'wb').write(bytes(16 + 12 * len([f for f in files if not is_local(f)])))  # placeholder: LBAs after mastering
     tree.append('\t\t\t<file name="%s" source=%s date="%s"/>' % (IDX_NAME, quoteattr(idx), DISC_DATE))
     left_out = [f for f in disc_files(iso_root) if excluded(f)]
     left_bytes = sum(os.path.getsize(os.path.join(iso_root, f)) for f in left_out)
@@ -237,8 +238,24 @@ def main():
     entries = [e for e in iso_walk(out + '.bin')[0] if '/' in e[0]]
     if len(entries) != len(files):
         sys.exit('ERROR: %d files in the image, %d laid out' % (len(entries), len(files)))
-    table = index_bytes([(real.get(n.lower(), n), lba, sz) for n, lba, sz in entries])
+    table = index_bytes([(real.get(n.lower(), n), lba, sz) for n, lba, sz in entries if not is_local(n)])
     open(idx, 'wb').write(table)
+    # docs/32 9.2: each folder's PS1Local.idx (its placeholder is in the tree: same size), keyed by the copy's name (the
+    # FNV-1a 32 of the path the game opens: tools/disc/stage_local.py)
+    local = {}
+    for n, lba, sz in entries:
+        if is_local(n):
+            folder = os.path.dirname(os.path.dirname(real.get(n.lower(), n)))
+            local.setdefault(folder, []).append((int(os.path.splitext(os.path.basename(n))[0], 16), lba, sz))
+    for folder, rows in local.items():
+        path = os.path.join(iso_root, folder, 'PS1Local.idx')
+        rows.sort()
+        if len(set(r[0] for r in rows)) != len(rows):
+            sys.exit('ERROR: %s: copy name collision' % folder)
+        blob = struct.pack('<4sIII', b'FIX1', len(rows), 0, 0) + b''.join(struct.pack('<III', *r) for r in rows)
+        if os.path.getsize(path) != len(blob):
+            sys.exit('ERROR: %s: placeholder size %d != %d' % (path, os.path.getsize(path), len(blob)))
+        open(path, 'wb').write(blob)
     master(xml_path, out + '.bin', lic)
     again, user = iso_walk(out + '.bin')
     if sorted(e for e in again if '/' in e[0]) != sorted(entries):
