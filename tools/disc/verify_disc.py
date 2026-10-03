@@ -184,16 +184,17 @@ def main():
         if name.upper() == build_disc.IDX_NAME:
             table = b''.join(user(el + k) for k in range((sz + 2047) // 2048))[:sz]
             real = lambda n: src_files[n.lower()].replace(os.sep, '/') if n.lower() in src_files else n
-            local = lambda n: '/ps1local/' in n.lower()  # docs/32 9.2: the copies are in their folder's PS1Local.idx
+            local = lambda n: build_disc.local_entry(n, real(n)) is not None  # docs/32 9.2 / 9b.1: in their folder's PS1Local.idx
             want = build_disc.index_bytes([(real(n), lba, s_) for n, lba, s_ in files if '/' in n and not local(n)])
             if table != want:
                 err('%s does not match the directory tree' % name)
             # each folder's table: its copies' (name hash, lba, size), sorted
             folders = {}
             for fn, flba, fsz in files:
-                if local(fn):
-                    folders.setdefault(os.path.dirname(os.path.dirname(fn)).lower(), []).append(
-                        (int(os.path.splitext(os.path.basename(fn))[0], 16), flba, fsz))
+                le = build_disc.local_entry(fn, real(fn))
+                if le:
+                    folders.setdefault(os.path.dirname(fn).lower() if '/ps1local/' not in fn.lower() else
+                                       os.path.dirname(os.path.dirname(fn)).lower(), []).append((le[1], flba, fsz))
             for folder, rows in folders.items():
                 ent = [e for e in files if e[0].lower() == folder + '/ps1local.idx']
                 if not ent:

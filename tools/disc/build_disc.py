@@ -35,7 +35,7 @@ Usage: build_disc.py [ISO_ROOT] [EXE] [LICENSE|none] [OUT_PREFIX]
   LICENSE none = no license data (the disc boots in emulators, on ODEs and modded consoles only)
   defaults: build/iso rsdkv5.ps-exe ../LICENSE.DAT build/game
 """
-import os, struct, subprocess, sys
+import re, os, struct, subprocess, sys
 from xml.sax.saxutils import quoteattr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -99,6 +99,18 @@ def layout(iso_root):
 
 
 IDX_NAME = 'PS1FILES.IDX'
+
+
+def local_entry(n, real_path):
+    """(folder, key) when the disc file `n` (its source path `real_path`) goes in its folder's PS1Local.idx instead of
+    PS1FILES.IDX (docs/32 9.2: the stage-local copies, keyed by their names; 9b.1: the other characters' atlases, read
+    only while their folder loads, keyed by their path), else None"""
+    low, real_path = n.replace(os.sep, '/').lower(), real_path.replace(os.sep, '/')
+    if '/ps1local/' in low:
+        return os.path.dirname(os.path.dirname(real_path)), int(os.path.splitext(os.path.basename(n))[0], 16)
+    if re.search(r'/scene[^/]*_(tails|knux)\.(atl|pda)$', low):
+        return os.path.dirname(real_path), path_hash(real_path)
+    return None
 
 
 def path_hash(path):
@@ -205,7 +217,7 @@ def main():
     tree.append('\t\t\t<file name="PSX.EXE" source=%s date="%s"/>' % (quoteattr(exe), DISC_DATE))
     files, n_ordered = layout(iso_root)
     idx = os.path.join(work, IDX_NAME)
-    is_local = lambda rel: '/ps1local/' in rel.replace(os.sep, '/').lower()  # docs/32 9.2: in the folders' own tables
+    is_local = lambda rel: local_entry(rel, rel) is not None  # docs/32 9.2 / 9b.1: in the folders' own tables
     open(idx, 'wb').write(bytes(16 + 12 * len([f for f in files if not is_local(f)])))  # placeholder: LBAs after mastering
     tree.append('\t\t\t<file name="%s" source=%s date="%s"/>' % (IDX_NAME, quoteattr(idx), DISC_DATE))
     left_out = [f for f in disc_files(iso_root) if excluded(f)]
@@ -244,9 +256,9 @@ def main():
     # FNV-1a 32 of the path the game opens: tools/disc/stage_local.py)
     local = {}
     for n, lba, sz in entries:
-        if is_local(n):
-            folder = os.path.dirname(os.path.dirname(real.get(n.lower(), n)))
-            local.setdefault(folder, []).append((int(os.path.splitext(os.path.basename(n))[0], 16), lba, sz))
+        le = local_entry(n, real.get(n.lower(), n))
+        if le:
+            local.setdefault(le[0], []).append((le[1], lba, sz))
     for folder, rows in local.items():
         path = os.path.join(iso_root, folder, 'PS1Local.idx')
         rows.sort()

@@ -207,12 +207,32 @@ def player_anim_values():
     return val
 
 
+def player_anim_owners():
+    """9b.1: ANI_* alias name -> the character whose ability poses it names (Player.h's '<Char> Ability Anim Aliases'
+    sections: the same ABILITY_n slots are Tails' swimming and Knuckles' climbing poses)"""
+    t = open(os.path.join(REPO, 'SonicMania', 'Objects', 'Global', 'Player.h')).read()
+    owners, cur = {}, None
+    for line in t[t.index('ANI_IDLE'):t.index('} PlayerAnimationIDs')].split('\n'):
+        m = re.search(r'//\s*(\w+) Ability Anim Aliases', line)
+        if m:
+            cur = m.group(1).lower()
+            continue
+        m = re.match(r'\s*(ANI_\w+)\s*=', line)
+        if m and cur:
+            owners[m.group(1)] = cur
+    return owners
+
+
 # 7b: an ANI_ name a `case` label or a comparison names sets no animation (Player.c's switch on Tails' tail poses)
 NONSET = re.compile(r'case\s+ANI_\w+\s*:|[!=<>]=\s*ANI_\w+|ANI_\w+\s*[!=<>]=|[<>]\s*ANI_\w+|ANI_\w+\s*[<>](?!=)')
 # 7b: poses one object's code sets only for some entities or with some other object (reviewed in the code):
 # (object, ANI) -> ('never',) / ('active', {objects}) / ('var', editable variable, {values of some scene entity})
 POSE_GATES = {('Player', 'ANI_HANG'): ('never',),                   # a sidekick Tails carrying the leader (one character)
               ('Player', 'ANI_DROWN'): ('active', {'Water'}),       # Water.c sets PLAYER_DEATH_DROWN
+              # 9b.1: Tails' swimming poses need player->underwater, which only Water.c sets (MSZ1's Tails atlas fits)
+              ('Player', 'ANI_SWIM'): ('active', {'Water'}),
+              ('Player', 'ANI_SWIM_TIRED'): ('active', {'Water'}),
+              ('Player', 'ANI_SWIM_LIFT'): ('active', {'Water'}),
               ('Player', 'ANI_FLUME'): ('active', {'HCZSetup'}),    # Player_State_WaterSlide: HCZSetup's slides
               ('Platform', 'ANI_TWISTER'): ('var', 'collision', {8}),    # PLATFORM_C_SOLID_HOLD
               ('Platform', 'ANI_TURNTABLE'): ('var', 'collision', {14})}  # PLATFORM_C_SOLID_BARREL
@@ -248,11 +268,16 @@ def boss_only_poses(active, names, boss_files):
     return {val[a] for a, objs in setters.items() if a in val and objs and objs <= boss_objs}
 
 
-def player_anims(active, names, scene=None):
+def player_anims(active, names, scene=None, character=None):
+    """the player animation IDs the scene's code can set; with `character` (9b.1: Tails' / Knuckles' atlases), another
+    character's ability aliases don't count (their slots are this character's other poses)"""
+    owners = player_anim_owners() if character else {}
     used = set()
     for f in code_closure(active, set(names), sources()):
         obj = os.path.basename(f)[:-2]
         for a in set(re.findall(r'\bANI_\w+\b', NONSET.sub(' ', code_of(f)))):
+            if owners.get(a, character) != character:
+                continue
             g = POSE_GATES.get((obj, a))
             if g is None or gate_open(g, obj, active, scene):
                 used.add(a)

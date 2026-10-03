@@ -139,6 +139,35 @@ void RSDK::PS1AtlasRelease()
     s_ps1PdaCount = 0;
 }
 
+// 9b.1: a zone's scene has an atlas per character (tools/gfx/build_atlas.py: Scene<N>.atl Sonic's, Scene<N>_tails / _knux
+// the others', each with its .pda); a presentation scene has one for all. The character: the game's globals->playerID
+// (its first character: the low byte), at the offset SonicMania/Objects/Global/Zone.c exports
+extern "C" const int32 ps1GlobalsPlayerIDOffset;
+void PS1FsPin(const char *path); // ps1/cdrom_fs.cpp: the file stays found after the load (group swaps reopen it)
+static const char *PS1AtlasCharSuffix()
+{
+    if (!globalVarsPtr)
+        return "";
+    int32 id = *(const int32 *)((const uint8 *)globalVarsPtr + ps1GlobalsPlayerIDOffset) & 0xFF;
+    return id == (1 << 1) ? "_tails" : id == (1 << 2) ? "_knux" : ""; // ID_TAILS, ID_KNUCKLES (GameVariables.h)
+}
+// The scene's file `ext` for the character, else the scene's one (Sonic's, or every character's); its path in s_atlasPath
+static bool PS1AtlasOpen(FileInfo *info, const char *folder, const char *sceneID, const char *ext)
+{
+    const char *suf = PS1AtlasCharSuffix();
+    if (*suf) {
+        sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s%s.%s", folder, sceneID, suf, ext);
+        InitFileInfo(info);
+        if (LoadFile(info, s_atlasPath, FMODE_RB)) {
+            PS1FsPin(s_atlasPath); // (only in the loading folder's table: tools/disc/build_disc.py local_entry)
+            return true;
+        }
+    }
+    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.%s", folder, sceneID, ext);
+    InitFileInfo(info);
+    return LoadFile(info, s_atlasPath, FMODE_RB);
+}
+
 bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
 {
     PS1AtlasRelease();
@@ -149,9 +178,7 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
 
     FileInfo info;
     // 7b: the dropped animations first (kept until the next load: LoadSpriteAnimation reads them)
-    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.pda", folder, sceneID);
-    InitFileInfo(&info);
-    if (LoadFile(&info, s_atlasPath, FMODE_RB)) {
+    if (PS1AtlasOpen(&info, folder, sceneID, "pda")) {
         uint32 head[2];
         ReadBytes(&info, head, sizeof(head));
         uint32 bytes = (uint32)info.fileSize - sizeof(head);
@@ -162,9 +189,7 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
         }
         CloseFile(&info);
     }
-    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.atl", folder, sceneID);
-    InitFileInfo(&info);
-    if (!LoadFile(&info, s_atlasPath, FMODE_RB)) {
+    if (!PS1AtlasOpen(&info, folder, sceneID, "atl")) {
         s_atlasPath[0] = 0;
         return false;
     }

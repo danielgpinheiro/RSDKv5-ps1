@@ -625,6 +625,23 @@ static bool findLocal(const char *path, uint32_t *lba, uint32_t *size) {
     return false;
 }
 
+// 9b.1: a file of the loading folder's table opened again after the load (the scene's atlas, for its group swaps: the
+// other characters' atlases are only in their folder's table), its place kept here
+static char s_pinPath[64];
+static uint32_t s_pinLba = 0, s_pinSize = 0;
+void PS1FsPin(const char *path) {
+    uint32_t lba, size;
+    s_pinPath[0] = 0;
+    if (strlen(path) < sizeof(s_pinPath) && findLocal(path, &lba, &size))
+        strcpy(s_pinPath, path), s_pinLba = lba, s_pinSize = size;
+}
+static bool findPin(const char *path, uint32_t *lba, uint32_t *size) {
+    if (!s_pinPath[0] || strcmp(path, s_pinPath))
+        return false;
+    *lba = s_pinLba, *size = s_pinSize;
+    return true;
+}
+
 FILE *fopen(const char *path, const char *mode) {
     (void)mode;
     uint32_t lba, size;
@@ -653,7 +670,7 @@ FILE *fopen(const char *path, const char *mode) {
     // One CD action at a time: CD-XA music reads continuously; scripts stop it before loads,
     // this is the safety net (counted in g_ps1XaForcedStops).
     PS1XaStopForFileRead();
-    if (!findLocal(path, &lba, &size) && !findFile(path, &lba, &size))
+    if (!findLocal(path, &lba, &size) && !findPin(path, &lba, &size) && !findFile(path, &lba, &size))
         return nullptr;
     FILE *f = (FILE *)malloc(sizeof(FILE));
     if (!f)

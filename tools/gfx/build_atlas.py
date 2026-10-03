@@ -91,7 +91,19 @@ def md5_words(text):
     return struct.unpack('<4I', hashlib.md5(text.encode()).digest())
 
 
-def read_manifest(folder, scene_id):
+# 9b.1: the sprite files the game loads by the player's character (Player.c's Player_StageLoad, SizeLaser's chibis, the
+# Mean Bean boss, Blue Spheres): the manifests were captured as Sonic, so another character's scene takes its own in
+# their place (boots as each character check that no frame is missing: g_ps1SpriteMissing)
+CHAR_FILES = {
+    'Players/Sonic.bin': {'tails': ['Players/Tails.bin', 'Players/TailSprite.bin'], 'knux': ['Players/Knux.bin']},
+    'Players/SuperSonic.bin': {'tails': [], 'knux': []},
+    'Players/ChibiSonic.bin': {'tails': ['Players/ChibiTails.bin', 'Players/CTailSprite.bin'], 'knux': ['Players/ChibiKnux.bin']},
+    'CPZ/MBMSonic.bin': {'tails': ['CPZ/MBMTails.bin'], 'knux': ['CPZ/MBMKnux.bin']},
+    'SpecialBS/Sonic.bin': {'tails': ['SpecialBS/Tails.bin'], 'knux': ['SpecialBS/Knuckles.bin']},
+}
+
+
+def read_manifest(folder, scene_id, character='sonic'):
     path = os.path.join(HERE, 'manifests', '%s%s.txt' % (folder, scene_id))
     data = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data', 'Sprites')
     out = []
@@ -103,6 +115,13 @@ def read_manifest(folder, scene_id):
             if t[0] == 'SPR' and not os.path.exists(os.path.join(data, t[1])):
                 continue
             out.append((t[0], t[1]))
+    if character != 'sonic':
+        swapped = []
+        for k, p in out:
+            if k == 'SPR' and p in CHAR_FILES and character in CHAR_FILES[p]:
+                swapped += [('SPR', q) for q in CHAR_FILES[p][character] if ('SPR', q) not in out and ('SPR', q) not in swapped]
+            swapped.append((k, p)) # (Sonic's stay listed: select() drops another character's frames)
+        out = swapped
     return out
 
 
@@ -534,7 +553,8 @@ def select(folder, scene_id, character, files):
     names, placed, active, _ = U.active_objects(folder, scene_id)
     _, _, scene = U.scene_objects(folder, scene_id)  # 7b: editable variables as animation IDs
     need = U.needed_files(names, active, [p for p, _, _ in files])
-    keep_player, _ = U.player_anims(active, names, U.scene_objects(folder, scene_id)[2])
+    keep_player, _ = U.player_anims(active, names, U.scene_objects(folder, scene_id)[2],
+                                    None if character == 'sonic' else character)  # 9b.1: its own ability aliases
     handles_of = U.file_handles(names)
     groups = EVENT_GROUPS.get(folder + scene_id, EVENT_GROUPS.get(folder, {}))  # 7b.8: a scene's own entry first
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
@@ -778,7 +798,7 @@ def decode_check(clusters, vram, work, clut_maps, name):
 
 def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     name = '%s%s/%s' % (folder, scene_id, character)
-    man = read_manifest(folder, scene_id)
+    man = read_manifest(folder, scene_id, character)
     sheets = Sheets(data)
     files = []                                  # (path, sprite, [(anim, key)] in record order)
     for kind, path in man:
@@ -1189,6 +1209,10 @@ def main():
         sys.exit(__doc__)
     data, disc, outdir, folder, sid = a[:5]
     character = a[5] if len(a) > 5 else 'sonic'
+    # 9b.1: a presentation scene's atlas holds every character (select keeps all player files): one, Sonic's name
+    if character != 'sonic' and folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data')):
+        print('%s%s/%s: a presentation scene (one atlas for every character)' % (folder, sid, character))
+        return
     blob, rep, clusters, _, sel, why = build_fit(data, disc, folder, sid, character)
     if '--why' in sys.argv:
         for p in sorted(why):
@@ -1200,18 +1224,18 @@ def main():
         os.makedirs(os.path.join(outdir, folder), exist_ok=True)
         suffix = '' if character == 'sonic' else '_' + character
         open(os.path.join(outdir, folder, 'Scene%s%s.atl' % (sid, suffix)), 'wb').write(blob)
-        pda, dropped = dropped_animations(disc, folder, sid, sel)
+        pda, dropped = dropped_animations(disc, folder, sid, sel, character)
         open(os.path.join(outdir, folder, 'Scene%s%s.pda' % (sid, suffix)), 'wb').write(pda)
         print('  animations never placed (their frames not loaded): %d frames' % dropped)
 
 
-def dropped_animations(disc, folder, sid, sel):
+def dropped_animations(disc, folder, sid, sel, character='sonic'):
     """7b: Scene<N>.pda: the animations the atlas places nowhere (none of their frames in any region or group), per
     sprite file: the PS1's LoadSpriteAnimation stores only the other animations' frames (one placeholder frame for
     the dropped ones). 'PDA1', u32 count, then per file: u32 md5[4], u16 frames kept, u16 animations dropped, then
     (u16 animation, u16 frames) each."""
     out, n, frames = bytearray(), 0, 0
-    for kind, path in read_manifest(folder, sid):
+    for kind, path in read_manifest(folder, sid, character):
         if kind != 'SPR' or path not in sel:
             continue
         s = F.read_sprite(os.path.join(disc, 'Sprites', path))

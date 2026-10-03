@@ -1499,6 +1499,8 @@ const char *const ps1StockAbsentObjects[] = {
 const char *const ps1TempStageMarker = "PuyoBean";
 // 7b.14: the credits create their text lines as temp entities (CreditsSetup, PS1): every temp block large there
 const char *const ps1TempLargeStageMarker = "CreditsSetup";
+// 9b.1: where the engine reads the player's character (each scene has an atlas per character: RSDK/Graphics/PS1/PS1Atlas.cpp)
+const int32 ps1GlobalsPlayerIDOffset = (int32)offsetof(GlobalVariables, playerID);
 const PS1ReservedSpec ps1ReservedSpecs[] = {
     { SLOT_PLAYER1, SLOT_PLAYER1, NULL, { "Player" } },
     { 1, 1, NULL, { "Shield", "InvincibleStars", "SuperSparkle" } },

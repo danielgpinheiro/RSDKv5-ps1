@@ -216,13 +216,16 @@ objects:
 # and, for the scenes with a sprite manifest (tools/gfx/manifests), Scene<N>.atl (the sprite atlas; it reads the
 # disc's sprite files: run tools/data_disc.sh first)
 GAME_DATA ?= ../SonicMania_Extracted/Data
+GFX_CHARACTERS ?= sonic tails knux # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; presentation scenes: one)
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \
 	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
 	  /usr/bin/python3 tools/gfx/build_tiles.py $(GAME_DATA) build/gfx $$f $$ids || exit 1; \
 	  for i in $$ids; do \
 	    if [ -f tools/gfx/manifests/$$f$$i.txt ]; then \
-	      /usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx $$f $$i sonic | head -1 || exit 1; \
+	      for c in $(GFX_CHARACTERS); do \
+	        /usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx $$f $$i $$c | head -1 || exit 1; \
+	      done; \
 	    fi; \
 	  done; \
 	done

@@ -14,7 +14,7 @@ order: GameConfig's categories), copies included, so a load reads a few continuo
 Writes the copies under ISO_ROOT and the load order (paths only, no game data).
 Usage: stage_local.py ISO_ROOT [OUT=tools/disc/load_order.txt]
 """
-import hashlib, os, shutil, struct, sys
+import hashlib, os, re, shutil, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.join(HERE, '..', '..')
@@ -122,10 +122,17 @@ def main():
         if os.path.isdir(mesh_dir):
             for n in sorted(os.listdir(mesh_dir)):
                 shared('Data/Meshes/%s/%s' % (folder, n))
+        # 9b.1: the other characters' atlases after the scene's files (a Sonic load reads past none of them)
+        for c in ('tails', 'knux'):
+            for ext in ('pda', 'atl'):
+                add(stage + 'Scene%s_%s.%s' % (sid, c, ext))
     # each folder's index of its copies (tools/disc/build_disc.py fills it with their LBAs after the first mastering
     # pass; the disc index leaves the copies out: it lives in RAM from boot, the folders' tables only during a load)
     for folder in sorted(first, key=lambda f: -first[f]):
-        n = len(copies[folder])
+        # (9b.1: the other characters' atlases go in the table too: tools/disc/build_disc.py local_entry)
+        d = os.path.join(iso, 'Data', 'Stages', folder)
+        alts = [f for f in os.listdir(d) if re.match(r'scene[^/]*_(tails|knux)\.(atl|pda)$', f.lower())]
+        n = len(copies[folder]) + len(alts)
         if not n:
             continue
         rel = 'Data/Stages/%s/PS1Local.idx' % folder
