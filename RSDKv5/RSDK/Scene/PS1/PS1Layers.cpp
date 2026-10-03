@@ -741,6 +741,7 @@ bool s_clutHeadFull     = false; // this frame's head uploads every CLUT
 extern "C" {
 volatile uint32 g_ps1ClutFullUploads = 0; // frames that uploaded every CLUT (total)
 volatile uint32 g_ps1ClutRowUploads  = 0; // CLUT rows uploaded because their entries changed (total)
+volatile uint32 g_ps1ClutRowsSkipped = 0; // 9.4c: rows whose buckets changed but not their entries (total)
 volatile uint32 g_ps1ClutSplices     = 0; // full sets spliced in at the frame's head for a FillScreen (total)
 volatile uint32 g_ps1ClutTestSplice  = 0; // GDB test: 1 = a fade doesn't make the next frame upload everything, so
                                           // every fading frame takes the splice (exact only while every frame fades)
@@ -782,12 +783,14 @@ void PS1ClutUploadChanged()
     }
     s_clutHeadFull = false;
     uint32 changed[2] = { 0, 0 };
+    uint32 exact[8]   = { 0, 0, 0, 0, 0, 0, 0, 0 }; // 9.4c: the entries themselves (a bucket holds 4)
     int32 lo = 256, hi = -1;
     for (int32 i = 1; i < 256; ++i) {
         uint16 c = fullPalette[0][i];
         if (c != s_palRaw[i]) {
             s_palRaw[i] = c, s_pal16[i] = PS1Colour(c);
             changed[i >> 7] |= 1u << ((i >> 2) & 31);
+            exact[i >> 5] |= 1u << (i & 31);
             if (i < lo)
                 lo = i;
             hi = i;
@@ -801,7 +804,17 @@ void PS1ClutUploadChanged()
             continue;
         const PS1TileClut *t = c < nt ? &cl[c] : NULL;
         const PS1AtlasClut *a = c < nt ? NULL : &ac[c - nt];
-        PS1ClutRowFrom(row, t ? t->map : a->map);
+        // 9.4c: only a CLUT one of whose own entries changed (SPZ1: ~129 rows a frame from the buckets' neighbours); an
+        // unchanged one already holds these colours in VRAM
+        const uint8 *map = t ? t->map : a->map;
+        bool hit = false;
+        for (int32 i = 1; i < 16 && !hit; ++i)
+            hit = map[i] && ((exact[map[i] >> 5] >> (map[i] & 31)) & 1);
+        if (!hit) {
+            g_ps1ClutRowsSkipped = g_ps1ClutRowsSkipped + 1;
+            continue;
+        }
+        PS1ClutRowFrom(row, map);
         PS1ClutRow(row, 16, (int16_t)(t ? t->x : a->x), (int16_t)(t ? t->y : a->y));
         ++rows;
     }
