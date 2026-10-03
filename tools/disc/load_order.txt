@@ -97,6 +97,7 @@ Data/Stages/Credits/16x16Tiles.pal
 Data/Stages/Credits/Scene1.ptl
 Data/Stages/Credits/Scene1.pda
 Data/Stages/Credits/Scene1.atl
+Data/Stages/Credits/PS1Sfx1.bin
 Data/Stages/Credits/Scene1.bin
 Data/Stages/Credits/PS1Local/4DAE3EB4.txt
 Data/Stages/Credits/PS1Local/03467FEC.bin
@@ -114,6 +115,7 @@ Data/Stages/Ending/16x16Tiles.pal
 Data/Stages/Ending/SceneC.ptl
 Data/Stages/Ending/SceneC.pda
 Data/Stages/Ending/SceneC.atl
+Data/Stages/Ending/PS1SfxC.bin
 Data/Stages/Ending/SceneC.bin
 Data/Stages/Ending/PS1Local/4DAE3EB4.txt
 Data/Stages/Ending/PS1Local/1E31108E.bin
@@ -440,6 +442,7 @@ Data/Stages/FBZ/16x16Tiles.pal
 Data/Stages/FBZ/Scene1.ptl
 Data/Stages/FBZ/Scene1.pda
 Data/Stages/FBZ/Scene1.atl
+Data/Stages/FBZ/PS1Sfx1.bin
 Data/Stages/FBZ/Scene1.bin
 Data/Stages/FBZ/PS1Local/4DAE3EB4.txt
 Data/Stages/FBZ/PS1Local/1EF5A1C6.bin
@@ -499,6 +502,7 @@ Data/PS1Ovl/FBZ_2.bin
 Data/Stages/FBZ/Scene2.ptl
 Data/Stages/FBZ/Scene2.pda
 Data/Stages/FBZ/Scene2.atl
+Data/Stages/FBZ/PS1Sfx2.bin
 Data/Stages/FBZ/Scene2.bin
 Data/Stages/FBZ/PS1Local/9184FE72.bin
 Data/Stages/FBZ/PS1Local/BEF5CA02.bin
@@ -519,6 +523,7 @@ Data/Stages/PSZ1/16x16Tiles.pal
 Data/Stages/PSZ1/Scene1.ptl
 Data/Stages/PSZ1/Scene1.pda
 Data/Stages/PSZ1/Scene1.atl
+Data/Stages/PSZ1/PS1Sfx1.bin
 Data/Stages/PSZ1/Scene1.bin
 Data/Stages/PSZ1/PS1Local/4DAE3EB4.txt
 Data/Stages/PSZ1/PS1Local/1EF5A1C6.bin
@@ -582,6 +587,7 @@ Data/Stages/PSZ2/16x16Tiles.pal
 Data/Stages/PSZ2/Scene2.ptl
 Data/Stages/PSZ2/Scene2.pda
 Data/Stages/PSZ2/Scene2.atl
+Data/Stages/PSZ2/PS1Sfx2.bin
 Data/Stages/PSZ2/Scene2.bin
 Data/Stages/PSZ2/PS1Local/4DAE3EB4.txt
 Data/Stages/PSZ2/PS1Local/1EF5A1C6.bin
@@ -643,6 +649,7 @@ Data/Stages/SSZ1/16x16Tiles.pal
 Data/Stages/SSZ1/Scene1.ptl
 Data/Stages/SSZ1/Scene1.pda
 Data/Stages/SSZ1/Scene1.atl
+Data/Stages/SSZ1/PS1Sfx1.bin
 Data/Stages/SSZ1/Scene1.bin
 Data/Stages/SSZ1/PS1Local/4DAE3EB4.txt
 Data/Stages/SSZ1/PS1Local/1EF5A1C6.bin
@@ -713,6 +720,7 @@ Data/Stages/SSZ2/16x16Tiles.pal
 Data/Stages/SSZ2/Scene1.ptl
 Data/Stages/SSZ2/Scene1.pda
 Data/Stages/SSZ2/Scene1.atl
+Data/Stages/SSZ2/PS1Sfx1.bin
 Data/Stages/SSZ2/Scene1.bin
 Data/Stages/SSZ2/PS1Local/4DAE3EB4.txt
 Data/Stages/SSZ2/PS1Local/1EF5A1C6.bin
@@ -772,6 +780,7 @@ Data/PS1Ovl/SSZ2_2.bin
 Data/Stages/SSZ2/Scene2.ptl
 Data/Stages/SSZ2/Scene2.pda
 Data/Stages/SSZ2/Scene2.atl
+Data/Stages/SSZ2/PS1Sfx2.bin
 Data/Stages/SSZ2/Scene2.bin
 Data/Stages/HCZ/PS1Local.idx
 Data/PS1Ovl/HCZ_1.bin
@@ -788,6 +797,7 @@ Data/Stages/HCZ/16x16Tiles.pal
 Data/Stages/HCZ/Scene1.ptl
 Data/Stages/HCZ/Scene1.pda
 Data/Stages/HCZ/Scene1.atl
+Data/Stages/HCZ/PS1Sfx1.bin
 Data/Stages/HCZ/Scene1.bin
 Data/Stages/HCZ/PS1Local/4DAE3EB4.txt
 Data/Stages/HCZ/PS1Local/1EF5A1C6.bin
@@ -848,6 +858,7 @@ Data/PS1Ovl/HCZ_2.bin
 Data/Stages/HCZ/Scene2.ptl
 Data/Stages/HCZ/Scene2.pda
 Data/Stages/HCZ/Scene2.atl
+Data/Stages/HCZ/PS1Sfx2.bin
 Data/Stages/HCZ/Scene2.bin
 Data/Stages/HCZ/PS1Local/2CB3EC5A.bin
 Data/Stages/HCZ/PS1Local/FF37D88B.bin
@@ -867,6 +878,7 @@ Data/Stages/MSZ/16x16Tiles.pal
 Data/Stages/MSZ/Scene1.ptl
 Data/Stages/MSZ/Scene1.pda
 Data/Stages/MSZ/Scene1.atl
+Data/Stages/MSZ/PS1Sfx1.bin
 Data/Stages/MSZ/Scene1.bin
 Data/Stages/MSZ/PS1Local/4DAE3EB4.txt
 Data/Stages/MSZ/PS1Local/1EF5A1C6.bin
@@ -917,6 +929,7 @@ Data/Stages/MSZ/PS1Local/033E1D44.bin
 Data/Stages/MSZ/Scene1k.ptl
 Data/Stages/MSZ/Scene1k.pda
 Data/Stages/MSZ/Scene1k.atl
+Data/Stages/MSZ/PS1Sfx1k.bin
 Data/Stages/MSZ/Scene1k.bin
 Data/Stages/MSZ/PS1Local/7F4D14AF.bin
 Data/Stages/MSZ/PS1Local/3CC55C2B.bin
@@ -931,6 +944,7 @@ Data/PS1Ovl/MSZ_2.bin
 Data/Stages/MSZ/Scene2.ptl
 Data/Stages/MSZ/Scene2.pda
 Data/Stages/MSZ/Scene2.atl
+Data/Stages/MSZ/PS1Sfx2.bin
 Data/Stages/MSZ/Scene2.bin
 Data/Stages/MSZ/PS1Local/17741AD9.bin
 Data/Stages/MSZ/PS1Local/4FA76C50.bin
@@ -949,6 +963,7 @@ Data/Stages/OOZ1/16x16Tiles.pal
 Data/Stages/OOZ1/Scene1.ptl
 Data/Stages/OOZ1/Scene1.pda
 Data/Stages/OOZ1/Scene1.atl
+Data/Stages/OOZ1/PS1Sfx1.bin
 Data/Stages/OOZ1/Scene1.bin
 Data/Stages/OOZ1/PS1Local/4DAE3EB4.txt
 Data/Stages/OOZ1/PS1Local/1EF5A1C6.bin
@@ -1005,6 +1020,7 @@ Data/Stages/OOZ2/16x16Tiles.pal
 Data/Stages/OOZ2/Scene2.ptl
 Data/Stages/OOZ2/Scene2.pda
 Data/Stages/OOZ2/Scene2.atl
+Data/Stages/OOZ2/PS1Sfx2.bin
 Data/Stages/OOZ2/Scene2.bin
 Data/Stages/OOZ2/PS1Local/4DAE3EB4.txt
 Data/Stages/OOZ2/PS1Local/1EF5A1C6.bin
@@ -1063,6 +1079,7 @@ Data/Stages/LRZ1/16x16Tiles.pal
 Data/Stages/LRZ1/Scene1.ptl
 Data/Stages/LRZ1/Scene1.pda
 Data/Stages/LRZ1/Scene1.atl
+Data/Stages/LRZ1/PS1Sfx1.bin
 Data/Stages/LRZ1/Scene1.bin
 Data/Stages/LRZ1/PS1Local/4DAE3EB4.txt
 Data/Stages/LRZ1/PS1Local/1EF5A1C6.bin
@@ -1127,6 +1144,7 @@ Data/Stages/LRZ2/16x16Tiles.pal
 Data/Stages/LRZ2/Scene1.ptl
 Data/Stages/LRZ2/Scene1.pda
 Data/Stages/LRZ2/Scene1.atl
+Data/Stages/LRZ2/PS1Sfx1.bin
 Data/Stages/LRZ2/Scene1.bin
 Data/Stages/LRZ2/PS1Local/4DAE3EB4.txt
 Data/Stages/LRZ2/PS1Local/1EF5A1C6.bin
@@ -1192,6 +1210,7 @@ Data/Stages/LRZ3/16x16Tiles.pal
 Data/Stages/LRZ3/Scene1.ptl
 Data/Stages/LRZ3/Scene1.pda
 Data/Stages/LRZ3/Scene1.atl
+Data/Stages/LRZ3/PS1Sfx1.bin
 Data/Stages/LRZ3/Scene1.bin
 Data/Stages/LRZ3/PS1Local/4DAE3EB4.txt
 Data/Stages/LRZ3/PS1Local/1EF5A1C6.bin
@@ -1247,6 +1266,7 @@ Data/Stages/MMZ/16x16Tiles.pal
 Data/Stages/MMZ/Scene1.ptl
 Data/Stages/MMZ/Scene1.pda
 Data/Stages/MMZ/Scene1.atl
+Data/Stages/MMZ/PS1Sfx1.bin
 Data/Stages/MMZ/Scene1.bin
 Data/Stages/MMZ/PS1Local/4DAE3EB4.txt
 Data/Stages/MMZ/PS1Local/1EF5A1C6.bin
@@ -1302,6 +1322,7 @@ Data/PS1Ovl/MMZ_2.bin
 Data/Stages/MMZ/Scene2.ptl
 Data/Stages/MMZ/Scene2.pda
 Data/Stages/MMZ/Scene2.atl
+Data/Stages/MMZ/PS1Sfx2.bin
 Data/Stages/MMZ/Scene2.bin
 Data/Stages/MMZ/PS1Local/C1B5D3DF.bin
 Data/Stages/TMZ1/PS1Local.idx
@@ -1318,6 +1339,7 @@ Data/Stages/TMZ1/16x16Tiles.pal
 Data/Stages/TMZ1/Scene1.ptl
 Data/Stages/TMZ1/Scene1.pda
 Data/Stages/TMZ1/Scene1.atl
+Data/Stages/TMZ1/PS1Sfx1.bin
 Data/Stages/TMZ1/Scene1.bin
 Data/Stages/TMZ1/PS1Local/4DAE3EB4.txt
 Data/Stages/TMZ1/PS1Local/1EF5A1C6.bin
@@ -1379,6 +1401,7 @@ Data/Stages/TMZ2/16x16Tiles.pal
 Data/Stages/TMZ2/Scene1.ptl
 Data/Stages/TMZ2/Scene1.pda
 Data/Stages/TMZ2/Scene1.atl
+Data/Stages/TMZ2/PS1Sfx1.bin
 Data/Stages/TMZ2/Scene1.bin
 Data/Stages/TMZ2/PS1Local/4DAE3EB4.txt
 Data/Stages/TMZ2/PS1Local/1EF5A1C6.bin
@@ -1441,6 +1464,7 @@ Data/Stages/TMZ3/16x16Tiles.pal
 Data/Stages/TMZ3/Scene1.ptl
 Data/Stages/TMZ3/Scene1.pda
 Data/Stages/TMZ3/Scene1.atl
+Data/Stages/TMZ3/PS1Sfx1.bin
 Data/Stages/TMZ3/Scene1.bin
 Data/Stages/TMZ3/PS1Local/4DAE3EB4.txt
 Data/Stages/TMZ3/PS1Local/1EF5A1C6.bin
@@ -1505,6 +1529,7 @@ Data/Stages/ERZ/16x16Tiles.pal
 Data/Stages/ERZ/Scene1.ptl
 Data/Stages/ERZ/Scene1.pda
 Data/Stages/ERZ/Scene1.atl
+Data/Stages/ERZ/PS1Sfx1.bin
 Data/Stages/ERZ/Scene1.bin
 Data/Stages/ERZ/PS1Local/4DAE3EB4.txt
 Data/Stages/ERZ/PS1Local/1EF5A1C6.bin
@@ -2067,6 +2092,7 @@ Data/Stages/MSZCutscene/16x16Tiles.pal
 Data/Stages/MSZCutscene/Scene1.ptl
 Data/Stages/MSZCutscene/Scene1.pda
 Data/Stages/MSZCutscene/Scene1.atl
+Data/Stages/MSZCutscene/PS1Sfx1.bin
 Data/Stages/MSZCutscene/Scene1.bin
 Data/Stages/MSZCutscene/PS1Local/4DAE3EB4.txt
 Data/Stages/MSZCutscene/PS1Local/1EF5A1C6.bin
@@ -2114,6 +2140,7 @@ Data/Stages/TimeTravel/PS1Local/4DAE3EB4.txt
 Data/Stages/Ending/SceneT.ptl
 Data/Stages/Ending/SceneT.pda
 Data/Stages/Ending/SceneT.atl
+Data/Stages/Ending/PS1SfxT.bin
 Data/Stages/Ending/SceneT.bin
 Data/Stages/MSZEnding/PS1Local.idx
 Data/Stages/MSZEnding/TileConfig.bin
@@ -2124,20 +2151,29 @@ Data/Stages/MSZEnding/16x16Tiles.pal
 Data/Stages/MSZEnding/Scene2.bin
 Data/Stages/MSZEnding/PS1Local/4DAE3EB4.txt
 Data/Stages/Ending/SceneTE.ptl
+Data/Stages/Ending/PS1SfxTE.bin
 Data/Stages/Ending/SceneTE.bin
 Data/Stages/Ending/SceneBS.ptl
+Data/Stages/Ending/PS1SfxBS.bin
 Data/Stages/Ending/SceneBS.bin
 Data/Stages/Ending/SceneBS2.ptl
+Data/Stages/Ending/PS1SfxBS2.bin
 Data/Stages/Ending/SceneBS2.bin
 Data/Stages/Ending/SceneBT.ptl
+Data/Stages/Ending/PS1SfxBT.bin
 Data/Stages/Ending/SceneBT.bin
 Data/Stages/Ending/SceneBK.ptl
+Data/Stages/Ending/PS1SfxBK.bin
 Data/Stages/Ending/SceneBK.bin
 Data/Stages/Ending/SceneBM.ptl
+Data/Stages/Ending/PS1SfxBM.bin
 Data/Stages/Ending/SceneBM.bin
 Data/Stages/Ending/SceneBR.ptl
+Data/Stages/Ending/PS1SfxBR.bin
 Data/Stages/Ending/SceneBR.bin
 Data/Stages/Ending/SceneG.ptl
+Data/Stages/Ending/PS1SfxG.bin
 Data/Stages/Ending/SceneG.bin
 Data/Stages/Ending/SceneTK.ptl
+Data/Stages/Ending/PS1SfxTK.bin
 Data/Stages/Ending/SceneTK.bin
