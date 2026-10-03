@@ -219,6 +219,9 @@ void SchrodingersCapsule_State_Explode(void)
         EntityPlayer *buddy1 = RSDK_GET_ENTITY(SLOT_PLAYER3, Player);
         memset(buddy1, 0, sizeof(EntityBase)); // not in the original, clears the entity slot incase of something like a shield is still active
         buddy1->classID = Player->classID;
+#if defined RETRO_PS1_BUILD
+        PS1ClassNoteEntity(buddy1); // docs/32 9.4: foreach_all's class ranges
+#endif
         Player_ChangeCharacter(buddy1, ID_MIGHTY);
         buddy1->position.x      = self->position.x + TO_FIXED(14);
         buddy1->position.y      = self->position.y;
@@ -242,6 +245,9 @@ void SchrodingersCapsule_State_Explode(void)
         EntityPlayer *buddy2 = RSDK_GET_ENTITY(SLOT_PLAYER4, Player);
         memset(buddy2, 0, sizeof(EntityBase)); // like above, but for safety :]
         buddy2->classID      = Player->classID;
+#if defined RETRO_PS1_BUILD
+        PS1ClassNoteEntity(buddy2); // docs/32 9.4
+#endif
         Player_ChangeCharacter(buddy2, ID_RAY);
         buddy2->position.x      = self->position.x - TO_FIXED(14);
         buddy2->position.y      = self->position.y;

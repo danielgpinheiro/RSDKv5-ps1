@@ -67,4 +67,11 @@ typedef struct {
     const char *from, *to;
 } PS1GrowSpec;
 
+/* docs/32 9.4: a class written straight into an entity slot (game code past the engine's create / reset / copy: the
+ * player slots' Player / DebugMode swaps, BSS_Setup's collectables) widens foreach_all's range of that class. */
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1ClassNoteEntity(void *entity);
+
 #endif /* PS1_LIMITS_H */

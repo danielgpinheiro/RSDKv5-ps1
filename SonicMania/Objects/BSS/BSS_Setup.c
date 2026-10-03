@@ -770,6 +770,9 @@ void BSS_Setup_HandleCollectableMovement(void)
             }
             else {
                 collectable->classID = BSS_Collectable->classID;
+#if defined RETRO_PS1_BUILD
+                PS1ClassNoteEntity(collectable); // docs/32 9.4: foreach_all's class ranges (the one game write past the reserved slots)
+#endif
                 collectable->type    = tile & 0x3FF;
                 if (y < 112) {
                     self->xMultiplier             = BSS_Setup->xMultiplierTable[y];

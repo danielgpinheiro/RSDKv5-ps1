@@ -697,6 +697,9 @@ void ItemBox_GivePowerup(void)
                         }
                         else {
                             player2->classID     = Player->classID;
+#if defined RETRO_PS1_BUILD
+                            PS1ClassNoteEntity(player2); // docs/32 9.4: foreach_all's class ranges
+#endif
                             Player->respawnTimer = 0;
                             EntityDust *dust     = CREATE_ENTITY(Dust, INT_TO_VOID(1), player2->position.x, player2->position.y);
 

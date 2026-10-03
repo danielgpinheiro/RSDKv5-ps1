@@ -138,6 +138,7 @@ void RSDK::PS1EntityStorageClear()
 {
     PS1EntityCheckGhosts();
     for (int32 s = 0; s < ENTITY_COUNT; ++s) objectEntityPtr[s] = Ghost(s);
+    PS1ClassRangesNewFrame(); // 9.4: foreach_all's class ranges re-measured for the new slots
     if (s_arena)
         RemoveStorageEntry((void **)&s_arena);
     s_arena = s_spare = s_spareEnd = s_arenaAt = NULL;
@@ -921,6 +922,7 @@ void RSDK::PS1SceneEntitiesPlace()
             EntityBase *e = Carve(p, slot, SceneCap(r->classID));
             objectEntityPtr[slot] = e;
             FillEntity(e, PS1EntityCapacity(e), r);
+            PS1ClassNote(e->classID, slot); // 9.4
         }
         // classID 0 (a class this build does not have, or a blank entity): the slot stays a ghost (stock: a blank entity
         // with a position)
@@ -1031,6 +1033,7 @@ void DormCreate(const DormRec *r, EntityBase *e)
     h->capacity          = (uint16)cap;
     EntityBase *was      = objectEntityPtr[slot];
     objectEntityPtr[slot] = e;
+    PS1ClassNote(e->classID, slot); // 9.4: (a foreach_all inside this Create sees it there)
     Entity *curEnt       = sceneInfo.entity;
     int32 curSlot        = sceneInfo.entitySlot;
     sceneInfo.entity     = e;
@@ -1163,6 +1166,7 @@ bool RSDK::PS1DormantLoadCreate(int32 slot)
             ((PS1EntityHeader *)e - 1)->slot = (uint16)slot;
             memcpy(e, f, s_dCapK[sp]);
             objectEntityPtr[slot] = e;
+            PS1ClassNote(e->classID, slot); // 9.4
             --s_dPool;
         }
         r->slot |= PS1_DORMANT_GONE;
@@ -1260,6 +1264,7 @@ void RSDK::PS1DormantUpdate()
             r->diff                     = PS1_DORMANT_NODIFF;
         }
         objectEntityPtr[r->slot] = e;
+        PS1ClassNote(e->classID, r->slot); // 9.4: a woken record back in its scene slot
         s_dMatRec[s_dMatN]       = (uint16)i;
         s_dMatBlk[s_dMatN++]     = e;
         g_ps1DormantCreated      = g_ps1DormantCreated + 1;
@@ -1267,6 +1272,14 @@ void RSDK::PS1DormantUpdate()
     g_ps1DormantLive = s_dMatN;
     if ((uint32)s_dMatN > g_ps1DormantPeak)
         g_ps1DormantPeak = s_dMatN;
+}
+
+// 9.4: the game's own class write into a slot past the reserved ones (BSS_Setup's collectables)
+extern "C" void PS1ClassNoteEntity(void *entity)
+{
+    int32 slot = PS1EntitySlotOf(entity);
+    if (slot >= 0)
+        PS1ClassNote(((EntityBase *)entity)->classID, slot);
 }
 
 // Stock copies sizeof(EntityBase) bytes. Here: the source's class (its whole block for a slot-less pointer), into a
@@ -1302,6 +1315,7 @@ void RSDK::CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
         memcpy(dst, src, n);
         if (cap > n)
             memset((uint8 *)dst + n, 0, cap - n);
+        PS1ClassNote(dst->classID, dslot); // 9.4
     }
     else {
         memcpy(dst, src, n);

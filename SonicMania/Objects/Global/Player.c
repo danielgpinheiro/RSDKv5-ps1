@@ -824,6 +824,9 @@ void Player_LoadSprites(void)
         for (int32 i = 0; i < 0x10; ++i) Player->leaderPositionBuffer[i] = leader->position;
 
         sidekick->classID    = Player->classID;
+#if defined RETRO_PS1_BUILD
+        PS1ClassNoteEntity(sidekick); // docs/32 9.4: foreach_all's class ranges
+#endif
         sidekick->position.x = leader->position.x;
         sidekick->position.y = leader->position.y;
 
@@ -6438,6 +6441,9 @@ void Player_Input_P1(void)
                 if (self->controllerID == CONT_P1 && SceneInfo->debugMode && self->state != Player_State_Transform
                     && ControllerInfo[CONT_P1].keyX.press && globals->gameMode != MODE_TIMEATTACK) {
                     self->classID    = DebugMode->classID;
+#if defined RETRO_PS1_BUILD
+                    PS1ClassNoteEntity(self); // docs/32 9.4
+#endif
                     self->velocity.x = 0;
                     self->velocity.y = 0;
                     self->groundVel  = 0;

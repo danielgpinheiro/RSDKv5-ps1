@@ -343,6 +343,24 @@ inline void CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
 bool32 GetActiveEntities(uint16 group, Entity **entity);
 bool32 GetAllEntities(uint16 classID, Entity **entity);
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9.4: per class, the slots that may hold it, [lo, hi] (lo > hi: none). foreach_all walks only that range: the
+// same entities in the same order. The range is measured at a class's first foreach_all after a new generation (every
+// 16 frames, every load: ps1/gen) and widened by every path that gives a slot a class in between (PS1ClassNote: create,
+// reset, copy, dormant wakes, scene placement; PS1ClassNoteEntity: the game's own writes), so it is always a superset.
+extern uint16 ps1ClassLo[OBJECT_COUNT], ps1ClassHi[OBJECT_COUNT];
+inline void PS1ClassNote(uint16 classID, int32 slot)
+{
+    if (classID && classID < OBJECT_COUNT && slot >= 0) {
+        if (slot < ps1ClassLo[classID])
+            ps1ClassLo[classID] = (uint16)slot;
+        if (slot > ps1ClassHi[classID])
+            ps1ClassHi[classID] = (uint16)slot;
+    }
+}
+void PS1ClassRangesNewFrame(); // ranges re-measured at their next use
+#endif
+
 inline void BreakForeachLoop() { --foreachStackPtr; }
 
 // CheckPosOnScreen but if range is NULL it'll use entity->updateRange

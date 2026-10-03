@@ -986,6 +986,11 @@ PS1_HOT void PS1FrozenLatePass()
 void RSDK::ProcessObjects()
 {
     for (int32 i = 0; i < DRAWGROUP_COUNT; ++i) drawGroups[i].entityCount = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    static uint8 s_ps1ClassFrames = 0;
+    if (!(++s_ps1ClassFrames & 15))
+        PS1ClassRangesNewFrame(); // 9.4: foreach_all ranges re-measured at their next use (between: widened only)
+#endif
 
     PS1_PART_BEGIN(0);
     for (int32 o = 0; o < sceneInfo.classCount; ++o) {
@@ -1817,6 +1822,9 @@ void RSDK::ResetEntity(Entity *entity, uint16 classID, void *data)
         }
 
         entity->classID = classID;
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1ClassNote(classID, slot); // 9.4
+#endif
     }
 }
 
@@ -1857,6 +1865,9 @@ void RSDK::ResetEntitySlot(uint16 slot, uint16 classID, void *data)
     else {
         entity->classID = classID;
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1ClassNote(classID, slot); // 9.4
+#endif
 }
 
 Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
@@ -1912,6 +1923,9 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
     entity->position.x  = x;
     entity->position.y  = y;
     entity->interaction = true;
+#if RETRO_PLATFORM == RETRO_PS1
+    int32 ps1Slot = sceneInfo.createSlot; // (a create inside the Create moves createSlot)
+#endif
 
     if (object->create) {
         Entity *curEnt = sceneInfo.entity;
@@ -1934,6 +1948,9 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
         entity->active  = ACTIVE_NORMAL;
         entity->visible = true;
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1ClassNote(classID, ps1Slot); // 9.4
+#endif
 
     return entity;
 }
@@ -1978,6 +1995,58 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
 
     return false;
 }
+#if RETRO_PLATFORM == RETRO_PS1
+uint16 RSDK::ps1ClassLo[OBJECT_COUNT], RSDK::ps1ClassHi[OBJECT_COUNT];
+static uint8 s_ps1ClassGen[OBJECT_COUNT], s_ps1ClassGenNow = 1; // a range is measured when its gen is not the frame's
+extern "C" {
+volatile uint32 g_ps1ClassMeasures = 0; // ranges measured (GDB)
+#if PS1_CHECK_FOREACH // evidence build: every foreach_all step against the stock walk (must stay 0)
+volatile uint32 g_ps1ForeachChecks = 0, g_ps1ForeachWrong = 0, g_ps1ForeachWrongClass = 0, g_ps1ForeachWrongSlot = 0;
+#endif
+}
+void RSDK::PS1ClassRangesNewFrame()
+{
+    if (++s_ps1ClassGenNow == 0) // (a stale range is still a superset: the generation only decides when to narrow)
+        s_ps1ClassGenNow = 1;
+}
+// The class's first and last slot, as the slots are now
+__attribute__((noinline)) static void PS1ClassMeasure(uint16 classID)
+{
+    int32 lo = ENTITY_COUNT, hi = -1;
+    for (int32 r = 0; r < 2; ++r) {
+        int32 from = r ? TEMPENTITY_START : 0;
+        int32 to   = r ? (ps1TempSlotEnd < ENTITY_COUNT ? ps1TempSlotEnd : ENTITY_COUNT)
+                       : (ps1SceneSlotEnd < TEMPENTITY_START ? ps1SceneSlotEnd : TEMPENTITY_START);
+        for (int32 s = from; s < to; ++s) {
+            if (objectEntityPtr[s]->classID == classID) {
+                if (s < lo)
+                    lo = s;
+                hi = s;
+            }
+        }
+    }
+    ps1ClassLo[classID] = (uint16)(lo < ENTITY_COUNT ? lo : 0xFFFF);
+    ps1ClassHi[classID] = (uint16)(hi >= 0 ? hi : 0);
+    s_ps1ClassGen[classID] = s_ps1ClassGenNow;
+    g_ps1ClassMeasures     = g_ps1ClassMeasures + 1;
+}
+#if PS1_CHECK_FOREACH
+// the stock walk's next slot of the class from `id` (PS1NextSlot's ranges), -1: none
+static int32 PS1ForeachStock(uint16 classID, int32 id)
+{
+    for (int32 s = id; s < ENTITY_COUNT; ++s) {
+        if (s >= ps1SceneSlotEnd && s < TEMPENTITY_START)
+            s = TEMPENTITY_START;
+        if (s >= ps1TempSlotEnd || s >= ENTITY_COUNT)
+            break;
+        if (objectEntityPtr[s]->classID == classID)
+            return s;
+    }
+    return -1;
+}
+#endif
+#endif
+
 bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
 {
     if (classID >= OBJECT_COUNT)
@@ -2003,12 +2072,26 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
 #endif
     // 4.2e: PS1NextSlot's walk as plain pointer loops over its ranges (the menu's foreach_all scans ~19 hblanks a frame)
     int32 id = foreachStackPtr->id;
+    // 9.4: the class's range only (classID 0: every slot, as before)
+    if (classID && !*entity && s_ps1ClassGen[classID] != s_ps1ClassGenNow)
+        PS1ClassMeasure(classID);
+    int32 clsLo = classID ? ps1ClassLo[classID] : 0, clsHi = classID ? ps1ClassHi[classID] : ENTITY_COUNT - 1;
+#if PS1_CHECK_FOREACH
+    int32 stockSlot = PS1ForeachStock(classID, id);
+    g_ps1ForeachChecks = g_ps1ForeachChecks + 1;
+#endif
     while (id < ENTITY_COUNT) {
+        if (id < clsLo)
+            id = clsLo;
+        if (id > clsHi)
+            break;
         int32 stop = ENTITY_COUNT, next = ENTITY_COUNT; // [id, stop), then next (PS1NextSlot(stop - 1))
         if (ps1SceneSlotEnd > id && ps1SceneSlotEnd < TEMPENTITY_START)
             stop = ps1SceneSlotEnd, next = TEMPENTITY_START;
         if (ps1TempSlotEnd > id && ps1TempSlotEnd < stop)
             stop = ps1TempSlotEnd, next = ENTITY_COUNT;
+        if (stop > clsHi + 1)
+            stop = clsHi + 1, next = ENTITY_COUNT;
         EntityBase **p = &objectEntityPtr[id], **pend = &objectEntityPtr[stop];
         for (; p + 4 <= pend; p += 4) { // four at a time: the loads fill each other's delay slots; the first match wins
             EntityBase *e0 = p[0], *e1 = p[1], *e2 = p[2], *e3 = p[3];
@@ -2025,6 +2108,11 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
 #endif
                 foreachStackPtr->id = (int32)(p - objectEntityPtr);
                 *entity             = (Entity *)*p;
+#if PS1_CHECK_FOREACH
+                if (stockSlot != foreachStackPtr->id)
+                    g_ps1ForeachWrong = g_ps1ForeachWrong + 1, g_ps1ForeachWrongClass = classID,
+                    g_ps1ForeachWrongSlot = (uint32)stockSlot;
+#endif
                 return true;
             }
         }
@@ -2033,6 +2121,10 @@ bool32 RSDK::GetAllEntities(uint16 classID, Entity **entity)
 #endif
         id = next == ps1TempSlotEnd ? ENTITY_COUNT : next;
     }
+#if PS1_CHECK_FOREACH
+    if (stockSlot >= 0)
+        g_ps1ForeachWrong = g_ps1ForeachWrong + 1, g_ps1ForeachWrongClass = classID, g_ps1ForeachWrongSlot = (uint32)stockSlot;
+#endif
 #else
     for (; foreachStackPtr->id < ENTITY_COUNT; ++foreachStackPtr->id) {
         Entity *nextEntity = OBJECT_ENTITY(foreachStackPtr->id);
