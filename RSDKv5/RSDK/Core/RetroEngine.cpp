@@ -439,6 +439,9 @@ void RSDK::ProcessEngine()
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
             SKU::ProcessAchievements();
 #endif
+#if RETRO_PLATFORM == RETRO_PS1
+            PS1AudioStartPending(); // 9b.2: music the updates started, with its sprite groups, before the draws
+#endif
 #if PS1_PROFILE
         {
             uint16 t0 = *(volatile uint16 *)0xBF801110;

@@ -257,19 +257,27 @@ static void PS1StreamFrame(ChannelInfo *channel)
 // Once per engine frame (RunRetroEngine order): the voices follow their channels (see above), then each playing
 // channel advances by one frame of 44.1 kHz samples at its speed; an SFX past its length loops or ends exactly as in
 // AudioDeviceBase::ProcessAudioMixing, so the game's IsSfxPlaying / GetChannelPos see the PC's state
+// The stream a PlayStream queued: its sprite groups and its XA. 9b.2: also called between the object updates and the draw
+// lists (RetroEngine.cpp), so what the update that started the music shows (ActClear's victory pose, from the end group)
+// is drawn this frame, not missing one frame (the PC starts the stream in PlayStream itself)
+void RSDK::PS1AudioStartPending()
+{
+    if (s_pendChannel < 0)
+        return;
+    if (sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK) // the video owns the CD (ps1/fmv)
+        s_videoChannel = s_pendChannel; // its sound plays from the STR
+    else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM) {
+        PS1AtlasMusicGroups(s_streamName); // 7b: the sprite groups this music brings (before its XA: the CD is free)
+        PS1StreamStart(s_pendChannel);
+    }
+    s_pendChannel = -1;
+}
+
 void AudioDevice::FrameInit()
 {
     const uint32 frameSamples = AUDIO_FREQUENCY / 60;
     bool video                = sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK; // the video owns the CD (ps1/fmv)
-    if (s_pendChannel >= 0) {
-        if (video)
-            s_videoChannel = s_pendChannel; // its sound plays from the STR
-        else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM) {
-            PS1AtlasMusicGroups(s_streamName); // 7b: the sprite groups this music brings (before its XA: the CD is free)
-            PS1StreamStart(s_pendChannel);
-        }
-        s_pendChannel = -1;
-    }
+    PS1AudioStartPending();
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         ChannelInfo *channel = &channels[c];
         bool sfx             = (channel->state & ~CHANNEL_PAUSED) == CHANNEL_SFX && channel->soundID >= 0;

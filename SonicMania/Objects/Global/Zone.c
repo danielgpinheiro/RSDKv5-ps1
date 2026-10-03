@@ -75,12 +75,36 @@ void Zone_LateUpdate(void)
     }
 }
 
+#if defined RETRO_PS1_BUILD
+// PS1 test hook (docs/32 9b.2): GDB sets g_ps1TestActEnd to end the act as its sign post or capsule would (the act-clear
+// music and ActClear in its slot), player 1 first put at (g_ps1TestActEndX, Y) when GDB gives a point (the zones whose
+// StageFinish stores the entities around a fixed point, GHZ1 / PSZ1 / FBZ1 / MSZ; the others store around the camera).
+// 0 in normal play.
+volatile int32 g_ps1TestActEnd = 0, g_ps1TestActEndX = 0, g_ps1TestActEndY = 0;
+static void Zone_PS1TestActEnd(void)
+{
+    g_ps1TestActEnd = 0;
+    if (g_ps1TestActEndX || g_ps1TestActEndY) {
+        EntityPlayer *player = RSDK_GET_ENTITY(SLOT_PLAYER1, Player);
+        player->position.x   = g_ps1TestActEndX << 16;
+        player->position.y   = g_ps1TestActEndY << 16;
+        player->velocity.x = player->velocity.y = player->groundVel = 0;
+    }
+    Music_PlayTrack(TRACK_ACTCLEAR);
+    RSDK.ResetEntitySlot(SLOT_ACTCLEAR, ActClear->classID, NULL);
+}
+#endif
+
 void Zone_StaticUpdate(void)
 {
     // Global timer, used to keep various objects in sync
     // This timer is reset every time a stage is loaded
     ++Zone->timer;
     Zone->timer &= 0x7FFF;
+#if defined RETRO_PS1_BUILD
+    if (g_ps1TestActEnd)
+        Zone_PS1TestActEnd();
+#endif
 
     // Persistent timer, this
     // This timer is NOT reset when a same-folder act transition happens (aka GHZ1 -> GHZ2 or CPZ1 -> CPZ2)
