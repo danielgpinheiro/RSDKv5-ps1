@@ -1,0 +1,9 @@
+# Summary1: the sprite files (SPR) and sheets (SHT) the scene loads, in load order (tools/gfx/capture_manifests.sh, 9b.2 0,7)
+SPR LSelect/Icons.bin
+SHT LSelect/Objects.gif
+SPR LSelect/Text.bin
+SPR Summary/SummaryEmerald.bin
+SHT Summary/Emeralds.gif
+SPR UI/SmallFont.bin
+SHT UI/SmallFont1.gif
+SHT UI/SmallFont2.gif

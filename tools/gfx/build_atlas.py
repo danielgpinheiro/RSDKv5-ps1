@@ -547,10 +547,20 @@ def literal_anims(path, names, active, handles_of, never=(), scene=None):
     return out if handles_of.get(path) else None
 
 
+# 9b.2: the act 2 scenes a seamless act end carries its sign post into (Zone_StoreEntities in the act 1 finish keeps the
+# players, sign posts and item boxes; OOZ2 shows OOZ1's act clear with its sign post): the sign post is drawn there from
+# the act's first frame, before the act-clear music loads the end group, so its frames stay resident there
+SIGNPOST_CARRIED = {('GHZ', '2'), ('CPZ', '2'), ('SPZ2', '1'), ('FBZ', '2'), ('PSZ2', '2'), ('HCZ', '2'), ('MSZ', '2'),
+                    ('MMZ', '2'), ('LRZ2', '1'), ('TMZ2', '1'), ('OOZ2', '2')}
+
+
 def select(folder, scene_id, character, files):
     """For each file, each animation: None (not placed) or its placement: 'resident', ('player', alt), ('event', g)."""
     import scene_usage as U
     names, placed, active, _ = U.active_objects(folder, scene_id)
+    carried = (folder, scene_id) in SIGNPOST_CARRIED
+    if carried and 'SignPost' in names:
+        active = set(active) | {'SignPost'}  # 9b.2
     _, _, scene = U.scene_objects(folder, scene_id)  # 7b: editable variables as animation IDs
     need = U.needed_files(names, active, [p for p, _, _ in files])
     keep_player, _ = U.player_anims(active, names, U.scene_objects(folder, scene_id)[2],
@@ -627,7 +637,7 @@ def select(folder, scene_id, character, files):
                     where = None
             for g, members in groups.items():
                 for fp, fa in members:
-                    if fp == path and (fa is None or ai in fa):
+                    if fp == path and (fa is None or ai in fa) and not (carried and fp == 'Global/SignPost.bin'):
                         where = ('event', g)
             place.append(where)
         sel[path] = place

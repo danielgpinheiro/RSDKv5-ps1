@@ -1,0 +1,7 @@
+# Thanks1: the sprite files (SPR) and sheets (SHT) the scene loads, in load order (tools/gfx/capture_manifests.sh, 9b.2 0,3)
+SPR Thanks/Decorations.bin
+SHT Players/Sonic1.gif
+SHT Thanks/Logos.gif
+SPR UI/SmallFont.bin
+SHT UI/SmallFont1.gif
+SHT UI/SmallFont2.gif

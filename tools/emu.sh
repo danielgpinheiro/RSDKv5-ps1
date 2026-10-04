@@ -37,7 +37,9 @@ emu_start() {
     fi
     "$EMU_DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
     EMU_PID=$!
-    sleep 6
+    # its GDB stub listens once the app is up: slower while another emulator runs (a fixed 6 s missed it, 9b.2)
+    sleep 4
+    for _ in $(seq 1 26); do nc -z localhost 2345 2>/dev/null && break; sleep 1; done
   else
     # 4.2e: other sessions run isolated copies (-portable config, their own GDB port): only an instance on the default
     # config (this harness's pcsx.json and GDB port 3333) blocks this run
