@@ -78,3 +78,5 @@ SPR Puyo/Combos.bin
 SPR CPZ/Shutter.bin
 SPR Eggman/EggmanCPZ.bin
 SHT Eggman/EggmanMBM.gif
+SPR CPZ/MBMSonic.bin
+SHT CPZ/MBMSonic.gif

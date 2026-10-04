@@ -56,6 +56,8 @@ extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes w
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
 extern "C" const char *const ps1TempLargeStageMarker; // 7b.14: (Zone.c) a stage with this class: PS1_TEMP_BLOCKS_LARGE, all large
 extern "C" const char *const ps1TempBurstClasses[]; // 9b.2b: (Zone.c) the small temp blocks fit these classes (stage has them)
+extern "C" const PS1SlotRangeSpec ps1SlotRangeSpecs[]; // 9b.2b: (Zone.c) scene slots the game copies entities into
+
 __attribute__((noinline)) int32 StageClassOf(const char *name)
 {
     RETRO_HASH_MD5(hash);
@@ -73,6 +75,8 @@ void SceneCapsBegin()
     memset(s_growCap, 0, sizeof(s_growCap));
     for (const PS1GrowSpec *g = ps1GrowSpecs; g->from; ++g) {
         // 7b.13: "Blank Object" = the scene's blank entities (class 0: a ghost slot unless an entry here gives it a block)
+        if (g->needs && !StageClassOf(g->needs))
+            continue; // 9b.2b: not this stage's
         bool blank = !strcmp(g->from, "Blank Object");
         int32 a = blank ? 0 : StageClassOf(g->from), b = g->to ? StageClassOf(g->to) : 0;
         uint32 cap = 0; // 7b.13: several entries for one class: the largest the stage has
@@ -84,6 +88,22 @@ void SceneCapsBegin()
             s_growCap[a] = (uint16)cap;
     }
 }
+// 9b.2b: the slot's range entry this stage gives a block (its class size), or 0
+static uint32 RangeCap(int32 slot)
+{
+    for (const PS1SlotRangeSpec *g = ps1SlotRangeSpecs; g->cls; ++g) {
+        if (slot < g->first || slot > g->last)
+            continue;
+        int32 k = slot - g->first;
+        if (k % g->period >= g->span || k % g->stride >= g->width)
+            continue;
+        int32 o = StageClassOf(g->cls);
+        if (o && o < TYPE_COUNT)
+            return Align4(objectClassList[stageObjectIDs[o]].entityClassSize);
+    }
+    return 0;
+}
+
 inline uint32 SceneCap(uint16 classID)
 {
     uint32 c = Align4(objectClassList[stageObjectIDs[classID]].entityClassSize);
@@ -802,6 +822,14 @@ void RSDK::PS1SceneEntitiesPlace()
             bytes += sizeof(PS1EntityHeader) + SceneCap(0);
         ++placed;
     }
+    // 9b.2b: the slots the game copies entities into by number (ps1SlotRangeSpecs), past the scene's own slots
+    int32 rangeLast = 0;
+    for (const PS1SlotRangeSpec *g = ps1SlotRangeSpecs; g->cls; ++g)
+        for (int32 sl = g->first; sl <= g->last; ++sl)
+            if (uint32 cap = sl >= RESERVE_ENTITY_COUNT + placed ? RangeCap(sl) : 0) {
+                bytes += sizeof(PS1EntityHeader) + cap;
+                rangeLast = sl;
+            }
     // 7b: the temp blocks (more in a stage with the game's ps1TempStageMarker class: the Mean Bean Machine's beans)
     ps1TempBlocks     = StageClassOf(ps1TempStageMarker) ? PS1_TEMP_BLOCKS_MANY : PS1_TEMP_BLOCKS;
     ps1TempLargeEvery = ps1TempBlocks / PS1_TEMP_LARGE_COUNT;
@@ -973,9 +1001,16 @@ void RSDK::PS1SceneEntitiesPlace()
     g_ps1DormantPool    = pool;
     g_ps1DormantLive    = 0;
 
+    // 9b.2b: the range blocks (blank: the game copies its entities in); the slot loops visit them
+    for (int32 sl = slot; sl <= rangeLast; ++sl)
+        if (uint32 cap = RangeCap(sl)) {
+            objectEntityPtr[sl] = Carve(p, (uint16)sl, cap);
+            memset(objectEntityPtr[sl], 0, cap);
+        }
+
     s_spare         = p;
     s_spareEnd      = s_arena + bytes;
-    ps1SceneSlotEnd = slot;
+    ps1SceneSlotEnd = slot; // (a range block extends it when the game copies an entity in: CopyEntity)
     ps1TempSlotEnd  = TEMPENTITY_START + ps1TempBlocks;
 
     // (the candidates' scratch: STG's tail, released below with the records)
@@ -1337,6 +1372,8 @@ void RSDK::CopyEntity(void *destEntity, void *srcEntity, bool32 clearSrcEntity)
         if (cap > n)
             memset((uint8 *)dst + n, 0, cap - n);
         PS1ClassNote(dst->classID, dslot); // 9.4
+        if (dslot >= ps1SceneSlotEnd && dslot < TEMPENTITY_START && n)
+            ps1SceneSlotEnd = dslot + 1; // 9b.2b: an entity copied past the scene's slots (a range block): visit it now
     }
     else {
         memcpy(dst, src, n);

@@ -97,39 +97,49 @@ static void Zone_PS1TestActEnd(void)
 // PS1 test hook (docs/32 9b.2b): GDB sets the boss class (its object's classID), its Hit function (the overlay's symbol)
 // and how many hits: once a frame the entity of that class (the first, or the g_ps1TestBossNth-th after it) takes one, as if the player had hit it, so the
 // fight ends through the boss's own defeat code (its capsule / outro / stage finish). g_ps1TestBossWarp first puts
-// player 1 at the boss's position + (g_ps1TestBossDX, DY) pixels; g_ps1TestBossSlot tells GDB where the entity is (-1:
-// none). All 0 in normal play.
-volatile int32 g_ps1TestBossSlot = -1, g_ps1TestBossNth = 0, g_ps1TestBossHits = 0, g_ps1TestBossClass = 0, g_ps1TestBossWarp = 0, g_ps1TestBossDX = 0, g_ps1TestBossDY = 0;
+// player 1 at the boss's position + (g_ps1TestBossDX, DY) pixels (2: at that point); g_ps1TestBossSlot tells GDB where the entity is (-1:
+// none; g_ps1TestBossPin: that slot instead of the n-th). All 0 in normal play.
+volatile int32 g_ps1TestBossSlot = -1, g_ps1TestBossPin = -1, g_ps1TestBossNth = 0, g_ps1TestBossHits = 0, g_ps1TestBossClass = 0, g_ps1TestBossWarp = 0, g_ps1TestBossDX = 0, g_ps1TestBossDY = 0;
 void (*volatile g_ps1TestBossHit)(void) = NULL;
+static void Zone_PS1TestBossWarp(Entity *boss)
+{
+    EntityPlayer *player = RSDK_GET_ENTITY(SLOT_PLAYER1, Player);
+    // (g_ps1TestBossWarp 2: DX, DY are the point itself: a boss that moves, or whose parts appear, once the arena starts)
+    player->position.x = (boss ? boss->position.x : 0) + (g_ps1TestBossDX << 16);
+    player->position.y = (boss ? boss->position.y : 0) + (g_ps1TestBossDY << 16);
+    player->velocity.x = player->velocity.y = player->groundVel = 0;
+    g_ps1TestBossWarp  = 0;
+    // the whole layer, as the stage load sets it: the bounds the start area left would kill the player
+    Vector2 layerSize;
+    RSDK.GetLayerSize(Zone->fgLayer[0], &layerSize, true);
+    Zone->cameraBoundsL[0] = Zone->cameraBoundsT[0] = 0;
+    Zone->cameraBoundsR[0] = layerSize.x;
+    Zone->cameraBoundsB[0] = layerSize.y;
+    Zone->playerBoundsL[0] = Zone->playerBoundsT[0] = 0;
+    Zone->playerBoundsR[0] = TO_FIXED(layerSize.x);
+    Zone->playerBoundsB[0] = Zone->deathBoundary[0] = TO_FIXED(layerSize.y);
+}
 static void Zone_PS1TestBoss(void)
 {
+    if (g_ps1TestBossWarp == 2)
+        Zone_PS1TestBossWarp(NULL);
     g_ps1TestBossSlot = -1;
     for (int32 s = 0, n = g_ps1TestBossNth; s < ENTITY_COUNT; ++s) {
         Entity *boss = RSDK.GetEntity(s);
-        if (boss->classID != g_ps1TestBossClass || n-- > 0)
+        if (boss->classID != g_ps1TestBossClass || (g_ps1TestBossPin >= 0 ? s != g_ps1TestBossPin : n-- > 0))
             continue;
         g_ps1TestBossSlot = s;
         if (g_ps1TestBossWarp) {
-            EntityPlayer *player = RSDK_GET_ENTITY(SLOT_PLAYER1, Player);
-            player->position.x   = boss->position.x + (g_ps1TestBossDX << 16);
-            player->position.y   = boss->position.y + (g_ps1TestBossDY << 16);
-            player->velocity.x = player->velocity.y = player->groundVel = 0;
-            g_ps1TestBossWarp    = 0;
-            // the whole layer, as the stage load sets it: the bounds the start area left would kill the player
-            Vector2 layerSize;
-            RSDK.GetLayerSize(Zone->fgLayer[0], &layerSize, true);
-            Zone->cameraBoundsL[0] = Zone->cameraBoundsT[0] = 0;
-            Zone->cameraBoundsR[0] = layerSize.x;
-            Zone->cameraBoundsB[0] = layerSize.y;
-            Zone->playerBoundsL[0] = Zone->playerBoundsT[0] = 0;
-            Zone->playerBoundsR[0] = TO_FIXED(layerSize.x);
-            Zone->playerBoundsB[0] = Zone->deathBoundary[0] = TO_FIXED(layerSize.y);
+            Zone_PS1TestBossWarp(boss);
         }
         else if (g_ps1TestBossHits > 0 && g_ps1TestBossHit) {
-            Entity *current   = SceneInfo->entity;
-            SceneInfo->entity = boss;
+            Entity *current       = SceneInfo->entity;
+            int32 currentSlot     = SceneInfo->entitySlot;
+            SceneInfo->entity     = boss;
+            SceneInfo->entitySlot = s; // (bosses find their parts by slot: CrimsonEye's balls)
             g_ps1TestBossHit();
-            SceneInfo->entity = current;
+            SceneInfo->entity     = current;
+            SceneInfo->entitySlot = currentSlot;
             --g_ps1TestBossHits;
         }
         return;
@@ -1558,6 +1568,12 @@ const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" },
                                      { "Blank Object", "KleptoMobile" },
                                      { "Blank Object", "PhantomKing" },
                                      { "Blank Object", "ERZKing" },
+                                     // 9b.2b: GHZ2's Death Egg Robot resets the blank slot two before it into its Eggman,
+                                     // then into the flying capsule, and places the capsule through its old pointer
+                                     { "Blank Object", "EggPrison", "DERobot" },
+                                     // (GHZ1's DD Wrecker: the seven blank slots after it become its chains, core and
+                                     // balls, placed through the pointers taken before the reset)
+                                     { "Blank Object", "DDWrecker" },
                                      { NULL, NULL } };
 // 7b.14: StageConfig names stock never registers as objects (the engine counts them apart from missing ones): with Plus,
 // SaveGame registers only its static variables (Game.c), and Credits' StageConfig still lists it
@@ -1574,6 +1590,9 @@ const char *const ps1TempLargeStageMarker = "CreditsSetup";
 // 9b.2b: classes made as temp entities in bursts beyond the large temp blocks (SSZ1's Hotaru Hi-Watt: its small Hotarus
 // and their bulbs, 296 B, a dozen at once): a stage with one sizes its small temp blocks for it (else spare blocks)
 const char *const ps1TempBurstClasses[] = { "HotaruHiWatt", NULL };
+// 9b.2b: CPZ2's Mean Bean Machine copies each landed bean into slot 0x600 + its cell (128 a board, 8 a row; 14 rows and 6
+// columns used) and keeps the slot's pointer it took before the copy: those slots hold a PuyoBean block from the load
+const PS1SlotRangeSpec ps1SlotRangeSpecs[] = { { 0x600, 0x6FF, 128, 14 * 8, 8, 6, "PuyoBean" }, { 0, 0, 0, 0, 0, 0, NULL } };
 // 9b.1: where the engine reads the player's character (each scene has an atlas per character: RSDK/Graphics/PS1/PS1Atlas.cpp)
 const int32 ps1GlobalsPlayerIDOffset = (int32)offsetof(GlobalVariables, playerID);
 const PS1ReservedSpec ps1ReservedSpecs[] = {

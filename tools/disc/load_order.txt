@@ -336,6 +336,7 @@ Data/Stages/CPZ/Scene2.pda
 Data/Stages/CPZ/Scene2.atl
 Data/Stages/CPZ/PS1Sfx2.bin
 Data/Stages/CPZ/Scene2.bin
+Data/Stages/CPZ/PS1Local/5EB2C30C.bin
 Data/Stages/CPZ/Scene2_tails.pda
 Data/Stages/CPZ/Scene2_tails.atl
 Data/Stages/CPZ/Scene2_knux.pda

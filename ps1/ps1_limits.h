@@ -67,7 +67,17 @@ typedef struct {
    slot (sizeof(EntityBase)): for a class that writes past its struct, which the PC's uniform slots absorb */
 typedef struct {
     const char *from, *to;
+    const char *needs; /* 9b.2b: the entry applies only when the stage has this class (NULL: whenever it has `to`) */
 } PS1GrowSpec;
+
+/* docs/32 9b.2b: scene slots the game copies entities into by number (the Mean Bean Machine's landed beans: slot 0x600 +
+   their cell) get a block for `cls` from the load when the stage has it: within [first, last], the first `span` slots of
+   each `period` and the first `width` of each `stride` (the board's used cells). The game keeps pointers it takes before
+   the copy: a block made then (a spare one) would leave them on the old slot. */
+typedef struct {
+    unsigned short first, last, period, span, stride, width;
+    const char *cls;
+} PS1SlotRangeSpec;
 
 /* docs/32 9.4: a class written straight into an entity slot (game code past the engine's create / reset / copy: the
  * player slots' Player / DebugMode swaps, BSS_Setup's collectables) widens foreach_all's range of that class. */

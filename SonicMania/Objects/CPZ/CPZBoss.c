@@ -61,6 +61,16 @@ void CPZBoss_Create(void *data)
 void CPZBoss_StageLoad(void)
 {
     CPZBoss->aniFrames = RSDK.LoadSpriteAnimation("Eggman/EggmanCPZ.bin", SCOPE_STAGE);
+#if defined RETRO_PS1_BUILD
+    // PS1 (docs/32 9b.2b): the character's machine file with the scene, so the atlas binds it at the load (SetupArena loads
+    // it again: the same animation); loaded first there, it had no frames until the boss music brought its group
+    switch (GET_CHARACTER_ID(1)) {
+        default:
+        case ID_SONIC: RSDK.LoadSpriteAnimation("CPZ/MBMSonic.bin", SCOPE_STAGE); break;
+        case ID_TAILS: RSDK.LoadSpriteAnimation("CPZ/MBMTails.bin", SCOPE_STAGE); break;
+        case ID_KNUCKLES: RSDK.LoadSpriteAnimation("CPZ/MBMKnux.bin", SCOPE_STAGE); break;
+    }
+#endif
 
     CPZBoss->hitboxPlayerTrigger.left   = -16;
     CPZBoss->hitboxPlayerTrigger.top    = 8;

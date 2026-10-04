@@ -234,6 +234,15 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                                  ('Global/Explosions.bin', {2, 3})],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: CPZ1's Amoeba Droid, CPZ2's Mean Bean Machine (Eggman, the Puyo beans, the player's MBM picture)
+                # 9b.2b: CPZ2's Mean Bean Machine is on screen (its control panels) and starts its entrance before the boss
+                # music (an 80-frame fade) brings the boss group: its art is in the title card's group too
+                'CPZ2': {'start': [('Global/TitleCard.bin', None), ('Eggman/EggmanCPZ.bin', None), ('CPZ/MBMSonic.bin', None),
+                                   ('CPZ/MBMTails.bin', None), ('CPZ/MBMKnux.bin', None)],
+                         'boss': [('CPZ/AmoebaDroid.bin', None), ('Eggman/EggmanCPZ.bin', None), ('Puyo/PuyoBeans.bin', None),
+                                  ('Puyo/Combos.bin', None), ('Puyo/PuyoIndicator.bin', None), ('Puyo/PuyoUI.bin', None),
+                                  ('CPZ/MBMSonic.bin', None), ('CPZ/MBMTails.bin', None), ('CPZ/MBMKnux.bin', None),
+                                  ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'CPZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('CPZ/AmoebaDroid.bin', None), ('Eggman/EggmanCPZ.bin', None), ('Puyo/PuyoBeans.bin', None),
                                  ('Puyo/Combos.bin', None), ('Puyo/PuyoIndicator.bin', None), ('Puyo/PuyoUI.bin', None),
@@ -308,9 +317,10 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: MMZ1's Egg Pistons MKII, MMZ2's Gachapandora (Eggman in each)
                 # 7b: TMZ1's Crimson Eye; TMZ2 has no boss; TMZ3 is the Phantom Egg fight from its start (level frames)
+                # 9b.2b: the boss's elevator (its arrows) carries the player to act 2 after the act clear
                 'TMZ1': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('TMZ1/CrimsonEye.bin', None)],
-                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('TMZ1/CrimsonEye.bin', None)]},
                 'TMZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'TMZ3': {'start': [('Global/TitleCard.bin', None)],
@@ -1143,14 +1153,16 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 counts['unplaced'] += 1
                 continue
             counts['placed'] += 1
-            for i, wh in enumerate(places_of(where)):
+            default = MISSING  # the binding the scene loads with: its placement in a group loaded from the start, if any
+            for wh in places_of(where):
                 bd = binding(wh, sh, max(0, x), max(0, y), w, h)
                 if bd is None:
                     raise AtlasError('%s: no cluster for %s %s' % (name, path, (sh, x, y, w, h)))
-                if i == 0:
-                    bind += bd if wh in ('resident', ('player', 'normal'), ('event', 'start')) else MISSING
+                if wh in ('resident', ('player', 'normal'), ('event', 'start')):
+                    default = bd
                 if wh != 'resident':
                     patches[wh] += struct.pack('<HH', fi, k) + bd
+            bind += default
         if dropped:
             bind += MISSING  # the placeholder frame of the dropped animations
 
