@@ -1877,8 +1877,10 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
 
     int32 permCnt = 0, loopCnt = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1: a free temp slot must also be big enough for the class (PS1Entities.hpp: small and large temp slots).
-    while (entity->classID || PS1EntityCapacity(entity) < object->entityClassSize) {
+    // PS1: a free temp slot must also be big enough for the class (PS1Entities.hpp: small and large temp slots); a blank
+    // one for the class PS1CreateBlankFor names (9b.2b)
+    uint32 need = classID == TYPE_DEFAULTOBJECT && ps1BlankCreateSize ? ps1BlankCreateSize : object->entityClassSize;
+    while (entity->classID || PS1EntityCapacity(entity) < need) {
         if (!entity->classID)
             g_ps1EntityCreateSkips = g_ps1EntityCreateSkips + 1;
 #else
@@ -1913,13 +1915,29 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
 #if RETRO_PLATFORM == RETRO_PS1
     if (entity->classID) // 7b: no free block in the search: the stock overwrite of a live entity (counted)
         g_ps1EntityCreateOverwrites = g_ps1EntityCreateOverwrites + 1;
+    else if (PS1EntityCapacity(entity) < need) {
+        // 9b.2b: the search ended on a free block too small (16 slots without a free large one): any free temp block that
+        // is big enough (a large one, or one an earlier relocation enlarged) before a spare block: a burst of big temp
+        // entities (SSZ1's small Hotarus, 296 B) would otherwise take a new spare block each round until none is left
+        for (int32 t = 0; t < ps1TempBlocks; ++t) {
+            EntityBase *b = OBJECT_ENTITY(TEMPENTITY_START + t);
+            if (!b->classID && PS1EntityCapacity(b) >= need) {
+                sceneInfo.createSlot = TEMPENTITY_START + t;
+                entity               = (Entity *)b;
+                g_ps1EntityCreateFar = g_ps1EntityCreateFar + 1;
+                break;
+            }
+        }
+    }
     {
         static EntityBase s_createOverflow; // no block at all (no spare room): counted, never a write through NULL
-        Entity *e = PS1EntityEnsure((EntityBase *)entity, sceneInfo.createSlot, object->entityClassSize);
+        Entity *e = PS1EntityEnsure((EntityBase *)entity, sceneInfo.createSlot, need);
         entity    = e ? e : &s_createOverflow;
     }
-#endif
+    memset(entity, 0, need);
+#else
     memset(entity, 0, object->entityClassSize);
+#endif
     entity->position.x  = x;
     entity->position.y  = y;
     entity->interaction = true;

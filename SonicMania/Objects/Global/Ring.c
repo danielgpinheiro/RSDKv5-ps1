@@ -1057,48 +1057,50 @@ const PS1DormantSpec ps1DormantSpecs[] = {
       { offsetof(EntityRing, drawPos), offsetof(EntityRing, animator.frameID) + sizeof(int32) - offsetof(EntityRing, drawPos),
         offsetof(EntityRing, direction), sizeof(uint8) },
       false,
-      { "ERZOutro", "RingField", "LaundroMobile" } },
-    { "PlaneSwitch", PS1Always, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 }, false, { "HeavyRider", "RollerMKII", NULL } },
+      PS1_UNLESS("ERZOutro", "RingField", "LaundroMobile") },
+    { "PlaneSwitch", PS1Always, 0, PlaneSwitch_PS1Range, { 0, 0, 0, 0 }, false, PS1_UNLESS("HeavyRider", "RollerMKII") },
     { "ShopWindow", PS1Always, 0, ShopWindow_PS1Range, { offsetof(EntityShopWindow, animator.frameID), sizeof(int32), 0, 0 },
-      false, { NULL, NULL, NULL } },
+      false, NULL },
     { "InvisibleBlock", InvisibleBlock_PS1Eligible, 0, InvisibleBlock_PS1Range, { 0, 0, 0, 0 }, false,
-      { "Shiversaw", NULL, NULL } },
+      PS1_UNLESS("Shiversaw") },
     // springs (a bounce leaves the animation on its last frame) and decorations (animation, rotation) come back with
     // their changed words
-    { "Spring", PS1Always, TO_FIXED(96), NULL, { 0, 0, 0, 0 }, true, { "PopOut", "MetalSonic", NULL } },
-    { "Decoration", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { "AIZSetup", "MSZSetup", "EncoreGoodEnd" } },
+    { "Spring", PS1Always, TO_FIXED(96), NULL, { 0, 0, 0, 0 }, true, PS1_UNLESS("PopOut", "MetalSonic") },
+    { "Decoration", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, PS1_UNLESS("AIZSetup", "MSZSetup", "EncoreGoodEnd") },
     // (7b.12: PopOut reads its spring / spikes from the next slot: a stage with PopOut keeps them entities)
-    { "Spikes", Spikes_PS1Eligible, 0, Spikes_PS1Range, { 0, 0, 0, 0 }, false, { "PopOut", NULL, NULL } },
+    { "Spikes", Spikes_PS1Eligible, 0, Spikes_PS1Range, { 0, 0, 0, 0 }, false, PS1_UNLESS("PopOut") },
     // SPZ: TV vans / satellites / TVs (the radio signals find them with foreach_active: in range only; a TV broken
     // comes back with its changed words); Rock'em Sock'em bumpers (raised in Create; back to their start after a hit)
     { "CircleBumper", CircleBumper_PS1Eligible, 0, CircleBumper_PS1Range, { offsetof(EntityCircleBumper, drawPos), sizeof(Vector2), 0, 0 },
-      true, { NULL, NULL, NULL } },
-    { "TVVan", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL }, true },
-    // (7b.12: Blastoid / DiveEggman / EggPistonsMKII read their collapsing platforms by slot: those stages keep them)
+      true, NULL },
+    { "TVVan", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL, true },
+    // (7b.12: Blastoid / DiveEggman / EggPistonsMKII read their collapsing platforms by slot: those stages keep them;
+    // 9b.2b: so do BuckwildBall / RockDrill / MegaOctus, and BigSqueeze (+ FBZ1Outro) / PuyoGame walk them with
+    // foreach_all: BigSqueeze's intro arms the arena floor, a dormant one stayed solid and the outro never dropped the player)
     { "CollapsingPlatform", CollapsingPlatform_PS1Eligible, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false,
-      { "Blastoid", "DiveEggman", "EggPistonsMKII" }, true },
-    { "BGSwitch", PS1Always, 0, BGSwitch_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
-    { "GenericTrigger", PS1Always, 0, GenericTrigger_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
-    { "Mine", PS1Always, TO_FIXED(64), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+      PS1_UNLESS("Blastoid", "DiveEggman", "EggPistonsMKII", "BuckwildBall", "RockDrill", "MegaOctus", "BigSqueeze", "PuyoGame"), true },
+    { "BGSwitch", PS1Always, 0, BGSwitch_PS1Range, { 0, 0, 0, 0 }, false, NULL },
+    { "GenericTrigger", PS1Always, 0, GenericTrigger_PS1Range, { 0, 0, 0, 0 }, false, NULL },
+    { "Mine", PS1Always, TO_FIXED(64), NULL, { 0, 0, 0, 0 }, false, NULL },
     { "FBZFan", PS1Always, TO_FIXED(128), NULL,
-      { offsetof(EntityFBZFan, hitboxTrigger.top), sizeof(int16), offsetof(EntityFBZFan, hitboxTrigger.bottom), sizeof(int16) }, false, { NULL, NULL, NULL } },
-    { "PropellerShaft", PS1Always, 0, PropellerShaft_PS1Range, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
-    { "Propeller", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "HangPoint", PS1Always, 0, HangPoint_PS1Range, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "FlameSpring", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "ElectroMagnet", PS1Always, 0, ElectroMagnet_PS1Range, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "Current", PS1Always, 0, Current_PS1Range, { 0, 0, 0, 0 }, true, { "LaundroMobile", NULL, NULL } },
+      { offsetof(EntityFBZFan, hitboxTrigger.top), sizeof(int16), offsetof(EntityFBZFan, hitboxTrigger.bottom), sizeof(int16) }, false, NULL },
+    { "PropellerShaft", PS1Always, 0, PropellerShaft_PS1Range, { 0, 0, 0, 0 }, false, NULL },
+    { "Propeller", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "HangPoint", PS1Always, 0, HangPoint_PS1Range, { 0, 0, 0, 0 }, true, NULL },
+    { "FlameSpring", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "ElectroMagnet", PS1Always, 0, ElectroMagnet_PS1Range, { 0, 0, 0, 0 }, true, NULL },
+    { "Current", PS1Always, 0, Current_PS1Range, { 0, 0, 0, 0 }, true, PS1_UNLESS("LaundroMobile") },
     // launchers (FBZ): a Platform without children (only direction is editable: a fixed platform, 128 px); a launch ends
     // back at the start, idle (ACTIVE_BOUNDS)
-    { "Launcher", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
+    { "Launcher", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
     // PSZ (7b.4): ice blocks (Create reads only globals and the player's character; Player.c's foreach_all destroys
     // only the frozen-player blocks, temp entities; a broken block is gone) and petal piles (Init sets the hitbox and
     // state on the first update: diffs; a scattered pile's tiles go with its state)
-    { "Ice", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "PetalPile", PS1Always, TO_FIXED(16), NULL, { 0, 0, 0, 0 }, true, { NULL, NULL, NULL } },
-    { "Technosqueek", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
-    { "Clucker", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
-    { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, { NULL, NULL, NULL } },
+    { "Ice", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "PetalPile", PS1Always, TO_FIXED(16), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "Technosqueek", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, NULL },
+    { "Clucker", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, false, NULL },
+    { NULL, NULL, 0, NULL, { 0, 0, 0, 0 }, false, NULL },
 };
 #endif

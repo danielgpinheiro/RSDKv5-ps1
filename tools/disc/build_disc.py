@@ -108,7 +108,8 @@ def local_entry(n, real_path):
     low, real_path = n.replace(os.sep, '/').lower(), real_path.replace(os.sep, '/')
     if '/ps1local/' in low:
         return os.path.dirname(os.path.dirname(real_path)), int(os.path.splitext(os.path.basename(n))[0], 16)
-    if re.search(r'/scene[^/]*_(tails|knux)\.(atl|pda)$', low):
+    # (9b.2b: every scene's .pda too: PS1AtlasLoad reads it once, while its folder loads; 86 entries out of the index)
+    if re.search(r'/scene[^/]*_(tails|knux)\.atl$', low) or re.search(r'/scene[^/]*\.pda$', low):
         return os.path.dirname(real_path), path_hash(real_path)
     return None
 

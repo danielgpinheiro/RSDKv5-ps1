@@ -93,6 +93,48 @@ static void Zone_PS1TestActEnd(void)
     Music_PlayTrack(TRACK_ACTCLEAR);
     RSDK.ResetEntitySlot(SLOT_ACTCLEAR, ActClear->classID, NULL);
 }
+
+// PS1 test hook (docs/32 9b.2b): GDB sets the boss class (its object's classID), its Hit function (the overlay's symbol)
+// and how many hits: once a frame the entity of that class (the first, or the g_ps1TestBossNth-th after it) takes one, as if the player had hit it, so the
+// fight ends through the boss's own defeat code (its capsule / outro / stage finish). g_ps1TestBossWarp first puts
+// player 1 at the boss's position + (g_ps1TestBossDX, DY) pixels; g_ps1TestBossSlot tells GDB where the entity is (-1:
+// none). All 0 in normal play.
+volatile int32 g_ps1TestBossSlot = -1, g_ps1TestBossNth = 0, g_ps1TestBossHits = 0, g_ps1TestBossClass = 0, g_ps1TestBossWarp = 0, g_ps1TestBossDX = 0, g_ps1TestBossDY = 0;
+void (*volatile g_ps1TestBossHit)(void) = NULL;
+static void Zone_PS1TestBoss(void)
+{
+    g_ps1TestBossSlot = -1;
+    for (int32 s = 0, n = g_ps1TestBossNth; s < ENTITY_COUNT; ++s) {
+        Entity *boss = RSDK.GetEntity(s);
+        if (boss->classID != g_ps1TestBossClass || n-- > 0)
+            continue;
+        g_ps1TestBossSlot = s;
+        if (g_ps1TestBossWarp) {
+            EntityPlayer *player = RSDK_GET_ENTITY(SLOT_PLAYER1, Player);
+            player->position.x   = boss->position.x + (g_ps1TestBossDX << 16);
+            player->position.y   = boss->position.y + (g_ps1TestBossDY << 16);
+            player->velocity.x = player->velocity.y = player->groundVel = 0;
+            g_ps1TestBossWarp    = 0;
+            // the whole layer, as the stage load sets it: the bounds the start area left would kill the player
+            Vector2 layerSize;
+            RSDK.GetLayerSize(Zone->fgLayer[0], &layerSize, true);
+            Zone->cameraBoundsL[0] = Zone->cameraBoundsT[0] = 0;
+            Zone->cameraBoundsR[0] = layerSize.x;
+            Zone->cameraBoundsB[0] = layerSize.y;
+            Zone->playerBoundsL[0] = Zone->playerBoundsT[0] = 0;
+            Zone->playerBoundsR[0] = TO_FIXED(layerSize.x);
+            Zone->playerBoundsB[0] = Zone->deathBoundary[0] = TO_FIXED(layerSize.y);
+        }
+        else if (g_ps1TestBossHits > 0 && g_ps1TestBossHit) {
+            Entity *current   = SceneInfo->entity;
+            SceneInfo->entity = boss;
+            g_ps1TestBossHit();
+            SceneInfo->entity = current;
+            --g_ps1TestBossHits;
+        }
+        return;
+    }
+}
 #endif
 
 void Zone_StaticUpdate(void)
@@ -104,6 +146,8 @@ void Zone_StaticUpdate(void)
 #if defined RETRO_PS1_BUILD
     if (g_ps1TestActEnd)
         Zone_PS1TestActEnd();
+    if (g_ps1TestBossClass)
+        Zone_PS1TestBoss();
 #endif
 
     // Persistent timer, this
@@ -478,7 +522,11 @@ void Zone_ReloadStoredEntities(int32 xOffset, int32 yOffset, bool32 setATLBounds
 
         // only players & powerups get to be overridden, everything else is just added to the temp area
         if (globals->atlEntitySlot[e] >= SLOT_ZONE)
+#if defined RETRO_PS1_BUILD
+            entity = (Entity *)PS1CreateBlankFor(storedEntity->classID); // a temp block for the stored class (9b.2b)
+#else
             entity = RSDK.CreateEntity(TYPE_BLANK, NULL, 0, 0);
+#endif
         else
             entity = RSDK_GET_ENTITY_GEN(globals->atlEntitySlot[e]);
 
@@ -1523,6 +1571,9 @@ const char *const ps1StockAbsentObjects[] = {
 const char *const ps1TempStageMarker = "PuyoBean";
 // 7b.14: the credits create their text lines as temp entities (CreditsSetup, PS1): every temp block large there
 const char *const ps1TempLargeStageMarker = "CreditsSetup";
+// 9b.2b: classes made as temp entities in bursts beyond the large temp blocks (SSZ1's Hotaru Hi-Watt: its small Hotarus
+// and their bulbs, 296 B, a dozen at once): a stage with one sizes its small temp blocks for it (else spare blocks)
+const char *const ps1TempBurstClasses[] = { "HotaruHiWatt", NULL };
 // 9b.1: where the engine reads the player's character (each scene has an atlas per character: RSDK/Graphics/PS1/PS1Atlas.cpp)
 const int32 ps1GlobalsPlayerIDOffset = (int32)offsetof(GlobalVariables, playerID);
 const PS1ReservedSpec ps1ReservedSpecs[] = {

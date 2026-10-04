@@ -12,6 +12,7 @@ Data/Stages/Logos/PS1Local/30935561.bin
 Data/Stages/Logos/PS1Local/2A26B880.bin
 Data/Stages/Logos/16x16Tiles.pal
 Data/Stages/Logos/Scene1.ptl
+Data/Stages/Logos/Scene1.pda
 Data/Stages/Logos/Scene1.atl
 Data/Stages/Logos/PS1Sfx1.bin
 Data/Stages/Logos/Scene1.bin
@@ -24,6 +25,7 @@ Data/Stages/Title/PS1Local/30935561.bin
 Data/Stages/Title/PS1Local/2A26B880.bin
 Data/Stages/Title/16x16Tiles.pal
 Data/Stages/Title/Scene1.ptl
+Data/Stages/Title/Scene1.pda
 Data/Stages/Title/Scene1.atl
 Data/Stages/Title/PS1Sfx1.bin
 Data/Stages/Title/Scene1.bin
@@ -42,6 +44,7 @@ Data/Stages/Menu/PS1Local/2A26B880.bin
 Data/Stages/Menu/PS1Local/47208097.bin
 Data/Stages/Menu/16x16Tiles.pal
 Data/Stages/Menu/Scene1.ptl
+Data/Stages/Menu/Scene1.pda
 Data/Stages/Menu/Scene1.atl
 Data/Stages/Menu/PS1Sfx1.bin
 Data/Stages/Menu/Scene1.bin
@@ -172,6 +175,7 @@ Data/Stages/GHZ/PS1Local/6BF0FD0C.bin
 Data/Stages/GHZ/PS1Local/ADDD5ABD.bin
 Data/Stages/GHZ/16x16Tiles.pal
 Data/Stages/GHZ/Scene1.ptl
+Data/Stages/GHZ/Scene1.pda
 Data/Stages/GHZ/Scene1.atl
 Data/Stages/GHZ/PS1Sfx1.bin
 Data/Stages/GHZ/Scene1.bin
@@ -1718,6 +1722,7 @@ Data/Stages/UFO1/PS1Local/49DDE7AD.bin
 Data/Stages/UFO1/PS1Local/47208097.bin
 Data/Stages/UFO1/16x16Tiles.pal
 Data/Stages/UFO1/Scene1.ptl
+Data/Stages/UFO1/Scene1.pda
 Data/Stages/UFO1/Scene1.atl
 Data/Stages/UFO1/PS1Sfx1.bin
 Data/Stages/UFO1/Scene1.bin
@@ -1747,6 +1752,7 @@ Data/Stages/UFO2/PS1Local/49DDE7AD.bin
 Data/Stages/UFO2/PS1Local/47208097.bin
 Data/Stages/UFO2/16x16Tiles.pal
 Data/Stages/UFO2/Scene1.ptl
+Data/Stages/UFO2/Scene1.pda
 Data/Stages/UFO2/Scene1.atl
 Data/Stages/UFO2/PS1Sfx1.bin
 Data/Stages/UFO2/Scene1.bin
@@ -1776,6 +1782,7 @@ Data/Stages/UFO3/PS1Local/49DDE7AD.bin
 Data/Stages/UFO3/PS1Local/47208097.bin
 Data/Stages/UFO3/16x16Tiles.pal
 Data/Stages/UFO3/Scene1.ptl
+Data/Stages/UFO3/Scene1.pda
 Data/Stages/UFO3/Scene1.atl
 Data/Stages/UFO3/PS1Sfx1.bin
 Data/Stages/UFO3/Scene1.bin
@@ -1805,6 +1812,7 @@ Data/Stages/UFO4/PS1Local/49DDE7AD.bin
 Data/Stages/UFO4/PS1Local/47208097.bin
 Data/Stages/UFO4/16x16Tiles.pal
 Data/Stages/UFO4/Scene1.ptl
+Data/Stages/UFO4/Scene1.pda
 Data/Stages/UFO4/Scene1.atl
 Data/Stages/UFO4/PS1Sfx1.bin
 Data/Stages/UFO4/Scene1.bin
@@ -1834,6 +1842,7 @@ Data/Stages/UFO5/PS1Local/49DDE7AD.bin
 Data/Stages/UFO5/PS1Local/47208097.bin
 Data/Stages/UFO5/16x16Tiles.pal
 Data/Stages/UFO5/Scene1.ptl
+Data/Stages/UFO5/Scene1.pda
 Data/Stages/UFO5/Scene1.atl
 Data/Stages/UFO5/PS1Sfx1.bin
 Data/Stages/UFO5/Scene1.bin
@@ -1863,6 +1872,7 @@ Data/Stages/UFO6/PS1Local/49DDE7AD.bin
 Data/Stages/UFO6/PS1Local/47208097.bin
 Data/Stages/UFO6/16x16Tiles.pal
 Data/Stages/UFO6/Scene1.ptl
+Data/Stages/UFO6/Scene1.pda
 Data/Stages/UFO6/Scene1.atl
 Data/Stages/UFO6/PS1Sfx1.bin
 Data/Stages/UFO6/Scene1.bin
@@ -1892,6 +1902,7 @@ Data/Stages/UFO7/PS1Local/49DDE7AD.bin
 Data/Stages/UFO7/PS1Local/47208097.bin
 Data/Stages/UFO7/16x16Tiles.pal
 Data/Stages/UFO7/Scene1.ptl
+Data/Stages/UFO7/Scene1.pda
 Data/Stages/UFO7/Scene1.atl
 Data/Stages/UFO7/PS1Sfx1.bin
 Data/Stages/UFO7/Scene1.bin
@@ -1941,6 +1952,7 @@ Data/Stages/SpecialBS/PS1Local/205BB96C.bin
 Data/Stages/SpecialBS/PS1Local/21F329AC.bin
 Data/Stages/SpecialBS/16x16Tiles.pal
 Data/Stages/SpecialBS/Scene1.ptl
+Data/Stages/SpecialBS/Scene1.pda
 Data/Stages/SpecialBS/Scene1.atl
 Data/Stages/SpecialBS/PS1Sfx1.bin
 Data/Stages/SpecialBS/Scene1.bin
@@ -1965,6 +1977,7 @@ Data/Stages/SpecialBS/Scene1_tails.atl
 Data/Stages/SpecialBS/Scene1_knux.pda
 Data/Stages/SpecialBS/Scene1_knux.atl
 Data/Stages/SpecialBS/Scene2.ptl
+Data/Stages/SpecialBS/Scene2.pda
 Data/Stages/SpecialBS/Scene2.atl
 Data/Stages/SpecialBS/PS1Sfx2.bin
 Data/Stages/SpecialBS/Scene2.bin
@@ -1973,6 +1986,7 @@ Data/Stages/SpecialBS/Scene2_tails.atl
 Data/Stages/SpecialBS/Scene2_knux.pda
 Data/Stages/SpecialBS/Scene2_knux.atl
 Data/Stages/SpecialBS/Scene3.ptl
+Data/Stages/SpecialBS/Scene3.pda
 Data/Stages/SpecialBS/Scene3.atl
 Data/Stages/SpecialBS/PS1Sfx3.bin
 Data/Stages/SpecialBS/Scene3.bin
@@ -1981,6 +1995,7 @@ Data/Stages/SpecialBS/Scene3_tails.atl
 Data/Stages/SpecialBS/Scene3_knux.pda
 Data/Stages/SpecialBS/Scene3_knux.atl
 Data/Stages/SpecialBS/Scene4.ptl
+Data/Stages/SpecialBS/Scene4.pda
 Data/Stages/SpecialBS/Scene4.atl
 Data/Stages/SpecialBS/PS1Sfx4.bin
 Data/Stages/SpecialBS/Scene4.bin
@@ -1989,6 +2004,7 @@ Data/Stages/SpecialBS/Scene4_tails.atl
 Data/Stages/SpecialBS/Scene4_knux.pda
 Data/Stages/SpecialBS/Scene4_knux.atl
 Data/Stages/SpecialBS/Scene5.ptl
+Data/Stages/SpecialBS/Scene5.pda
 Data/Stages/SpecialBS/Scene5.atl
 Data/Stages/SpecialBS/PS1Sfx5.bin
 Data/Stages/SpecialBS/Scene5.bin
@@ -1997,6 +2013,7 @@ Data/Stages/SpecialBS/Scene5_tails.atl
 Data/Stages/SpecialBS/Scene5_knux.pda
 Data/Stages/SpecialBS/Scene5_knux.atl
 Data/Stages/SpecialBS/Scene6.ptl
+Data/Stages/SpecialBS/Scene6.pda
 Data/Stages/SpecialBS/Scene6.atl
 Data/Stages/SpecialBS/PS1Sfx6.bin
 Data/Stages/SpecialBS/Scene6.bin
@@ -2005,6 +2022,7 @@ Data/Stages/SpecialBS/Scene6_tails.atl
 Data/Stages/SpecialBS/Scene6_knux.pda
 Data/Stages/SpecialBS/Scene6_knux.atl
 Data/Stages/SpecialBS/Scene7.ptl
+Data/Stages/SpecialBS/Scene7.pda
 Data/Stages/SpecialBS/Scene7.atl
 Data/Stages/SpecialBS/PS1Sfx7.bin
 Data/Stages/SpecialBS/Scene7.bin
@@ -2013,6 +2031,7 @@ Data/Stages/SpecialBS/Scene7_tails.atl
 Data/Stages/SpecialBS/Scene7_knux.pda
 Data/Stages/SpecialBS/Scene7_knux.atl
 Data/Stages/SpecialBS/Scene8.ptl
+Data/Stages/SpecialBS/Scene8.pda
 Data/Stages/SpecialBS/Scene8.atl
 Data/Stages/SpecialBS/PS1Sfx8.bin
 Data/Stages/SpecialBS/Scene8.bin
@@ -2021,6 +2040,7 @@ Data/Stages/SpecialBS/Scene8_tails.atl
 Data/Stages/SpecialBS/Scene8_knux.pda
 Data/Stages/SpecialBS/Scene8_knux.atl
 Data/Stages/SpecialBS/Scene9.ptl
+Data/Stages/SpecialBS/Scene9.pda
 Data/Stages/SpecialBS/Scene9.atl
 Data/Stages/SpecialBS/PS1Sfx9.bin
 Data/Stages/SpecialBS/Scene9.bin
@@ -2029,6 +2049,7 @@ Data/Stages/SpecialBS/Scene9_tails.atl
 Data/Stages/SpecialBS/Scene9_knux.pda
 Data/Stages/SpecialBS/Scene9_knux.atl
 Data/Stages/SpecialBS/Scene10.ptl
+Data/Stages/SpecialBS/Scene10.pda
 Data/Stages/SpecialBS/Scene10.atl
 Data/Stages/SpecialBS/PS1Sfx10.bin
 Data/Stages/SpecialBS/Scene10.bin
@@ -2037,6 +2058,7 @@ Data/Stages/SpecialBS/Scene10_tails.atl
 Data/Stages/SpecialBS/Scene10_knux.pda
 Data/Stages/SpecialBS/Scene10_knux.atl
 Data/Stages/SpecialBS/Scene11.ptl
+Data/Stages/SpecialBS/Scene11.pda
 Data/Stages/SpecialBS/Scene11.atl
 Data/Stages/SpecialBS/PS1Sfx11.bin
 Data/Stages/SpecialBS/Scene11.bin
@@ -2045,6 +2067,7 @@ Data/Stages/SpecialBS/Scene11_tails.atl
 Data/Stages/SpecialBS/Scene11_knux.pda
 Data/Stages/SpecialBS/Scene11_knux.atl
 Data/Stages/SpecialBS/Scene12.ptl
+Data/Stages/SpecialBS/Scene12.pda
 Data/Stages/SpecialBS/Scene12.atl
 Data/Stages/SpecialBS/PS1Sfx12.bin
 Data/Stages/SpecialBS/Scene12.bin
@@ -2053,6 +2076,7 @@ Data/Stages/SpecialBS/Scene12_tails.atl
 Data/Stages/SpecialBS/Scene12_knux.pda
 Data/Stages/SpecialBS/Scene12_knux.atl
 Data/Stages/SpecialBS/Scene13.ptl
+Data/Stages/SpecialBS/Scene13.pda
 Data/Stages/SpecialBS/Scene13.atl
 Data/Stages/SpecialBS/PS1Sfx13.bin
 Data/Stages/SpecialBS/Scene13.bin
@@ -2061,6 +2085,7 @@ Data/Stages/SpecialBS/Scene13_tails.atl
 Data/Stages/SpecialBS/Scene13_knux.pda
 Data/Stages/SpecialBS/Scene13_knux.atl
 Data/Stages/SpecialBS/Scene14.ptl
+Data/Stages/SpecialBS/Scene14.pda
 Data/Stages/SpecialBS/Scene14.atl
 Data/Stages/SpecialBS/PS1Sfx14.bin
 Data/Stages/SpecialBS/Scene14.bin
@@ -2069,6 +2094,7 @@ Data/Stages/SpecialBS/Scene14_tails.atl
 Data/Stages/SpecialBS/Scene14_knux.pda
 Data/Stages/SpecialBS/Scene14_knux.atl
 Data/Stages/SpecialBS/Scene15.ptl
+Data/Stages/SpecialBS/Scene15.pda
 Data/Stages/SpecialBS/Scene15.atl
 Data/Stages/SpecialBS/PS1Sfx15.bin
 Data/Stages/SpecialBS/Scene15.bin
@@ -2077,6 +2103,7 @@ Data/Stages/SpecialBS/Scene15_tails.atl
 Data/Stages/SpecialBS/Scene15_knux.pda
 Data/Stages/SpecialBS/Scene15_knux.atl
 Data/Stages/SpecialBS/Scene16.ptl
+Data/Stages/SpecialBS/Scene16.pda
 Data/Stages/SpecialBS/Scene16.atl
 Data/Stages/SpecialBS/PS1Sfx16.bin
 Data/Stages/SpecialBS/Scene16.bin
@@ -2085,6 +2112,7 @@ Data/Stages/SpecialBS/Scene16_tails.atl
 Data/Stages/SpecialBS/Scene16_knux.pda
 Data/Stages/SpecialBS/Scene16_knux.atl
 Data/Stages/SpecialBS/Scene17.ptl
+Data/Stages/SpecialBS/Scene17.pda
 Data/Stages/SpecialBS/Scene17.atl
 Data/Stages/SpecialBS/PS1Sfx17.bin
 Data/Stages/SpecialBS/Scene17.bin
@@ -2093,6 +2121,7 @@ Data/Stages/SpecialBS/Scene17_tails.atl
 Data/Stages/SpecialBS/Scene17_knux.pda
 Data/Stages/SpecialBS/Scene17_knux.atl
 Data/Stages/SpecialBS/Scene18.ptl
+Data/Stages/SpecialBS/Scene18.pda
 Data/Stages/SpecialBS/Scene18.atl
 Data/Stages/SpecialBS/PS1Sfx18.bin
 Data/Stages/SpecialBS/Scene18.bin
@@ -2101,6 +2130,7 @@ Data/Stages/SpecialBS/Scene18_tails.atl
 Data/Stages/SpecialBS/Scene18_knux.pda
 Data/Stages/SpecialBS/Scene18_knux.atl
 Data/Stages/SpecialBS/Scene19.ptl
+Data/Stages/SpecialBS/Scene19.pda
 Data/Stages/SpecialBS/Scene19.atl
 Data/Stages/SpecialBS/PS1Sfx19.bin
 Data/Stages/SpecialBS/Scene19.bin
@@ -2109,6 +2139,7 @@ Data/Stages/SpecialBS/Scene19_tails.atl
 Data/Stages/SpecialBS/Scene19_knux.pda
 Data/Stages/SpecialBS/Scene19_knux.atl
 Data/Stages/SpecialBS/Scene20.ptl
+Data/Stages/SpecialBS/Scene20.pda
 Data/Stages/SpecialBS/Scene20.atl
 Data/Stages/SpecialBS/PS1Sfx20.bin
 Data/Stages/SpecialBS/Scene20.bin
@@ -2117,6 +2148,7 @@ Data/Stages/SpecialBS/Scene20_tails.atl
 Data/Stages/SpecialBS/Scene20_knux.pda
 Data/Stages/SpecialBS/Scene20_knux.atl
 Data/Stages/SpecialBS/Scene21.ptl
+Data/Stages/SpecialBS/Scene21.pda
 Data/Stages/SpecialBS/Scene21.atl
 Data/Stages/SpecialBS/PS1Sfx21.bin
 Data/Stages/SpecialBS/Scene21.bin
@@ -2125,6 +2157,7 @@ Data/Stages/SpecialBS/Scene21_tails.atl
 Data/Stages/SpecialBS/Scene21_knux.pda
 Data/Stages/SpecialBS/Scene21_knux.atl
 Data/Stages/SpecialBS/Scene22.ptl
+Data/Stages/SpecialBS/Scene22.pda
 Data/Stages/SpecialBS/Scene22.atl
 Data/Stages/SpecialBS/PS1Sfx22.bin
 Data/Stages/SpecialBS/Scene22.bin
@@ -2133,6 +2166,7 @@ Data/Stages/SpecialBS/Scene22_tails.atl
 Data/Stages/SpecialBS/Scene22_knux.pda
 Data/Stages/SpecialBS/Scene22_knux.atl
 Data/Stages/SpecialBS/Scene23.ptl
+Data/Stages/SpecialBS/Scene23.pda
 Data/Stages/SpecialBS/Scene23.atl
 Data/Stages/SpecialBS/PS1Sfx23.bin
 Data/Stages/SpecialBS/Scene23.bin
@@ -2141,6 +2175,7 @@ Data/Stages/SpecialBS/Scene23_tails.atl
 Data/Stages/SpecialBS/Scene23_knux.pda
 Data/Stages/SpecialBS/Scene23_knux.atl
 Data/Stages/SpecialBS/Scene24.ptl
+Data/Stages/SpecialBS/Scene24.pda
 Data/Stages/SpecialBS/Scene24.atl
 Data/Stages/SpecialBS/PS1Sfx24.bin
 Data/Stages/SpecialBS/Scene24.bin
@@ -2149,6 +2184,7 @@ Data/Stages/SpecialBS/Scene24_tails.atl
 Data/Stages/SpecialBS/Scene24_knux.pda
 Data/Stages/SpecialBS/Scene24_knux.atl
 Data/Stages/SpecialBS/Scene25.ptl
+Data/Stages/SpecialBS/Scene25.pda
 Data/Stages/SpecialBS/Scene25.atl
 Data/Stages/SpecialBS/PS1Sfx25.bin
 Data/Stages/SpecialBS/Scene25.bin
@@ -2157,6 +2193,7 @@ Data/Stages/SpecialBS/Scene25_tails.atl
 Data/Stages/SpecialBS/Scene25_knux.pda
 Data/Stages/SpecialBS/Scene25_knux.atl
 Data/Stages/SpecialBS/Scene26.ptl
+Data/Stages/SpecialBS/Scene26.pda
 Data/Stages/SpecialBS/Scene26.atl
 Data/Stages/SpecialBS/PS1Sfx26.bin
 Data/Stages/SpecialBS/Scene26.bin
@@ -2165,6 +2202,7 @@ Data/Stages/SpecialBS/Scene26_tails.atl
 Data/Stages/SpecialBS/Scene26_knux.pda
 Data/Stages/SpecialBS/Scene26_knux.atl
 Data/Stages/SpecialBS/Scene27.ptl
+Data/Stages/SpecialBS/Scene27.pda
 Data/Stages/SpecialBS/Scene27.atl
 Data/Stages/SpecialBS/PS1Sfx27.bin
 Data/Stages/SpecialBS/Scene27.bin
@@ -2173,6 +2211,7 @@ Data/Stages/SpecialBS/Scene27_tails.atl
 Data/Stages/SpecialBS/Scene27_knux.pda
 Data/Stages/SpecialBS/Scene27_knux.atl
 Data/Stages/SpecialBS/Scene28.ptl
+Data/Stages/SpecialBS/Scene28.pda
 Data/Stages/SpecialBS/Scene28.atl
 Data/Stages/SpecialBS/PS1Sfx28.bin
 Data/Stages/SpecialBS/Scene28.bin
@@ -2181,6 +2220,7 @@ Data/Stages/SpecialBS/Scene28_tails.atl
 Data/Stages/SpecialBS/Scene28_knux.pda
 Data/Stages/SpecialBS/Scene28_knux.atl
 Data/Stages/SpecialBS/Scene29.ptl
+Data/Stages/SpecialBS/Scene29.pda
 Data/Stages/SpecialBS/Scene29.atl
 Data/Stages/SpecialBS/PS1Sfx29.bin
 Data/Stages/SpecialBS/Scene29.bin
@@ -2189,6 +2229,7 @@ Data/Stages/SpecialBS/Scene29_tails.atl
 Data/Stages/SpecialBS/Scene29_knux.pda
 Data/Stages/SpecialBS/Scene29_knux.atl
 Data/Stages/SpecialBS/Scene30.ptl
+Data/Stages/SpecialBS/Scene30.pda
 Data/Stages/SpecialBS/Scene30.atl
 Data/Stages/SpecialBS/PS1Sfx30.bin
 Data/Stages/SpecialBS/Scene30.bin
@@ -2197,6 +2238,7 @@ Data/Stages/SpecialBS/Scene30_tails.atl
 Data/Stages/SpecialBS/Scene30_knux.pda
 Data/Stages/SpecialBS/Scene30_knux.atl
 Data/Stages/SpecialBS/Scene31.ptl
+Data/Stages/SpecialBS/Scene31.pda
 Data/Stages/SpecialBS/Scene31.atl
 Data/Stages/SpecialBS/PS1Sfx31.bin
 Data/Stages/SpecialBS/Scene31.bin
@@ -2205,6 +2247,7 @@ Data/Stages/SpecialBS/Scene31_tails.atl
 Data/Stages/SpecialBS/Scene31_knux.pda
 Data/Stages/SpecialBS/Scene31_knux.atl
 Data/Stages/SpecialBS/Scene32.ptl
+Data/Stages/SpecialBS/Scene32.pda
 Data/Stages/SpecialBS/Scene32.atl
 Data/Stages/SpecialBS/PS1Sfx32.bin
 Data/Stages/SpecialBS/Scene32.bin
@@ -2213,6 +2256,7 @@ Data/Stages/SpecialBS/Scene32_tails.atl
 Data/Stages/SpecialBS/Scene32_knux.pda
 Data/Stages/SpecialBS/Scene32_knux.atl
 Data/Stages/SpecialBS/Scene34.ptl
+Data/Stages/SpecialBS/Scene34.pda
 Data/Stages/SpecialBS/Scene34.atl
 Data/Stages/SpecialBS/PS1Sfx34.bin
 Data/Stages/SpecialBS/Scene34.bin
@@ -2221,6 +2265,7 @@ Data/Stages/SpecialBS/Scene34_tails.atl
 Data/Stages/SpecialBS/Scene34_knux.pda
 Data/Stages/SpecialBS/Scene34_knux.atl
 Data/Stages/SpecialBS/Scene36.ptl
+Data/Stages/SpecialBS/Scene36.pda
 Data/Stages/SpecialBS/Scene36.atl
 Data/Stages/SpecialBS/PS1Sfx36.bin
 Data/Stages/SpecialBS/Scene36.bin
@@ -2272,6 +2317,7 @@ Data/Stages/AIZ/PS1Local/E67177E4.bin
 Data/Stages/AIZ/PS1Local/6BF0FD0C.bin
 Data/Stages/AIZ/16x16Tiles.pal
 Data/Stages/AIZ/Scene1.ptl
+Data/Stages/AIZ/Scene1.pda
 Data/Stages/AIZ/Scene1.atl
 Data/Stages/AIZ/PS1Sfx1.bin
 Data/Stages/AIZ/Scene1.bin

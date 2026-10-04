@@ -11,6 +11,7 @@ volatile uint32 RSDK::g_ps1EntityArenaMoved  = 0; // 4.3: STG compactions that m
 volatile uint32 RSDK::g_ps1EntityArenaBytes  = 0;
 volatile uint32 RSDK::g_ps1EntityArenaPeak   = 0;
 volatile uint32 RSDK::g_ps1EntityCreateSkips = 0;
+volatile uint32 RSDK::g_ps1EntityCreateFar   = 0;
 volatile uint32 RSDK::g_ps1SceneRecordBytes  = 0;
 volatile uint32 RSDK::g_ps1SceneRecordDropped = 0;
 volatile uint32 RSDK::g_ps1EntitiesDropped    = 0;
@@ -24,6 +25,7 @@ namespace
 uint8 *s_arena      = NULL; // DATASET_STG, one per scene
 uint8 *s_arenaAt    = NULL; // 4.3: where it was placed (a compaction must never move it: the slots point into it)
 uint8 *s_spare      = NULL; // the arena's tail, bump-allocated by relocations
+uint32 s_tempSmallCap = PS1_TEMP_SMALL_CAP; // 9b.2b: this stage's small temp block (ps1TempBurstClasses)
 uint8 *s_spareEnd   = NULL;
 
 inline uint32 Align4(uint32 v) { return (v + 3) & ~3u; }
@@ -53,6 +55,7 @@ extern "C" const char *const ps1ReservedStageMarker;
 extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes whose Create becomes another class
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
 extern "C" const char *const ps1TempLargeStageMarker; // 7b.14: (Zone.c) a stage with this class: PS1_TEMP_BLOCKS_LARGE, all large
+extern "C" const char *const ps1TempBurstClasses[]; // 9b.2b: (Zone.c) the small temp blocks fit these classes (stage has them)
 __attribute__((noinline)) int32 StageClassOf(const char *name)
 {
     RETRO_HASH_MD5(hash);
@@ -688,7 +691,7 @@ void RSDK::PS1SceneEntitiesPlace()
     int32 candidates = 0;
     for (int32 k = 0; k < PS1_DORMANT_SPECS && ps1DormantSpecs[k].name; ++k) {
         bool walked = false; // a class of the stage walks or keeps this one's entities (foreach_all, pointers)
-        for (int32 u = 0; u < 3 && ps1DormantSpecs[k].unless[u]; ++u) walked |= StageClassOf(ps1DormantSpecs[k].unless[u]) != 0;
+        for (int32 u = 0; ps1DormantSpecs[k].unless && ps1DormantSpecs[k].unless[u]; ++u) walked |= StageClassOf(ps1DormantSpecs[k].unless[u]) != 0;
         int32 o = walked ? 0 : StageClassOf(ps1DormantSpecs[k].name);
         if (o && o < TYPE_COUNT && objectClassList[stageObjectIDs[o]].create
             && Align4(objectClassList[stageObjectIDs[o]].entityClassSize) <= PS1_DORMANT_SCRATCH)
@@ -805,7 +808,13 @@ void RSDK::PS1SceneEntitiesPlace()
     if (StageClassOf(ps1TempLargeStageMarker)) // 7b.14: every temp block large (the credits' text lines, ~1 KB each)
         ps1TempBlocks = PS1_TEMP_BLOCKS_LARGE, ps1TempLargeEvery = 1;
     int32 tempLarge   = ps1TempBlocks / ps1TempLargeEvery;
-    bytes += (ps1TempBlocks - tempLarge) * (sizeof(PS1EntityHeader) + PS1_TEMP_SMALL_CAP);
+    s_tempSmallCap    = PS1_TEMP_SMALL_CAP;
+    for (int32 k = 0; ps1TempBurstClasses[k]; ++k) {
+        int32 o = StageClassOf(ps1TempBurstClasses[k]);
+        if (o && o < TYPE_COUNT && Align4(objectClassList[stageObjectIDs[o]].entityClassSize) > s_tempSmallCap)
+            s_tempSmallCap = Align4(objectClassList[stageObjectIDs[o]].entityClassSize);
+    }
+    bytes += (ps1TempBlocks - tempLarge) * (sizeof(PS1EntityHeader) + s_tempSmallCap);
     bytes += tempLarge * (sizeof(PS1EntityHeader) + maxCap);
     // 7b: the dormant records, their payloads and a pool of blocks for the most records the cameras' boxes reach at once
     int32 pool = 0;
@@ -931,7 +940,7 @@ void RSDK::PS1SceneEntitiesPlace()
 
     for (int32 t = 0; t < ps1TempBlocks; ++t) {
         uint16 s           = TEMPENTITY_START + t;
-        objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? maxCap : PS1_TEMP_SMALL_CAP);
+        objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? maxCap : s_tempSmallCap);
     }
     // 7b: the pool (the records stay in slot order until InitObjects has run their Creates: PS1DormantLoadDone sorts)
     s_dLoadNext = 0;
@@ -1280,6 +1289,18 @@ extern "C" void PS1ClassNoteEntity(void *entity)
     int32 slot = PS1EntitySlotOf(entity);
     if (slot >= 0)
         PS1ClassNote(((EntityBase *)entity)->classID, slot);
+}
+
+// 9b.2b: CreateEntity(TYPE_DEFAULTOBJECT) sized for the class copied into it next (the stored entities of an act change)
+uint32 RSDK::ps1BlankCreateSize = 0;
+extern "C" void *PS1CreateBlankFor(unsigned short classID)
+{
+    ps1BlankCreateSize = Align4(classID < TYPE_COUNT && objectClassList[stageObjectIDs[classID]].entityClassSize > sizeof(Entity)
+                                    ? objectClassList[stageObjectIDs[classID]].entityClassSize
+                                    : sizeof(Entity));
+    void *e            = CreateEntity(TYPE_DEFAULTOBJECT, NULL, 0, 0);
+    ps1BlankCreateSize = 0;
+    return e;
 }
 
 // Stock copies sizeof(EntityBase) bytes. Here: the source's class (its whole block for a slot-less pointer), into a

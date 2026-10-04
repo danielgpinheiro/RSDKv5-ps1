@@ -129,9 +129,9 @@ def main():
     # each folder's index of its copies (tools/disc/build_disc.py fills it with their LBAs after the first mastering
     # pass; the disc index leaves the copies out: it lives in RAM from boot, the folders' tables only during a load)
     for folder in sorted(first, key=lambda f: -first[f]):
-        # (9b.1: the other characters' atlases go in the table too: tools/disc/build_disc.py local_entry)
+        # (9b.1: the other characters' atlases go in the table too, 9b.2b: every .pda: tools/disc/build_disc.py local_entry)
         d = os.path.join(iso, 'Data', 'Stages', folder)
-        alts = [f for f in os.listdir(d) if re.match(r'scene[^/]*_(tails|knux)\.(atl|pda)$', f.lower())]
+        alts = [f for f in os.listdir(d) if re.match(r'scene[^/]*_(tails|knux)\.atl$', f.lower()) or re.match(r'scene[^/]*\.pda$', f.lower())]
         n = len(copies[folder]) + len(alts)
         if not n:
             continue

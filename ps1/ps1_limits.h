@@ -43,10 +43,12 @@ typedef struct {
     unsigned short transient[4];     /* (offset, size) pairs its update / draw rewrite before any read: not compared */
     unsigned char diffs;             /* may go back to a record with up to 7 changed words, restored when re-created
                                         (an animation's phase, a spring's last frame): exact, as if it had stayed */
-    const char *unless[3];           /* not in a stage with one of these classes (they walk or keep this one's entities) */
+    const char *const *unless;       /* not in a stage with one of these classes (they walk or keep this one's entities;
+                                        NULL-terminated, PS1_UNLESS) */
     unsigned char movesInCreate;     /* its Create moves it: the camera boxes use the created position, Create the
                                         scene file's */
 } PS1DormantSpec;
+#define PS1_UNLESS(...) ((const char *const[]){ __VA_ARGS__, NULL })
 
 /* docs/32 7b: reserved slots sized by what the game puts there. In a stage with a Zone object (the zones) a reserved
    slot's block holds the largest of the classes listed for it that the stage has (no listed class: no block); other
@@ -73,5 +75,12 @@ typedef struct {
 extern "C"
 #endif
 void PS1ClassNoteEntity(void *entity);
+
+/* docs/32 9b.2b: a blank temp entity sized for the class the caller copies into it next (Zone_ReloadStoredEntities: the
+ * carried sign post / item boxes), not the blank object's full EntityBase (no temp block is that big: a spare block). */
+#ifdef __cplusplus
+extern "C"
+#endif
+void *PS1CreateBlankFor(unsigned short classID);
 
 #endif /* PS1_LIMITS_H */

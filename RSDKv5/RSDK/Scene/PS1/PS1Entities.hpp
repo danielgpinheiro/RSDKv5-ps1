@@ -39,6 +39,7 @@ extern volatile uint32 g_ps1EntityCreateOverwrites; // CreateEntity found no fre
 extern EntityBase *objectEntityPtr[ENTITY_COUNT];
 extern uint8 ps1EntityGhosts[];
 
+extern uint32 ps1BlankCreateSize; // 9b.2b: PS1CreateBlankFor's size for a blank CreateEntity (0: the class's)
 extern volatile uint32 g_ps1EntityRelocations; // slots moved to a spare block (reset / copy into a smaller block)
 extern volatile uint32 g_ps1EntityGhostWrites; // non-zero bytes found in the ghost page (writes through a stale ghost)
 extern volatile uint32 g_ps1EntitySpareFail;   // a relocation that found no spare room (the entity was blanked)
@@ -48,6 +49,7 @@ void *PS1EntityArenaData(); // 4.3: the arena block (STG compactions keep it in 
 extern volatile uint32 g_ps1EntityArenaBytes;  // this scene's arena
 extern volatile uint32 g_ps1EntityArenaPeak;
 extern volatile uint32 g_ps1EntityCreateSkips; // temp slots skipped by CreateEntity for being too small
+extern volatile uint32 g_ps1EntityCreateFar;   // 9b.2b: creates that took a big enough free temp block past the search
 extern volatile uint32 g_ps1SceneRecordBytes;  // the scene loader's record buffer (TMP) peak
 extern volatile uint32 g_ps1SceneRecordDropped;
 

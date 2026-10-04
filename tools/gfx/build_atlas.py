@@ -227,6 +227,8 @@ PLAYER_ANIMATED = {'Players/Sonic.bin', 'Players/SuperSonic.bin', 'Players/Tails
 PLAYER_EXTRA = {'Global/SuperSparkle.bin': 'super'}
 # per folder: event groups, one at a time in the event region: the title card at the act start, the boss where the boss
 # music starts, the sign post / prison where the act-clear music starts
+# 9b.2b: the boss explosions (Explosions.bin 2 / 3) stay resident where level objects make them too: FBZ's missiles and
+# mines (the puff, 3), SSZ1's flower pods and teleporters, OOZ's OOZSetup, LRZ1's Rexons and intro, TMZ1's crash tests
 EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('GHZ/DDWrecker.bin', None), ('GHZ/DERobot.bin', None), ('Eggman/EggmanAll.bin', None),
                                  ('Global/Explosions.bin', {2, 3})],
@@ -243,27 +245,36 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 'SPZ1': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('SPZ1/Boss.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 9b.2b: the flying prison comes in under the boss music (the Weather Mobile turns into it), and the
+                # weather TV (WeatherTV draws from WeatherMobile.bin) stays on screen through the act clear and the outro:
+                # both in the boss and the end group
                 'SPZ2': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None),
-                                  ('Global/Explosions.bin', {2, 3})],
+                                  ('Global/Explosions.bin', {2, 3}), ('Global/EggPrison.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None),
-                                 ('SPZ2/TVFlyingBattery.bin', None)]},
+                                 ('SPZ2/TVFlyingBattery.bin', None),
+                                 ('SPZ2/WeatherMobile.bin', {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 25})]},
                 # 7b: FBZ1's Big Squeeze, FBZ2's Spider Mobile (Eggman in both); act 2's end leaves on the hang glider
                 'FBZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('FBZ/BigSqueeze.bin', None), ('FBZ/SpiderMobile.bin', None), ('Eggman/EggmanFBZ.bin', None),
-                                 ('Global/Explosions.bin', {2, 3})],
-                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('FBZ/HangGlider.bin', None)]},
+                                 ('Global/Explosions.bin', {2})],
+                        # 9b.2b: FBZ1's crushers close in again in the outro, after the act clear
+                        'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('FBZ/HangGlider.bin', None),
+                                ('FBZ/BigSqueeze.bin', {0})]},
                 # 7b: PSZ1's Shiversaw, PSZ2's Heavy Shinobi (PSZ1's hang glider is its intro, under the stage music:
                 # level frames; PSZ2's outro art too, unless VRAM needs it)
                 'PSZ1': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('PSZ1/Shiversaw.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                # 9b.2b: the outro's Eggman (at his console past the arena: on screen only in the outro, after the act
+                # clear) turns round and brings out the Phantom Ruby
                 'PSZ2': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('PSZ2/Shinobi.bin', None), ('Global/Explosions.bin', {2, 3})],
-                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('Eggman/EggmanPSZ.bin', None),
+                                 ('PSZ2/ControlPanel.bin', None), ('Global/PhantomRuby.bin', None)]},
                 # 7b: SSZ1's Hotaru Hi-Watt; SSZ2M is the Metal Sonic fight from its start (level frames, halvable)
                 'SSZ1': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('SSZ1/HotaruHiWatt.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'boss': [('SSZ1/HotaruHiWatt.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'SSZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
@@ -282,14 +293,14 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: OOZ1's Meter Droid, OOZ2's Mega Octus
                 'OOZ1': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('OOZ/MeterDroid.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'boss': [('OOZ/MeterDroid.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'OOZ2': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('OOZ/MegaOctus.bin', None), ('Eggman/EggmanOOZ.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'boss': [('OOZ/MegaOctus.bin', None), ('Eggman/EggmanOOZ.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: LRZ1's Drillerdroid; LRZ2 has no boss; LRZ3 opens with the Heavies in its cutscene (level frames)
                 'LRZ1': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('LRZ1/Drillerdroid.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'boss': [('LRZ1/Drillerdroid.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'LRZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
@@ -298,7 +309,7 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 # 7b: MMZ1's Egg Pistons MKII, MMZ2's Gachapandora (Eggman in each)
                 # 7b: TMZ1's Crimson Eye; TMZ2 has no boss; TMZ3 is the Phantom Egg fight from its start (level frames)
                 'TMZ1': {'start': [('Global/TitleCard.bin', None)],
-                         'boss': [('TMZ1/CrimsonEye.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'boss': [('TMZ1/CrimsonEye.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'TMZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
@@ -554,6 +565,19 @@ SIGNPOST_CARRIED = {('GHZ', '2'), ('CPZ', '2'), ('SPZ2', '1'), ('FBZ', '2'), ('P
                     ('MMZ', '2'), ('LRZ2', '1'), ('TMZ2', '1'), ('OOZ2', '2')}
 
 
+# 9b.2b: the sign post and the capsules are on screen before the act-clear music loads the end group (a sign post drops
+# after a miniboss under the boss group; a capsule shows after the boss, and mid-act duds / springs (FBZ1) under the
+# title card's group): resident in every scene (11.6 + 6.7 KB; the end group shrinks by as much)
+ALWAYS_RESIDENT = {'Global/SignPost.bin', 'Global/EggPrison.bin'}
+# (MSZ1 as Sonic ends in the train cutscene, no act clear: its sign post is never on screen; the atlas is 1 KB short)
+ALWAYS_RESIDENT_EXCEPT = {('MSZ', '1', 'sonic')}
+
+
+def places_of(where):
+    """9b.2b: the single placements of an animation's placement (('events', groups): one ('event', g) per group)"""
+    return [('event', g) for g in where[1]] if where is not None and where[0] == 'events' else [where]
+
+
 def select(folder, scene_id, character, files):
     """For each file, each animation: None (not placed) or its placement: 'resident', ('player', alt), ('event', g)."""
     import scene_usage as U
@@ -635,10 +659,13 @@ def select(folder, scene_id, character, files):
                 where = ('player', PLAYER_EXTRA[path])
                 if PLAYER_EXTRA[path] == 'super' and no_super:
                     where = None
-            for g, members in groups.items():
-                for fp, fa in members:
-                    if fp == path and (fa is None or ai in fa) and not (carried and fp == 'Global/SignPost.bin'):
-                        where = ('event', g)
+            gs = sorted({g for g, members in groups.items() for fp, fa in members
+                         if fp == path and (fa is None or ai in fa)
+                         and (fp not in ALWAYS_RESIDENT or (folder, scene_id, character) in ALWAYS_RESIDENT_EXCEPT)})
+            if len(gs) == 1:
+                where = ('event', gs[0])
+            elif gs:  # 9b.2b: in several event groups (boss art still on screen after the act-clear music): a copy in each
+                where = ('events', tuple(gs))
             place.append(where)
         sel[path] = place
         why[path] = 'animations %s' % ('all' if anims is None else sorted(anims))
@@ -835,8 +862,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     always_halvable = {}                        # every frame using the rect comes from a HALVABLE file (any plan step)
     quarter = {}                                # 7b.12: every frame using the rect comes from a QUARTER file
     for path, _, keys in files:
-        for ai, (sh, x, y, w, h) in keys:
-            where = sel[path][ai]
+        for ai, (sh, x, y, w, h), where in ((ai, k, wh) for ai, k in keys for wh in places_of(sel[path][ai])):
             if where is not None and sh is not None and w > 0 and h > 0:
                 im = sheets.get(sh)
                 H, W = im.shape
@@ -1116,13 +1142,15 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 bind += OUTSIDE
                 counts['unplaced'] += 1
                 continue
-            bd = binding(where, sh, max(0, x), max(0, y), w, h)
-            if bd is None:
-                raise AtlasError('%s: no cluster for %s %s' % (name, path, (sh, x, y, w, h)))
             counts['placed'] += 1
-            bind += bd if where in ('resident', ('player', 'normal'), ('event', 'start')) else MISSING
-            if where != 'resident':
-                patches[where] += struct.pack('<HH', fi, k) + bd
+            for i, wh in enumerate(places_of(where)):
+                bd = binding(wh, sh, max(0, x), max(0, y), w, h)
+                if bd is None:
+                    raise AtlasError('%s: no cluster for %s %s' % (name, path, (sh, x, y, w, h)))
+                if i == 0:
+                    bind += bd if wh in ('resident', ('player', 'normal'), ('event', 'start')) else MISSING
+                if wh != 'resident':
+                    patches[wh] += struct.pack('<HH', fi, k) + bd
         if dropped:
             bind += MISSING  # the placeholder frame of the dropped animations
 

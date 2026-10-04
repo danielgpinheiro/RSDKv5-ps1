@@ -134,6 +134,19 @@ def active_objects(folder, scene_id, data=DATA):
         p = src.get(n)
         body = function_body(code_of(p), n + '_StageLoad') if p else ''
         active |= (set(pat_create.findall(body)) | set(pat_classid.findall(body)) | set(pat_assign.findall(body))) & known
+    # 9b.2b: the act's stage-finish callback (ActClear runs it: PSZ2Setup's creates PSZ2Outro, whose cutscene animates
+    # PSZEggman's turn: a dropped animation there hung the ending) is a root like a StageLoad
+    # (a folder with both acts' scenes: only this act's callbacks, by their EndAct<N> name)
+    acts = {f[5] for f in os.listdir(os.path.join(data, 'Stages', folder)) if re.match(r'Scene\d', f)}
+    for n in names:
+        p = src.get(n)
+        for cb in set(re.findall(r'stageFinishCallback\s*=\s*(\w+)\s*;', code_of(p) if p else '')):
+            m = re.search(r'EndAct(\d)', cb)
+            if m and {'1', '2'} <= acts and scene_id[:1] in ('1', '2') and m.group(1) != scene_id[0]:
+                continue
+            owner = src.get(cb.split('_', 1)[0])
+            body = function_body(code_of(owner), cb) if owner else ''
+            active |= (set(pat_create.findall(body)) | set(pat_classid.findall(body)) | set(pat_assign.findall(body))) & known
     while True:
         code = ''.join(code_of(f) for f in code_closure(active, known, src))
         made = (set(pat_create.findall(code)) | set(pat_classid.findall(code)) | set(pat_assign.findall(code))) & known
