@@ -388,19 +388,16 @@ inline uint32 PS1BankTileClut(uint32 attr)
     return c < 96 ? s_copyAttr[c] : attr;
 }
 
-// 9.4b: one copy per case (a full tile row from its first line, on palette bank 0 or an uploaded bank, or any other
-// band): the full rows' constants (16 lines, v 0, the 16x16 sprite, flips as quads) fold, which frees the registers the
-// loop spilled (PSZ1: ~210 cycles a tile column). The same words as the one generic loop.
-template <bool FULL, bool BANKED>
-__attribute__((optimize("O2"))) void DrawBandT(PS1Emit &e, TileLayer *layer, int32 sy, int32 hIn, int32 x, int32 ly, uint8 bank)
+__attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
-    const int32 h          = FULL ? TILE_SIZE : hIn;
-    const bool banked      = BANKED;
+    bool banked = bank && PS1BankReady(bank);
+    if (bank && !banked)
+        g_ps1BankTodo = g_ps1BankTodo + 1;
     uint16 tg              = PS1T();
     const uint16 *tileImage = TileTable();
     const uint8 *images     = s_ps1TileBlob + s_imgOff; // PS1TileImage: u8 u, v; u16 tpage, clut
     uint32 bankClut         = (uint32)(0 | (240 + bank) << 6); // GPU CLUT attribute of the bank's 256 entries
-    int32 ty = ly >> 4, v0 = FULL ? 0 : ly & 15;
+    int32 ty = ly >> 4, v0 = ly & 15;
     int32 tx = x >> 4, sx = -(x & 15);
     int32 xsize            = layer->xsize;
     const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
@@ -408,7 +405,7 @@ __attribute__((optimize("O2"))) void DrawBandT(PS1Emit &e, TileLayer *layer, int
     const uint16 *chunk    = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
     int32 sub              = tx & 3;
     int32 pieces = 0, misses = 0;
-    const bool full = FULL || h == TILE_SIZE;
+    bool full   = h == TILE_SIZE;
     uint32 cmd  = full ? 0x7C808080 : 0x64808080, wh = TILE_SIZE | (uint32)h << 16;
     int32 n     = full ? 3 : 4;
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
@@ -460,22 +457,6 @@ __attribute__((optimize("O2"))) void DrawBandT(PS1Emit &e, TileLayer *layer, int
     PS1_LT_ADD(1, PS1T() - tg);
     g_ps1LayerBands  = g_ps1LayerBands + 1;
     g_ps1LayerPieces = g_ps1LayerPieces + pieces;
-}
-void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
-{
-    bool banked = bank && PS1BankReady(bank);
-    if (bank && !banked)
-        g_ps1BankTodo = g_ps1BankTodo + 1;
-    if (h == TILE_SIZE && !(ly & 15)) {
-        if (banked)
-            DrawBandT<true, true>(e, layer, sy, h, x, ly, bank);
-        else
-            DrawBandT<true, false>(e, layer, sy, h, x, ly, bank);
-    }
-    else if (banked)
-        DrawBandT<false, true>(e, layer, sy, h, x, ly, bank);
-    else
-        DrawBandT<false, false>(e, layer, sy, h, x, ly, bank);
 }
 // One band in its own span (a lone band of a tile row, DrawRowBands' fallback)
 void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
