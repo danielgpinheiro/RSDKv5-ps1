@@ -458,6 +458,16 @@ bool PS1TileTex(uint16 tile, int32 &u, int32 &v, uint32 &tpage, uint32 &clut)
 } // namespace
 
 // The frame at screen (x, y) (its top-left after the pivot, as DrawSpriteFlipped gets it), flipped as `direction`
+// 9b.6: the next draw of one frame starts `du` texels into its stored strip (PS1SetFrameShift; the strip is the frame
+// widened by build_atlas SHIFT_STRIPS, so the shifted reads stay inside stored texels)
+static const void *s_shiftFrame = NULL;
+static int32 s_shiftU           = 0;
+extern "C" void PS1SetFrameShift(const void *frame, int du)
+{
+    s_shiftFrame = frame;
+    s_shiftU     = du;
+}
+
 void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha)
 {
     int32 w = frame->width, h = frame->height;
@@ -468,6 +478,10 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (frame == s_shiftFrame) {
+        u += s_shiftU >> shift;
+        s_shiftFrame = NULL;
+    }
     int32 m = (1 << shift) - 1, tw = (w + m) >> shift;
     if ((w > 1023 || h > 511) && u + tw <= 256) {
         // 7b.12: past the GPU's primitive size (TMZ's 1024 x 1024 Monarch backdrop): only the screen's part, its edges on

@@ -93,4 +93,11 @@ extern "C"
 #endif
 void *PS1CreateBlankFor(unsigned short classID);
 
+/* docs/32 9b.6: a frame whose texture the game scrolls by rewriting its sprX (ParallaxSprite's SHIFT attribute: CPZ2's
+ * masked chemicals) draws `du` texels further right in its atlas strip (build_atlas SHIFT_STRIPS) on its next draw. */
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1SetFrameShift(const void *frame, int du);
+
 #endif /* PS1_LIMITS_H */

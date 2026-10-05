@@ -625,7 +625,8 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
     uint32_t *w   = PS1ChainSpanBegin(6);
     if (!w)
         return;
-    w[1] = 0xE6000001;
+    // 9b.6: a run of the mask colour keeps bit 15 clear, as its tile texels do (CPZ2: INK_MASKED sprites land on it)
+    w[1] = (maskColor && rgb == (uint16)maskColor) ? 0xE6000000 : 0xE6000001;
     w[2] = 0x60000000 | colour;
     PS1FadeRecordColour(&w[2]);
     w[3] = (uint32)(uint16)sy << 16;

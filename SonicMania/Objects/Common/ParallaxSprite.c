@@ -53,7 +53,13 @@ void ParallaxSprite_Draw(void)
         }
     }
     else if (self->attribute == PARALLAXSPRITE_ATTR_SHIFT) {
+#if defined RETRO_PS1_BUILD
+        // the atlas binds frames to fixed texels: the shift moves the draw inside the frame's stored strip (docs/32 9b.6)
+        SpriteFrame *frame = RSDK.GetFrame(ParallaxSprite->aniFrames, self->aniID, 0);
+        PS1SetFrameShift(frame, self->sprX + ((self->xSpeed + (Zone->timer << self->timerSpeed)) & 0x7F) - frame->sprX);
+#else
         RSDK.GetFrame(ParallaxSprite->aniFrames, self->aniID, 0)->sprX = self->sprX + ((self->xSpeed + (Zone->timer << self->timerSpeed)) & 0x7F);
+#endif
     }
 
     RSDK.DrawSprite(&self->animator, &drawPos, true);

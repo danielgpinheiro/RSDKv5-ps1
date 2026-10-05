@@ -71,6 +71,9 @@ ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), (
 # 9c (MSZ2's title card: the SONIC MANIA strip read garbled): their text strips (<= TEXT_KEEP_H) stay full in the text
 # fallback too
 ALWAYS_TEXT_FILES = {'Global/TitleCard.bin', 'Global/HUD.bin'}
+# 9b.6: animations whose texture the game scrolls by rewriting a frame's sprX (ParallaxSprite's SHIFT attribute: sprX + 0..127,
+# CPZ2's masked chemicals): stored as the frame widened by that many texels, drawn from it with PS1SetFrameShift
+SHIFT_STRIPS = {('CPZ/CPZParallax.bin', 1): 127, ('CPZ/CPZParallax.bin', 2): 127}
 # 7.5: sheets drawn by DrawDeformedSprite (UFO7's plasma, OOZ's smog): whole, in VRAM, 128x128 4-bit
 DEFORM_SHEETS = {'SpecialUFO/Plasma.gif', 'OOZ/Smog.gif'}
 
@@ -877,7 +880,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     for kind, path in man:
         if kind == 'SPR':
             s = F.read_sprite(os.path.join(disc_data, 'Sprites', path))
-            keys = [(ai, (s['sheets'][f['sheet']] if f['sheet'] < len(s['sheets']) else None, f['x'], f['y'], f['w'], f['h']))
+            keys = [(ai, (s['sheets'][f['sheet']] if f['sheet'] < len(s['sheets']) else None, f['x'], f['y'],
+                          f['w'] + SHIFT_STRIPS.get((path, ai), 0), f['h']))
                     for ai, a in enumerate(s['anims']) for f in a['frames']]
             files.append((path, s, keys))
     sel, why = select(folder, scene_id, character, files)
