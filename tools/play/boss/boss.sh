@@ -196,6 +196,8 @@ G
 if [ -n "$PER" ]; then python3 $H/perins.py $S/$OUT.in.gdb $PER; else sed -i '' '/@PER@/d' $S/$OUT.in.gdb; fi
 [ -n "$EXTRA" ] && sed "s|@OVL@|$R/build/gen/ovl/$OVL/$OVL.elf|g" $EXTRA >> $S/$OUT.in.gdb
 echo continue >> $S/$OUT.in.gdb
+# a run the timeout interrupts (SIGINT) lands here: where the game was (a hang never reaches perfTick)
+printf 'printf "L STUCK f=%%u\\n", g_ps1PerfFrames\nbt 12\ninfo registers pc ra\n' >> $S/$OUT.in.gdb
 pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && [ "$EMU" = ds ] && { echo "DS busy"; exit 1; }
 cd $R; TIMEOUT=${TIMEOUT:-1500} tools/play_test.sh $S/$OUT.in.gdb $S/$OUT > /dev/null 2>&1
 grep -a "^L \|No symbol\|rror" $S/$OUT.log | cut -c1-260
