@@ -1746,6 +1746,9 @@ void RSDK::ProcessObjectDrawLists()
             currentScreen++;
             sceneInfo.currentScreenID++;
         }
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1LayersFrameEnd(); // 9b.3: the grey tint's CLUT state (docs/32)
+#endif
     }
 }
 

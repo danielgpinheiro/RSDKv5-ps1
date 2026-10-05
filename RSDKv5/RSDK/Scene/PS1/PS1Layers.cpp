@@ -640,7 +640,8 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
 // The frame start of the draw lists: this frame's clear, the tile CLUTs and the bank CLUT from the palette
 // --- 3.5: the frame's CLUT uploads, recorded for FillScreen -------------------------------------------------------------
 #define PS1_CLUT_CHUNK_HW 22 // halfwords per CLUT upload fragment (3 + 11 words = 14), as PS1ChainReserveRow's
-#define PS1_CLUT_RECS   192 // upload chunks a frame: tile CLUTs + the bank (12 chunks) + sprite CLUTs, and restores
+#define PS1_CLUT_RECS   320 // upload chunks a frame: tile CLUTs + the bank (12 chunks) + sprite CLUTs, and restores (9b.3: a full set
+                            // is up to ~70 + 12 + 189 = 271 rows; 192 lost records, so a grey pause re-uploaded every CLUT each frame)
 #define PS1_COLOUR_RECS 256 // direct colour words a frame (flat rectangles, one-colour runs)
 struct PS1ClutRec {
     uint16_t *data;
@@ -720,6 +721,17 @@ uint32 s_clutGen        = 0;
 int32 s_clutMask        = 0; // maskColor the CLUTs were built with (4.1b: a change uploads everything)
 bool s_clutFullNext     = true; // the next frame uploads every CLUT
 bool s_clutHeadFull     = false; // this frame's head uploads every CLUT
+// 9b.3: the pause's grey tint. While frames keep tinting, VRAM keeps the grey CLUTs: a tinting frame greys only the CLUTs
+// its head uploaded (the changed ones), not a full set spliced in every frame (SPZ2 overflowed the chain arena); the first
+// frame that doesn't tint splices the full colour set at its head at the frame's end (PS1LayersFrameEnd)
+bool s_greyHeld      = false; // VRAM's CLUTs are grey (the last frame tinted)
+bool s_greyThisFrame = false;
+// Draws after a fade / the tint take their colours back one CLUT at a time (PS1FadeRestoreSlot: the pause menu's sprites
+// need a few rows, not every CLUT); the rows a tinting frame restored are uploaded again at the next frame's head, where
+// that frame's tint greys them with the rest (s_regrey*)
+#define PS1_RESTORE_WORDS 16 // 512 CLUTs (tiles + atlas)
+uint32 s_restored[PS1_RESTORE_WORDS], s_regrey[PS1_RESTORE_WORDS];
+bool s_restoredBank = false, s_regreyBank = false, s_restoredAll = false;
 extern "C" {
 volatile uint32 g_ps1ClutFullUploads = 0; // frames that uploaded every CLUT (total)
 volatile uint32 g_ps1ClutRowUploads  = 0; // CLUT rows uploaded because their entries changed (total)
@@ -764,6 +776,14 @@ void PS1ClutUploadChanged()
         return;
     }
     s_clutHeadFull = false;
+    if (s_greyHeld) { // 9b.3: the rows the last (tinting) frame took back to colour after its tint
+        for (int32 c = 0; c < nt + na && c < PS1_RESTORE_WORDS * 32; ++c)
+            if ((s_regrey[c >> 5] >> (c & 31)) & 1)
+                PS1ClutRowFrom(row, c < nt ? cl[c].map : ac[c - nt].map),
+                    PS1ClutRow(row, 16, (int16_t)(c < nt ? cl[c].x : ac[c - nt].x), (int16_t)(c < nt ? cl[c].y : ac[c - nt].y));
+        if (s_regreyBank)
+            PS1ClutRow(s_pal16, 256, 0, 240);
+    }
     uint32 changed[2] = { 0, 0 };
     uint32 exact[8]   = { 0, 0, 0, 0, 0, 0, 0, 0 }; // 9.4c: the entries themselves (a bucket holds 4)
     int32 lo = 256, hi = -1;
@@ -854,12 +874,37 @@ void PS1ClutSpliceFull()
     g_ps1ClutSplices = g_ps1ClutSplices + 1;
 }
 
+// 9b.3: the end of the frame's draw lists: a frame that tinted leaves VRAM's CLUTs grey for the next one; the first frame
+// that doesn't splices the colour set in at its head (before its draws), or the next frame uploads it (the splice failed)
+void RSDK::PS1LayersFrameEnd()
+{
+    if (s_greyThisFrame) {
+        s_greyHeld = !s_fadeRecsLost && !s_restoredAll;
+        if (!s_greyHeld)
+            s_clutFullNext = true; // some CLUT this frame stayed coloured: the next frame starts from a full set
+        memcpy(s_regrey, s_restored, sizeof(s_regrey));
+        s_regreyBank = s_restoredBank;
+    }
+    else if (s_greyHeld) {
+        s_greyHeld = false;
+        if (!s_clutHeadFull) {
+            s_fadeRecsLost = false;
+            PS1ClutSpliceFull();
+            if (s_fadeRecsLost)
+                s_clutFullNext = true;
+        }
+    }
+    s_greyThisFrame = false;
+}
+
 // The frame start of the draw lists: this frame's clear, the CLUTs whose palette entries changed (3.3e)
 void RSDK::PS1LayersFrameBegin()
 {
     ++s_layerFrame; // 7b.7: this frame's extra bank is uploaded at its first use
     s_clutRecCount = s_colourRecCount = 0; // before the frame start: its clear may record a colour word (4.1b)
     s_ps1Faded = s_fadeRecsLost = false;
+    memset(s_restored, 0, sizeof(s_restored));
+    s_restoredBank = s_restoredAll = false;
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
     g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
@@ -928,8 +973,42 @@ void RSDK::PS1FadeRestore()
     if (s_ps1Faded) {
         s_ps1Faded = false;
         PS1ClutUploadAll();
+        s_restoredAll = true;
         g_ps1FadeRestores = g_ps1FadeRestores + 1;
     }
+}
+
+// 9b.3: a sprite after a fade / the tint: its own CLUT back to colour (atlas slot, or the bank's 256 entries), once a frame
+void RSDK::PS1FadeRestoreSlot(uint32 slot)
+{
+    if (!s_ps1Faded || s_restoredAll)
+        return;
+    if (slot == PS1_ATLAS_BANK_CLUT) {
+        if (!s_restoredBank) {
+            static uint16 s_bank[256];
+            s_bank[0] = 0;
+            for (int32 i = 1; i < 256; ++i) s_bank[i] = PS1Colour(fullPalette[0][i]);
+            PS1ClutRow(s_bank, 256, 0, 240);
+            PS1ChainFlushCache();
+            s_restoredBank = true;
+        }
+        return;
+    }
+    const PS1AtlasClut *ac = PS1AtlasCluts();
+    int32 nt = PS1TileCluts() ? PS1TileClutCount() : 0, c = nt + (int32)slot;
+    if (!ac || slot >= PS1AtlasClutCount() || c >= PS1_RESTORE_WORDS * 32) {
+        PS1FadeRestore(); // past the bitmap: every CLUT, as before
+        return;
+    }
+    if ((s_restored[c >> 5] >> (c & 31)) & 1)
+        return;
+    uint16 row[16];
+    row[0] = 0;
+    for (int32 i = 1; i < 16; ++i) row[i] = ac[slot].map[i] ? PS1Colour(fullPalette[0][ac[slot].map[i]]) : 0;
+    PS1ClutRow(row, 16, (int16_t)ac[slot].x, (int16_t)ac[slot].y);
+    PS1ChainFlushCache();
+    s_restored[c >> 5] |= 1u << (c & 31);
+    g_ps1FadeRestores = g_ps1FadeRestores + 1;
 }
 
 // FillScreen's arithmetic per 5-bit channel (the PC: blendLookupTable[0x20 * a + c] = a * c >> 8; the fill colour's
@@ -1017,9 +1096,9 @@ inline uint32 PS1GreyWord(uint32 w) // a GP0 colour word's 8-bit fields (0xBBGGR
 
 void RSDK::PS1TintScreenGrey()
 {
-    if (!s_clutHeadFull)
-        PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them turn (3.3e)
-    s_clutFullNext = true;
+    if (!s_clutHeadFull && !s_greyHeld)
+        PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them turn (3.3e); held: VRAM's are grey already
+    s_greyThisFrame = true;
     for (int32 r = 0; r < s_clutRecCount; ++r) {
         uint16_t *e = s_clutRecs[r].data;
         for (int32 i = 0; i < s_clutRecs[r].n; ++i) {

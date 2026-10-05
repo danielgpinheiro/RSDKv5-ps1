@@ -415,7 +415,6 @@ inline int32 PS1LineBank(int32 y)
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
 bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &shift)
 {
-    PS1FadeRestore(); // a FillScreen earlier this frame faded the CLUTs
     uint16 attr = frame->ps1Attr;
     if (attr == PS1_ATLAS_MISSING) {
         if (frame->ps1U == PS1_ATLAS_OUTSIDE && frame->ps1V == PS1_ATLAS_OUTSIDE) { // 4.2d: no texels to draw (the PC
@@ -436,6 +435,7 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &s
     }
     tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7;
     uint32 slot = PS1_ATLAS_CLUT(attr);
+    PS1FadeRestoreSlot(slot); // a FillScreen / the pause tint earlier this frame changed the CLUTs: this one back (9b.3)
     clut = slot == PS1_ATLAS_BANK_CLUT ? (uint32)(240 << 6) : (slot % PS1_SPRITE_CLUTS_PER_ROW) | (496 + slot / PS1_SPRITE_CLUTS_PER_ROW) << 6;
     shift = PS1_ATLAS_SHIFT(attr);
     return true;
