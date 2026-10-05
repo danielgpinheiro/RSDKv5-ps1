@@ -1,0 +1,98 @@
+# 9b.4 (docs/32): zone -> giant ring -> UFO -> back -> star post -> Blue Spheres -> back. Per load + 300 frames: the guards
+# and sprite misses (L AT, L MISS), then the step's action. @UFO@ = saveRAM->nextSpecialStage (UFO 1-7 = 0-6).
+add-symbol-file @R@/build/gen/ovl/UFO1/UFO1.elf
+set $lf = 0
+set $armed = 1
+set $step = -1
+break RSDK::LoadSceneFolder
+commands
+silent
+printf "L SCENE f=%u cat=%d pos=%d folder=%s name=%s\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].folder, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].name
+if $step == -1
+  set var globals->playerID = @PID@
+end
+set $step = $step + 1
+set var g_ps1TestBossClass = 0
+set $lf = g_ps1PerfFrames
+set $armed = 1
+continue
+end
+break perfTick if $armed && (g_ps1PerfFrames == $lf + 300 || g_ps1PerfFrames == $lf + 330 || g_ps1PerfFrames == $lf + 360 || g_ps1PerfFrames == $lf + 390 || g_ps1PerfFrames == $lf + 420 || g_ps1PerfFrames == $lf + 450)
+commands
+silent
+set $p = (struct EntityPlayer *)RSDK::objectEntityPtr[0]
+if g_ps1PerfFrames == $lf + 300
+  printf "L AT f=%u pos=%d state=%d x=%d y=%d rings=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u acMissing=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, $p->position.x >> 16, $p->position.y >> 16, $p->rings, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1SpriteOutside
+  set $i = 0
+  while $i < 8
+    set $e = g_ps1MissingSheet[$i]
+    if $e
+      set $s = ($e & 0xFF) - 1
+      printf "L MISS sheet=%d frames=%u rect=%u,%u hash=%08x%08x\n", $s, $e >> 8, g_ps1MissingRect[$i] & 0xFFFF, g_ps1MissingRect[$i] >> 16, RSDK::gfxSurface[$s].hash[0], RSDK::gfxSurface[$s].hash[1]
+    end
+    set var g_ps1MissingSheet[$i] = 0
+    set $i = $i + 1
+  end
+end
+# step 0: the zone: onto a giant ring (again every 30 frames: it takes a touch only once grown on screen)
+if $step == 0 && !RSDK::sceneInfo.timeEnabled && g_ps1PerfFrames > $lf + 300
+  set var g_ps1TestBossClass = 0
+end
+if $step == 0 && (RSDK::sceneInfo.timeEnabled || g_ps1PerfFrames == $lf + 300)
+  set var ((SaveRAM *)((struct ObjectSaveGame *)SaveGame)->saveRAM)->nextSpecialStage = @UFO@
+  set var $p->rings = 50
+  set var g_ps1TestBossClass = *(short *)SpecialRing
+  set var g_ps1TestBossNth = 0
+  set var g_ps1TestBossDX = 0
+  set var g_ps1TestBossDY = 0
+  set var g_ps1TestBossWarp = 1
+  if g_ps1TestBossSlot >= 0
+    set $r = (struct EntitySpecialRing *)RSDK::objectEntityPtr[g_ps1TestBossSlot]
+    printf "L RING f=%u slot=%d en=%d scale=%d state=%p rx=%d ry=%d px=%d py=%d time=%d\n", g_ps1PerfFrames, g_ps1TestBossSlot, $r->enabled, $r->scale.x, $r->state, $r->position.x >> 16, $r->position.y >> 16, $p->position.x >> 16, $p->position.y >> 16, RSDK::sceneInfo.timeEnabled
+  end
+end
+# step 1: the UFO: no rings (time over), its results, back to the zone
+if $step == 1 && g_ps1PerfFrames == $lf + 300
+  set var UFO_Setup->rings = 0
+  set var g_ps1TestBossClass = 0
+end
+# step 2: the zone again: onto a star post with 50 rings, then (90 frames later) into its bonus stars
+if $step == 2
+  set var $p->rings = 50
+  set var g_ps1TestBossClass = *(short *)StarPost
+  set var g_ps1TestBossNth = @POSTNTH@
+  set var g_ps1TestBossDX = 0
+  set var g_ps1TestBossDY = (g_ps1PerfFrames >= $lf + 390) ? -44 : 0
+  set var g_ps1TestBossWarp = 1
+end
+# step 4: back from Blue Spheres
+if $step == 4 && g_ps1PerfFrames == $lf + 300
+  printf "L DONE\n"
+  quit
+end
+if g_ps1PerfFrames == $lf + 450
+  set $armed = 0
+end
+continue
+end
+break perfTick if g_ps1PerfFrames == $lf + 6000 || (($step == 0 || $step == 2) && g_ps1PerfFrames == $lf + 2000)
+commands
+silent
+printf "L TIMEOUT f=%u step=%d state=%d\n", g_ps1PerfFrames, $step, RSDK::sceneInfo.state
+quit
+end
+break RSDK::PS1EntityRelocate
+commands
+silent
+printf "L RELOC f=%u step=%d slot=%d size=%u\n", g_ps1PerfFrames, $step, $a0, $a1
+bt 5
+continue
+end
+break PS1OutOfMemory
+commands
+silent
+printf "L STOP oom %u\n", $a0
+bt 8
+quit
+end
+continue

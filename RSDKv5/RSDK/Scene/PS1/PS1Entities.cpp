@@ -193,8 +193,11 @@ EntityBase *RSDK::PS1EntityEnsure(EntityBase *entity, int32 slot, uint32 size)
 {
     if (slot < 0)
         return entity; // not a slot's entity (a scratch one): the stock behaviour
-    if (PS1EntityCapacity(entity) >= size)
+    if (PS1EntityCapacity(entity) >= size) {
+        if (slot >= ps1SceneSlotEnd && slot < TEMPENTITY_START)
+            ps1SceneSlotEnd = slot + 1; // 9b.4: a range block past the scene's slots: the slot loops visit it now
         return entity;
+    }
     return PS1EntityRelocate((uint16)slot, size);
 }
 
@@ -1322,8 +1325,11 @@ void RSDK::PS1DormantUpdate()
 extern "C" void PS1ClassNoteEntity(void *entity)
 {
     int32 slot = PS1EntitySlotOf(entity);
-    if (slot >= 0)
+    if (slot >= 0) {
         PS1ClassNote(((EntityBase *)entity)->classID, slot);
+        if (slot >= ps1SceneSlotEnd && slot < TEMPENTITY_START && PS1EntityCapacity((EntityBase *)entity))
+            ps1SceneSlotEnd = slot + 1; // 9b.4: a range block the game writes a class into (BSS_Setup's spheres)
+    }
 }
 
 // 9b.2b: CreateEntity(TYPE_DEFAULTOBJECT) sized for the class copied into it next (the stored entities of an act change)

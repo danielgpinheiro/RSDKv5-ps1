@@ -1600,8 +1600,14 @@ const char *const ps1TempLargeStageMarker = "CreditsSetup";
 // and their bulbs, 296 B, a dozen at once): a stage with one sizes its small temp blocks for it (else spare blocks)
 const char *const ps1TempBurstClasses[] = { "HotaruHiWatt", NULL };
 // 9b.2b: CPZ2's Mean Bean Machine copies each landed bean into slot 0x600 + its cell (128 a board, 8 a row; 14 rows and 6
-// columns used) and keeps the slot's pointer it took before the copy: those slots hold a PuyoBean block from the load
-const PS1SlotRangeSpec ps1SlotRangeSpecs[] = { { 0x600, 0x6FF, 128, 14 * 8, 8, 6, "PuyoBean" }, { 0, 0, 0, 0, 0, 0, NULL } };
+// columns used) and keeps the slot's pointer it took before the copy: those slots hold a PuyoBean block from the load.
+// 9b.4: Blue Spheres resets slots 0x40-0x9F into BSS_Collectable and writes the visible spheres into 0x40-0xBF
+// (BSS_Setup); the UFO stages reset their shadows into the slots below TEMPENTITY_START (UFO_Shadow_StageLoad: the
+// player's at TEMPENTITY_START, the UFO's and the PS1's single ring / sphere shadow below it)
+const PS1SlotRangeSpec ps1SlotRangeSpecs[] = { { 0x600, 0x6FF, 128, 14 * 8, 8, 6, "PuyoBean" },
+                                               { RESERVE_ENTITY_COUNT, RESERVE_ENTITY_COUNT + 0x7F, 1, 1, 1, 1, "BSS_Collectable" },
+                                               { TEMPENTITY_START - 2, TEMPENTITY_START - 1, 1, 1, 1, 1, "UFO_Shadow" },
+                                               { 0, 0, 0, 0, 0, 0, NULL } };
 // 9b.1: where the engine reads the player's character (each scene has an atlas per character: RSDK/Graphics/PS1/PS1Atlas.cpp)
 const int32 ps1GlobalsPlayerIDOffset = (int32)offsetof(GlobalVariables, playerID);
 const PS1ReservedSpec ps1ReservedSpecs[] = {
