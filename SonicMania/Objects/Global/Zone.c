@@ -118,6 +118,13 @@ static void Zone_PS1TestBossWarp(Entity *boss)
     Zone->playerBoundsL[0] = Zone->playerBoundsT[0] = 0;
     Zone->playerBoundsR[0] = TO_FIXED(layerSize.x);
     Zone->playerBoundsB[0] = Zone->deathBoundary[0] = TO_FIXED(layerSize.y);
+    // the camera keeps its own copy of the bounds (BoundsMarker / stage start): open it and put it on the player, or an
+    // arena that anchors itself to the camera the next frame (SPZ1's Heavy Gunner) starts where the camera was left
+    EntityCamera *camera = RSDK_GET_ENTITY(SLOT_CAMERA1, Camera);
+    camera->boundsL = camera->boundsT = 0;
+    camera->boundsR = layerSize.x;
+    camera->boundsB = layerSize.y;
+    camera->position = player->position;
 }
 static void Zone_PS1TestBoss(void)
 {
@@ -1574,6 +1581,8 @@ const PS1GrowSpec ps1GrowSpecs[] = { { "DCEvent", "Water" },
                                      // (GHZ1's DD Wrecker: the seven blank slots after it become its chains, core and
                                      // balls, placed through the pointers taken before the reset)
                                      { "Blank Object", "DDWrecker" },
+                                     // (SPZ1's Heavy Gunner: the four blank slots after it become its robots and helicopter)
+                                     { "Blank Object", "HeavyGunner" },
                                      { NULL, NULL } };
 // 7b.14: StageConfig names stock never registers as objects (the engine counts them apart from missing ones): with Plus,
 // SaveGame registers only its static variables (Game.c), and Credits' StageConfig still lists it

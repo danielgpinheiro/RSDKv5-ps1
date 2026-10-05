@@ -13,8 +13,9 @@ loads, captured from the running game with tools/gfx/capture_manifest.gdb), the 
   RGB, least pixels x distance first, until every frame has <= 15): shades can't flicker between frames and palette
   effects (Super) stay coherent. Every other sprite is exact.
 - Big sprites at half resolution (user decision 2026-09-26: bosses, big effects, UI art), only where the scene needs
-  it: the fewest HALF_PLAN steps that fit (bosses first, then big effects, presentation art, the HUD last, each from a
-  side of 64 / 48 / 32 px down); such a frame is stored halved (each 2x2 block -> its most common opaque index) and
+  it: the fewest HALF_PLAN steps that fit (9c: level art at 15 colours first, then Super Sonic, big effects, pictures,
+  presentation art, set pieces, the HUD's art, bosses last, each from a side of 96 / 64 / 48 / 32 px down; the title
+  card's letters and the HUD's text never); such a frame is stored halved (each 2x2 block -> its most common opaque index) and
   drawn 2x (binding bit 6). Badniks, springs, rings, platforms… are never halved.
 - Character art (players, the title screen's Sonic: PLAYER_LIKE) is 15 colours per frame at full size.
 - A cluster with <= 15 colours is 4-bit (clusters share 16-entry CLUTs of palette indices, entry 0 transparent),
@@ -63,6 +64,10 @@ LOSSY_LEVEL = False
 # 4.3 (user: the pause menu's CONTINUE / RESTART read blocky): animations never halved while the text is kept (the
 # pause buttons' text, UI/TextEN.bin list 10; a scene that can't fit them falls back with the other text: GHZ2)
 NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
+# 9c (user 2026-10-04: the title card's zone name and act number, the HUD's SCORE / TIME / RINGS and its digits read
+# blocky): never halved, in any plan step (the text fallback too); ~12 KB in the title card's group, ~3 KB resident
+ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), ('Global/TitleCard.bin', 3),
+                     ('Global/HUD.bin', 0), ('Global/HUD.bin', 1)}
 # 7.5: sheets drawn by DrawDeformedSprite (UFO7's plasma, OOZ's smog): whole, in VRAM, 128x128 4-bit
 DEFORM_SHEETS = {'SpecialUFO/Plasma.gif', 'OOZ/Smog.gif'}
 
@@ -251,7 +256,9 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: SPZ1's Heavy Gunner, SPZ2's Weather Mobile (Eggman's mobile); the act-2 end's TV picture (the Egg TVs
                 # stand in the level: normal group)
-                'SPZ1': {'start': [('Global/TitleCard.bin', None)],
+                # 9b.2b: the Heavy Gunner's Egg Robos and helicopter are made in the frame its boss music starts fading
+                # in (drawn ~400 frames before the boss group's load): in the title card's group too
+                'SPZ1': {'start': [('Global/TitleCard.bin', None), ('SPZ1/Boss.bin', None)],
                          'boss': [('SPZ1/Boss.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 9b.2b: the flying prison comes in under the boss music (the Weather Mobile turns into it), and the
@@ -288,6 +295,18 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 'SSZ2': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: HCZ1's Screw Mobile / Dive Eggman, HCZ2's Laundro Mobile
+                # 9b.2b: HCZ1's Screw Mobile waits parked in view until the player climbs in (which starts the boss
+                # music; Dive Eggman swims off with his bomb at once, before the boss group's load); MMZ1's pistons and
+                # barrier stand in the arena before Egg Pistons drops in: in the title card's group too
+                'HCZ1': {'start': [('Global/TitleCard.bin', None), ('HCZ/ScrewMobile.bin', None), ('HCZ/DiveEggman.bin', None)],
+                         'boss': [('HCZ/ScrewMobile.bin', None), ('HCZ/DiveEggman.bin', None), ('Eggman/EggmanHCZ1.bin', None),
+                                  ('HCZ/LaundroMobile.bin', None), ('Eggman/EggmanHCZ2.bin', None),
+                                  ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
+                'MMZ1': {'start': [('Global/TitleCard.bin', None), ('MMZ/EggPistonsMKII.bin', None)],
+                         'boss': [('MMZ/EggPistonsMKII.bin', None), ('Eggman/EggmanMMZ1.bin', None), ('MMZ/Gachapandora.bin', None),
+                                  ('Eggman/EggmanMMZ2.bin', None), ('Global/Explosions.bin', {2, 3})],
+                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'HCZ': {'start': [('Global/TitleCard.bin', None)],
                         'boss': [('HCZ/ScrewMobile.bin', None), ('HCZ/DiveEggman.bin', None), ('Eggman/EggmanHCZ1.bin', None),
                                  ('HCZ/LaundroMobile.bin', None), ('Eggman/EggmanHCZ2.bin', None),
@@ -408,6 +427,7 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
               # 7b.4: Press Garden's ice (pillars up to 110 px and their 12-frame glint; blocks are ~50 px)
               'PSZ1/Ice.bin', 'PSZ2/Ice.bin',
               'MSZ/Sandworm.bin',  # 7b.8: Mirage Saloon's sandworm (a set piece of big segments)
+              'MSZ/Train.bin',  # 9c: MSZ1's train cars (up to 320 px; the act no longer fit with its text kept sharp)
               # 7b.12: Titanic Monarch's mist (shares the ruby portal's sheet clusters) and big set pieces
               'TMZ1/Decoration.bin', 'TMZ1/LargeGear.bin', 'TMZ1/MetalArm.bin', 'TMZ1/CrashTest.bin', 'TMZ1/MagnetSphere.bin',
               'TMZ1/JacobsLadder.bin'}
@@ -415,10 +435,13 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
 LOSSY = 'lossy'  # 7b: HALF_PLAN's colour step (after the bosses: fewer colours shows less than half resolution)
-HALF_PLAN = [(HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (LOSSY, 0), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96),
-             (HALF_EFFECT, 48),
+# 9c (user 2026-10-04: bosses, Hydrocity's Eggman, read blocky; choice 161): fewer colours first, then Super Sonic (seen
+# only with the emeralds), effects, pictures, presentation, set pieces and the HUD's art; the bosses last (measured over
+# the 93 atlases that halve anything: bosses halved in 14 instead of 84)
+HALF_PLAN = [(LOSSY, 0), (HALF_SUPER, 32), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96), (HALF_EFFECT, 48),
              (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_LEVEL, 96), (HALF_LEVEL, 64),
-             (HALF_SUPER, 32), (HALF_HUD, 48), (HALF_HUD, 32), (HALF_LEVEL, 48), (HALF_LEVEL, 32), (HALF_BOSS, 16)]
+             (HALF_HUD, 48), (HALF_HUD, 32), (HALF_LEVEL, 48), (HALF_LEVEL, 32),
+             (HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (HALF_BOSS, 16)]
 # 7b.12: backdrops far larger than VRAM allows at any plan step, stored at quarter resolution (each texel drawn 4x4) at
 # 15 colours whatever the step: Titanic Monarch's sky backdrop (the Monarch, two 1024 x 1024 frames drawn mirrored)
 QUARTER = {'TMZ1/MonarchBG.bin'}
@@ -880,7 +903,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if x1 > x0 and y1 > y0:
                     k = (where, sh, (x0, y0, x1 - x0, y1 - y0))
                     t = HALF_RULES.get(path, HALF_RULES.get(sh))
-                    if (path, ai) in NEVER_HALF_ANIMS and KEEP_TEXT:
+                    if (path, ai) in ALWAYS_FULL_ANIMS or ((path, ai) in NEVER_HALF_ANIMS and KEEP_TEXT):
                         t = None
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)

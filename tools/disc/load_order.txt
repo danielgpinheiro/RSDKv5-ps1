@@ -1016,6 +1016,8 @@ Data/Stages/MSZ/PS1Local/518A8DD3.bin
 Data/Stages/MSZ/PS1Local/033E1D44.bin
 Data/Stages/MSZ/Scene1_tails.pda
 Data/Stages/MSZ/Scene1_tails.atl
+Data/Stages/MSZ/Scene1_knux.pda
+Data/Stages/MSZ/Scene1_knux.atl
 Data/Stages/MSZ/Scene1k.ptl
 Data/Stages/MSZ/Scene1k.pda
 Data/Stages/MSZ/Scene1k.atl
