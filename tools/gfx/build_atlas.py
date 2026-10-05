@@ -68,6 +68,9 @@ NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
 # blocky): never halved, in any plan step (the text fallback too); ~12 KB in the title card's group, ~3 KB resident
 ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), ('Global/TitleCard.bin', 3),
                      ('Global/HUD.bin', 0), ('Global/HUD.bin', 1)}
+# 9c (MSZ2's title card: the SONIC MANIA strip read garbled): their text strips (<= TEXT_KEEP_H) stay full in the text
+# fallback too
+ALWAYS_TEXT_FILES = {'Global/TitleCard.bin', 'Global/HUD.bin'}
 # 7.5: sheets drawn by DrawDeformedSprite (UFO7's plasma, OOZ's smog): whole, in VRAM, 128x128 4-bit
 DEFORM_SHEETS = {'SpecialUFO/Plasma.gif', 'OOZ/Smog.gif'}
 
@@ -891,7 +894,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     # the unique sheet rects of every placement (a rect used by two placements is stored in each); a rect is halvable
     # only if every frame using it comes from a HALVABLE file, character art if any does from a PLAYER_LIKE one
     rects = {}                                  # (placement, sheet) -> set(rect)
-    halvable, charart, textish = {}, set(), {}
+    halvable, charart, textish, alltext = {}, set(), {}, {}
     always_halvable = {}                        # every frame using the rect comes from a HALVABLE file (any plan step)
     quarter = {}                                # 7b.12: every frame using the rect comes from a QUARTER file
     for path, _, keys in files:
@@ -910,6 +913,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                     # 7b: text lives in presentation / HUD art (the strips KEEP_TEXT protects); a set piece's or a boss's
                     # short strip is not text
                     textish[k] = textish.get(k, False) or path in HALF_PRESENT or path in HALF_HUD
+                    alltext[k] = alltext.get(k, False) or path in ALWAYS_TEXT_FILES
                     always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
                     quarter[k] = quarter.get(k, True) and path in QUARTER
                     if path in PLAYER_LIKE or path.startswith('Players/'):
@@ -977,7 +981,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             half = bool(ts) and all(t is not None for t in ts) and max(w, h) >= max(ts)
             # 4.3 / 4b (user: readable text): a strip at most TEXT_KEEP_H tall is text (the title's "PRESS ANY BUTTON",
             # headings, buttons): full resolution in every plan step (halved it can't be read)
-            if half and h <= TEXT_KEEP_H and KEEP_TEXT and any(textish.get(k) for k in inner):
+            if half and h <= TEXT_KEEP_H and (KEEP_TEXT and any(textish.get(k) for k in inner)
+                                              or any(alltext.get(k) for k in inner)):
                 half = False
             # 4.2b: wider or taller than a texture page (the menu's 294 x 162 diorama backdrop): halved whatever the plan
             # step, when every frame using it may be (else the error below)
