@@ -1,0 +1,44 @@
+# 9b.5 (docs/32): menu flows driven by the engine's scripted pad (g_ps1PadScript, PS1InputDevice.hpp), set once here:
+# no per-frame pad breakpoints (set at the first scene load: the EXE's start-up clears BSS). Per scene load: L SCENE (+ the card's counters, the script's next step); at +240 frames
+# L AT (guards); the run ends @ENDF@ frames after the @ENDN@-th load of scene @ENDPOS@ (L DONE), or L TIMEOUT.
+@PRE@
+set $lf = 0
+set $script = 0
+set $loads = 0
+set $done = 0
+break RSDK::LoadSceneFolder
+commands
+silent
+if !$script
+  # (set here, after the EXE's start-up cleared its BSS)
+  @STEPS@
+  set $script = 1
+end
+printf "L SCENE f=%u cat=%d pos=%d folder=%s name=%s step=%u cardLoads=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].folder, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].name, g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors
+if RSDK::sceneInfo.listPos == @ENDPOS@
+  set $loads = $loads + 1
+  if $loads == @ENDN@
+    set $done = 1
+  end
+end
+set $lf = g_ps1PerfFrames
+continue
+end
+break perfTick if g_ps1PerfFrames == $lf + 240 || ($done && g_ps1PerfFrames == $lf + @ENDF@) || g_ps1PerfFrames == $lf + @TIMEOUT@
+commands
+silent
+if g_ps1PerfFrames == $lf + 240
+  printf "L AT f=%u pos=%d state=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u step=%u cardLoads=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors
+end
+if $done && g_ps1PerfFrames == $lf + @ENDF@
+  printf "L DONE f=%u step=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, g_ps1PadScriptStep, g_ps1CardSaves, g_ps1CardErrors
+  @ENDCMDS@
+  quit
+end
+if g_ps1PerfFrames == $lf + @TIMEOUT@
+  printf "L TIMEOUT f=%u pos=%d step=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, g_ps1PadScriptStep
+  quit
+end
+continue
+end
+continue

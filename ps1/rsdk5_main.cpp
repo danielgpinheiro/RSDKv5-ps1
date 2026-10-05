@@ -48,12 +48,13 @@ extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/
 
 namespace {
 
-// Pad 1 -> g_ps1PadButtons (RSDK/Input/PS1): Up Down Left Right, A = Cross, B = Circle, C = Square, X = Triangle,
-// Y = L1, Z = R1, Start, Select (as the Sonic CD port's mapping).
+// Pad 1 -> g_ps1PadButtons (RSDK/Input/PS1): Up Down Left Right, A = Cross, B = Circle, C = L1, X = Square,
+// Y = Triangle, Z = R1, Start, Select. docs/32 9b.5: the menus' prompts draw X as Square and Y as Triangle (Save Select's
+// Delete, Game Options), as the PS4 version's layout; gameplay jumps on A / B / C / X, as there.
 void readPad() {
     using Pad = psyqo::AdvancedPad;
-    static const Pad::Button map[12] = { Pad::Up,   Pad::Down,     Pad::Left, Pad::Right, Pad::Cross, Pad::Circle,
-                                         Pad::Square, Pad::Triangle, Pad::L1,  Pad::R1,    Pad::Start, Pad::Select };
+    static const Pad::Button map[12] = { Pad::Up,   Pad::Down,   Pad::Left,     Pad::Right, Pad::Cross, Pad::Circle,
+                                         Pad::L1,   Pad::Square, Pad::Triangle, Pad::R1,    Pad::Start, Pad::Select };
     uint16_t held = 0;
     if (g_ps1Pad && g_ps1Pad->isPadConnected(Pad::Pad::Pad1a))
         for (int i = 0; i < 12; i++)

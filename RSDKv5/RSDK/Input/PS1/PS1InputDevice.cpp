@@ -5,6 +5,36 @@
 extern "C" {
 volatile uint16_t g_ps1PadButtons  = 0;
 volatile uint16_t g_ps1PadTestMask = 0;
+volatile uint16_t g_ps1PadScript[4 * 48];
+volatile uint32_t g_ps1PadScriptSteps = 0, g_ps1PadScriptStep = 0, g_ps1SceneLoadSerial = 0;
+}
+
+// 9b.5: the scripted pad's buttons this frame (see PS1InputDevice.hpp)
+static uint16 PS1PadScriptButtons()
+{
+    static uint32 serial = 0, frames = 0, stepSerial = 0, pressSerial = 0;
+    static bool pressing = false;
+    if (serial != ::g_ps1SceneLoadSerial)
+        serial = ::g_ps1SceneLoadSerial, frames = 0;
+    else
+        ++frames;
+    while (::g_ps1PadScriptStep < ::g_ps1PadScriptSteps) {
+        volatile uint16_t *s = &::g_ps1PadScript[4 * ::g_ps1PadScriptStep];
+        if (!(pressing && serial != pressSerial)) { // (a press its scene's end cut short is done)
+            if (s[0] == 0xFFFE ? serial == stepSerial : s[0] != 0xFFFF && s[0] != RSDK::sceneInfo.listPos)
+                return 0;
+            if (frames < s[1])
+                return 0;
+            if (frames < (uint32)s[1] + s[3]) {
+                pressing = true, pressSerial = serial;
+                return s[2];
+            }
+        }
+        ::g_ps1PadScriptStep = ::g_ps1PadScriptStep + 1;
+        stepSerial           = serial;
+        pressing             = false;
+    }
+    return 0;
 }
 
 using namespace RSDK;
@@ -19,7 +49,7 @@ void SKU::InputDevicePS1::operator delete(void *ptr) {}
 void SKU::InputDevicePS1::UpdateInput()
 {
     this->prevButtonMasks = this->buttonMasks;
-    this->buttonMasks     = g_ps1PadButtons | g_ps1PadTestMask;
+    this->buttonMasks     = g_ps1PadButtons | g_ps1PadTestMask | (::g_ps1PadScriptSteps ? PS1PadScriptButtons() : 0);
     uint16 changed        = this->buttonMasks ^ this->prevButtonMasks;
 
     this->inactiveTimer[0] = this->buttonMasks ? 0 : this->inactiveTimer[0] + 1;

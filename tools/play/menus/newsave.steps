@@ -1,0 +1,7 @@
+# a new save from a blank card: Title (Start), the first-boot autosave notice (A), Mania Mode (A), the selected slot (A),
+# the AIZ intro skipped (Start); the run ends in GHZ1
+1 400 0x400 4
+2 200 0x10 4
+2 320 0x10 4
+2 480 0x10 4
+0xFFFE 300 0x400 4

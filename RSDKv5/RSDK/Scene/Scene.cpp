@@ -196,6 +196,7 @@ void RSDK::LoadSceneFolder()
 #if RETRO_PLATFORM == RETRO_PS1
     // docs/32 9.2: the folder whose PS1Local copies this load reads (ps1/cdrom_fs.cpp)
     PS1FsSetLoadFolder(sceneInfo.listData[sceneInfo.listPos].folder);
+    ::g_ps1SceneLoadSerial = ::g_ps1SceneLoadSerial + 1; // 9b.5: the scripted pad's steps count frames from a scene's load
 #endif
     sceneInfo.timeCounter  = 0;
     sceneInfo.minutes      = 0;

@@ -1,0 +1,5 @@
+# load the save the new-save flow made (same card): Title (Start), Mania Mode (A), the slot (A): straight into its zone
+1 400 0x400 4
+2 200 0x10 4
+2 320 0x10 4
+2 480 0x10 4

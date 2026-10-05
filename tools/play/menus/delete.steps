@@ -1,0 +1,8 @@
+# delete the save the new-save flow made (a copy of its card): Title (Start), Mania Mode (A), on the save slot Square
+# (X: Delete), the dialog's No / Yes: Right, A
+1 400 0x400 4
+2 200 0x10 4
+2 320 0x10 4
+2 480 0x80 4
+2 560 0x8 4
+2 620 0x10 4
