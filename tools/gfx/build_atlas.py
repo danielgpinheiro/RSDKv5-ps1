@@ -417,8 +417,10 @@ HALF_EFFECT = {'Global/Explosions.bin', 'Global/Shields.bin', 'Global/Water.bin'
                'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin',
                'TMZ1/Portal.bin'}  # 7b.12: the ruby portal (TMZ2 / TMZ3: 20 frames of 126 x 126, 229 KB at 4-bit)
 HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison.bin', 'UI/TextEN.bin', 'UI/SaveSelect.bin',
-                'UI/UIElements.bin', 'UI/SmallFont.bin', 'Title/Logo.bin', 'Title/PlusLogo.bin', 'Title/Background.bin',
+                'UI/UIElements.bin', 'UI/SmallFont.bin', 'Title/PlusLogo.bin', 'Title/Background.bin',
                 'Title/Electricity.bin', 'Logos/Logos.bin',
+                # (9c, user 2026-10-05: the title's SONIC MANIA letters read blocky: Title/Logo.bin stays full size, the
+                # title then fits in 19 of 20 columns)
                 # 4.2b: the menu's art (the text fonts stay: SmallFont / TextEN only from their plan side up)
                 'UI/Diorama.bin', 'UI/Picture.bin', 'UI/MainIcons.bin', 'UI/HeadingsEN.bin', 'UI/Buttons.bin',
                 'UI/ButtonLabel.bin', 'UI/MedallionPanel.bin'}
