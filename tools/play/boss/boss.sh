@@ -9,6 +9,12 @@ OUT=$1; CLASS=$2; FN=$3; HITS=$4; DX=$5; DY=$6; WAIT=$7; PRISON=$8
 ADDR=$(mipsel-none-elf-nm $R/build/gen/ovl/$OVL/$OVL.elf 2>/dev/null | awk -v f=$FN '$3==f && $2=="T"{print $1}')
 [ -z "$ADDR" ] && ADDR=$(mipsel-none-elf-nm $R/rsdkv5.elf | awk -v f=$FN '$3==f && $2=="T"{print $1}')
 [ -z "$ADDR" ] && { echo "no symbol $FN"; exit 1; }
+ADDR2=$ADDR   # FN2: the second hit round's function (CLASS2: its class), e.g. ERZ's King then the Klepto Mobile
+if [ -n "${FN2:-}" ]; then
+  ADDR2=$(mipsel-none-elf-nm $R/build/gen/ovl/$OVL/$OVL.elf 2>/dev/null | awk -v f=$FN2 '$3==f && $2=="T"{print $1}')
+  [ -z "$ADDR2" ] && ADDR2=$(mipsel-none-elf-nm $R/rsdkv5.elf | awk -v f=$FN2 '$3==f && $2=="T"{print $1}')
+  [ -z "$ADDR2" ] && { echo "no symbol $FN2"; exit 1; }
+fi
 cat > $S/$OUT.in.gdb <<G
 set \$lf = 0
 set \$armed = 1
@@ -109,6 +115,8 @@ if \$ph == 10 && (${READY:-1})
 end
 if \$ph == 11 && (${READY2:-1})
   printf "L READY2 f=%u\n", g_ps1PerfFrames
+  set var g_ps1TestBossClass = ${CLASS2:-$CLASS}
+  set var g_ps1TestBossHit = (void (*)(void))0x$ADDR2
   set var g_ps1TestBossNth = ${NTH2:-${NTH:-0}}
   set var g_ps1TestBossPin = ${PIN2:-${PIN:--1}}
   set var g_ps1TestBossHits = ${HITS2:-0}

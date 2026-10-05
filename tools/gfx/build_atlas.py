@@ -236,6 +236,9 @@ PLAYER_FILES = {'sonic': {'Players/Sonic.bin': 'normal', 'Players/SuperSonic.bin
 PLAYER_ANIMATED = {'Players/Sonic.bin', 'Players/SuperSonic.bin', 'Players/Tails.bin', 'Players/Knux.bin'}  # ANI_* order
 # the player region's alternates beyond the character's own files (Super's sparkles swap in with Super Sonic)
 PLAYER_EXTRA = {'Global/SuperSparkle.bin': 'super'}
+# 9b.2b: scenes where the player turns Super without Super's music (ERZ's cutscene transforms him for the final fight,
+# under its own boss track): the Super frames sit with the normal ones from the start (the region swaps on Super.ogg)
+SUPER_FROM_START = {('ERZ', '1')}
 # per folder: event groups, one at a time in the event region: the title card at the act start, the boss where the boss
 # music starts, the sign post / prison where the act-clear music starts
 # 9b.2b: the boss explosions (Explosions.bin 2 / 3) stay resident where level objects make them too: FBZ's missiles and
@@ -651,6 +654,8 @@ def select(folder, scene_id, character, files):
                 sel[path], why[path] = [None] * n, 'another character'
                 continue
             alt = PLAYER_FILES[character][path]
+            if alt == 'super' and (folder, scene_id) in SUPER_FROM_START:
+                alt = 'normal'
             if alt == 'super' and no_super:
                 sel[path], why[path] = [None] * n, 'no Super in a cutscene'
                 continue
@@ -696,7 +701,9 @@ def select(folder, scene_id, character, files):
             where = 'resident'
             if path in PLAYER_EXTRA:
                 where = ('player', PLAYER_EXTRA[path])
-                if PLAYER_EXTRA[path] == 'super' and no_super:
+                if PLAYER_EXTRA[path] == 'super' and (folder, scene_id) in SUPER_FROM_START:
+                    where = ('player', 'normal')
+                elif PLAYER_EXTRA[path] == 'super' and no_super:
                     where = None
             gs = sorted({g for g, members in groups.items() for fp, fa in members
                          if fp == path and (fa is None or ai in fa)
@@ -1270,6 +1277,8 @@ def build_fit(data, disc_data, folder, scene_id, character='sonic'):
             if files_ == LOSSY:
                 LOSSY_LEVEL = True
                 continue
+            if files_ is HALF_SUPER and (folder, scene_id) in SUPER_FROM_START:
+                continue  # Super is the player for the whole scene there (ERZ's final fight): full size
             for f in files_:
                 HALF_RULES[f] = side
         res = build(data, disc_data, folder, scene_id, character)
