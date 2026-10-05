@@ -57,7 +57,7 @@ for f in sorted(glob.glob('%s/%s_*_*.bin' % (W, n))):
     if len(d) < 153600: continue
     im = Image.new('RGB', (320, 240))
     px = [((v & 31) << 3, ((v >> 5) & 31) << 3, ((v >> 10) & 31) << 3) for v in (d[i] | d[i + 1] << 8 for i in range(0, 153600, 2))]
-    im.putdata(px); im.save(f[:-4] + '.png'); os.remove(f)
+    im.putdata(px); im.save(f[:-4] + ".png"); os.rename(f, f[:-4] + ".raw")
     print(f[:-4] + '.png')
 P
 grep -a "^L \|rror" $W/$NAME.log | head -20
