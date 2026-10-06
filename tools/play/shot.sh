@@ -1,7 +1,7 @@
 #!/bin/bash
 # shot.sh NAME BOOT FRAMES [PRE.gdb]: 8 MB measuring build of BOOT (docs/32 9c pictures), both framebuffers dumped at each
 # frame in FRAMES (comma list) -> build/shots/NAME_<frame>_<y>.png (320x240; the displayed one is the complete picture).
-# PRE.gdb: extra GDB lines (breakpoints that set up the scene, e.g. the boss hook). PCSX-Redux, shared tree lock of
+# SHOT_X=x: dump the 320 x 240 area from VRAM column x instead of 0. PRE.gdb: extra GDB lines (breakpoints that set up the scene, e.g. the boss hook). PCSX-Redux, shared tree lock of
 # tools/play/boss (build/boss/tree.lock).
 set -u
 cd "$(dirname "$0")/../.."
@@ -37,7 +37,7 @@ break ps1TestStop
 commands
 silent
 if g_ps1PerfFrames == g_ps1TestStops[3]
-  set var g_ps1VramDumpX = 0
+  set var g_ps1VramDumpX = ${SHOT_X:-0}
   set var g_ps1VramDumpW = 320
   set var g_ps1VramDumpH = 240
   if \$half && g_ps1PerfFrames == \$half

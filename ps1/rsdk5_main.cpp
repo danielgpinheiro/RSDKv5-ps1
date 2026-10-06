@@ -93,15 +93,6 @@ class ManiaPS1App final : public psyqo::Application {
                              .set(psyqo::GPU::ColorMode::C15BITS)
                              .set(psyqo::GPU::Interlace::PROGRESSIVE)
                              .set(psyqo::GPU::MiscSetting::CLEAR_VRAM));
-        // CLEAR_VRAM's one 1024 x 512 fill is a 0 x 0 fill (GP0(02h) masks the width to 10 bits, the height to 9: the
-        // BIOS's boot image stayed in VRAM, behind the first loading screens); upstream psyqo fixed it (nugget f6a0f93),
-        // the shared nugget is not updated yet: the same four quarters here
-        for (int16_t y = 0; y < 512; y += 256)
-            for (int16_t x = 0; x < 1024; x += 512) {
-                psyqo::Prim::FastFill ff;
-                ff.rect = psyqo::Rect{x, y, 512, 256};
-                gpu().sendPrimitive(ff);
-            }
         g_ps1GPU = &gpu();
         m_cdrom.prepare();
         PS1McPrepare(); // phase 8: the memory card's file system (before any card call)

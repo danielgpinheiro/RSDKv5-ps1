@@ -53,8 +53,12 @@ emu_start() {
     local mc1=${EMU_MC1:-$1.mc1.mcd} mc2=$1.mc2.mcd
     [ -f "$mc1" ] || /usr/bin/python3 tools/memcard/mcd.py format "$mc1" >/dev/null
     /usr/bin/python3 tools/memcard/mcd.py format "$mc2" >/dev/null
-    "$EMU_PCSX" -fastboot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
-      -iso build/game.cue -exe rsdkv5.ps-exe >/dev/null 2>&1 &
+    # docs/32 9d: EMU_RETAIL=1 boots the disc through the user's retail BIOS with its intro (the Sony / PlayStation
+    # screens stay in VRAM unless the game clears it), not the EXE straight into OpenBIOS
+    local boot="-fastboot -exe rsdkv5.ps-exe"
+    [ "${EMU_RETAIL:-0}" = 1 ] && boot="-bios ${EMU_BIOS:-$HOME/Files/Projetos_Infaliveis/PS1/SCPH101.BIN}"
+    "$EMU_PCSX" $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
+      -iso build/game.cue >/dev/null 2>&1 &
     EMU_PID=$!
     sleep 4
   fi
