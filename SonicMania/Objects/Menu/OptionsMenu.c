@@ -117,6 +117,52 @@ void OptionsMenu_Initialize(void)
         if (UIControl_ContainsPos(controller, &label->position))
             OptionsMenu->selectDataToEraseLabel = label;
     }
+
+#if defined RETRO_PS1_BUILD
+    // docs/32 9b.5: the PS1 has no video settings (the PC menu sets window size, borders, vsync, triple buffering; a
+    // console's the shader filter): Video leaves the Options grid and Data takes its place (2 x 2: Data | Sound,
+    // Controls | Language); the grids' columns closer to the middle for the 320-pixel screen (the 424 layout ran Controls,
+    // Saved Games, Medallions, English and Français to its edges)
+    EntityUIControl *optionsControl = OptionsMenu->optionsControl;
+    EntityUIButton *videoButton = NULL, *dataButton = NULL;
+    for (int32 i = 0; i < optionsControl->buttonCount; ++i) {
+        if (optionsControl->buttons[i]->frameID == 0)
+            videoButton = optionsControl->buttons[i];
+        else if (optionsControl->buttons[i]->frameID == 4)
+            dataButton = optionsControl->buttons[i];
+    }
+    if (videoButton && dataButton) {
+        dataButton->position = videoButton->position;
+        dataButton->size     = videoButton->size;
+        videoButton->visible = false;
+        videoButton->active  = ACTIVE_NEVER;
+        int32 kept           = 0;
+        for (int32 i = 0; i < optionsControl->buttonCount; ++i) {
+            EntityUIButton *button = optionsControl->buttons[i];
+            if (button == dataButton)
+                continue;
+            optionsControl->buttons[kept++] = button == videoButton ? dataButton : button;
+        }
+        for (int32 i = kept; i < optionsControl->buttonCount; ++i) optionsControl->buttons[i] = NULL;
+        optionsControl->buttonCount = kept;
+        optionsControl->rowCount    = 2;
+        optionsControl->columnCount = 2;
+    }
+    EntityUIControl *insetControls[] = { optionsControl, OptionsMenu->dataOptionsControl, OptionsMenu->languageControl };
+    const int32 insets[]               = { 24, 12, 16 }; // (Data's two top buttons are wide: 24 px made them touch)
+    for (int32 c = 0; c < 3; ++c) {
+        foreach_all(UIButton, button)
+        {
+            if (!UIControl_ContainsPos(insetControls[c], &button->position))
+                continue;
+            int32 dx = button->position.x - insetControls[c]->position.x;
+            if (dx >= TO_FIXED(32))
+                button->position.x -= TO_FIXED(insets[c]);
+            else if (dx <= -TO_FIXED(32))
+                button->position.x += TO_FIXED(insets[c]);
+        }
+    }
+#endif
 }
 
 void OptionsMenu_HandleUnlocks(void)
