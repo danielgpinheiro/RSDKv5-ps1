@@ -26,6 +26,7 @@ uint8 *s_arena      = NULL; // DATASET_STG, one per scene
 uint8 *s_arenaAt    = NULL; // 4.3: where it was placed (a compaction must never move it: the slots point into it)
 uint8 *s_spare      = NULL; // the arena's tail, bump-allocated by relocations
 uint32 s_tempSmallCap = PS1_TEMP_SMALL_CAP; // 9b.2b: this stage's small temp block (ps1TempBurstClasses)
+uint32 s_tempLargeCap = 0;                  // 9b.7: this stage's large temp block (ps1TempLargeClasses)
 uint8 *s_spareEnd   = NULL;
 
 inline uint32 Align4(uint32 v) { return (v + 3) & ~3u; }
@@ -56,6 +57,7 @@ extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes w
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
 extern "C" const char *const ps1TempLargeStageMarker; // 7b.14: (Zone.c) a stage with this class: PS1_TEMP_BLOCKS_LARGE, all large
 extern "C" const char *const ps1TempBurstClasses[]; // 9b.2b: (Zone.c) the small temp blocks fit these classes (stage has them)
+extern "C" const char *const ps1TempLargeClasses[]; // 9b.7: (Zone.c) temp-created classes past a small temp block
 extern "C" const PS1SlotRangeSpec ps1SlotRangeSpecs[]; // 9b.2b: (Zone.c) scene slots the game copies entities into
 
 __attribute__((noinline)) int32 StageClassOf(const char *name)
@@ -845,8 +847,20 @@ void RSDK::PS1SceneEntitiesPlace()
         if (o && o < TYPE_COUNT && Align4(objectClassList[stageObjectIDs[o]].entityClassSize) > s_tempSmallCap)
             s_tempSmallCap = Align4(objectClassList[stageObjectIDs[o]].entityClassSize);
     }
+    // 9b.7: the large temp blocks hold the largest class the game creates as a temp entity in this stage (the game's
+    // ps1TempLargeClasses: CREATE_ENTITY's classes past a small block; the act transitions' stored SignPost is one), not
+    // the largest class at all: FBZ2's TitleCard (888 B, a reserved slot) sized its 16 large blocks and STG ran out
+    uint32 tempLargeCap = s_tempSmallCap;
+    for (int32 k = 0; ps1TempLargeClasses[k]; ++k) {
+        int32 o = StageClassOf(ps1TempLargeClasses[k]);
+        if (o && o < TYPE_COUNT && Align4(objectClassList[stageObjectIDs[o]].entityClassSize) > tempLargeCap)
+            tempLargeCap = Align4(objectClassList[stageObjectIDs[o]].entityClassSize);
+    }
+    if (tempLargeCap > maxCap)
+        tempLargeCap = maxCap;
+    s_tempLargeCap = tempLargeCap;
     bytes += (ps1TempBlocks - tempLarge) * (sizeof(PS1EntityHeader) + s_tempSmallCap);
-    bytes += tempLarge * (sizeof(PS1EntityHeader) + maxCap);
+    bytes += tempLarge * (sizeof(PS1EntityHeader) + tempLargeCap);
     // 7b: the dormant records, their payloads and a pool of blocks for the most records the cameras' boxes reach at once
     int32 pool = 0;
     if (dormant) {
@@ -971,7 +985,7 @@ void RSDK::PS1SceneEntitiesPlace()
 
     for (int32 t = 0; t < ps1TempBlocks; ++t) {
         uint16 s           = TEMPENTITY_START + t;
-        objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? maxCap : s_tempSmallCap);
+        objectEntityPtr[s] = Carve(p, s, PS1_TEMP_IS_LARGE(t) ? s_tempLargeCap : s_tempSmallCap);
     }
     // 7b: the pool (the records stay in slot order until InitObjects has run their Creates: PS1DormantLoadDone sorts)
     s_dLoadNext = 0;

@@ -16,6 +16,11 @@ static const char *zoneNames[]   = { "GHZ", "CPZ", "SPZ", "FBZ", "PGZ", "SSZ", "
 static const char *modeNames[]   = { "Mania", "Encore" };
 
 // clang-format off
+#if defined RETRO_PS1_BUILD
+// docs/32 9b.7: the PS1 has no leaderboards (the dummy ones only log the PC id): one entry stands for every board (the
+// 240 entries and their 480 id strings were ~13 KB of the resident, which FBZ2's STG needed)
+static LeaderboardID leaderboardInfo[] = { { .idPS4 = 0, .idUnknown = 0, .idSwitch = 0, .idXbox = "TA", .idPC = "TA" } };
+#else
 static LeaderboardID leaderboardInfo[] = {
     { .idPS4 = 0,   .idUnknown = 1,   .idSwitch = 71,  .idXbox = "PlusGHZ1SonicMania",      .idPC = "GHZ1_S_MANIA" },
     { .idPS4 = 1,   .idUnknown = 2,   .idSwitch = 72,  .idXbox = "PlusGHZ1TailsMania",      .idPC = "GHZ1_T_MANIA" },
@@ -259,6 +264,7 @@ static LeaderboardID leaderboardInfo[] = {
     { .idPS4 = 238, .idUnknown = 235, .idSwitch = 305, .idXbox = "PlusTMZ2MightyEncore",    .idPC = "TMZ2_M_ENCORE" },
     { .idPS4 = 239, .idUnknown = 236, .idSwitch = 306, .idXbox = "PlusTMZ2RayEncore",       .idPC = "TMZ2_R_ENCORE" },
 };
+#endif
 // clang-format on
 #endif
 
@@ -719,7 +725,12 @@ LeaderboardID *TimeAttackData_GetLeaderboardInfo(uint8 zoneID, uint8 act, uint8 
         if (isEncore)
             id += 120;
 
+#if defined RETRO_PS1_BUILD
+        (void)id;
+        info = &leaderboardInfo[0];
+#else
         info = &leaderboardInfo[id];
+#endif
     }
 
     return info;

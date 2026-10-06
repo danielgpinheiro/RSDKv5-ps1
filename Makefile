@@ -262,4 +262,19 @@ disc:
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game
 	/usr/bin/python3 tools/disc/verify_disc.py build/game.bin build/iso rsdkv5.ps-exe none
 
-.PHONY: disc objects overlays gfx sfx music video meshes
+# Phase 10: the distribution disc (licensed with the workspace's ../LICENSE.DAT, never copied into the repo; LICENSE=none
+# for an unlicensed one) from the natural 2 MB build only: build/dist/SonicMania-PS1.bin/.cue + SHA256SUMS. Run
+# `make && make disc` first (the disc tree, overlays, graphics, SFX, music and video come from there).
+LICENSE ?= ../LICENSE.DAT
+DIST    ?= build/dist/SonicMania-PS1
+dist:
+	@if [ -n "$$(cat build/gen/boot.txt)" ]; then echo "dist: rsdkv5.ps-exe is a BOOT= test build"; exit 1; fi
+	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
+	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= build"; exit 1; fi
+	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
+	mkdir -p build/dist
+	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe $(LICENSE) $(DIST)
+	/usr/bin/python3 tools/disc/verify_disc.py $(DIST).bin build/iso rsdkv5.ps-exe $(LICENSE)
+	cd build/dist && shasum -a 256 SonicMania-PS1.bin SonicMania-PS1.cue > SHA256SUMS && cat SHA256SUMS
+
+.PHONY: disc dist objects overlays gfx sfx music video meshes

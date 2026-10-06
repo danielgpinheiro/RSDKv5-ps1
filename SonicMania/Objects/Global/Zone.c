@@ -1599,6 +1599,15 @@ const char *const ps1TempLargeStageMarker = "CreditsSetup";
 // 9b.2b: classes made as temp entities in bursts beyond the large temp blocks (SSZ1's Hotaru Hi-Watt: its small Hotarus
 // and their bulbs, 296 B, a dozen at once): a stage with one sizes its small temp blocks for it (else spare blocks)
 const char *const ps1TempBurstClasses[] = { "HotaruHiWatt", NULL };
+// 9b.7: the classes the game creates as temp entities (CREATE_ENTITY / CreateEntity(X->classID), the DebugSpawns too)
+// whose entities are larger than a small temp block (PS1_TEMP_SMALL_CAP): a stage's large temp blocks hold the largest
+// of these it has (tools/temp_large_classes.py rebuilds the list from the sources and the ELFs' sizes)
+const char *const ps1TempLargeClasses[] = { "UICreditsText", "Whirlpool", "Rattlekiller", "SpiderMobile", "CaterkillerJr",
+                                            "UberCaterkiller", "SentryBug", "Fireworm", "TVVan", "FXTrail", "Hatterkiller",
+                                            "LoveTester", "SpecialRing", "HeavyGunner", "MonarchPlans", "ERZMystic",
+                                            "FXSpinRay", "DERobot", "SignPost", "WeatherMobile", "Tubinaut", "DBTower",
+                                            "HotaruHiWatt", "PhantomRider", "Rexon", "PhantomGunner", "ScrewMobile",
+                                            "GigaMetal", "PuyoBean", "ERZGunner", NULL };
 // 9b.2b: CPZ2's Mean Bean Machine copies each landed bean into slot 0x600 + its cell (128 a board, 8 a row; 14 rows and 6
 // columns used) and keeps the slot's pointer it took before the copy: those slots hold a PuyoBean block from the load.
 // 9b.4: Blue Spheres resets slots 0x40-0x9F into BSS_Collectable and writes the visible spheres into 0x40-0xBF

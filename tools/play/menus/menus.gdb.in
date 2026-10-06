@@ -40,7 +40,7 @@ break ps1TestStop
 commands
 silent
 if g_ps1PerfFrames == $lf + 240
-  printf "L AT f=%u pos=%d state=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u step=%u cardLoads=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors
+  printf "L AT f=%u pos=%d state=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u step=%u cardLoads=%u cardSaves=%u cardErrors=%u stg=%u/%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors, RSDK::dataStorage[0].usedStorage * 4, RSDK::dataStorage[0].storageLimit
   set $i = 0
   while $i < 8
     set $e = g_ps1MissingSheet[$i]
@@ -65,3 +65,7 @@ end
 continue
 end
 continue
+# (a wall-clock timeout interrupts the run: where it stood)
+printf "L STUCK f=%u pos=%d state=%d headroom=%u oom=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1HeapHeadroom, g_ps1OutOfMemory
+bt 16
+info registers pc ra
