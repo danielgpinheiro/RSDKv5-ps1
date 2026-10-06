@@ -12,26 +12,47 @@ until mkdir $R/build/boss/tree.lock 2>/dev/null; do sleep 5; done
 make -j8 BOOT=$BOOT > /dev/null 2>&1   # the tree back to a 2 MB link
 rmdir $R/build/boss/tree.lock
 [ $ok = 0 ] || { echo "BUILD FAIL"; exit 1; }
-cond=$(echo $FRAMES | tr ',' '\n' | sed 's/^/g_ps1PerfFrames == /; s/$/ || /' | tr -d '\n' | sed 's/ || $//')
-last=$(echo $FRAMES | tr ',' '\n' | sort -n | tail -1)
+frames=$(echo $FRAMES | tr ',' '\n' | sort -n)
+first=$(echo "$frames" | head -1)
+last=$(echo "$frames" | tail -1)
 {
+# 9b.5: GDB stops only at the shot frames (g_ps1TestStops[3], ps1/rsdk5_main.cpp; set after main starts: start-up clears
+# BSS), not on a per-frame condition; PRE may define ps1_onstop (called at every stop) and use g_ps1TestStops[0-2, 4-7]
+echo 'define ps1_onstop'
+echo 'end'
+echo 'define ps1_shot_next'
+echo '  set $next = 0'
+for f in $(echo "$frames" | sort -rn); do echo "  if g_ps1PerfFrames < $f"; echo "    set \$next = $f"; echo "  end"; done
+echo 'end'
 [ -n "$PRE" ] && cat $PRE
 cat <<G
 set \$half = 0
-break perfTick if $cond || (\$half && g_ps1PerfFrames == \$half)
+tbreak main
 commands
 silent
-set var g_ps1VramDumpX = 0
-set var g_ps1VramDumpW = 320
-set var g_ps1VramDumpH = 240
-if \$half && g_ps1PerfFrames == \$half
-  set var g_ps1VramDumpY = 256
-  set \$half = 0
-else
-  set var g_ps1VramDumpY = 0
-  set \$half = g_ps1PerfFrames + 1
+set var g_ps1TestStops[3] = $first
+continue
 end
-set var g_ps1VramDumpReq = 1
+break ps1TestStop
+commands
+silent
+if g_ps1PerfFrames == g_ps1TestStops[3]
+  set var g_ps1VramDumpX = 0
+  set var g_ps1VramDumpW = 320
+  set var g_ps1VramDumpH = 240
+  if \$half && g_ps1PerfFrames == \$half
+    set var g_ps1VramDumpY = 256
+    set \$half = 0
+    ps1_shot_next
+    set var g_ps1TestStops[3] = \$next
+  else
+    set var g_ps1VramDumpY = 0
+    set \$half = g_ps1PerfFrames + 1
+    set var g_ps1TestStops[3] = \$half
+  end
+  set var g_ps1VramDumpReq = 1
+end
+ps1_onstop
 continue
 end
 break PS1VramDumpHook

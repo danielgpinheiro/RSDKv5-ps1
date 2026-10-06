@@ -332,16 +332,32 @@ void RSDK::SKU::UserDB::Init(va_list list)
     active = true;
     valid  = true;
 }
+// docs/32 9b.5: a table's rows are packed (1-byte value sizes, 16-byte names, tm structs), so a row's uuid sits at any
+// address: the R3000 raises an address error on an unaligned word access (the first Time Attack record crashed the save).
+#if RETRO_PLATFORM == RETRO_PS1
+template <typename T> static inline T PS1DbGet(const uint8 *p)
+{
+    T v;
+    memcpy(&v, p, sizeof(T));
+    return v;
+}
+template <typename T> static inline void PS1DbPut(uint8 *p, T v) { memcpy(p, &v, sizeof(T)); }
+#define PS1_DB_GET(T, p)    PS1DbGet<T>(p)
+#define PS1_DB_PUT(T, p, v) PS1DbPut<T>(p, (T)(v))
+#else
+#define PS1_DB_GET(T, p)    (*(T *)(p))
+#define PS1_DB_PUT(T, p, v) (*(T *)(p) = (v))
+#endif
 bool32 RSDK::SKU::UserDB::Load(uint8 *buffer)
 {
-    uint32 signature = *(uint32 *)buffer;
+    uint32 signature = PS1_DB_GET(uint32, buffer);
     if (signature != RETRO_USERDB_SIGNATURE)
         return false;
 
     buffer += sizeof(int32);
     buffer += sizeof(int32); // used size
 
-    rowCount = *(uint16 *)buffer;
+    rowCount = PS1_DB_GET(uint16, buffer);
     buffer += sizeof(uint16);
 
     columnCount = *buffer;
@@ -365,7 +381,7 @@ bool32 RSDK::SKU::UserDB::Load(uint8 *buffer)
     }
 
     for (int32 r = 0; r < rowCount; ++r) {
-        rows[r].uuid = *(uint32 *)buffer;
+        rows[r].uuid = PS1_DB_GET(uint32, buffer);
         buffer += sizeof(uint32);
 
         memcpy(&rows[r].createTime, buffer, sizeof(tm));
@@ -398,19 +414,19 @@ void RSDK::SKU::UserDB::Save(int32 totalSize, uint8 *buffer)
     int32 size = 0;
     if (sizeof(uint32) < totalSize) {
         size              = sizeof(uint32);
-        *(uint32 *)buffer = RETRO_USERDB_SIGNATURE;
+        PS1_DB_PUT(uint32, buffer, RETRO_USERDB_SIGNATURE);
         buffer += sizeof(uint32);
     }
 
     if (size + sizeof(uint32) < totalSize) {
         size += sizeof(uint32);
-        *(uint32 *)buffer = (int32)GetSize(); // used size
+        PS1_DB_PUT(uint32, buffer, (int32)GetSize()); // used size
         buffer += sizeof(uint32);
     }
 
     if (size + sizeof(uint16) < totalSize) {
         size += sizeof(uint16);
-        *(uint16 *)buffer = rowCount;
+        PS1_DB_PUT(uint16, buffer, rowCount);
         buffer += sizeof(uint16);
     }
 
@@ -435,7 +451,7 @@ void RSDK::SKU::UserDB::Save(int32 totalSize, uint8 *buffer)
     for (int32 r = 0; r < rowCount; ++r) {
         if (size + sizeof(uint32) < totalSize) {
             size += sizeof(uint32);
-            *(uint32 *)buffer = rows[r].uuid;
+            PS1_DB_PUT(uint32, buffer, rows[r].uuid);
             buffer += sizeof(uint32);
         }
         if (size + sizeof(tm) < totalSize) {

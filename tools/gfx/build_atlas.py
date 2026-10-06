@@ -114,6 +114,13 @@ CHAR_FILES = {
 }
 
 
+def has_ta_gates(folder, scene_id):
+    """9b.5: the scene places TimeAttackGate entities (a Time Attack act)."""
+    import scene_usage as U
+    _, placed, _, _ = U.active_objects(folder, scene_id)
+    return 'TimeAttackGate' in placed
+
+
 def read_manifest(folder, scene_id, character='sonic'):
     path = os.path.join(HERE, 'manifests', '%s%s.txt' % (folder, scene_id))
     data = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data', 'Sprites')
@@ -126,6 +133,11 @@ def read_manifest(folder, scene_id, character='sonic'):
             if t[0] == 'SPR' and not os.path.exists(os.path.join(data, t[1])):
                 continue
             out.append((t[0], t[1]))
+    # 9b.5: Time Attack loads Global/Announcer.bin (Announcer_StageLoad, MODE_TIMEATTACK) for the finish gate's GOAL
+    # (Announcer_AnnounceGoal); the manifests were captured in Mania mode: a scene with TimeAttackGate entities gets it
+    if ('SPR', 'Global/Announcer.bin') not in out and has_ta_gates(folder, scene_id):
+        out.append(('SPR', 'Global/Announcer.bin'))
+        out.append(('SHT', 'Global/Display.gif'))
     if character != 'sonic':
         swapped = []
         for k, p in out:
@@ -461,6 +473,8 @@ HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HA
 # reviewed by hand (the literal analysis can't follow a handle stored in an entity): in a stage, UIButton_Create sets
 # list 0 before PauseMenu (10) / UIDialog (9) set theirs; 7 = a disabled button
 ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10},
+                  # 9b.5: in Time Attack only GOAL (Announcer_AnnounceGoal); the countdown and player icons are Competition's
+                  'Global/Announcer.bin': {0},
                   # 7b: HUD_GetButtonFrame draws the pad's own set (the PS1 pad reports DEVICE_PS4: UIBUTTONPROMPT_PS4 = 3,
                   # RSDK/Input/PS1/PS1InputDevice.cpp) and the icon (0)
                   'Global/SuperButtons.bin': {0, 3},
@@ -710,6 +724,8 @@ def select(folder, scene_id, character, files):
             gs = sorted({g for g, members in groups.items() for fp, fa in members
                          if fp == path and (fa is None or ai in fa)
                          and (fp not in ALWAYS_RESIDENT or (folder, scene_id, character) in ALWAYS_RESIDENT_EXCEPT)})
+            if path == 'Global/Announcer.bin' and not gs and 'start' in groups:
+                gs = ['start']  # 9b.5: Time Attack's GOAL comes before any music change (the finish gate): the start group
             if len(gs) == 1:
                 where = ('event', gs[0])
             elif gs:  # 9b.2b: in several event groups (boss art still on screen after the act-clear music): a copy in each

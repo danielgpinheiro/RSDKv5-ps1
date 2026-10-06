@@ -1,6 +1,13 @@
 # 9b.5 (docs/32): menu flows driven by the engine's scripted pad (g_ps1PadScript, PS1InputDevice.hpp), set once here:
-# no per-frame pad breakpoints (set at the first scene load: the EXE's start-up clears BSS). Per scene load: L SCENE (+ the card's counters, the script's next step); at +240 frames
-# L AT (guards); the run ends @ENDF@ frames after the @ENDN@-th load of scene @ENDPOS@ (L DONE), or L TIMEOUT.
+# no per-frame pad breakpoints (set at the first scene load: the EXE's start-up clears BSS). Per scene load: L SCENE (+
+# the card's counters, the script's next step); at +240 frames L AT (guards); the run ends @ENDF@ frames after the
+# @ENDN@-th load of scene @ENDPOS@ (L DONE), or L TIMEOUT @TIMEOUT@ frames after a load. GDB stops only at the frames in
+# g_ps1TestStops (ps1/rsdk5_main.cpp; 0-2 here, 4-7 for PRE_EXTRA): PRE_EXTRA may define ps1_onload (after each load,
+# $lf = its frame) and ps1_onstop (at each stop).
+define ps1_onload
+end
+define ps1_onstop
+end
 @PRE@
 set $lf = 0
 set $script = 0
@@ -22,21 +29,36 @@ if RSDK::sceneInfo.listPos == @ENDPOS@
   end
 end
 set $lf = g_ps1PerfFrames
+set var g_ps1TestStops[0] = $lf + 240
+set var g_ps1TestStops[1] = $done ? $lf + @ENDF@ : 0
+set var g_ps1TestStops[2] = $lf + @TIMEOUT@
+ps1_onload
 continue
 end
-break perfTick if g_ps1PerfFrames == $lf + 240 || ($done && g_ps1PerfFrames == $lf + @ENDF@) || g_ps1PerfFrames == $lf + @TIMEOUT@
+break ps1TestStop
 commands
 silent
 if g_ps1PerfFrames == $lf + 240
   printf "L AT f=%u pos=%d state=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u step=%u cardLoads=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors
+  set $i = 0
+  while $i < 8
+    set $e = g_ps1MissingSheet[$i]
+    if $e
+      set $s = ($e & 0xFF) - 1
+      printf "L MISS sheet=%d frames=%u rect=%u,%u hash=%08x%08x\n", $s, $e >> 8, g_ps1MissingRect[$i] & 0xFFFF, g_ps1MissingRect[$i] >> 16, RSDK::gfxSurface[$s].hash[0], RSDK::gfxSurface[$s].hash[1]
+    end
+    set var g_ps1MissingSheet[$i] = 0
+    set $i = $i + 1
+  end
 end
+ps1_onstop
 if $done && g_ps1PerfFrames == $lf + @ENDF@
   printf "L DONE f=%u step=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, g_ps1PadScriptStep, g_ps1CardSaves, g_ps1CardErrors
   @ENDCMDS@
   quit
 end
 if g_ps1PerfFrames == $lf + @TIMEOUT@
-  printf "L TIMEOUT f=%u pos=%d step=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, g_ps1PadScriptStep
+  printf "L TIMEOUT f=%u pos=%d step=%u state=%d cardLoads=%u cardSaves=%u cardErrors=%u asyncDone=%u asyncErrors=%u lastError=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, g_ps1PadScriptStep, RSDK::sceneInfo.state, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors, g_ps1CardAsyncDone, g_ps1CardAsyncErrors, g_ps1CardLastError
   quit
 end
 continue

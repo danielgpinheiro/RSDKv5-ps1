@@ -28,7 +28,7 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 
 #if RETRO_PLATFORM == RETRO_PS1
 extern "C" char __heap_start, __stack_start;
-extern "C" void *psyqo_heap_end();
+#include "psyqo/alloc.h" // psyqo_heap_end, psyqo_malloc / psyqo_free (docs/32 9d: inline wrappers in upstream nugget)
 #define PS1_STACK_RESERVE (16 * 1024)
 // 2.3p: user database (0xE0 rows); in play the chain arena takes 50 KB of it (3.2). 4.2a: the database 62 -> 35 KB (6 columns
 // of 4 bytes), 128 -> 104 KB: the menu at 2 MB (its save-file list, TA table) leaves ~3.5 KB of it never reached
@@ -236,8 +236,6 @@ extern "C" void PS1ChainExtraGive() { PS1StorageTailRelease(DATASET_STG); }
 // docs/32 6.2: the video's buffers (ps1/video.cpp, ~110 KB) from STG's tail: nothing allocates while the engine is in
 // ENGINESTATE_VIDEOPLAYBACK (the scene waits; a load comes after). The chain gave its extra block back as the video
 // opened (PS1ChainSuspend) and takes none while these are out (PS1ChainExtraTake sees the tail in use).
-extern "C" void *psyqo_malloc(size_t size); // psyqo/alloc.h (its headers clash with the engine's assert)
-extern "C" void psyqo_free(void *ptr);
 static uint32 s_ps1VideoTailBlocks = 0;
 volatile uint32 g_ps1VideoTailBytes = 0;
 extern "C" void *PS1VideoMalloc(size_t n)

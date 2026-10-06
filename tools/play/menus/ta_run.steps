@@ -1,0 +1,13 @@
+# Time Attack GHZ1 as Sonic, run (with ta_run.gdb): Title, notice, Down, A (Time Attack), A (Sonic), A (Green Hill),
+# A (act 1: Go), then in GHZ1 Right through each gate; Start on the results (they wait for it; any scene: the results set listPos to the Menu)
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 540 0x10 4
+2 760 0x10 4
+2 900 0x10 4
+2 1040 0x10 4
+9 300 0x8 120
+9 460 0x8 120
+0xFFFF 1200 0x400 4
+0xFFFF 1500 0x400 4

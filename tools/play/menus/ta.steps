@@ -1,4 +1,9 @@
-# Time Attack (unlocked by ta_unlock.gdb): Title (Start), Main Menu: Down to Time Attack, A
+# Time Attack (unlocked by ta_unlock.gdb): Title (Start), the autosave notice (A), Main Menu: Down to Time Attack, A
 1 400 0x400 4
-2 320 0x2 4
-2 380 0x10 4
+2 400 0x10 4
+2 480 0x2 4
+2 540 0x10 4
+2 760 0x10 4
+2 900 0x10 4
+2 1040 0x10 4
+2 1180 0x10 4

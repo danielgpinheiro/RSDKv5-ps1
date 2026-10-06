@@ -43,8 +43,13 @@ psyqo::AdvancedPad *g_ps1Pad   = nullptr;
 psyqo::CDRomDevice *g_ps1CDRom = nullptr;
 
 extern "C" char __heap_start, __stack_start;
-extern "C" void *psyqo_heap_end();
+#include "psyqo/alloc.h" // psyqo_heap_end (docs/32 9d)
 extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
+
+// docs/32 9b.5 (test harness): GDB breaks on ps1TestStop, called only at the frames it asked for (g_ps1TestStops, 0 =
+// unused), instead of a breakpoint whose condition GDB evaluates every frame (that ran the emulator at a few fps)
+volatile uint32_t g_ps1TestStops[8] = {};
+__attribute__((noinline)) void ps1TestStop() { __asm__ volatile(""); }
 
 namespace {
 
@@ -73,6 +78,11 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
     g_ps1HeapTotal    = ss - hs;
     // 2.4a: the part of the init reserve no allocation has reached (STG and the stack guard fill the rest of the heap)
     g_ps1HeapHeadroom = g_ps1ReserveEnd > g_ps1ReserveHigh ? g_ps1ReserveEnd - g_ps1ReserveHigh : 0;
+    for (int k = 0; k < 8; k++)
+        if (g_ps1TestStops[k] == g_ps1PerfFrames) {
+            ps1TestStop();
+            break;
+        }
 }
 
 class ManiaPS1App final : public psyqo::Application {
@@ -83,6 +93,15 @@ class ManiaPS1App final : public psyqo::Application {
                              .set(psyqo::GPU::ColorMode::C15BITS)
                              .set(psyqo::GPU::Interlace::PROGRESSIVE)
                              .set(psyqo::GPU::MiscSetting::CLEAR_VRAM));
+        // CLEAR_VRAM's one 1024 x 512 fill is a 0 x 0 fill (GP0(02h) masks the width to 10 bits, the height to 9: the
+        // BIOS's boot image stayed in VRAM, behind the first loading screens); upstream psyqo fixed it (nugget f6a0f93),
+        // the shared nugget is not updated yet: the same four quarters here
+        for (int16_t y = 0; y < 512; y += 256)
+            for (int16_t x = 0; x < 1024; x += 512) {
+                psyqo::Prim::FastFill ff;
+                ff.rect = psyqo::Rect{x, y, 512, 256};
+                gpu().sendPrimitive(ff);
+            }
         g_ps1GPU = &gpu();
         m_cdrom.prepare();
         PS1McPrepare(); // phase 8: the memory card's file system (before any card call)
