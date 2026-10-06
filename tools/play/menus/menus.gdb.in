@@ -19,6 +19,7 @@ silent
 if !$script
   # (set here, after the EXE's start-up cleared its BSS)
   @STEPS@
+  @PIDSET@
   set $script = 1
 end
 printf "L SCENE f=%u cat=%d pos=%d folder=%s name=%s step=%u cardLoads=%u cardSaves=%u cardErrors=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].folder, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].name, g_ps1PadScriptStep, g_ps1CardLoads, g_ps1CardSaves, g_ps1CardErrors

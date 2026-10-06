@@ -3,15 +3,17 @@
 # build) with the scripted pad. STEPS = a file of "scene delay buttons hold" lines (scene = listPos, 0xFFFF any, 0xFFFE the next scene loaded; delay =
 # frames after that scene's load; buttons: bit 0 Up, 1 Down, 2 Left, 3 Right, 4 A (Cross), 5 B, 6 C, 7 X (Triangle),
 # 10 Start); ends ENDF frames after the ENDN-th load of scene ENDPOS. CARD = a card image kept across runs (EMU_MC1;
-# made blank if missing), never the player's. PRE_EXTRA = a file of more GDB lines (@R@ = the build snapshot). ENDCMDS = extra GDB lines at the end (prints). Output build/boss/mn_NAME.log.
+# made blank if missing), never the player's. PRE_EXTRA = a file of more GDB lines (@R@ = the build snapshot). ENDCMDS = extra GDB lines at the end (prints). BOOT=cat,scene: start at that scene (a BOOT= build); PID=1/2/4: play
+# as Sonic / Tails / Knuckles (globals->playerID at the first load). Output build/boss/mn_NAME.log.
 H=$(cd "$(dirname "$0")" && pwd)
 R=$(cd "$H/../../.." && pwd)
 S=${BOSS_WORK:-$R/build/boss}
 name=$1 steps=$2 endpos=$3 endn=$4 endf=$5 card=${6:-}
 n=menu_nat
+[ -n "${BOOT:-}" ] && n=scene_${BOOT/,/_}   # BOOT=cat,scene: a BOOT= build (its own snapshot) instead of the natural one
 if [ "${NOBUILD:-0}" != 1 ]; then
   until mkdir $S/tree.lock 2>/dev/null; do sleep 5; done
-  ( cd $R && make -j8 > $S/b_$n.log 2>&1 && make disc > $S/d_$n.log 2>&1 && $R/tools/play/boss/snap.sh $n > /dev/null ); ok=$?
+  ( cd $R && make -j8 ${BOOT:+BOOT=$BOOT} > $S/b_$n.log 2>&1 && make disc > $S/d_$n.log 2>&1 && $R/tools/play/boss/snap.sh $n > /dev/null ); ok=$?
   rmdir $S/tree.lock
   [ $ok = 0 ] || { echo "BUILD FAIL"; exit 1; }
 fi
@@ -21,6 +23,7 @@ import sys, os
 src, out, steps, endpos, endn, endf, to, endcmds = sys.argv[1:9]
 s = open(src).read().replace('@STEPS@', steps.replace('\\n', '\n')).replace('@ENDPOS@', endpos).replace('@ENDN@', endn)
 s = s.replace('@PRE@', open(os.environ['PRE_EXTRA']).read().replace('@R@', os.environ['SNAP']) if os.environ.get('PRE_EXTRA') else '')
+s = s.replace('@PIDSET@', ('set var globals->playerID = %s' % os.environ['PID']) if os.environ.get('PID') else '')
 s = s.replace('@ENDF@', endf).replace('@TIMEOUT@', to).replace('@ENDCMDS@', endcmds.replace('\\n', '\n'))
 open(out, 'w').write(s)
 PY
