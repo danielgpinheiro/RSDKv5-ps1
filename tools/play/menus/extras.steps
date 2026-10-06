@@ -1,0 +1,10 @@
+# Extras (PS1: Blue Spheres, D.A. Garden, Credits): Title (Start), the notice (A), Main Menu Down x3 to Extras, A; then
+# Down to D.A. Garden, A (the scene loads)
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 520 0x2 4
+2 560 0x2 4
+2 620 0x10 4
+2 800 0x2 4
+2 900 0x10 4
