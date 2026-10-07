@@ -112,8 +112,11 @@ def blend(b, f, mode):
     return out
 
 
-def modulate(f, m):
-    """Texture modulation (psx-spx): texel * colour / 0x80 per channel, saturated, dither off."""
+def modulate(f, m, ink=0):
+    """Texture modulation (psx-spx): texel * colour / 0x80 per channel, saturated, dither off. INK_SUB (4): sprites take an
+    inverted CLUT copy first (9f, PS1Sprites.cpp PS1BankClut: each channel 31 - c, the PC's subtract table)."""
+    if ink == 4:
+        f = 0x8000 | (~f & 0x7FFF)
     if m == 0x80:
         return f
     out = f & 0x8000
@@ -174,7 +177,7 @@ def draw_sprite(out, mask, e, vram, cluts, colours):
                 nib = (int(vram[py0 + tv, px0 + (tu >> 2)]) >> (4 * (tu & 3))) & 15
                 idx = cluts[slot][nib] if nib else 0
             if idx:
-                f = modulate(int(colour[idx]), mod)
+                f = modulate(int(colour[idx]), mod, ink)
                 # 4.2b: a masked draw over an approximate pixel (a half-resolution mask frame's edge) is approximate
                 under = mode == -2 and mask[sy, sx] == 2
                 if mode == -2:
@@ -219,7 +222,7 @@ def draw_tile(out, mask, e, imgs, table, colour):
                 mask[sy, sx] = 1
 
 
-def draw_quad(out, mask, corners, uvs, fetch, im, colour):
+def draw_quad(out, mask, corners, uvs, fetch, im, colour, ink=0):
     """A rotated / scaled rectangle (approximate): the GPU's two triangles (A B C, B C D) with affine UVs; mask 2."""
     mode, passes, mod = im
     xs = [c[0] for c in corners]; ys = [c[1] for c in corners]
@@ -241,7 +244,7 @@ def draw_quad(out, mask, corners, uvs, fetch, im, colour):
                 tv = int(l0 * uvs[a][1] + l1 * uvs[b][1] + l2 * uvs[c][1] + 0.5)
                 idx = fetch(tu, tv)
                 if idx:
-                    f = modulate(int(colour[idx]), mod)
+                    f = modulate(int(colour[idx]), mod, ink)
                     out[sy, sx] = f if mode < 0 else blend(int(out[sy, sx]), f, mode)
                     mask[sy, sx] = 2
     xs0, ys0 = [c[0] for c in corners], [c[1] for c in corners]
@@ -383,7 +386,7 @@ def render(cap, folder, scene_id):
                 fetch = lambda tu, tv, img=img: int(imgs[img][min(15, max(0, tv)), min(15, max(0, tu))])
             u0, u1 = (u + tw - 1, u) if direction & 1 else (u, u + tw - 1)
             uvs = [(u0, v), (u1, v), (u0, v + th - 1), (u1, v + th - 1)]
-            draw_quad(out, mask, corners, uvs, fetch, im, colour)
+            draw_quad(out, mask, corners, uvs, fetch, im, colour, a[2] if a[0] == 3 else 0)  # (frames only: INK_SUB copies)
             continue
         c, li = map(int, re.findall(r'sl_(\d+)_(\d+)', path)[0])
         L = layers[li]

@@ -379,17 +379,21 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
 
 // The frame's CLUT when its top line uses palette bank `bank` != 0 (SetActivePalette: the PC draws each line with its
 // bank as it is now), or bank 0 when a palette write in this draw phase changed it (9f): the same palette indices from that bank, uploaded in the chain right before the draw (an 8-bit
-// frame's 256 entries into the bank's own row 240 + bank; a 4-bit frame's 16 into a spare slot, alternating)
-uint32 PS1BankClut(uint16 attr, int32 bank)
+// frame's 256 entries into the bank's own row 240 + bank; a 4-bit frame's 16 into a spare slot, alternating).
+// 9f invert: INK_SUB's colours (each 5-bit channel c as 31 - c: the PC's subtract table takes alpha * (31 - c) >> 8 off;
+// the GPU's B - F mode then takes texel * mod / 128 off, mod = alpha / 2); an 8-bit frame's row is put back after its
+// draw (PS1SubClutRestore)
+uint32 PS1BankClut(uint16 attr, int32 bank, bool invert = false)
 {
     static uint16 s_row[256];
     static int32 s_flip = 0;
+    const uint16 inv = invert ? 0x7FFF : 0; // STP stays set: an inverted white (0x8000) is drawn, not transparent
     uint32 slot = PS1_ATLAS_CLUT(attr);
     if (slot == PS1_ATLAS_BANK_CLUT) {
         s_row[0] = 0;
-        for (int32 i = 1; i < 256; ++i) s_row[i] = PS1ClutColour(fullPalette[bank][i]);
+        for (int32 i = 1; i < 256; ++i) s_row[i] = (uint16)(PS1ClutColour(fullPalette[bank][i]) ^ inv) | 0x8000 * invert;
         PS1UploadClut(s_row, 256, 0, (int16)(240 + bank));
-        if (!bank)
+        if (!bank && !invert)
             PS1PaletteRow0Swapped(); // 9f: restored when the palette is (PS1PaletteWrite) or at the next frame start
         return (uint32)(240 + bank) << 6;
     }
@@ -399,12 +403,23 @@ uint32 PS1BankClut(uint16 attr, int32 bank)
     s_row[0] = 0;
     for (int32 i = 1; i < 16; ++i) {
         uint16 c = ac[slot].map[i] ? fullPalette[bank][ac[slot].map[i]] : 0;
-        s_row[i] = ac[slot].map[i] ? PS1ClutColour(c) : 0;
+        s_row[i] = ac[slot].map[i] ? (uint16)((PS1ClutColour(c) ^ inv) | 0x8000 * invert) : 0;
     }
     uint32 scratch = PS1_SPRITE_CLUT_SCRATCH + (s_flip ^= 1);
     int16 x = (int16)((scratch % PS1_SPRITE_CLUTS_PER_ROW) * 16), y = (int16)(496 + scratch / PS1_SPRITE_CLUTS_PER_ROW);
     PS1UploadClut(s_row, 16, x, y);
     return (uint32)(x >> 4) | (uint32)y << 6;
+}
+
+// 9f: after an INK_SUB draw of an 8-bit frame, its bank's row back to the colours the other draws use
+void PS1SubClutRestore(uint16 attr, int32 bank)
+{
+    if (PS1_ATLAS_CLUT(attr) != PS1_ATLAS_BANK_CLUT)
+        return;
+    if (bank)
+        PS1BankClut(attr, bank);
+    else
+        PS1PaletteRow0Restore();
 }
 
 // The palette bank of screen line y (clamped to the screen)
@@ -508,9 +523,12 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         w = b - a, h = d - c, tw = (w + m) >> shift;
         g_ps1SpriteBigClips = g_ps1SpriteBigClips + 1;
     }
-    // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours)
-    if (int32 bank = PS1LineBank(y); bank || g_ps1PalDiffs) {
-        clut = PS1BankClut(frame->ps1Attr, bank);
+    // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours; INK_SUB
+    // with its colours inverted)
+    const bool sub = inkEffect == INK_SUB;
+    const int32 bank = PS1LineBank(y);
+    if (bank || g_ps1PalDiffs || sub) {
+        clut = PS1BankClut(frame->ps1Attr, bank, sub);
         if (!clut)
             return;
     }
@@ -537,6 +555,8 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
     }
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
+    if (sub)
+        PS1SubClutRestore(frame->ps1Attr, bank);
     if (!drawn)
         return;
     g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
@@ -563,9 +583,11 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
-    // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours)
-    if (int32 bank = PS1LineBank(y); bank || g_ps1PalDiffs) {
-        clut = PS1BankClut(frame->ps1Attr, bank);
+    // (9f: bank 0 too while a palette write in this draw phase changed it; INK_SUB with its colours inverted)
+    const bool sub   = inkEffect == INK_SUB;
+    const int32 bank = PS1LineBank(y);
+    if (bank || g_ps1PalDiffs || sub) {
+        clut = PS1BankClut(frame->ps1Attr, bank, sub);
         if (!clut)
             return;
     }
@@ -575,6 +597,8 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
                                 direction, rotation, ink, cx, cy);
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
+    if (sub)
+        PS1SubClutRestore(frame->ps1Attr, bank);
     if (!drawn)
         return;
     g_ps1SpriteDraws   = g_ps1SpriteDraws + 1;

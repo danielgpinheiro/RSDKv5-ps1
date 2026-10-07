@@ -859,6 +859,15 @@ void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
     }
 }
 void RSDK::PS1PaletteRow0Swapped() { s_palRow0Swapped = true; }
+void RSDK::PS1PaletteRow0Restore()
+{
+    if (g_ps1PalDiffs) { // the bank's own draws take copies now (PS1BankClut): put back when the palette is
+        s_palRow0Swapped = true;
+        return;
+    }
+    s_palRow0Swapped = false;
+    PS1ClutRow(s_pal16, 256, 0, 240);
+}
 
 // A FillScreen in a frame whose head uploaded only the changed CLUTs: every CLUT, from the same copy, linked in at the
 // frame's slot (before the draws) and recorded, so the fade rewrites them with the rest
