@@ -85,6 +85,9 @@ void UFO_Shadow_Draw(void)
 {
     RSDK_THIS(UFO_Shadow);
 #if defined RETRO_PS1_BUILD
+    extern volatile int32 g_ps1UfoLite; // Zone.c (docs/32 9f)
+    if (g_ps1UfoLite & 2)
+        return;
     if (!self->parent) { // the spheres' shadows had the lowest slots (drawn first), then the rings'
         foreach_all(UFO_Sphere, sphere) { UFO_Shadow_DrawFor(self, (Entity *)sphere, 0x100); }
         foreach_all(UFO_Ring, ring) { UFO_Shadow_DrawFor(self, (Entity *)ring, 0xC0); }

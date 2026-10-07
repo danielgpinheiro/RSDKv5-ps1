@@ -99,6 +99,8 @@ static void Zone_PS1TestActEnd(void)
 // fight ends through the boss's own defeat code (its capsule / outro / stage finish). g_ps1TestBossWarp first puts
 // player 1 at the boss's position + (g_ps1TestBossDX, DY) pixels (2: at that point); g_ps1TestBossSlot tells GDB where the entity is (-1:
 // none; g_ps1TestBossPin: that slot instead of the n-th). All 0 in normal play.
+// docs/32 9f: UFO stages' detail switch (bit 0: no decorations, bit 1: no shadows); 0 = as stock
+volatile int32 g_ps1UfoLite = 0;
 volatile int32 g_ps1TestBossSlot = -1, g_ps1TestBossPin = -1, g_ps1TestBossNth = 0, g_ps1TestBossHits = 0, g_ps1TestBossClass = 0, g_ps1TestBossWarp = 0, g_ps1TestBossDX = 0, g_ps1TestBossDY = 0;
 void (*volatile g_ps1TestBossHit)(void) = NULL;
 static void Zone_PS1TestBossWarp(Entity *boss)

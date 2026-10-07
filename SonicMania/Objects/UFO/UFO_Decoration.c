@@ -44,6 +44,11 @@ void UFO_Decoration_LateUpdate(void)
                       / self->zdepth;
         self->visible = abs(depth) < 0x100;
     }
+#if defined RETRO_PS1_BUILD
+    extern volatile int32 g_ps1UfoLite; // Zone.c (docs/32 9f)
+    if (g_ps1UfoLite & 1)
+        self->visible = false;
+#endif
 }
 
 void UFO_Decoration_StaticUpdate(void) {}
