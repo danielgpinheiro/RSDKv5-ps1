@@ -173,7 +173,12 @@ bool PS1FloorSpan(const int32 V[4][2], int32 ya, int32 yb, int32 &xmin, int32 &x
         int32 dy = q[1] - p[1];
         for (int32 e = 0; e < 2; ++e) {
             int32 cy = e ? c1 : c0;
-            int32 cx = dy ? p[0] + (int32)(((int64)(q[0] - p[0]) * (cy - p[1])) / dy) : p[0];
+            // (9f: in 32 bits when the product fits: the same quotient, truncated alike; libgcc's 64-bit divide was
+            // ~1 % of a UFO frame)
+            const int32 ex = q[0] - p[0], ey = cy - p[1]; // ey in [0, dy]
+            int32 cx = p[0];
+            if (dy)
+                cx += (ex > -0x8000 && ex < 0x8000 && ey < 0x10000) ? ex * ey / dy : (int32)(((int64)ex * ey) / dy);
             if (!any || cx < xmin)
                 xmin = cx;
             if (!any || cx > xmax)

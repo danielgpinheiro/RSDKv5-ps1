@@ -173,6 +173,32 @@ void RSDK::SetIdentityMatrix(Matrix *matrix)
     matrix->values[2][3] = 0;
     matrix->values[3][3] = 0x100;
 }
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9f: the same sums, a product skipped where A's factor is 0 (it adds 0 exactly): the UFO stages' matrices are
+// rotations and translations, mostly zeros, and the R3000's mult takes 6-13 cycles (UFO1: ~20 calls a frame)
+__attribute__((optimize("O2"))) void RSDK::MatrixMultiply(Matrix *dest, Matrix *matrixA, Matrix *matrixB)
+{
+    int32 result[4][4];
+    for (int32 rowA = 0; rowA < 4; ++rowA) {
+        const int32 a0 = matrixA->values[0][rowA], a1 = matrixA->values[1][rowA], a2 = matrixA->values[2][rowA],
+                    a3 = matrixA->values[3][rowA];
+        for (int32 rowB = 0; rowB < 4; ++rowB) {
+            const int32 *b = matrixB->values[rowB];
+            int32 s        = 0;
+            if (a3)
+                s += a3 * b[3] >> 8;
+            if (a2)
+                s += a2 * b[2] >> 8;
+            if (a1)
+                s += a1 * b[1] >> 8;
+            if (a0)
+                s += a0 * b[0] >> 8;
+            result[rowB][rowA] = s;
+        }
+    }
+    memcpy(dest, result, sizeof(result));
+}
+#else
 void RSDK::MatrixMultiply(Matrix *dest, Matrix *matrixA, Matrix *matrixB)
 {
     int32 result[4][4];
@@ -192,6 +218,7 @@ void RSDK::MatrixMultiply(Matrix *dest, Matrix *matrixA, Matrix *matrixB)
         dest->values[rowB][rowA] = result[rowB][rowA];
     }
 }
+#endif
 void RSDK::MatrixTranslateXYZ(Matrix *matrix, int32 x, int32 y, int32 z, bool32 setIdentity)
 {
     if (setIdentity) {
@@ -438,7 +465,7 @@ static void PS1Scene3DModelLoaded(Model *model)
     needF = needF > g_ps1S3DWorkFaces ? needF : g_ps1S3DWorkFaces;
     if (g_ps1S3DWork)
         RemoveStorageEntry((void **)&g_ps1S3DWork);
-    AllocateStorage((void **)&g_ps1S3DWork, needV * 6 + needF * 7 + PS1_S3D_BUCKETS * 2 + 16, DATASET_STG, false);
+    AllocateStorage((void **)&g_ps1S3DWork, needV * 7 + 16 /* 9f: positions, depths, outcodes (the faces go straight into the chain) */, DATASET_STG, false);
     g_ps1S3DWorkVerts = g_ps1S3DWork ? needV : 0, g_ps1S3DWorkFaces = g_ps1S3DWork ? needF : 0;
 }
 static void PS1Scene3DAdd(uint16 model, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, uint32 colour, uint16 a,

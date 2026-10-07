@@ -54,6 +54,12 @@ void PS1ChainPrimsRawN(const uint32_t *words, int wpp, int n);
 // Up to n primitives of wpp (<= 14) words, one fragment each, written straight into the arena and linked
 // with a single chain() call: PS1ChainBulkBegin returns where primitive 0's words go (primitive k at
 // + k * (wpp + 1)), nullptr if the arena is full; PS1ChainBulkEnd(used) links the first `used` of them.
+// 9f: arena words linked by the caller (an ordering table): PS1ChainAlloc reserves them (nothing chained; nullptr: the
+// arena is full, counted), PS1ChainAllocTrim gives back the tail of the last reservation, PS1ChainLinkList chains the
+// list first .. last (last's payload lastWords words; every node's header its own size << 24 | next)
+uint32_t *PS1ChainAlloc(int words);
+void PS1ChainAllocTrim(uint32_t *end);
+void PS1ChainLinkList(uint32_t *first, uint32_t *last, int lastWords);
 uint32_t *PS1ChainBulkBegin(int n, int wpp);
 void PS1ChainBulkEnd(int used);
 // A span of fragments of any size (<= 14 words each), written by the caller straight into the arena: PS1ChainSpanBegin

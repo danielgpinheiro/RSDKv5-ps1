@@ -14,6 +14,9 @@
 
 void PS1Gte3DSetup(const int32_t r[9], int32_t trx, int32_t trY, int32_t trz, uint32_t h, int32_t ofx, int32_t ofy);
 int PS1Gte3DProject(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz); // -> vertices flagged
+// 9f: the same, plus each vertex's outcode (PS1Scene3D.cpp's face test; the screen sw x sh, depth zmin)
+int PS1Gte3DProjectOc(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
+                      int32_t sh);
 
 extern volatile uint32_t g_ps1GteVertices; // vertices projected (total)
 extern volatile uint32_t g_ps1GteFlagged;  // ... of them flagged (total)

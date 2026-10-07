@@ -3,7 +3,7 @@
 #include "RSDK/Core/RetroEngine.hpp"
 #include "PS1Scene3D.hpp"
 #include "../../../../ps1/gte3d.hh"
-#include "../../../../ps1/gpu_chain_raw.hh" // PS1ChainBulkBegin / End: the faces straight into the arena
+#include "../../../../ps1/gpu_chain_raw.hh" // PS1ChainAlloc / LinkList: the faces straight into the arena (9f: an ordering table)
 
 using namespace RSDK;
 
@@ -16,7 +16,6 @@ volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (
 
 namespace
 {
-uint32 *s_ps1S3DBulk = NULL; // the open chain bulk (32 faces)
 // (a << sh) / d with the CPU's 32-bit divide when a << sh fits (the 64-bit one is a libgcc loop: ~16 hblanks a frame)
 static inline int32 PS1ShiftDiv(int32 a, int32 sh, int32 d)
 {
@@ -31,48 +30,108 @@ static inline int32 PS1BitLen(uint32 v)
     while (v) ++n, v >>= 1;
     return n;
 }
-// one model's faces (FVC corners each): the ones to draw get their depth key, the others 0xFFFFFFFF; owner = the model
-template <int32 FVC>
-__attribute__((optimize("O2"), always_inline)) static inline void PS1S3DFaces(const uint16 *idx, int32 faces, const uint32 *xyp,
-                                                                              const uint16 *szp, uint32 zmin, int32 k, int32 cull, uint8 j,
-                                                                              uint32 *keyp, uint8 *ownp, uint32 &kmin, uint32 &kmax,
-                                                                              uint32 &culled, bool inside)
+// 9f: PS1Gte3DProjectOc's vertex outcodes (ps1/gte3d.cpp): bits 0-3 off the screen's sides, 4 nearer than zmin, 5
+// outside the band where any face fits the GPU's limits (x in [-352, 671]: spans <= 1023; y in [-136, 375]: <= 511). The
+// faces decide as the per-face box test did: any corner near -> not drawn; all corners off one side -> off screen; a
+// corner outside the band -> the exact span test
+#define PS1_OC_NEAR 16
+#define PS1_OC_FAR 32
+// 9f (Driver 2's ordering table, docs/38 2.3): the faces are tested, keyed and written in one pass, each primitive linked
+// into its depth bucket of an ordering table in the arena (psyqo's layout: 0-word nodes, far bucket first, a primitive
+// after its bucket's node, the newest first) instead of keys, a bucket sort and a second pass that read every face again
+struct PS1S3DOt {
+    uint32 *ot;           // the bucket nodes [0, PS1_S3D_BUCKETS): bucket b's primitives draw before bucket b - 1's
+    uint32 kmin, kmax;    // the frame's key range (the models' bounding spheres); keys clamped into it
+    int32 shift;          // key - kmin >> shift: the bucket
+    uint32 *w, *wend;     // the reserved primitive words (chunks of PS1_S3D_CHUNK primitives)
+    uint32 cmd, flatBgr;  // GP0 command (| semi) and the flat modes' colour
+    uint32 drawn, culled;
+    bool full;            // the arena is full: the rest not drawn (counted by the chain)
+};
+#define PS1_S3D_CHUNK 32
+__attribute__((noinline)) static bool PS1S3DOtRefill(PS1S3DOt &o, int32 need)
+{
+    PS1ChainAllocTrim((uint32_t *)o.w); // the last chunk's unused tail first (nothing reserved since: the next chunk follows it)
+    o.w = (uint32 *)PS1ChainAlloc(PS1_S3D_CHUNK * need);
+    o.wend = o.w ? o.w + PS1_S3D_CHUNK * need : NULL;
+    o.full = !o.w;
+    return o.w != NULL;
+}
+// one model's faces (FVC corners each, corner colours `cols` unless FLAT): a face with a corner near, wholly off screen,
+// past the GPU's limits or turned away is left out (the corners' outcodes from the projection); the others get their
+// depth key (the mean depth, 12ths of engine units) and their primitive in its bucket. RSDK's quads go round, the GPU's
+// are two triangles (0 1 2, 1 2 3): corners 0 1 3 2
+template <int32 FVC, bool FLAT>
+__attribute__((optimize("O2"), noinline)) static void PS1S3DFaces(const uint16 *idx, const uint32 *cols, int32 faces, const uint32 *xyp,
+                                                                  const uint16 *szp, const uint8 *ocp, int32 k, int32 cull, bool inside,
+                                                                  PS1S3DOt &o)
 {
     const uint32 scale = FVC == 3 ? 4 : 3;
-    const int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+    const int32 wpp = FLAT ? FVC + 1 : 2 * FVC, need = wpp + 1;
+    const uint32 kmin = o.kmin, kmax = o.kmax, cmd = o.cmd, hdr = (uint32)wpp << 24;
+    const int32 shift = o.shift;
+    uint32 *const ot = o.ot;
+    uint32 *w = o.w, *wend = o.wend;
+    uint32 drawn = 0, culled = 0;
     for (int32 f = 0; f < faces; ++f, idx += FVC) {
         const uint32 i0 = idx[0], i1 = idx[1], i2 = idx[2], i3 = FVC == 4 ? idx[3] : i2;
-        const uint32 z0 = szp[i0], z1 = szp[i1], z2 = szp[i2], z3 = FVC == 4 ? szp[i3] : 0;
-        ownp[f] = j;
-        if (z0 < zmin || z1 < zmin || z2 < zmin || (FVC == 4 && z3 < zmin)) {
-            keyp[f] = 0xFFFFFFFF, ++culled;
+        const uint32 o0 = ocp[i0], o1 = ocp[i1], o2 = ocp[i2], o3 = FVC == 4 ? ocp[i3] : o2;
+        const uint32 oAll = o0 & o1 & o2 & o3, oAny = o0 | o1 | o2 | o3;
+        if ((oAny & PS1_OC_NEAR) || (!inside && (oAll & 15))) {
+            ++culled;
             continue;
         }
-        const uint32 a = xyp[i0], b = xyp[i1], c = xyp[i2];
+        const uint32 a = xyp[i0], b = xyp[i1], c = xyp[i2], d = FVC == 4 ? xyp[i3] : c;
         const int32 ax = (int16)a, ay = (int32)a >> 16, bx = (int16)b, by = (int32)b >> 16, cx = (int16)c, cy = (int32)c >> 16;
-        bool ok = true;
-        if (!inside) {
-            const uint32 d = xyp[i3];
+        if (!inside && (oAny & PS1_OC_FAR)) {
             const int32 dx = (int16)d, dy = (int32)d >> 16;
             int32 x0 = ax < bx ? ax : bx, x1 = ax < bx ? bx : ax, y0 = ay < by ? ay : by, y1 = ay < by ? by : ay;
             x0 = cx < x0 ? cx : x0, x1 = cx > x1 ? cx : x1, y0 = cy < y0 ? cy : y0, y1 = cy > y1 ? cy : y1;
             if (FVC == 4)
                 x0 = dx < x0 ? dx : x0, x1 = dx > x1 ? dx : x1, y0 = dy < y0 ? dy : y0, y1 = dy > y1 ? dy : y1;
-            ok = x1 >= 0 && x0 < sw && y1 >= 0 && y0 < sh && x1 - x0 <= 1023 && y1 - y0 <= 511;
+            if (x1 - x0 > 1023 || y1 - y0 > 511) {
+                ++culled;
+                continue;
+            }
         }
-        if (ok && cull) { // turned away: the first three corners' screen winding
+        if (cull) { // turned away: the first three corners' screen winding
             const int32 cross = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
-            ok                = cull > 0 ? cross >= 0 : cross <= 0;
+            if (cull > 0 ? cross < 0 : cross > 0) {
+                ++culled;
+                continue;
+            }
         }
-        if (!ok) {
-            keyp[f] = 0xFFFFFFFF, ++culled;
-            continue;
+        const uint32 z0 = szp[i0], z1 = szp[i1], z2 = szp[i2], z3 = FVC == 4 ? szp[i3] : 0;
+        uint32 kk = ((z0 + z1 + z2 + z3) << k) * scale;
+        kk = kk < kmin ? kmin : kk > kmax ? kmax : kk;
+        if (w + need > wend) {
+            o.w = w;
+            if (!PS1S3DOtRefill(o, need))
+                break;
+            w = o.w, wend = o.wend;
         }
-        const uint32 kk = ((z0 + z1 + z2 + z3) << k) * scale;
-        keyp[f]         = kk;
-        kmin            = kk < kmin ? kk : kmin;
-        kmax            = kk > kmax ? kk : kmax;
+        if (FLAT) {
+            w[1] = cmd, w[2] = a, w[3] = b;
+            if (FVC == 4)
+                w[4] = d, w[5] = c;
+            else
+                w[4] = c;
+        }
+        else {
+            const uint32 *fc = cols + f * FVC;
+            w[1] = cmd | fc[0], w[2] = a, w[3] = fc[1], w[4] = b;
+            if (FVC == 4)
+                w[5] = fc[3], w[6] = d, w[7] = fc[2], w[8] = c;
+            else
+                w[5] = fc[2], w[6] = c;
+        }
+        uint32 *node = ot + ((kk - kmin) >> shift);
+        w[0]  = hdr | (*node & 0xFFFFFF);
+        *node = (uint32)(uintptr_t)w & 0xFFFFFF;
+        w += need;
+        ++drawn;
     }
+    o.w = w, o.wend = wend, o.drawn += drawn, o.culled += culled;
 }
 // 7.5: S3D_WIREFRAME_SHADED_SCREEN (the UFO item box) as stock: positions through the matrix, projected (a face with a
 // corner nearer than 0x100 left out), each face's edges as lines in the entity's colour lit by its corners' mean normal y
@@ -176,36 +235,60 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         g_ps1S3DOverflow = g_ps1S3DOverflow + 1;
         return;
     }
-    uint32 *sxy   = (uint32 *)g_ps1S3DWork;
-    uint32 *key   = sxy + g_ps1S3DWorkVerts;
-    uint16 *sz    = (uint16 *)(key + g_ps1S3DWorkFaces);
-    uint16 *next  = sz + g_ps1S3DWorkVerts;
-    uint16 *head  = next + g_ps1S3DWorkFaces;
-    uint8 *owner  = (uint8 *)(head + PS1_S3D_BUCKETS); // the face's model (index into list)
+    uint32 *sxy = (uint32 *)g_ps1S3DWork;
+    uint16 *sz  = (uint16 *)(sxy + g_ps1S3DWorkVerts);
+    uint8 *oc   = (uint8 *)(sz + g_ps1S3DWorkVerts); // 9f: the vertices' outcodes (PS1Gte3DProjectOc)
 #define PS1_HBL() (*(volatile uint16 *)0xBF801110)
-    uint16 t0 = PS1_HBL(), tx = 0;
-    uint32 kmin = 0xFFFFFFFF, kmax = 0, culled = 0;
-    uint32 vb = 0, fb = 0;
-    int16 chunk[3 * 96];
-    // per model drawn: its face corners' colours and indices (the mesh's or its distance LOD's), its face count
-    const uint32 *mcols[PS1_S3D_ITEMS];
-    const uint16 *midx[PS1_S3D_ITEMS];
-    int32 mfaces[PS1_S3D_ITEMS], mfvc[PS1_S3D_ITEMS];
-    uint32 mvb[PS1_S3D_ITEMS], mfb[PS1_S3D_ITEMS]; // its first vertex / face in the work arrays
+    uint16 t0 = PS1_HBL(), tx = 0, tf = 0;
+    // the unit shift of each model: every view coordinate |T + M v| within 16 bits (bound: the largest |T + M v| bound);
+    // the frame's key range from the models' bounding spheres (a key is ~12 x the view depth, engine units)
+    uint32 bounds[PS1_S3D_ITEMS];
+    uint32 kmin = 0xFFFFFFFF, kmax = 0;
     for (int32 j = 0; j < n; ++j) {
-        mfaces[j] = 0, mcols[j] = NULL, midx[j] = NULL, mvb[j] = vb, mfb[j] = fb; // (a model skipped owns no faces)
-        mfvc[j] = modelList[g_ps1S3DItems[list[j]].model].faceVertCount;
         const PS1S3DItem &it = g_ps1S3DItems[list[j]];
         const Model *mdl     = &modelList[it.model];
         const Matrix &m      = it.m;
-        const bool pos16     = mdl->flags & PS1_MESH_POS16;
-        // the unit shift: every view coordinate |T + M v| within 16 bits
         uint32 bound = 0;
         for (int32 r = 0; r < 3; ++r) {
             uint32 b = (uint32)abs(m.values[r][3])
                        + (uint32)(((uint64)(abs(m.values[r][0]) + abs(m.values[r][1]) + abs(m.values[r][2])) * mdl->ps1Radius) >> 8);
             bound = b > bound ? b : bound;
         }
+        bounds[j]       = bound;
+        const int32 cz  = m.values[2][3], cr = (int32)(bound - (uint32)abs(cz));
+        const int32 zlo = cz - cr > 0 ? cz - cr : 0, zhi = cz + cr > 0 ? cz + cr : 0;
+        kmin = 12u * (uint32)zlo < kmin ? 12u * (uint32)zlo : kmin;
+        kmax = 12u * (uint32)zhi > kmax ? 12u * (uint32)zhi : kmax;
+    }
+    if (kmax <= kmin)
+        kmax = kmin + 1;
+    Entity *entity          = sceneInfo.entity;
+    const uint32 flatColour = g_ps1S3DItems[list[n - 1]].colour;
+    uint32 flatBgr, semi;
+    if (!PS1Face3DBegin(entity->inkEffect, entity->alpha, flatColour, &flatBgr, &semi))
+        return;
+    // the ordering table: bucket b's node links to b - 1's, bucket 0's to the end node (a GP0 NOP: the list's last node)
+    uint32 *ot = (uint32 *)PS1ChainAlloc(PS1_S3D_BUCKETS + 2);
+    if (!ot) {
+        PS1Face3DEnd();
+        return;
+    }
+    uint32 *otEnd = ot + PS1_S3D_BUCKETS;
+    ot[0]         = (uint32)(uintptr_t)otEnd & 0xFFFFFF;
+    for (int32 b = 1; b < PS1_S3D_BUCKETS; ++b) ot[b] = (uint32)(uintptr_t)(ot + b - 1) & 0xFFFFFF;
+    otEnd[1] = 0; // GP0 00h: NOP
+    PS1S3DOt o;
+    o.ot = ot, o.kmin = kmin, o.kmax = kmax, o.w = o.wend = otEnd + 2, o.drawn = o.culled = 0, o.full = false;
+    o.shift = PS1BitLen(kmax - kmin) - 8;
+    o.shift = o.shift < 0 ? 0 : o.shift;
+    o.flatBgr = flatBgr;
+    int16 chunk[3 * 96];
+    for (int32 j = 0; j < n && !o.full; ++j) {
+        const PS1S3DItem &it = g_ps1S3DItems[list[j]];
+        const Model *mdl     = &modelList[it.model];
+        const Matrix &m      = it.m;
+        const bool pos16     = mdl->flags & PS1_MESH_POS16;
+        const uint32 bound   = bounds[j];
         int32 k = 0;
         while ((bound >> k) > 32000) ++k;
         int32 R[9];
@@ -224,6 +307,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         }
         PS1Gte3DSetup((const int32_t *)R, m.values[0][3] >> k, -(m.values[1][3] >> k), m.values[2][3] >> k, 1u << scn->projectionX,
                       currentScreen->center.x << 16, currentScreen->center.y << 16);
+        const uint32 zmin = (0x100u >> k) ? (0x100u >> k) : 1; // nearer corners: the face is not drawn
+        const int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
         // the vertices (keyframes blended), 96 at a time
         const uint8 *data  = PS1MeshData(mdl);
         const uint16 *idx  = (const uint16 *)(data + 4 * mdl->indexCount); // PMD6: a colour per corner first
@@ -234,7 +319,7 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         const uint8 *fbp = pos + fstride * (it.frameB < mdl->frameCount ? it.frameB : 0);
         const int32 t = it.interp;
         if (pos16 && (!t || it.frameA == it.frameB)) // no blend: the stored positions go to the GTE as they are
-            PS1Gte3DProject((const int16_t *)fa, vc, (uint32_t *)(sxy + vb), sz + vb);
+            PS1Gte3DProjectOc((const int16_t *)fa, vc, (uint32_t *)sxy, sz, oc, zmin, sw, sh);
         for (int32 v0 = 0; v0 < vc && !(pos16 && (!t || it.frameA == it.frameB)); v0 += 96) {
             int32 cnt = vc - v0 < 96 ? vc - v0 : 96;
             if (pos16) {
@@ -245,14 +330,12 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                 const int8 *a = (const int8 *)fa + 3 * v0, *b = (const int8 *)fbp + 3 * v0;
                 for (int32 i = 0; i < 3 * cnt; ++i) chunk[i] = (int16)((a[i] << 7) + (((b[i] - a[i]) * t) >> 1));
             }
-            PS1Gte3DProject(chunk, cnt, (uint32_t *)(sxy + vb + v0), sz + vb + v0);
+            PS1Gte3DProjectOc(chunk, cnt, (uint32_t *)(sxy + v0), sz + v0, oc + v0, zmin, sw, sh);
         }
         uint16 t1 = PS1_HBL();
         tx += (uint16)(t1 - t0);
-        // the faces: valid ones get a depth key (the mean depth, in 12ths, engine units)
-        const uint32 zmin = (0x100u >> k) ? (0x100u >> k) : 1;
-        const int32 fvc   = mdl->faceVertCount;
-        const int32 cull  = (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DBackCull : 0;
+        const int32 fvc  = mdl->faceVertCount;
+        const int32 cull = (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DBackCull : 0;
         // the model's bounding sphere wholly on screen and within the GPU's limits: its faces need no box test
         const int32 cz = m.values[2][3], cr = (int32)(bound - (uint32)abs(m.values[2][3]));
         bool inside    = false;
@@ -264,98 +347,34 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
             inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
         }
         // 7.4: small on screen: its distance LOD (the same positions, fewer faces)
-        const bool lod = mdl->ps1LodIndexCount && rs < g_ps1S3DLodPx;
-        mcols[j]       = (const uint32 *)(lod ? data + mdl->ps1LodOffset : data);
-        midx[j]        = lod ? (const uint16 *)(data + mdl->ps1LodOffset + 4 * mdl->ps1LodIndexCount) : idx;
-        const int32 faces = (lod ? mdl->ps1LodIndexCount : mdl->indexCount) / fvc;
-        mfaces[j]         = faces;
-        g_ps1S3DLodDraws  = g_ps1S3DLodDraws + lod;
-        if (fvc == 4)
-            PS1S3DFaces<4>(midx[j], faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
+        const bool lod     = mdl->ps1LodIndexCount && rs < g_ps1S3DLodPx;
+        const uint32 *cols = (const uint32 *)(lod ? data + mdl->ps1LodOffset : data);
+        const uint16 *fidx = lod ? (const uint16 *)(data + mdl->ps1LodOffset + 4 * mdl->ps1LodIndexCount) : idx;
+        const int32 faces  = (lod ? mdl->ps1LodIndexCount : mdl->indexCount) / fvc;
+        g_ps1S3DLodDraws   = g_ps1S3DLodDraws + lod;
+        o.cmd = (flat ? (fvc == 4 ? 0x28000000 : 0x20000000) | flatBgr : (fvc == 4 ? 0x38000000 : 0x30000000)) | semi;
+        if (flat)
+            fvc == 4 ? PS1S3DFaces<4, true>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o)
+                     : PS1S3DFaces<3, true>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o);
         else
-            PS1S3DFaces<3>(midx[j], faces, sxy + vb, sz + vb, zmin, k, cull, (uint8)j, key + fb, owner + fb, kmin, kmax, culled, inside);
-        vb += vc, fb += faces;
+            fvc == 4 ? PS1S3DFaces<4, false>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o)
+                     : PS1S3DFaces<3, false>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o);
         g_ps1S3DModelFaces[it.model] = g_ps1S3DModelFaces[it.model] + faces;
         g_ps1S3DModelDraws[it.model] = g_ps1S3DModelDraws[it.model] + 1;
         t0 = PS1_HBL();
-        g_ps1S3DHbl[1] = g_ps1S3DHbl[1] + (uint16)(t0 - t1);
+        tf += (uint16)(t0 - t1);
     }
-    g_ps1S3DCulled = g_ps1S3DCulled + culled;
-    g_ps1S3DHbl[0] = g_ps1S3DHbl[0] + tx;
-    uint16 t2 = PS1_HBL();
-    if (kmin > kmax)
-        return;
-    // bucket sort, far first
-    int32 shift = PS1BitLen(kmax - kmin) - 8;
-    shift       = shift < 0 ? 0 : shift;
-    for (int32 b = 0; b < PS1_S3D_BUCKETS; ++b) head[b] = 0xFFFF;
-    for (uint32 g = 0; g < fb; ++g) {
-        if (key[g] == 0xFFFFFFFF)
-            continue;
-        uint32 b = (key[g] - kmin) >> shift;
-        next[g]  = head[b];
-        head[b]  = (uint16)g;
-    }
-    uint16 t3 = PS1_HBL();
-    g_ps1S3DHbl[2] = g_ps1S3DHbl[2] + (uint16)(t3 - t2);
-    Entity *entity = sceneInfo.entity;
-    const uint32 flatColour = g_ps1S3DItems[list[n - 1]].colour;
-    uint32 flatBgr, semi;
-    if (!PS1Face3DBegin(entity->inkEffect, entity->alpha, flatColour, &flatBgr, &semi))
-        return;
-    uint32 drawn = 0;
-    int32 cj = -1, fvc = 3, wpp = 0;
-    const uint32 *cols = NULL, *vxy = NULL;
-    const uint16 *idx0 = NULL;
-    uint32 fbase = 0, cmd = 0;
-    uint32 *w = NULL, *wend = NULL; // this bulk's next slot / its end
-    for (int32 b = PS1_S3D_BUCKETS - 1; b >= 0; --b) {
-        for (uint32 g = head[b]; g != 0xFFFF; g = next[g]) {
-            const int32 j = owner[g];
-            if (j != cj) { // another model: its pointers, and a new bulk if the face size changes
-                cj = j, fvc = mfvc[j], cols = mcols[j], vxy = sxy + mvb[j], idx0 = midx[j], fbase = mfb[j];
-                const int32 nw = flat ? fvc + 1 : 2 * fvc;
-                cmd            = (flat ? (fvc == 4 ? 0x28000000 : 0x20000000) : (fvc == 4 ? 0x38000000 : 0x30000000)) | semi;
-                if (nw != wpp && w) {
-                    PS1ChainBulkEnd((int)((w - s_ps1S3DBulk) / (wpp + 1)));
-                    w = wend = NULL;
-                }
-                wpp = nw;
-            }
-            if (w == wend) {
-                if (w)
-                    PS1ChainBulkEnd(32);
-                w = s_ps1S3DBulk = (uint32 *)PS1ChainBulkBegin(32, wpp);
-                if (!w)
-                    goto done;
-                wend = w + 32 * (wpp + 1);
-            }
-            const uint32 fo = (g - fbase) * fvc; // the face's first corner
-            const uint16 *fi = idx0 + fo;
-            // RSDK's quads go round; the GPU's are two triangles (0 1 2, 1 2 3): corners 0 1 3 2
-            const uint32 i0 = fi[0], i1 = fi[1], i2 = fvc == 4 ? fi[3] : fi[2];
-            if (flat) {
-                w[0] = cmd | flatBgr, w[1] = vxy[i0], w[2] = vxy[i1], w[3] = vxy[i2];
-                if (fvc == 4)
-                    w[4] = vxy[fi[2]];
-            }
-            else {
-                const uint32 *fc = cols + fo; // the corners' colours (PMD6)
-                w[0] = cmd | fc[0], w[1] = vxy[i0], w[2] = fc[1], w[3] = vxy[i1], w[4] = fc[fvc == 4 ? 3 : 2], w[5] = vxy[i2];
-                if (fvc == 4)
-                    w[6] = fc[2], w[7] = vxy[fi[2]];
-            }
-            w += wpp + 1;
-            ++drawn;
-        }
-    }
-done:
-    if (w && w != s_ps1S3DBulk)
-        PS1ChainBulkEnd((int)((w - s_ps1S3DBulk) / (wpp + 1)));
+    PS1ChainAllocTrim((uint32_t *)o.w); // the last chunk's unused words back
+    if (o.drawn)
+        PS1ChainLinkList((uint32_t *)(ot + PS1_S3D_BUCKETS - 1), (uint32_t *)otEnd, 1);
+    else
+        PS1ChainAllocTrim((uint32_t *)ot); // nothing drawn: the table back too
     PS1Face3DEnd();
-    g_ps1S3DHbl[3] = g_ps1S3DHbl[3] + (uint16)(PS1_HBL() - t3);
-    g_ps1S3DDraws = g_ps1S3DDraws + 1;
-    g_ps1S3DFaces = g_ps1S3DFaces + drawn;
+    g_ps1S3DCulled = g_ps1S3DCulled + o.culled;
+    g_ps1S3DHbl[0] = g_ps1S3DHbl[0] + tx;
+    g_ps1S3DHbl[1] = g_ps1S3DHbl[1] + tf; // the faces, their keys and primitives (9f: one pass)
+    g_ps1S3DDraws  = g_ps1S3DDraws + 1;
+    g_ps1S3DFaces  = g_ps1S3DFaces + o.drawn;
 }
 } // namespace
 

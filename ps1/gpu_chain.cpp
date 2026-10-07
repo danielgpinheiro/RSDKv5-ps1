@@ -602,6 +602,35 @@ void PS1ChainSpanEnd(uint32_t *lastHeader, int lastWords, uint32_t *end) {
     s_tpageValid = false;
 }
 
+// 9f: arena words the caller links itself (an ordering table and its primitives, PS1Scene3D.cpp): reserved, not chained
+uint32_t *PS1ChainAlloc(int words) {
+    if (g_ps1ChainSkipPrims || words <= 0)
+        return nullptr;
+    runHook();
+    flushBatch();
+    arenaReady();
+    if (!s_cur || !roomFor(words)) {
+        g_ps1ChainOverflow = g_ps1ChainOverflow + 1;
+        return nullptr;
+    }
+    uint32_t *p = s_cur;
+    s_cur += words;
+    return p;
+}
+// the words from `end` on, of the last PS1ChainAlloc, back (nothing reserved since)
+void PS1ChainAllocTrim(uint32_t *end) {
+    if (end && end < s_cur && end >= s_base)
+        s_cur = end;
+}
+// a list of nodes in reserved words into the chain: first's header starts it, last (lastWords words) ends it
+void PS1ChainLinkList(uint32_t *first, uint32_t *last, int lastWords) {
+    if (!first || !last || lastWords <= 0 || lastWords > PS1_CHAIN_MAX_WORDS)
+        return;
+    s_spanLastWords = lastWords;
+    s_gpu->chain(reinterpret_cast<SpanFrag *>(first), reinterpret_cast<SpanFrag *>(last));
+    s_tpageValid = false;
+}
+
 static uint32_t *s_bulk = nullptr;
 static int s_bulkWpp = 0;
 // A bulk primitive as psyqo's chain(first, last) sees it: the DMA header word, then the words.
