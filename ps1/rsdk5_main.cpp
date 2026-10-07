@@ -31,6 +31,13 @@ volatile uint32_t g_ps1PerfVsyncs   = 0; // vblanks elapsed while running
 volatile uint32_t g_ps1PerfLastHbl  = 0; // last frame's CPU time (hblanks; 262 = one NTSC frame)
 volatile uint32_t g_ps1PerfMaxHbl   = 0;
 volatile uint32_t g_ps1PerfOverHbl  = 0; // frames longer than a vblank
+volatile uint32_t g_ps1PerfLastVsyncs = 0; // 9f: vblanks the last frame took (1 = 60 fps)
+volatile uint32_t g_ps1PerfFlipHbl    = 0; // 9f: hblanks from the last frame's end to this one's start (psyqo's flip:
+                                           // the GPU finishing the chain, then vblank)
+volatile uint32_t g_ps1PerfFlipMax    = 0;
+// 9f: sums a GDB script resets at a window's start and reads at its end (two stops, no per-frame breakpoint)
+volatile uint32_t g_ps1PerfSumHbl = 0, g_ps1PerfSumFlip = 0, g_ps1PerfSlowFrames = 0, g_ps1PerfWorstVsyncs = 0;
+static uint32_t s_frameEnd          = 0;
 #if PS1_PROFILE
 volatile uint32_t g_ps1ProfEngine = 0, g_ps1ProfHbl = 0; // hblanks of ProcessEngine / of the whole frame (PROFILE=1)
 #endif
@@ -70,8 +77,14 @@ void readPad() {
 
 __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
     uint32_t now = gpu.getFrameCount();
-    if (g_ps1PerfFrames)
-        g_ps1PerfVsyncs = g_ps1PerfVsyncs + (now - s_lastCount);
+    if (g_ps1PerfFrames) {
+        g_ps1PerfVsyncs     = g_ps1PerfVsyncs + (now - s_lastCount);
+        g_ps1PerfLastVsyncs = now - s_lastCount;
+        if (now - s_lastCount > 1)
+            g_ps1PerfSlowFrames = g_ps1PerfSlowFrames + 1;
+        if (now - s_lastCount > g_ps1PerfWorstVsyncs)
+            g_ps1PerfWorstVsyncs = now - s_lastCount;
+    }
     s_lastCount     = now;
     g_ps1PerfFrames = g_ps1PerfFrames + 1;
     uintptr_t hs = (uintptr_t)&__heap_start, ss = (uintptr_t)&__stack_start;
@@ -213,6 +226,13 @@ class ManiaPS1App final : public psyqo::Application {
         SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
+        if (s_frameEnd) {
+            uint32_t gap     = (t0 - s_frameEnd) & 0xFFFF; // root counter 1 wraps at 16 bits
+            g_ps1PerfFlipHbl = gap;
+            g_ps1PerfSumFlip = g_ps1PerfSumFlip + gap;
+            if (gap > g_ps1PerfFlipMax)
+                g_ps1PerfFlipMax = gap;
+        }
 
         if (g_ps1InitDone == 1 && RenderDevice::isRunning) {
             readPad();
@@ -227,11 +247,13 @@ class ManiaPS1App final : public psyqo::Application {
         g_ps1ProfHbl += cpu;
 #endif
         g_ps1PerfLastHbl = cpu;
+        g_ps1PerfSumHbl  = g_ps1PerfSumHbl + cpu;
         if (cpu > g_ps1PerfMaxHbl)
             g_ps1PerfMaxHbl = cpu;
         if (cpu > 262)
             g_ps1PerfOverHbl = g_ps1PerfOverHbl + 1;
         perfTick(gpu());
+        s_frameEnd = PS1Hblanks();
     }
 
     psyqo::CDRomDevice m_cdrom;

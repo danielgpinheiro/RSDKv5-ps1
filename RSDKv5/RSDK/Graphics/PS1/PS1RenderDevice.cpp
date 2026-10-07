@@ -117,10 +117,16 @@ void RSDK::PS1FrameStart(bool clear)
         g_ps1RenderRepeats = g_ps1RenderRepeats + 1;
     }
 }
+#if PS1_PERF_HUD
+void PS1PerfHudDraw(); // ps1/perf_hud.cpp (docs/32 9f)
+#endif
 void RSDK::PS1RenderEndFrame()
 {
     if (!s_ps1FrameOpen)
         PS1FrameStart(false);
+#if PS1_PERF_HUD
+    PS1PerfHudDraw();
+#endif
     PS1ChainEnd();
 }
 

@@ -56,6 +56,7 @@ ps1/cdrom_fs.cpp \
 ps1/cdrom_stream.cpp \
 ps1/irq_guard.cpp \
 ps1/pc_sampler.cpp \
+ps1/perf_hud.cpp \
 ps1/gpu_chain.cpp \
 ps1/spu.cpp \
 ps1/xa_music.cpp \
@@ -112,6 +113,10 @@ endif
 ifneq ($(SAMPLE),)
 CPPFLAGS += -DPS1_SAMPLE=1
 endif
+# `make PERF_HUD=1`: the frame-timing numbers in the top-left corner (ps1/perf_hud.cpp, docs/32 9f); never in `make dist`.
+ifneq ($(PERF_HUD),)
+CPPFLAGS += -DPS1_PERF_HUD=1
+endif
 ifneq ($(BOOT),)
 CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
 endif
@@ -128,6 +133,7 @@ LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
 PS1_BOOT_OBJS    := ps1/rsdk5_main.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
+PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/PS1/PS1RenderDevice.o ps1/perf_hud.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
@@ -138,10 +144,12 @@ $(call ps1_stamp,boot,$(BOOT),$(PS1_BOOT_OBJS))
 $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
+$(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
 $(PS1_BOOT_OBJS): build/gen/boot.txt
 $(PS1_RAM_OBJS): build/gen/ram.txt
 $(PS1_PROFILE_OBJS): build/gen/profile.txt
 $(PS1_SAMPLE_OBJS): build/gen/sample.txt
+$(PS1_HUD_OBJS): build/gen/perfhud.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).
@@ -271,7 +279,7 @@ DIST    ?= build/dist/SonicMania-PS1
 dist:
 	@if [ -n "$$(cat build/gen/boot.txt)" ]; then echo "dist: rsdkv5.ps-exe is a BOOT= test build"; exit 1; fi
 	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
-	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= build"; exit 1; fi
+	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
 	mkdir -p build/dist
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe $(LICENSE) $(DIST)

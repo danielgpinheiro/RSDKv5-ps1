@@ -31,6 +31,18 @@ emu_start() {
   if [ "$EMU" = ds ]; then
     pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
     EMU_CFG=$EMU_DS_SET; EMU_BAK="$1.settings.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
+    # docs/32 9f: never the user's own card (memcards/<title>_1.mcd): slot 1 is a non-persistent card (formatted fresh
+    # at every boot), or EMU_DS_CARD=FILE (absolute path; a missing file is created formatted), for this run only
+    /usr/bin/python3 - "$EMU_CFG" "${EMU_DS_CARD:-}" <<'PYEOF'
+import re, sys
+p, card = sys.argv[1], sys.argv[2]
+s = open(p).read()
+m = re.search(r'^\[MemoryCards\]\n((?:(?!\[).*\n)*)', s, re.M)
+body = [l for l in m.group(1).splitlines() if not l.startswith(('Card1Type', 'Card1Path'))]
+body = (['Card1Type = Shared', 'Card1Path = ' + card] if card else ['Card1Type = NonPersistent']) + body
+s = s[:m.start(1)] + '\n'.join(body) + '\n' + s[m.end(1):]
+open(p, 'w').write(s)
+PYEOF
     if [ "$EMU_SP" != "0x801fff00" ]; then
       sed -i '' 's/^Enable8MBRAM = false/Enable8MBRAM = true/' "$EMU_CFG"
       echo "8 MB debug EXE (SP $EMU_SP): DuckStation Enable8MBRAM on for this run"
