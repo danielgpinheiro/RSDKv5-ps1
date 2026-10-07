@@ -314,6 +314,12 @@ void DialogRunner_PromptSavePreference(int32 id)
         LogHelpers_Print("WARNING PromptSavePreference() when prompt already in progress.");
 
     API.ClearSaveStatus();
+#if defined RETRO_PS1_BUILD
+    // docs/32 9f: the dialog below shows only while the save status is STATUS_CONTINUE, which a console's storage layer
+    // sets while it waits for the player's choice (the PS1's has none): the card too full for the save (STATUS_NOSPACE,
+    // RSDK SKU PS1CardStorageStatus) or a corrupt save now ask "CONTINUE WITHOUT SAVING?"
+    API.SetSaveStatusContinue();
+#endif
 
     EntityDialogRunner *dialogRunner = CREATE_ENTITY(DialogRunner, DialogRunner_PromptSavePreference_CB, 0, 0);
     dialogRunner->status             = id;

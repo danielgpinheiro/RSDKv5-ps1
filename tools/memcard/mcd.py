@@ -12,6 +12,7 @@ then the icon frames, then the payload. The port's payload (ps1/memcard.cpp) sta
 Usage:
   mcd.py format OUT.mcd                 blank formatted card
   mcd.py raw OUT.mcd                    unformatted card (all zero)
+  mcd.py fill OUT.mcd N                 formatted card with N one-block files of another game (docs/32 9f: full cards)
   mcd.py list IMAGE                     directory + titles
   mcd.py extract IMAGE NAME [--icon OUT.png] [--data OUT.bin]
   mcd.py check IMAGE NAME [--title T] [--icon SYMBOL] [--pattern N]
@@ -174,6 +175,19 @@ def main():
         open(a[1], 'wb').write(fmt_card()); print('formatted card %s' % a[1]); return
     if cmd == 'raw':
         open(a[1], 'wb').write(bytes(128 * 1024)); print('unformatted card %s' % a[1]); return
+    if cmd == 'fill':  # N one-block files ("BASLUS-99999FILLnn", a plain title frame) in blocks 1..N
+        card, n = fmt_card(), int(a[2])
+        for k in range(n):
+            f = bytearray(FRAME)
+            struct.pack_into('<IIH', f, 0, 0x51, BLOCK, 0xFFFF)
+            nm = ('BASLUS-99999FILL%02d' % k).encode()
+            f[0x0a:0x0a + len(nm)] = nm
+            f[0x7f] = cksum(f)
+            card[(1 + k) * FRAME:(2 + k) * FRAME] = f
+            body = bytearray(BLOCK)
+            body[0:4] = b'SC\x11\x01'
+            card[(1 + k) * BLOCK:(2 + k) * BLOCK] = body
+        open(a[1], 'wb').write(card); print('card %s: %d one-block file(s), %d free' % (a[1], n, 15 - n)); return
     data = open(a[1], 'rb').read()
     if cmd == 'list':
         fs = directory(data)

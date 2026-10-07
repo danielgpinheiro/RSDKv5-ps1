@@ -1092,6 +1092,7 @@ char RSDK::SKU::userFileDir[0x100];
 // mostly zeros). A load reads the file and unpacks one section; a save reads the file, replaces its section, writes it
 // back. The payload is staged in DATASET_TMP's tail (nothing lives there in play; no resident cache: the heap is STG's).
 extern "C" uint32_t PS1UserCardRoom();
+extern "C" uint32_t PS1UserCardFreeBlocks(uint32_t *hasFile);
 extern "C" uint32_t PS1UserCardRead(uint8_t *buf, uint32_t cap, uint32 *outLen); // (C linkage: uint32 = the same 32 bits)
 extern "C" uint32_t PS1UserCardWrite(uint8_t *buf, uint32_t len);
 extern "C" uint32_t PS1UserCardWriteAsync(uint8_t *buf, uint32_t len);
@@ -1100,6 +1101,7 @@ extern "C" volatile uint32 g_ps1CardLastError; // (ps1/user_card.cpp: the last p
 volatile uint32 g_ps1CardLoads = 0, g_ps1CardSaves = 0, g_ps1CardErrors = 0, g_ps1CardSkipped = 0, g_ps1CardStageFail = 0,
                 g_ps1CardTooBig = 0, g_ps1CardPayload = 0, g_ps1CardFresh = 0;
 volatile uint32 g_ps1CardOff = 0;
+volatile uint32 g_ps1CardFreeBlocks = 0, g_ps1CardNoSpace = 0; // 9f: the storage check's free blocks; its NOSPACE answers
 volatile uint32 g_ps1CardStageInfo[5] = { 0 }; // the last staging: size, TMP used, limit, flags (1 in TMP, 2 owner, 4 compacted), used after // GDB: no card calls (loads find nothing, saves report failure)
 namespace
 {
@@ -1425,6 +1427,26 @@ bool32 PS1CardSaveUserFile(const char *filename, void *buffer, uint32 bufSize)
     return true;
 }
 } // namespace
+
+// docs/32 9f (user 2026-10-07): the storage check the menu runs before it loads the saves (TryInitStorage, resolved in
+// DummyUserStorage::FrameInit): a card without Mania's file and with fewer free blocks than its first write needs (one:
+// the payload packs to a few hundred bytes; PS1_CARD_ROOM's three at most) answers STATUS_NOSPACE, and the game's own
+// dialog takes it from there (ManiaModeMenu_InitAPI -> DialogRunner_PromptSavePreference: "NO SAVE SPACE AVAILABLE.
+// CONTINUE WITHOUT SAVING?"). No card, or one with the file (rewritten in place), answers STATUS_OK as before.
+#define PS1_CARD_NEW_BLOCKS 1
+int32 RSDK::SKU::PS1CardStorageStatus()
+{
+    if (g_ps1CardOff)
+        return STATUS_OK;
+    uint32_t hasFile = 0;
+    uint32 free      = PS1UserCardFreeBlocks(&hasFile);
+    g_ps1CardFreeBlocks = free;
+    if (free != 0xFFFFFFFFu && !hasFile && free < PS1_CARD_NEW_BLOCKS) {
+        g_ps1CardNoSpace = g_ps1CardNoSpace + 1;
+        return STATUS_NOSPACE;
+    }
+    return STATUS_OK;
+}
 
 // GDB test hook (tools/memcard/save_test.sh): at a frame start, g_ps1CardTest 1 = SaveUserFile, 2 = LoadUserFile of file
 // (3 = SaveUserDB of table g_ps1CardTestFile)

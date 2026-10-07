@@ -20,6 +20,10 @@ struct DummyFileInfo {
 
 // This is the "dummy" struct, it serves as the base in the event a suitable API isn't loaded (such as in this decomp)
 // This struct should never be removed, other structs such as "SteamUserStorage" would be added and "userStorage" would be set to that instead
+#if RETRO_PLATFORM == RETRO_PS1
+int32 PS1CardStorageStatus(); // UserStorage.cpp (docs/32 9f)
+#endif
+
 struct DummyUserStorage : UserStorage {
     void FrameInit()
     {
@@ -36,7 +40,11 @@ struct DummyUserStorage : UserStorage {
 
         if (storageStatus == STATUS_CONTINUE) {
             if (storageInitTime <= 0) {
+#if RETRO_PLATFORM == RETRO_PS1
+                storageStatus = PS1CardStorageStatus(); // 9f: a card too full for the save: STATUS_NOSPACE
+#else
                 storageStatus = GetAPIValue(GetAPIValueID("SYSTEM_USERSTORAGE_STORAGE_STATUS", 0));
+#endif
             }
             else {
                 storageInitTime--;

@@ -54,6 +54,29 @@ uint32_t PS1UserCardRoom() {
     return 0;
 }
 
+// docs/32 9f: the card's free blocks (15 less the files' blocks) and whether Mania's file is there; 0xFFFFFFFF: no
+// card / unreadable (the error in g_ps1CardLastError)
+uint32_t PS1UserCardFreeBlocks(uint32_t *hasFile) {
+    psyqo::MemoryCardFileSystem::FileEntry list[15];
+    uint32_t count = 0;
+    *hasFile       = 0;
+    PS1McError e   = PS1McList(psyqo::MemoryCard::Port::Port0, list, 15, &count);
+    if (e != PS1McError::OK) {
+        g_ps1CardLastError = (uint32_t)e;
+        return 0xFFFFFFFFu;
+    }
+    const char *name = FileName();
+    uint32_t used    = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        used += list[i].sizeInBlocks;
+        const char *a = list[i].name, *b = name;
+        while (*a && *a == *b) ++a, ++b;
+        if (*a == *b)
+            *hasFile = 1;
+    }
+    return used >= 15 ? 0 : 15 - used;
+}
+
 // The payload into buf (cap bytes: the room above); the data at buf + PS1_MC_HEADER_SIZE, *outLen bytes. 0 = OK, else
 // the psyqo error (FileNotFound, BadData, ...)
 uint32_t PS1UserCardRead(uint8_t *buf, uint32_t cap, uint32_t *outLen) {
