@@ -5,6 +5,7 @@
 extern "C" {
 volatile uint16_t g_ps1PadButtons  = 0;
 volatile uint16_t g_ps1PadTestMask = 0;
+volatile uint16_t g_ps1Pad2Buttons = 0, g_ps1Pad2TestMask = 0;
 volatile uint16_t g_ps1PadScript[4 * 48];
 volatile uint32_t g_ps1PadScriptSteps = 0, g_ps1PadScriptStep = 0, g_ps1SceneLoadSerial = 0;
 }
@@ -40,16 +41,25 @@ static uint16 PS1PadScriptButtons()
 using namespace RSDK;
 
 // docs/32 4.2a: created at init just above a CD read window that is freed afterwards, the heap device (56 bytes) split
-// the hole the chain arena takes after each load: the menu (2 MB) found 32.8 + 22.8 KB and no 51 KB arena. One pad,
-// never removed on the PS1: static storage, and delete has nothing to free.
-alignas(8) static uint8 s_ps1PadDeviceMem[sizeof(SKU::InputDevicePS1)];
-void *SKU::InputDevicePS1::operator new(size_t size) { return size <= sizeof(s_ps1PadDeviceMem) ? s_ps1PadDeviceMem : NULL; }
+// the hole the chain arena takes after each load: the menu (2 MB) found 32.8 + 22.8 KB and no 51 KB arena. The pads
+// (9f: two, for Puyo Puyo's 2P), never removed on the PS1: static storage, and delete has nothing to free.
+alignas(8) static uint8 s_ps1PadDeviceMem[2][sizeof(SKU::InputDevicePS1)];
+static uint32 s_ps1PadDevices = 0;
+void *SKU::InputDevicePS1::operator new(size_t size)
+{
+    if (size > sizeof(s_ps1PadDeviceMem[0]))
+        return NULL;
+    return s_ps1PadDeviceMem[s_ps1PadDevices < 2 ? s_ps1PadDevices++ : 1];
+}
 void SKU::InputDevicePS1::operator delete(void *ptr) {}
 
 void SKU::InputDevicePS1::UpdateInput()
 {
     this->prevButtonMasks = this->buttonMasks;
-    this->buttonMasks     = g_ps1PadButtons | g_ps1PadTestMask | (::g_ps1PadScriptSteps ? PS1PadScriptButtons() : 0);
+    if (this->port)
+        this->buttonMasks = g_ps1Pad2Buttons | g_ps1Pad2TestMask;
+    else
+        this->buttonMasks = g_ps1PadButtons | g_ps1PadTestMask | (::g_ps1PadScriptSteps ? PS1PadScriptButtons() : 0);
     uint16 changed        = this->buttonMasks ^ this->prevButtonMasks;
 
     this->inactiveTimer[0] = this->buttonMasks ? 0 : this->inactiveTimer[0] + 1;
@@ -91,7 +101,7 @@ void SKU::InputDevicePS1::CloseDevice()
     this->prevButtonMasks = 0;
 }
 
-SKU::InputDevicePS1 *SKU::InitPS1InputDevice(uint32 id)
+SKU::InputDevicePS1 *SKU::InitPS1InputDevice(uint32 id, uint8 port)
 {
     if (inputDeviceCount >= INPUTDEVICE_COUNT)
         return NULL;
@@ -104,6 +114,7 @@ SKU::InputDevicePS1 *SKU::InitPS1InputDevice(uint32 id)
     if (!device)
         return NULL;
     device->gamepadType = (DEVICE_API_NONE << 16) | (DEVICE_TYPE_CONTROLLER << 8) | (DEVICE_PS4 << 0);
+    device->port        = port;
     device->disabled    = false;
     device->id          = id;
     device->active      = true;
@@ -122,5 +133,10 @@ void SKU::InitPS1InputAPI()
     char idString[] = "PS1Pad1";
     uint32 id       = 0;
     GenerateHashCRC(&id, idString);
-    InitPS1InputDevice(id);
+    InitPS1InputDevice(id, 0);
+    // 9f: pad 2 (Puyo Puyo's 2P versus): a second device the game assigns like any other (its presses go to "any" too)
+    char idString2[] = "PS1Pad2";
+    uint32 id2       = 0;
+    GenerateHashCRC(&id2, idString2);
+    InitPS1InputDevice(id2, 1);
 }

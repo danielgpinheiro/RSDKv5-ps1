@@ -22,10 +22,6 @@ void ExtrasMenu_Create(void *data) {}
 
 void ExtrasMenu_StageLoad(void) {}
 
-#if defined RETRO_PS1_BUILD
-static EntityUIButton *s_ps1ExtrasBss = NULL, *s_ps1ExtrasPuyo = NULL, *s_ps1ExtrasGarden = NULL;
-#endif
-
 void ExtrasMenu_Initialize(void)
 {
     String tag;
@@ -39,57 +35,12 @@ void ExtrasMenu_Initialize(void)
         if (RSDK.CompareStrings(&tag, &control->tag, false))
             ExtrasMenu->extrasControl = control;
     }
-
-#if defined RETRO_PS1_BUILD
-    // docs/32 9b.5: Puyo Puyo is out of the port's scope (user decision 2026-09-26): its button leaves the Extras list,
-    // which closes up as the Main Menu's does (4.2c); the unlock checks keep the buttons by what they are
-    EntityUIControl *extrasList = (EntityUIControl *)ExtrasMenu->extrasControl;
-    if (extrasList && extrasList->buttonCount >= 3) {
-        s_ps1ExtrasBss    = extrasList->buttons[0];
-        s_ps1ExtrasPuyo   = extrasList->buttons[1];
-        s_ps1ExtrasGarden = extrasList->buttons[2];
-        s_ps1ExtrasPuyo->visible = false;
-        s_ps1ExtrasPuyo->active  = ACTIVE_NEVER;
-        // its choices (1P vs CPU / 2P): the menu makes a button's current choice visible again (UIButton_Update once the
-        // control reactivates its area), so they and the button go far below the screen and the button has none
-        foreach_all(UIChoice, choice)
-        {
-            if (choice->listID == 7 && (choice->frameID == 2 || choice->frameID == 3)) {
-                choice->visible = false;
-                choice->active  = ACTIVE_NEVER;
-                choice->position.y += TO_FIXED(0x1000);
-            }
-        }
-        // the buttons below it move up a place (fixed positions, not a shifter's)
-        Vector2 slot = s_ps1ExtrasPuyo->position;
-        s_ps1ExtrasPuyo->position.y += TO_FIXED(0x1000);
-        s_ps1ExtrasPuyo->choiceCount = 0;
-        for (int32 i = 2; i < extrasList->buttonCount; ++i) {
-            Vector2 next                     = extrasList->buttons[i]->position;
-            extrasList->buttons[i]->position = slot;
-            slot                             = next;
-        }
-        for (int32 i = 1; i + 1 < extrasList->buttonCount; ++i) extrasList->buttons[i] = extrasList->buttons[i + 1];
-        extrasList->buttons[--extrasList->buttonCount] = NULL;
-        if (extrasList->rowCount > extrasList->buttonCount)
-            extrasList->rowCount = extrasList->buttonCount;
-    }
-#endif
 }
 
 void ExtrasMenu_HandleUnlocks(void)
 {
     EntityUIControl *control = (EntityUIControl *)ExtrasMenu->extrasControl;
 
-#if defined RETRO_PS1_BUILD
-    if (s_ps1ExtrasBss) { // (ExtrasMenu_Initialize: the list without Puyo Puyo)
-        s_ps1ExtrasBss->disabled = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_BLUESPHERES);
-        if (s_ps1ExtrasBss->disabled)
-            UIButton_ManageChoices(s_ps1ExtrasBss);
-        s_ps1ExtrasGarden->disabled = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_DAGARDEN) && !globals->medallionDebug;
-        return;
-    }
-#endif
     EntityUIButton *bssButton = control->buttons[0];
     bssButton->disabled       = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_BLUESPHERES);
     if (bssButton->disabled)

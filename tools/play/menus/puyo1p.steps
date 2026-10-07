@@ -1,0 +1,37 @@
+# Puyo Puyo 1P vs CPU (docs/32 9f): Title (Start), the notice (A), Main Menu Down x3 to Extras, A; Down to Puyo Puyo, A
+# (its first choice: 1P vs CPU); in the Puyo scene (listPos 114) A to take the level select's choices; then nothing:
+# the player's board fills and the CPU wins; A on the results takes the game back to the Extras menu
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 520 0x2 4
+2 560 0x2 4
+2 620 0x10 4
+2 800 0x2 4
+2 900 0x10 4
+114 240 0x10 4
+114 300 0x10 4
+114 360 0x10 4
+114 3000 0x10 4
+114 3300 0x10 4
+114 3600 0x10 4
+114 4200 0x10 4
+114 4800 0x10 4
+114 5400 0x10 4
+114 6000 0x10 4
+114 7600 0x10 4
+114 8000 0x10 4
+114 8400 0x10 4
+114 8800 0x10 4
+114 9200 0x10 4
+114 9600 0x10 4
+114 10000 0x10 4
+114 10400 0x10 4
+114 10800 0x10 4
+114 11200 0x10 4
+114 11600 0x10 4
+114 12000 0x10 4
+114 12400 0x10 4
+114 12800 0x10 4
+114 13200 0x10 4
+114 13600 0x10 4

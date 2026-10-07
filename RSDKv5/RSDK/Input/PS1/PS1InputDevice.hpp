@@ -18,18 +18,20 @@ struct InputDevicePS1 : InputDevice {
 
     uint16 buttonMasks;
     uint16 prevButtonMasks;
+    uint8 port; // 9f: 0 = pad 1, 1 = pad 2 (Puyo Puyo's 2P)
     uint8 stateUp, stateDown, stateLeft, stateRight;
     uint8 stateA, stateB, stateC, stateX, stateY, stateZ, stateStart, stateSelect;
 };
 
 void InitPS1InputAPI();
-InputDevicePS1 *InitPS1InputDevice(uint32 id);
+InputDevicePS1 *InitPS1InputDevice(uint32 id, uint8 port = 0);
 } // namespace SKU
 
 // C linkage: the same variables from inside namespace RSDK (this header) and from ps1/rsdk5_main.cpp.
 // Bit i = the button in the order above (Up, Down, Left, Right, A, B, C, X, Y, Z, Start, Select).
 extern "C" volatile uint16_t g_ps1PadButtons;  // read from the pad each frame (ps1/rsdk5_main.cpp)
 extern "C" volatile uint16_t g_ps1PadTestMask; // GDB-injected buttons (test harness), ORed in
+extern "C" volatile uint16_t g_ps1Pad2Buttons, g_ps1Pad2TestMask; // 9f: pad 2, the same way (Puyo Puyo's 2P)
 
 // docs/32 9b.5 (test harness, GDB): a scripted pad. Step k = g_ps1PadScript[4k .. 4k+3]: the scene (listPos; 0xFFFF any;
 // 0xFFFE the next scene loaded after the previous step),

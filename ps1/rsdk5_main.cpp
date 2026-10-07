@@ -67,12 +67,17 @@ void readPad() {
     using Pad = psyqo::AdvancedPad;
     static const Pad::Button map[12] = { Pad::Up,   Pad::Down,   Pad::Left,     Pad::Right, Pad::Cross, Pad::Circle,
                                          Pad::L1,   Pad::Square, Pad::Triangle, Pad::R1,    Pad::Start, Pad::Select };
-    uint16_t held = 0;
+    uint16_t held = 0, held2 = 0;
     if (g_ps1Pad && g_ps1Pad->isPadConnected(Pad::Pad::Pad1a))
         for (int i = 0; i < 12; i++)
             if (g_ps1Pad->isButtonPressed(Pad::Pad::Pad1a, map[i]))
                 held |= 1 << i;
-    g_ps1PadButtons = held;
+    if (g_ps1Pad && g_ps1Pad->isPadConnected(Pad::Pad::Pad2a)) // 9f: pad 2 (Puyo Puyo's 2P)
+        for (int i = 0; i < 12; i++)
+            if (g_ps1Pad->isButtonPressed(Pad::Pad::Pad2a, map[i]))
+                held2 |= 1 << i;
+    g_ps1PadButtons  = held;
+    g_ps1Pad2Buttons = held2;
 }
 
 __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
