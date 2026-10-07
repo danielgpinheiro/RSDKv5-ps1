@@ -1027,17 +1027,34 @@ static int32 PS1Lit(int32 ny, uint32 colour, int32 shift, int32 diffuse, int32 i
     int32 c         = specular + ((int32)((colour >> shift) & 0xFF) * ((ny >> 10) + diffuse) >> intensity);
     return c < 0 ? 0 : c > 0xFF ? 0xFF : c;
 }
-static uint32 PS1LitColour(const Scene3D *scn, int32 ny, uint32 colour)
+// (9f: PS1Lit's three channels with the normal's product computed once: the same values)
+__attribute__((optimize("O2"))) static uint32 PS1LitColour(const Scene3D *scn, int32 ny, uint32 colour)
 {
-    return (uint32)PS1Lit(ny, colour, 16, scn->diffuseX, scn->diffuseIntensityX, scn->specularIntensityX) << 16
-           | (uint32)PS1Lit(ny, colour, 8, scn->diffuseY, scn->diffuseIntensityY, scn->specularIntensityY) << 8
-           | (uint32)PS1Lit(ny, colour, 0, scn->diffuseZ, scn->diffuseIntensityZ, scn->specularIntensityZ);
+    const int32 normalVal = (ny >> 2) * (abs(ny) >> 2), n6 = normalVal >> 6, ny10 = ny >> 10;
+    int32 sx = n6 >> scn->specularIntensityX, sy = n6 >> scn->specularIntensityY, sz = n6 >> scn->specularIntensityZ;
+    sx = sx < 0 ? 0 : sx > 0xFF ? 0xFF : sx, sy = sy < 0 ? 0 : sy > 0xFF ? 0xFF : sy, sz = sz < 0 ? 0 : sz > 0xFF ? 0xFF : sz;
+    int32 cx = sx + ((int32)((colour >> 16) & 0xFF) * (ny10 + scn->diffuseX) >> scn->diffuseIntensityX);
+    int32 cy = sy + ((int32)((colour >> 8) & 0xFF) * (ny10 + scn->diffuseY) >> scn->diffuseIntensityY);
+    int32 cz = sz + ((int32)(colour & 0xFF) * (ny10 + scn->diffuseZ) >> scn->diffuseIntensityZ);
+    cx = cx < 0 ? 0 : cx > 0xFF ? 0xFF : cx, cy = cy < 0 ? 0 : cy > 0xFF ? 0xFF : cy, cz = cz < 0 ? 0 : cz > 0xFF ? 0xFF : cz;
+    return (uint32)cx << 16 | (uint32)cy << 8 | (uint32)cz;
 }
+// 9f: a closed mesh's faces turned away on screen are left out before the sort (the giant ring is opaque and closed:
+// its visible pixels are all front faces'); the sign a front face's screen winding is checked against (-1, picked by
+// pictures: +1 dropped the visible side), 0: none dropped
+volatile int32 g_ps1S3DOrthoCull = -1;
+// 9f: a normal component (int8, x 127) as LoadMesh keeps it (x 0x10000 / 127), from a table: the same quotients
+static int32 s_ps1Nrm127[256];
+static bool s_ps1Nrm127Ok = false;
 static bool PS1Scene3DOrtho(uint16 sceneID)
 {
     Scene3D *scn = &scene3DList[sceneID];
     if (scn->drawMode != S3D_SOLIDCOLOR_SHADED_BLENDED && scn->drawMode != S3D_WIREFRAME_SHADED)
         return false;
+    if (!s_ps1Nrm127Ok) {
+        for (int32 v = 0; v < 256; ++v) s_ps1Nrm127[v] = (int32)(int8)v * 0x10000 / 127;
+        s_ps1Nrm127Ok = true;
+    }
     // the items' positions through their matWorld (8.8 world pixels); each face its depth, item and index (stack:
     // PS1_S3D_ORTHO positions and faces a scene)
     int32 px[PS1_S3D_ORTHO], py[PS1_S3D_ORTHO], depth[PS1_S3D_ORTHO];
@@ -1068,11 +1085,19 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             pz[v] = m.values[2][3] + ((x * m.values[2][0]) >> 8) + ((m.values[2][2] * z >> 8) + (m.values[2][1] * y >> 8));
         }
         // stock's depth: 3 corners ((z0 / 2 + z1 / 2) / 2 + z2 / 2), 4 corners the sum of z / 4
-        for (int32 f = 0; f < nf; ++f, ++faces) {
+        const bool cull = g_ps1S3DOrthoCull && (mdl->flags & PS1_MESH_CLOSED) && scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED;
+        for (int32 f = 0; f < nf; ++f) {
             const uint16 *c = idx + f * fvc;
+            if (cull) { // the first three corners' winding on screen (world pixels, y down)
+                const int32 *X = px + positions, *Y = py + positions;
+                const int64 cross = (int64)(X[c[1]] - X[c[0]]) * (Y[c[2]] - Y[c[0]]) - (int64)(X[c[2]] - X[c[0]]) * (Y[c[1]] - Y[c[0]]);
+                if (g_ps1S3DOrthoCull > 0 ? cross < 0 : cross > 0)
+                    continue;
+            }
             depth[faces] = fvc == 4 ? (pz[c[0]] >> 2) + (pz[c[1]] >> 2) + (pz[c[2]] >> 2) + (pz[c[3]] >> 2)
                                     : ((((pz[c[0]] >> 1) + (pz[c[1]] >> 1)) >> 1) + (pz[c[2]] >> 1));
             fIdx[faces] = (uint16)f, fItem[faces] = (uint8)i;
+            ++faces;
         }
         positions += mdl->vertCount;
     }
@@ -1087,6 +1112,11 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
     Entity *entity = sceneInfo.entity;
     Vector2 vertPos[4];
     uint32 vertClrs[4];
+    // 9f: an opaque blended scene (the ring) writes its triangles into shared chain bulks (PS1Face3DSlot) instead of a
+    // span each (PS1DrawBlendedFace): the same primitives in the same order
+    uint32 f3dBgr, f3dSemi;
+    const bool bulk = scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED && entity->inkEffect == INK_NONE
+                      && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
     for (int32 f = 0; f < faces; ++f) {
         const PS1S3DItem &it = g_ps1S3DItems[fItem[f]];
         const Model *mdl     = &modelList[it.model];
@@ -1096,8 +1126,8 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
         const int8 *nrm      = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) + 4 * first : NULL;
         int32 nys[4];
         for (int32 v = 0; v < n; ++v) { // the corner's normal y through matNormals (LoadMesh keeps normals x 0x10000)
-            int32 nx = nrm ? nrm[4 * v] * 0x10000 / 127 : 0, ny = nrm ? nrm[4 * v + 1] * 0x10000 / 127 : 0;
-            int32 nz = nrm ? nrm[4 * v + 2] * 0x10000 / 127 : 0;
+            int32 nx = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v]] : 0, ny = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v + 1]] : 0;
+            int32 nz = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v + 2]] : 0;
             nys[v]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
         }
         if (scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED) {
@@ -1106,7 +1136,10 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
                 vertPos[v].y = (py[b + c[v]] << 8) - (currentScreen->position.y << 16);
                 vertClrs[v]  = PS1LitColour(scn, nys[v], it.colour);
             }
-            DrawBlendedFace(vertPos, vertClrs, n, entity->alpha, entity->inkEffect);
+            if (bulk)
+                PS1BlendedFaceBulk(vertPos, vertClrs, n);
+            else
+                DrawBlendedFace(vertPos, vertClrs, n, entity->alpha, entity->inkEffect);
         }
         else { // the face's mean normal, its edges as lines
             int32 ny = 0;
@@ -1119,6 +1152,8 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             }
         }
     }
+    if (bulk)
+        PS1Face3DEnd();
     g_ps1S3DDraws = g_ps1S3DDraws + 1;
     g_ps1S3DFaces = g_ps1S3DFaces + faces;
     return true;
