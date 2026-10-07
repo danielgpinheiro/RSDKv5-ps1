@@ -687,8 +687,16 @@ bool PS1FlatInk(uint32 color, int32 inkEffect, int32 alpha, uint32 &bgr, PS1Ink 
             if (alpha <= 0)
                 return false;
             uint32 a = alpha > 0xFF ? 0xFF : (uint32)alpha;
+            if (inkEffect == INK_SUB) {
+                // 9f: the PC's subtract table takes a * (31 - c) >> 8 off each 5-bit channel (subtractLookupTable,
+                // Drawing.cpp: the colour's inverse, scaled), not the colour itself: GHZ's water pools (0xA0A0E0 at full
+                // alpha) take 10 / 10 / 2 off, not 19 / 19 / 27. The GPU's B - F subtracts the flat colour's top 5 bits
+                r = (a * (31 - (r >> 3)) >> 8) << 3, g = (a * (31 - (g >> 3)) >> 8) << 3, b = (a * (31 - (b >> 3)) >> 8) << 3;
+                ink.mode = 2;
+                break;
+            }
             r = r * a >> 8, g = g * a >> 8, b = b * a >> 8;
-            ink.mode = inkEffect == INK_ADD ? 1 : 2;
+            ink.mode = 1;
             break;
         }
         case INK_TINT:
