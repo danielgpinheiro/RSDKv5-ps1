@@ -235,6 +235,8 @@ void PS1FadeRecordColour(uint32_t *word); // a primitive's colour word (bits 0-2
 // word when semi, then up to four 3-word rectangles, the next fragment right after): one record for all their colours
 void PS1FadeRecordSpan(uint32_t *firstHeader, int32 rects, bool semi);
 void PS1FadeRestore();                     // before a CLUT-using draw: the unfaded CLUTs, once after a fade
+void PS1PaletteRow0Swapped();              // 9f: PS1BankClut put a per-draw copy of bank 0 into row 240
+extern "C" volatile int32 g_ps1PalDiffs;   // 9f: bank-0 entries differing from this frame's CLUTs (PS1PaletteWrite)
 void PS1FadeRestoreSlot(uint32 slot);       // 9b.3: one sprite CLUT back after a fade / the tint (PS1FrameTex)
 // 3.5b: a CLUT row uploaded in the chain now (recorded for a later FillScreen), then the GPU's CLUT cache flushed
 void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);

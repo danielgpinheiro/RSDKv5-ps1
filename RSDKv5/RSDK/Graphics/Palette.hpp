@@ -66,9 +66,19 @@ inline uint32 GetPaletteEntry(uint8 bankID, uint8 index)
     return R | G | B;
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9f: a bank-0 write (RSDK/Scene/PS1/PS1Layers.cpp): counts the entries that now differ from the CLUTs uploaded at
+// the draw phase's start, so the draws after it take CLUTs of the palette as it is (CutsceneHBH: each Heavy's colours)
+void PS1PaletteWrite(uint8 index, uint16 value);
+#endif
 inline void SetPaletteEntry(uint8 bankID, uint8 index, uint32 color)
 {
-    fullPalette[bankID][index] = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
+    uint16 value = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
+#if RETRO_PLATFORM == RETRO_PS1
+    if (!bankID)
+        PS1PaletteWrite(index, value);
+#endif
+    fullPalette[bankID][index] = value;
 }
 
 inline void SetPaletteMask(uint32 color)

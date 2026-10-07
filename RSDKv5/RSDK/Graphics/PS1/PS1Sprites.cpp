@@ -378,7 +378,7 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
 #define PS1_SPRITE_CLUT_SCRATCH 318 // two spare sprite CLUT slots (318, 319: row 511, x 256 / 272) for other banks
 
 // The frame's CLUT when its top line uses palette bank `bank` != 0 (SetActivePalette: the PC draws each line with its
-// bank as it is now): the same palette indices from that bank, uploaded in the chain right before the draw (an 8-bit
+// bank as it is now), or bank 0 when a palette write in this draw phase changed it (9f): the same palette indices from that bank, uploaded in the chain right before the draw (an 8-bit
 // frame's 256 entries into the bank's own row 240 + bank; a 4-bit frame's 16 into a spare slot, alternating)
 uint32 PS1BankClut(uint16 attr, int32 bank)
 {
@@ -389,6 +389,8 @@ uint32 PS1BankClut(uint16 attr, int32 bank)
         s_row[0] = 0;
         for (int32 i = 1; i < 256; ++i) s_row[i] = PS1ClutColour(fullPalette[bank][i]);
         PS1UploadClut(s_row, 256, 0, (int16)(240 + bank));
+        if (!bank)
+            PS1PaletteRow0Swapped(); // 9f: restored when the palette is (PS1PaletteWrite) or at the next frame start
         return (uint32)(240 + bank) << 6;
     }
     const PS1AtlasClut *ac = PS1AtlasCluts();
@@ -506,7 +508,8 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         w = b - a, h = d - c, tw = (w + m) >> shift;
         g_ps1SpriteBigClips = g_ps1SpriteBigClips + 1;
     }
-    if (int32 bank = PS1LineBank(y)) {
+    // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours)
+    if (int32 bank = PS1LineBank(y); bank || g_ps1PalDiffs) {
         clut = PS1BankClut(frame->ps1Attr, bank);
         if (!clut)
             return;
@@ -560,7 +563,8 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
-    if (int32 bank = PS1LineBank(y)) {
+    // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours)
+    if (int32 bank = PS1LineBank(y); bank || g_ps1PalDiffs) {
         clut = PS1BankClut(frame->ps1Attr, bank);
         if (!clut)
             return;

@@ -37,6 +37,7 @@ volatile uint32 g_ps1RotoFlat       = 0; // 7b.6: rotozoom layers drawn unscaled
 volatile uint32 g_ps1RotoTodo       = 0; // rotozoom draws not done: lines on several palette banks, a region too big (total)
 volatile uint32 g_ps1RotoHbl        = 0; // hblanks spent in them (this frame)
 volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
+volatile int32 g_ps1PalDiffs        = 0;  // 9f: bank-0 entries differing from the CLUTs uploaded this frame (PS1PaletteWrite)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
 volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles a frame): scan, gather, sprites, quads
@@ -715,6 +716,8 @@ void PS1ClutUploadAll()
 // chained at the frame start takes the full set then, built from the same copy and faded with the rest.
 #define PS1_CLUT_MASKS 128 // CLUTs whose palette buckets are known (more: always uploaded)
 uint16 s_palRaw[256];      // bank 0 as the CLUTs in VRAM show it (RGB565)
+bool s_palRow0Swapped = false; // 9f: row 240 holds a per-draw copy (PS1BankClut, bank 0) until restored
+bool s_clutRow0Full    = false; // 9f: the next frame start uploads row 240 whole
 uint16 s_pal16[256];       // the same as PS1 colours; [0] = 0 (transparent)
 uint32 s_clutBuckets[PS1_CLUT_MASKS][2]; // per CLUT (tiles, then atlas): bit b of word w = an index in [128w + 4b, + 4) (3.3j)
 const void *s_clutSetTiles = NULL, *s_clutSetAtlas = NULL;
@@ -761,6 +764,11 @@ inline void PS1ClutRowFrom(uint16 *row, const uint8 *map)
 // The frame start's CLUTs: every one (full) or those whose entries changed
 void PS1ClutUploadChanged()
 {
+    g_ps1PalDiffs = 0; // s_palRaw follows bank 0 again below (index 0, always transparent, is not counted)
+    if (s_palRow0Swapped) { // a per-draw copy left in row 240 (9f): all of it again, from the copy updated below
+        s_palRow0Swapped = false;
+        s_clutRow0Full   = true;
+    }
     const PS1TileClut *cl  = PS1TileCluts();
     const PS1AtlasClut *ac = PS1AtlasCluts();
     int32 nt = cl ? PS1TileClutCount() : 0, na = ac ? PS1AtlasClutCount() : 0;
@@ -774,6 +782,7 @@ void PS1ClutUploadChanged()
         PS1ClutRow(s_pal16, 256, 0, 240);
         for (int32 c = 0; c < na; ++c) PS1ClutRowFrom(row, ac[c].map), PS1ClutRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
         s_clutHeadFull       = true;
+        s_clutRow0Full       = false; // (row 240 just went up whole)
         g_ps1ClutFullUploads = g_ps1ClutFullUploads + 1;
         return;
     }
@@ -800,8 +809,11 @@ void PS1ClutUploadChanged()
             hi = i;
         }
     }
-    if (!(changed[0] | changed[1]))
+    if (!(changed[0] | changed[1])) {
+        if (s_clutRow0Full)
+            PS1ClutRow(s_pal16, 256, 0, 240), s_clutRow0Full = false;
         return;
+    }
     int32 rows = 1;
     for (int32 c = 0; c < nt + na; ++c) {
         if (c < PS1_CLUT_MASKS && !((s_clutBuckets[c][0] & changed[0]) | (s_clutBuckets[c][1] & changed[1])))
@@ -823,9 +835,30 @@ void PS1ClutUploadChanged()
         ++rows;
     }
     lo &= ~1, hi |= 1; // an even count of halfwords (two per word)
+    if (s_clutRow0Full)
+        lo = 0, hi = 255, s_clutRow0Full = false;
     PS1ClutRow(s_pal16 + lo, hi - lo + 1, (int16_t)lo, 240);
     g_ps1ClutRowUploads = g_ps1ClutRowUploads + rows;
 }
+
+// 9f: SetPaletteEntry on bank 0 (RSDK/Graphics/Palette.hpp). The PC applies a palette write to the draws after it;
+// here the CLUTs come from the palette at the draw phase's start (PS1ClutUploadChanged). While some entries differ from
+// those (CutsceneHBH sets each Heavy's colours around its draw, then restores them), sprites take a per-draw copy
+// (PS1BankClut with bank 0, uploaded in the chain right before them); when the last difference is undone, a copy left in
+// row 240 (an 8-bit frame's) goes back to the uploaded colours, in the chain, before any later draw
+void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
+{
+    uint16 old = fullPalette[0][index];
+    if (!index || old == value)
+        return;
+    int32 was = old != s_palRaw[index], is = value != s_palRaw[index];
+    g_ps1PalDiffs = g_ps1PalDiffs + is - was;
+    if (!g_ps1PalDiffs && s_palRow0Swapped) {
+        s_palRow0Swapped = false;
+        PS1ClutRow(s_pal16, 256, 0, 240);
+    }
+}
+void RSDK::PS1PaletteRow0Swapped() { s_palRow0Swapped = true; }
 
 // A FillScreen in a frame whose head uploaded only the changed CLUTs: every CLUT, from the same copy, linked in at the
 // frame's slot (before the draws) and recorded, so the fade rewrites them with the rest
