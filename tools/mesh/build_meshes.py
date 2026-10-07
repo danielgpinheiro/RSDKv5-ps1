@@ -69,7 +69,9 @@ LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.
 NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
 # docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
 # faces); the decorations are open (palm leaves, wings: the PC shows both sides), as SSZ / TMZ until checked
-CULLED = {p for p in MESHES if p.startswith('Special/')} | {'Global/SpecialRing.bin'}
+# 9f: Pillar1 is closed too (every edge shared by two faces, opposite ways: tools/mesh check); the other decorations
+# have open parts (leaves, fins, petals)
+CULLED = {p for p in MESHES if p.startswith('Special/')} | {'Global/SpecialRing.bin', 'Decoration/Pillar1.bin'}
 
 
 def read_mdl(path):

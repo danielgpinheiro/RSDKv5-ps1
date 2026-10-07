@@ -40,7 +40,7 @@ static inline int32 PS1BitLen(uint32 v)
 // into its depth bucket of an ordering table in the arena (psyqo's layout: 0-word nodes, far bucket first, a primitive
 // after its bucket's node, the newest first) instead of keys, a bucket sort and a second pass that read every face again
 struct PS1S3DOt {
-    uint32 *ot;           // the bucket nodes [0, PS1_S3D_BUCKETS): bucket b's primitives draw before bucket b - 1's
+    uint32 *ot;           // the bucket nodes [0, nb): bucket b's primitives draw before bucket b - 1's
     uint32 kmin, kmax;    // the frame's key range (the models' bounding spheres); keys clamped into it
     int32 shift;          // key - kmin >> shift: the bucket
     uint32 *w, *wend;     // the reserved primitive words (chunks of PS1_S3D_CHUNK primitives)
@@ -267,19 +267,23 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     uint32 flatBgr, semi;
     if (!PS1Face3DBegin(entity->inkEffect, entity->alpha, flatColour, &flatBgr, &semi))
         return;
-    // the ordering table: bucket b's node links to b - 1's, bucket 0's to the end node (a GP0 NOP: the list's last node)
-    uint32 *ot = (uint32 *)PS1ChainAlloc(PS1_S3D_BUCKETS + 2);
+    // the ordering table: bucket b's node links to b - 1's, bucket 0's to the end node (a GP0 NOP: the list's last node);
+    // about one bucket per two faces, 16 to PS1_S3D_BUCKETS (a decoration's own draw: a 93-face tree)
+    int32 nbBits = PS1BitLen(totalF >> 1);
+    nbBits       = nbBits < 4 ? 4 : nbBits > 8 ? 8 : nbBits;
+    const int32 nb = 1 << nbBits;
+    uint32 *ot = (uint32 *)PS1ChainAlloc(nb + 2);
     if (!ot) {
         PS1Face3DEnd();
         return;
     }
-    uint32 *otEnd = ot + PS1_S3D_BUCKETS;
+    uint32 *otEnd = ot + nb;
     ot[0]         = (uint32)(uintptr_t)otEnd & 0xFFFFFF;
-    for (int32 b = 1; b < PS1_S3D_BUCKETS; ++b) ot[b] = (uint32)(uintptr_t)(ot + b - 1) & 0xFFFFFF;
+    for (int32 b = 1; b < nb; ++b) ot[b] = (uint32)(uintptr_t)(ot + b - 1) & 0xFFFFFF;
     otEnd[1] = 0; // GP0 00h: NOP
     PS1S3DOt o;
     o.ot = ot, o.kmin = kmin, o.kmax = kmax, o.w = o.wend = otEnd + 2, o.drawn = o.culled = 0, o.full = false;
-    o.shift = PS1BitLen(kmax - kmin) - 8;
+    o.shift = PS1BitLen(kmax - kmin) - nbBits;
     o.shift = o.shift < 0 ? 0 : o.shift;
     o.flatBgr = flatBgr;
     int16 chunk[3 * 96];
@@ -366,7 +370,7 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     }
     PS1ChainAllocTrim((uint32_t *)o.w); // the last chunk's unused words back
     if (o.drawn)
-        PS1ChainLinkList((uint32_t *)(ot + PS1_S3D_BUCKETS - 1), (uint32_t *)otEnd, 1);
+        PS1ChainLinkList((uint32_t *)(ot + nb - 1), (uint32_t *)otEnd, 1);
     else
         PS1ChainAllocTrim((uint32_t *)ot); // nothing drawn: the table back too
     PS1Face3DEnd();
