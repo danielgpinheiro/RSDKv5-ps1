@@ -5,7 +5,7 @@
 break perfTick if g_ps1PerfFrames % 10 == 0 && g_ps1PerfFrames >= 300
 commands
 silent
-printf "F %u hbl=%u layers=%u roto=%u by=%u,%u,%u,%u,%u quads=%u sprites=%u chainWords=%u\n", g_ps1PerfFrames, g_ps1PerfLastHbl, RSDK::g_ps1LayerHbl, g_ps1RotoHbl, g_ps1LayerHblBy[0], g_ps1LayerHblBy[1], g_ps1LayerHblBy[2], g_ps1LayerHblBy[3], g_ps1LayerHblBy[4], g_ps1RotoQuads, *(unsigned *)&g_ps1SpriteDraws, g_ps1ChainLastWords
+printf "F %u hbl=%u roto=%u by=%u,%u,%u,%u,%u quads=%u sprites=%u chainWords=%u\n", g_ps1PerfFrames, g_ps1PerfLastHbl, g_ps1RotoHbl, g_ps1LayerHblBy[0], g_ps1LayerHblBy[1], g_ps1LayerHblBy[2], g_ps1LayerHblBy[3], g_ps1LayerHblBy[4], g_ps1RotoQuads, *(unsigned *)&g_ps1SpriteDraws, g_ps1ChainLastWords
 if g_ps1PerfFrames == 300
   set $f0 = g_ps1ProfFrames
   set $p0 = g_ps1ProfPhase[0]

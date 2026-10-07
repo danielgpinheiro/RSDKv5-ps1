@@ -71,6 +71,10 @@ SOLID_MIN = 16  # one-colour lines a layer needs for its table
 # page path), per folder: the layers' names. A layer qualifies when its map is 256x256 texels (the page repeats over the
 # plane) or its non-empty tiles fit one 256x256 block of a larger map (the page is that block, repeated with the map).
 ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island')}
+# 9e.2: folders whose tile images drawn flipped are packed away from a page's edge texels (u or v 0 / 240): a flipped
+# tile there would pass the page's edge (u - 1 or u + 16) and is split out of line (PS1Layers.cpp EmitFlipped). Holes
+# in the column instead; opt-in (other scenes' .ptl unchanged): D.A. Garden's Horizon has 57 flipped tiles
+EDGE_FREE_FLIPS = {'DAGarden'}
 
 
 class TileError(Exception):
@@ -272,13 +276,22 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     # per-line rows' images first was tried in 3.3b: it spread the FG tiles over more pages, a net loss)
     place = [None] * len(images)    # (col, row, depth, u, v)
     cur = [0, 0, 0]                 # column index, image row, halfword
+    flipped = set()
+    if folder in EDGE_FREE_FLIPS:
+        flipped = {tile_image[v & 0x3FF] for li, L in enumerate(layers) if li not in paged for v in L['tiles']
+                   if v != 0xFFFF and v & 0xC00 and (v & 0x3FF) < ntiles}
     for want in (8, 4):
-        for i in (i for i in range(len(images)) if depth[i] == want):
+        for i in sorted((i for i in range(len(images)) if depth[i] == want), key=lambda i: i in flipped):
             hw = TILE * want // 16  # 8 or 4 halfwords
-            if cur[2] + hw > V.COL_HW:
-                cur[1], cur[2] = cur[1] + 1, 0
-            if cur[1] == V.PAGE // TILE:
-                cur[0], cur[1], cur[2] = cur[0] + 1, 0, 0
+            while True:
+                if cur[2] + hw > V.COL_HW:
+                    cur[1], cur[2] = cur[1] + 1, 0
+                if cur[1] == V.PAGE // TILE:
+                    cur[0], cur[1], cur[2] = cur[0] + 1, 0, 0
+                u, v = cur[2] * 16 // want, cur[1] * TILE
+                if i not in flipped or want != 4 or (0 < u < V.PAGE - TILE and 0 < v < V.PAGE - TILE):
+                    break
+                cur[2] += hw  # an edge slot: left empty
             if cur[0] >= len(columns):
                 raise TileError('%s%s: out of tile columns' % (folder, scene_id))
             col, row = columns[cur[0]]

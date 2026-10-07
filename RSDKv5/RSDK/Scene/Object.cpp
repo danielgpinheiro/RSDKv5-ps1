@@ -402,11 +402,16 @@ bool s_camUnionOk = false;
 int32 s_camMinX, s_camMinY;
 // 7.4: one camera: ACTIVE_RBOUNDS slots (the UFO stages' rings and spheres: ~400) decided in the scan with stock's test
 bool s_camOne = false;
-int32 s_camX, s_camY, s_camOX;
+int32 s_camX, s_camY, s_camOX, s_camOY;
 uint32 s_camW, s_camH; // max - min of the union, modulo 2^32
 inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
 void PS1CameraUnion()
 {
+    // 9e.2: recomputed after every update callback (one may move the camera); one camera that did not change keeps the
+    // union (D.A. Garden: ~90 callbacks a frame, ~12 hblanks)
+    if (s_camOne && s_camUnionOk && cameraCount == 1 && cameras[0].position.x == s_camX && cameras[0].position.y == s_camY
+        && cameras[0].offset.x == s_camOX && cameras[0].offset.y == s_camOY)
+        return;
     s_camUnionOk = cameraCount > 0;
     int32 minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (int32 s = 0; s < cameraCount; ++s) {
@@ -431,7 +436,7 @@ void PS1CameraUnion()
     s_camW = (uint32)maxX - (uint32)minX, s_camH = (uint32)maxY - (uint32)minY;
     s_camOne = cameraCount == 1;
     if (s_camOne)
-        s_camX = cameras[0].position.x, s_camY = cameras[0].position.y, s_camOX = cameras[0].offset.x;
+        s_camX = cameras[0].position.x, s_camY = cameras[0].position.y, s_camOX = cameras[0].offset.x, s_camOY = cameras[0].offset.y;
 }
 
 // 3.0f: a bit per slot that may have inRange or onScreen set. The update pass marks each slot it leaves in range, the
