@@ -46,7 +46,8 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
           's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o',
                                                              'ps1/gte3d.o'],
                   'PS1Scene3DLink'),
-          'deform': ({'UFO_Plasma', 'Smog'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Deform.o'], 'PS1DeformLink')}  # 7.5
+          'deform': ({'UFO_Plasma', 'Smog'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Deform.o'], 'PS1DeformLink'),  # 7.5
+          'rotopage': ({'TitleBG'}, ['RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o'], 'PS1RotoPageLink')}  # 9e: the title's paged layers
 
 
 # docs/32 7b: folders whose acts get an overlay each (<folder>_<scene id>.bin): an act's overlay leaves out the folder's

@@ -448,10 +448,43 @@ void RSDK::RemoveStorageEntry(void **dataPtr)
 // outside the layer / flat drawing calls)
 #define PS1_DEFRAG_ORDER ((uint16 *)0x1F800000)
 static_assert(STORAGE_ENTRY_COUNT * sizeof(uint16) <= 1024, "the entry order must fit the scratchpad");
+// 9e: an entry whose owner variable lies inside a dataset's pool but in none of its live blocks is garbage, although the
+// owner's bytes still point at it: a released entity arena (RemoveStorageEntry) or a scene's static variables (their
+// pointer set to NULL by ClearStageObjects) keep their contents. Stock clears the entity list and reallocates STG over
+// the old statics every scene; on the PS1 that memory stays until a compaction overwrites it, so the strings their
+// Strings own (Localization's, reloaded every scene; the menus' labels) filled DATASET_STR (Title -> Menu -> Extras ->
+// D.A. Garden). Owners outside the pools (the engine's and the game's variables, STG's tail blocks) stay live.
+static bool PS1StorageOwnerLive(const void *owner)
+{
+    uintptr_t p = (uintptr_t)owner;
+    for (int32 ds = 0; ds < DATASET_MAX; ++ds) {
+        const DataStorage *d = &dataStorage[ds];
+        uintptr_t lo         = (uintptr_t)d->memoryTable;
+        if (!d->memoryTable || p < lo || p >= lo + d->storageLimit)
+            continue;
+        for (uint32 k = 0; k < d->entryCount; ++k) {
+            uint32 *b = d->storageEntries[k];
+            if (d->dataEntries[k] && *d->dataEntries[k] == b && p >= (uintptr_t)b
+                && p < (uintptr_t)b + HEADER(b, HEADER_DATA_LENGTH))
+                return true;
+        }
+        return false;
+    }
+    return true;
+}
+
+volatile uint32 g_ps1StorageDeadOwners = 0; // entries dropped by that rule (total)
+
 void RSDK::DefragmentAndGarbageCollectStorage(StorageDataSets set)
 {
     DataStorage *st = &dataStorage[set];
     ++st->clearCount;
+    for (uint32 e = 0; e < st->entryCount; ++e) {
+        if (st->dataEntries[e] && !PS1StorageOwnerLive(st->dataEntries[e])) {
+            st->dataEntries[e]     = NULL;
+            g_ps1StorageDeadOwners = g_ps1StorageDeadOwners + 1;
+        }
+    }
     GarbageCollectStorage(set);
 
     uint16 *order = PS1_DEFRAG_ORDER;

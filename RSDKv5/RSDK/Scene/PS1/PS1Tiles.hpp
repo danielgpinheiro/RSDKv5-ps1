@@ -36,7 +36,10 @@ uint16 PS1TileClutCount();
 // scene has none for it (or a tile on its lines changed: SetTile on the layer, DrawAniTile on one of those tiles).
 // The pointer is into the STG block: use it within one draw.
 const uint8 *PS1TileSolidLines(int32 layer, int32 heightPx);
-void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer)
+void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer); also turns the layer's roto page off
+// 9e: a rotozoom layer drawn from one 256x256 page (tools/gfx/build_tiles.py ROTO_PAGES): its image (u = v = 0) and the
+// page's origin in the layer's map (texels; the page repeats with the map). False: none (or SetTile turned it off)
+bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy);
 // The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
 uint16 PS1TileHFlipImage(uint16 tile);
 
@@ -49,4 +52,5 @@ extern volatile uint32 g_ps1AniTileMisses; // DrawAniTile calls the PS1 cannot d
 extern volatile uint32 g_ps1SolidLines;    // one-colour lines in the scene's tables (as loaded)
 extern volatile uint32 g_ps1SolidDrops;    // tables switched off by a SetTile / DrawAniTile on their tiles
 extern volatile uint32 g_ps1HFlipDrops;    // H-flipped copies switched off by a DrawAniTile on their tile
+extern volatile uint32 g_ps1RotoPageDrops; // roto pages switched off by a SetTile on their layer
 }

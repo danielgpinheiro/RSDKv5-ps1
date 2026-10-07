@@ -41,6 +41,11 @@ u = v = 0, the page's texpage, CLUT = the last CLUT: the 15 most used colours; t
 of them). lodFirst 0: none. Then (7.5) u16 patternImage (0: none): a UFO stage's "3D Floor" / "3D Roof" layer (16x16 tiles)
 pre-rendered as one 256x256 8-bit texture page (the Dreamcast port's floor / roof texture; blocks after the minimap's),
 drawn repeated; its image: u = v = 0, the page, CLUT 0xFFFF (the palette bank's).
+PTL3 (docs/32 9e) = PTL2 + after the H-flip pairs: u16 rotoCount, u16 0, then rotoCount x (u8 layer, u8 0, u16 image,
+u16 ox, u16 oy): the ROTO_PAGES layers, each pre-rendered as one 256x256 page (its image: u = v = 0, 4-bit on its own
+CLUT or 8-bit on the bank's) holding the map's texels [ox, ox + 256) x [oy, oy + 256) (the rest of the map empty, or
+the map is the page); their tiles get no images (unless another layer shows them), no one-colour table. Blocks after the
+pattern page's. A scene without such layers stays PTL2 (byte-identical).
 
 Usage: build_tiles.py DATA_DIR OUT_DIR FOLDER SCENE_ID... [--report]
 """
@@ -62,6 +67,10 @@ LOD_COLUMNS = TILE_COLUMNS + [(9, 1), (8, 1), (7, 1), (6, 1)]  # 7.4: a UFO floo
 
 
 SOLID_MIN = 16  # one-colour lines a layer needs for its table
+# 9e (docs/32): rotozoom layers drawn from one pre-rendered 256x256 texture page instead of tile quads (PS1Roto.cpp's
+# page path), per folder: the layers' names. A layer qualifies when its map is 256x256 texels (the page repeats over the
+# plane) or its non-empty tiles fit one 256x256 block of a larger map (the page is that block, repeated with the map).
+ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island')}
 
 
 class TileError(Exception):
@@ -188,7 +197,26 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     if gif.shape[1] != TILE or gif.shape[0] % TILE:
         raise TileError('%s: 16x16Tiles.gif is %s' % (folder, gif.shape))
     ntiles = gif.shape[0] // TILE
-    used = sorted(t for t in scene_tiles(data, folder, scene_id) if t < ntiles)
+    layers = scene_layers(data, folder, scene_id)
+    # 9e: the rotozoom layers drawn from a page (their tiles need no images unless another layer shows them)
+    paged = {}                      # layer index -> (ox, oy) texels of the page's origin in the map
+    for li, L in enumerate(layers):
+        if L['name'] not in ROTO_PAGES.get(folder, ()) or L['type'] != 2:
+            continue
+        xs, ys = L['xsize'], L['ysize']
+        if xs * TILE < V.PAGE or ys * TILE < V.PAGE or xs & (xs - 1) or ys & (ys - 1):
+            raise TileError('%s%s: %s is %dx%d tiles (a page needs a power-of-two map of >= 16x16)' % (folder, scene_id, L['name'], xs, ys))
+        ne = [(k % xs, k // xs) for k, v in enumerate(L['tiles']) if v != 0xFFFF]
+        bx0, by0 = (min(x for x, _ in ne), min(y for _, y in ne)) if ne else (0, 0)
+        bx1, by1 = (max(x for x, _ in ne), max(y for _, y in ne)) if ne else (0, 0)
+        if xs * TILE == V.PAGE:
+            bx0, bx1 = 0, 15
+        if ys * TILE == V.PAGE:
+            by0, by1 = 0, 15
+        if bx1 - bx0 >= 16 or by1 - by0 >= 16:
+            raise TileError('%s%s: %s: its tiles span %dx%d (more than one page)' % (folder, scene_id, L['name'], bx1 - bx0 + 1, by1 - by0 + 1))
+        paged[li] = (bx0 * TILE, by0 * TILE)
+    used = sorted({t & 0x3FF for li, L in enumerate(layers) if li not in paged for t in L['tiles'] if t != 0xFFFF} & set(range(ntiles)))
 
     images, index = [], {}          # 16x16 uint8 arrays, bytes -> image number
 
@@ -202,9 +230,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     tile_image = [0xFFFF] * 1024
     for t in used:
         tile_image[t] = image_of(gif[t * TILE:(t + 1) * TILE])
-    layers = scene_layers(data, folder, scene_id)
     hflip = {}                      # tile -> image of the tile H-flipped (per-line rows only)
-    for t in sorted(hflip_tiles(layers)):
+    for t in sorted(hflip_tiles([L for li, L in enumerate(layers) if li not in paged])):
         if t < ntiles:
             hflip[t] = image_of(np.ascontiguousarray(gif[t * TILE:(t + 1) * TILE, ::-1]))
     sheets = []                     # (name, cellsW, cellsH, firstCell)
@@ -305,9 +332,9 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
 
     # one-colour lines, from the GIF; checked again through the stored images
     solid_tabs, solid_tiles, solid_count = [], set(), 0
-    for L in layers:
+    for li, L in enumerate(layers):
         c, ts = solid_lines(L, lambda t: gif[t * TILE:(t + 1) * TILE])
-        if np.count_nonzero(c) >= SOLID_MIN:
+        if li not in paged and np.count_nonzero(c) >= SOLID_MIN:
             back, _ = solid_lines(L, lambda t: images[tile_image[t]])
             if not np.array_equal(back, c):
                 raise TileError('%s%s: layer %s: one-colour lines differ through the stored images' % (folder, scene_id, L['name']))
@@ -398,6 +425,65 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         pattern_page = (col, row)
         pattern_image = len(images) + len(lod_pages)
 
+    # 9e: the paged rotozoom layers (ROTO_PAGES): each a 256x256 page (4-bit on its own CLUT when <= 15 colours, else
+    # 8-bit on the bank's CLUT) in the columns left after the tile images, the minimap and the pattern page
+    roto = []                       # (layer, image, ox, oy, (col, row), depth)
+    taken = set(used_cols) | set(lod_pages) | ({pattern_page, (pattern_page[0] + 1, pattern_page[1])} if pattern_page else set())
+    for li in sorted(paged):
+        L, (ox, oy) = layers[li], paged[li]
+        pg = np.zeros((V.PAGE, V.PAGE), np.uint8)
+        for ty in range(16):
+            for tx in range(16):
+                v = L['tiles'][(oy // TILE + ty) * L['xsize'] + ox // TILE + tx]
+                if v == 0xFFFF or (v & 0x3FF) >= ntiles:
+                    continue
+                px = gif[(v & 0x3FF) * TILE:((v & 0x3FF) + 1) * TILE]
+                if v & 0x400:
+                    px = px[:, ::-1]
+                if v & 0x800:
+                    px = px[::-1, :]
+                pg[ty * TILE:(ty + 1) * TILE, tx * TILE:(tx + 1) * TILE] = px
+        cs = sorted(set(np.unique(pg).tolist()) - {0})
+        d = 4 if len(cs) <= 15 else 8
+        cands = [(c, r) for (c, r) in LOD_COLUMNS if (c, r) not in taken and (d == 4 or ((c + 1, r) not in taken and c + 1 <= 15))]
+        if not cands:
+            raise TileError('%s%s: no free column%s for the %s page' % (folder, scene_id, '' if d == 4 else 's', L['name']))
+        col, row = cands[0]
+        X0, Y0 = col * V.COL_HW, row * V.PAGE
+        if d == 4:
+            if len(clut_maps) >= len(V.TILE_CLUT_SLOTS):
+                raise TileError('%s%s: no CLUT slot for the %s page' % (folder, scene_id, L['name']))
+            clut_maps.append([0] + cs + [0] * (15 - len(cs)))
+            lut = np.zeros(256, np.uint16)
+            for n, p in enumerate(cs):
+                lut[p] = n + 1
+            q = lut[pg]
+            vram[Y0:Y0 + V.PAGE, X0:X0 + 64] = q[:, 0::4] | (q[:, 1::4] << 4) | (q[:, 2::4] << 8) | (q[:, 3::4] << 12)
+            w = vram[Y0:Y0 + V.PAGE, X0:X0 + 64].astype(np.int32)
+            nib = np.stack([(w >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(V.PAGE, V.PAGE)
+            back = np.array(clut_maps[-1], np.int32)[nib]
+            taken |= {(col, row)}
+            img = struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[len(clut_maps) - 1]))
+        else:
+            vram[Y0:Y0 + V.PAGE, X0:X0 + 128] = pg[:, 0::2].astype(np.uint16) | (pg[:, 1::2].astype(np.uint16) << 8)
+            w = vram[Y0:Y0 + V.PAGE, X0:X0 + 128].astype(np.int32)
+            back = np.stack([w & 0xFF, w >> 8], -1).reshape(V.PAGE, V.PAGE)
+            taken |= {(col, row), (col + 1, row)}
+            img = struct.pack('<BBHH', 0, 0, V.texpage(col, row, 8), 0xFFFF)
+        if not np.array_equal(back, pg.astype(np.int32)):
+            raise TileError('%s%s: the %s page does not decode back' % (folder, scene_id, L['name']))
+        # the page against the map itself: every texel of the map (one period) through the page, empty outside it
+        mw, mh = L['xsize'] * TILE, L['ysize'] * TILE
+        for (mx, my) in ((ox + 7, oy + 250), (ox + 255, oy), (ox, oy + 255), ((ox + 300) % mw, (oy + 300) % mh)):
+            v = L['tiles'][(my // TILE) * L['xsize'] + mx // TILE]
+            inside = ox <= mx < ox + V.PAGE and oy <= my < oy + V.PAGE or (mw == V.PAGE and mh == V.PAGE)
+            want = 0 if v == 0xFFFF else int(gif[(v & 0x3FF) * TILE + ((15 - my % TILE) if v & 0x800 else my % TILE),
+                                                 (15 - mx % TILE) if v & 0x400 else mx % TILE])
+            got = int(back[(my - oy) % V.PAGE, (mx - ox) % V.PAGE]) if inside else 0
+            if want != got:
+                raise TileError('%s%s: the %s page differs from the map at %d,%d' % (folder, scene_id, L['name'], mx, my))
+        roto.append((li, img, ox, oy, (col, row), d))
+
     blocks = []
     for (col, row) in used_cols:
         n = lines.get((col, row), 0)
@@ -407,6 +493,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, V.PAGE))
     if pattern_page:
         blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 128, V.PAGE))
+    for (_, _, _, _, (col, row), d) in roto:
+        blocks.append((col * V.COL_HW, row * V.PAGE, 64 if d == 4 else 128, V.PAGE))
     out = bytearray()
     img_tab = bytearray()
     for i in range(len(images)):
@@ -417,6 +505,13 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         img_tab += struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[lod_clut]))
     if pattern_page:
         img_tab += struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 8), 0xFFFF)
+    roto_first = len(images) + len(lod_pages) + (1 if pattern_page else 0)
+    roto_tab = b''
+    for k, (li, img, ox, oy, _, _) in enumerate(roto):
+        img_tab += img
+        roto_tab += struct.pack('<BBHHH', li, 0, roto_first + k, ox, oy)
+    if roto:
+        roto_tab = struct.pack('<HH', len(roto), 0) + roto_tab
     clut_tab = b''.join(struct.pack('<HH', *V.TILE_CLUT_SLOTS[g]) + bytes(m) for g, m in enumerate(clut_maps))
     sheet_tab = b''.join(struct.pack('<32sHHH', n.encode()[:31], w, h, f) for n, w, h, f in sheets)
     cell_tab = struct.pack('<%dH' % len(cells), *cells)
@@ -425,12 +520,12 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         blk_tab += struct.pack('<HHHHI', x, y, w, h, len(pixels))
         pixels += vram[y:y + h, x:x + w].astype('<u2').tobytes()
     head = (32 + 2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)
-            + len(blk_tab))
+            + len(roto_tab) + len(blk_tab))
     data_off = (head + 2047) // 2048 * 2048
-    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL2', len(images) + len(lod_pages) + (1 if pattern_page else 0), len(clut_maps),
+    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL3' if roto else b'PTL2', roto_first + len(roto), len(clut_maps),
                        len(sheets), len(cells), len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
                        lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0, pattern_image)
-    out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + blk_tab
+    out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + roto_tab + blk_tab
     out += bytes(data_off - len(out)) + pixels
 
     n4 = sum(1 for d in depth if d == 4)
@@ -441,7 +536,9 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                   solid_count, sum(1 for c in solid_tabs if c is not None), len(hflip), len(out),
                   2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab),
                   '; minimap %dx%d pages (%s), CLUT %d' % (lod_dims[0], lod_dims[1], ' '.join('%d/%d' % c for c in lod_pages), lod_clut)
-                  if lod_pages else '') + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else ''))
+                  if lod_pages else '') + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else '')
+              + ''.join('; %s page %d-bit %d/%d at texel %d,%d' % (layers[li]['name'], d, c[0], c[1], ox, oy)
+                        for li, _, ox, oy, c, d in roto))
     return bytes(out), report, vram, blocks
 
 

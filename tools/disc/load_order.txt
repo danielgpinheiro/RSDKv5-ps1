@@ -32,7 +32,6 @@ Data/Stages/Title/Scene1.bin
 Data/Stages/Title/PS1Local/4DAE3EB4.txt
 Data/Stages/Title/PS1Local/9907A488.bin
 Data/Stages/Title/PS1Local/6042CC7E.bin
-Data/Stages/Title/PS1Local/6676AC92.bin
 Data/Stages/Title/PS1Local/5DCFFAB9.bin
 Data/Stages/Title/PS1Local/2CFB90F9.bin
 Data/Stages/Menu/PS1Local.idx

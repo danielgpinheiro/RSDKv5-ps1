@@ -241,6 +241,9 @@ void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);
 void PS1DrawLayerHScroll(TileLayer *layer);
 void PS1DrawLayerBasic(TileLayer *layer); // 4.1c: DrawLayerBasic (one scroll position for every line, palette bank 0)
 void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)
+void PS1RotoTileDraw(TileLayer *layer, uint8 bank, uint32 t0); // (its tile path; 9e: paged layers are drawn from their page)
+// 9e: a paged layer's draw (PS1RotoPage.cpp, in the overlays of the folders with paged layers; NULL elsewhere)
+extern bool (*g_ps1RotoPageDraw)(TileLayer *layer, const PS1TileImage *img, int32 ox, int32 oy, uint8 bank, uint32 t0);
 extern "C" {
 extern volatile uint32 g_ps1LayerBands, g_ps1LayerPieces, g_ps1LayerMisses, g_ps1LayerHbl, g_ps1LayerSolidRuns;
 }

@@ -19,6 +19,7 @@ Usage: layer_reference.py CAPTURE_DIR FOLDER SCENE_ID [--png OUT_PREFIX]
 """
 import glob, os, re, struct, sys
 import numpy as np
+from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
@@ -38,10 +39,12 @@ def tile_images(ptl):
     """Each image of a .ptl as 16x16 palette indices, decoded from its VRAM blocks through its CLUT map."""
     d = open(ptl, 'rb').read()
     magic, ni, nc, ns, ncell, nb, solid, doff, _, nhf = struct.unpack_from('<4sHHHHHHIIH', d, 0)
-    assert magic == b'PTL2', magic
+    assert magic in (b'PTL2', b'PTL3'), magic
     vram = np.zeros((512, 1024), np.uint16)
-    # the one-colour tables and the H-flip pairs sit before the blocks
+    # the one-colour tables and the H-flip pairs sit before the blocks (PTL3: then the rotozoom pages, 9e)
     boff = 32 + 2048 + ni * 6 + nc * 20 + ns * 38 + ncell * 2 + solid + 4 * nhf
+    if magic == b'PTL3':
+        boff += 4 + 8 * struct.unpack_from('<H', d, boff)[0]
     for i in range(nb):
         x, y, w, h, o = struct.unpack_from('<HHHHI', d, boff + 12 * i)
         vram[y:y + h, x:x + w] = np.frombuffer(d, '<u2', w * h, doff + o).reshape(h, w)
@@ -252,6 +255,7 @@ def render(cap, folder, scene_id):
     sc = F.read_stageconfig(os.path.join(DATA, 'Stages', folder, 'StageConfig.bin'))
     layers = F.read_scene(os.path.join(DATA, 'Stages', folder, 'Scene%s.bin' % scene_id), g['objects'] + sc['objects'])['layers']
     imgs = tile_images(os.path.join(HERE, '..', '..', 'build', 'gfx', folder, 'Scene%s.ptl' % scene_id))
+    gif = np.array(Image.open(os.path.join(DATA, 'Stages', folder, '16x16Tiles.gif')))
     tt = os.path.join(cap, 'tiletable.bin')  # none when the scene has no tile images loaded
     table = struct.unpack('<1024H', open(tt, 'rb').read()) if os.path.exists(tt) else (0xFFFF,) * 1024
     pal = np.frombuffer(open(os.path.join(cap, 'pal.bin'), 'rb').read(), '<u2')
@@ -402,14 +406,15 @@ def render(cap, folder, scene_id):
                     if tt == 0xFFFF:
                         continue
                     img = table[tt & 0x3FF]
-                    if img == 0xFFFF:
+                    # 9e: a layer drawn from its page has no tile images: the tileset's own pixels (the PC's)
+                    if img == 0xFFFF and (tt & 0x3FF) * 16 >= gif.shape[0]:
                         continue
                     tx, tyy = (X >> 16) & 15, (Y >> 16) & 15
                     if tt & 0x400:
                         tx = 15 - tx
                     if tt & 0x800:
                         tyy = 15 - tyy
-                    p = int(imgs[img][tyy, tx])
+                    p = int(imgs[img][tyy, tx]) if img != 0xFFFF else int(gif[(tt & 0x3FF) * 16 + tyy, tx])
                     if p:
                         out[y, sx] = colour[p]
                         mask[y, sx] = 2

@@ -114,6 +114,9 @@ inline bool PS1RotoSpan(const PS1RotoEdge *E, int32 ya, int32 yb, int32 &xmin, i
 }
 } // namespace
 
+// 9e: the page path (PS1RotoPage.cpp), linked into the overlays of the folders that have paged layers (gen_overlays EXTRAS)
+bool (*RSDK::g_ps1RotoPageDraw)(TileLayer *layer, const PS1TileImage *img, int32 ox, int32 oy, uint8 bank, uint32 t0) = NULL;
+
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer)
 {
     if ((uint32)scanlines[0].deform.x == SCANLINE_MAJOR_MAGIC_3DTILES) { // 7.4: a camera for 3D tiles, not lines
@@ -147,6 +150,21 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
         }
     uint8 bank = gfxLineBuffer[y1];
 
+    PS1TileImage pageImg;
+    int32 pageOx, pageOy;
+    if (g_ps1RotoPageDraw && PS1TileRotoPage((int32)(layer - tileLayers), &pageImg, &pageOx, &pageOy)
+        && g_ps1RotoPageDraw(layer, &pageImg, pageOx, pageOy, bank, t0))
+        return;
+
+    PS1RotoTileDraw(layer, bank, t0);
+}
+
+// The tile path (4.1d): one quad per tile the lines see
+__attribute__((noinline, optimize("O2"))) void RSDK::PS1RotoTileDraw(TileLayer *layer, uint8 bank, uint32 t0)
+{
+    int32 x1 = currentScreen->clipBound_X1, y1 = currentScreen->clipBound_Y1;
+    int32 x2 = currentScreen->clipBound_X2, y2 = currentScreen->clipBound_Y2;
+    int32 n = y2 - y1, xw = x2 - x1;
     // R: the middle line's direction, narrowed to 11 bits
     const ScanlineInfo *sl = &scanlines[y1];
     int32 rx = sl[n >> 1].deform.x, ry = sl[n >> 1].deform.y;
@@ -323,4 +341,5 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
     uint32 dt       = PS1HblanksSince(t0);
     g_ps1RotoHbl    = g_ps1RotoHbl + dt;
     g_ps1LayerHbl   = g_ps1LayerHbl + dt;
+    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
 }

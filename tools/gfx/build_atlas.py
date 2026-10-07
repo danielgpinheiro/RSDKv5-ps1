@@ -68,6 +68,9 @@ NEVER_HALF_ANIMS = {('UI/TextEN.bin', 10)}
 # blocky): never halved, in any plan step (the text fallback too); ~12 KB in the title card's group, ~3 KB resident
 ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), ('Global/TitleCard.bin', 3),
                      ('Global/HUD.bin', 0), ('Global/HUD.bin', 1)}
+# 9e: the title's rotozoom pages take 3 columns: of the logo (full since 9c: the user saw its letters blocky) only the
+# ribbon's unfurl (animation 1: red / white stripes and a star, no letters; played once as the logo enters) may be halved
+ALWAYS_FULL_ANIMS |= {('Title/Logo.bin', a) for a in (0, 2, 3, 4, 5, 6, 7, 8)}
 # 9c (MSZ2's title card: the SONIC MANIA strip read garbled): their text strips (<= TEXT_KEEP_H) stay full in the text
 # fallback too
 ALWAYS_TEXT_FILES = {'Global/TitleCard.bin', 'Global/HUD.bin'}
@@ -432,7 +435,8 @@ HALF_PRESENT = {'Global/TitleCard.bin', 'Global/SignPost.bin', 'Global/EggPrison
                 'UI/UIElements.bin', 'UI/SmallFont.bin', 'Title/PlusLogo.bin', 'Title/Background.bin',
                 'Title/Electricity.bin', 'Logos/Logos.bin',
                 # (9c, user 2026-10-05: the title's SONIC MANIA letters read blocky: Title/Logo.bin stays full size, the
-                # title then fits in 19 of 20 columns)
+                # title then fits in 19 of 20 columns; 9e: only its ribbon unfurl halvable, ALWAYS_FULL_ANIMS)
+                'Title/Logo.bin',
                 # 4.2b: the menu's art (the text fonts stay: SmallFont / TextEN only from their plan side up)
                 'UI/Diorama.bin', 'UI/Picture.bin', 'UI/MainIcons.bin', 'UI/HeadingsEN.bin', 'UI/Buttons.bin',
                 'UI/ButtonLabel.bin', 'UI/MedallionPanel.bin'}

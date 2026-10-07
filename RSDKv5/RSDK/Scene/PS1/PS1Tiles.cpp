@@ -11,6 +11,7 @@ volatile uint32 g_ps1AniTileMisses = 0;
 volatile uint32 g_ps1SolidLines    = 0;
 volatile uint32 g_ps1SolidDrops    = 0;
 volatile uint32 g_ps1HFlipDrops    = 0;
+volatile uint32 g_ps1RotoPageDrops = 0;
 }
 
 namespace
@@ -45,6 +46,14 @@ uint32 s_hflipOff = 0, s_hflipCount = 0; // (tile, image) pairs, sorted by tile
 uint32 s_lodInfo = 0;                    // 7.4: lodFirst | pagesW << 16 | pagesH << 24 (0: no minimap)
 uint16 s_patternImage = 0;               // 7.5: the 3D floor / roof texture's image (0: none)
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
+// 9e (PTL3): rotozoom layers drawn from a 256x256 page: layer index, the page's image, its origin in the map (texels)
+struct PS1RotoPageRec {
+    uint8 layer, on;
+    uint16 image, ox, oy;
+};
+#define PS1_TILE_ROTO_PAGES (4)
+PS1RotoPageRec s_rotoPage[PS1_TILE_ROTO_PAGES];
+uint32 s_rotoPageCount = 0;
 
 inline uint16 *TileTable() { return (uint16 *)s_ps1TileBlob; }
 inline const PS1TileSheet *Sheets() { return (const PS1TileSheet *)(s_ps1TileBlob + s_sheetOff); }
@@ -97,8 +106,28 @@ const uint8 *RSDK::PS1TileSolidLines(int32 layer, int32 heightPx)
     return s_ps1TileBlob + s_solidOff[layer];
 }
 
+bool RSDK::PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy)
+{
+    for (uint32 i = 0; s_ps1TileBlob && i < s_rotoPageCount; ++i) {
+        const PS1RotoPageRec &p = s_rotoPage[i];
+        if (p.layer == layer && p.on) {
+            *image = PS1TileImages()[p.image], *ox = p.ox, *oy = p.oy;
+            return true;
+        }
+    }
+    return false;
+}
+
 void RSDK::PS1TileSolidDrop(int32 layer)
 {
+    // 9e: a page shows the file's layout too: SetTile on its layer turns it off (DrawAniTile's -1 never touches a page:
+    // the paged folders have no animated-tile sheets, build_tiles' ANI_SHEETS)
+    for (uint32 i = 0; i < s_rotoPageCount; ++i) {
+        if (s_rotoPage[i].layer == layer && s_rotoPage[i].on) {
+            s_rotoPage[i].on   = 0;
+            g_ps1RotoPageDrops = g_ps1RotoPageDrops + 1;
+        }
+    }
     for (int32 l = 0; l < LAYER_COUNT; ++l) {
         if ((layer < 0 || l == layer) && s_solidOff[l]) {
             s_solidOff[l]   = 0;
@@ -122,6 +151,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     s_solidMaskOff  = 0;
     g_ps1SolidLines = 0;
     s_hflipOff = s_hflipCount = 0;
+    s_rotoPageCount = 0;
     PS1HFlipCacheClear();
 
     char path[0x40];
@@ -137,7 +167,8 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
                     + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2 + h.solidBytes + h.hflipCount * 4;
     uint32 blocksBytes = h.blockCount * sizeof(PS1TileBlock);
     DataStorage *tmp   = &dataStorage[DATASET_TMP];
-    if (memcmp(h.magic, "PTL2", 4) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
+    bool v3            = !memcmp(h.magic, "PTL3", 4); // PTL2 + the rotozoom pages after the H-flip pairs (9e)
+    if ((!v3 && memcmp(h.magic, "PTL2", 4)) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
         || blocksBytes + 128 * 2 > tmp->storageLimit || sizeof(h) + tables + blocksBytes > h.dataOffset) {
         g_ps1TileErrors = g_ps1TileErrors + 1;
         CloseFile(&info);
@@ -146,6 +177,21 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
 
     AllocateStorage((void **)&s_ps1TileBlob, tables, DATASET_STG, false);
     ReadBytes(&info, s_ps1TileBlob, tables);
+    if (v3) { // u16 count, u16 0, then (u8 layer, u8 0, u16 image, u16 ox, u16 oy) each
+        uint16 rc[2];
+        ReadBytes(&info, rc, 4);
+        for (uint32 i = 0; i < rc[0]; ++i) {
+            PS1RotoPageRec p;
+            ReadBytes(&info, &p, sizeof(p));
+            if (s_rotoPageCount < PS1_TILE_ROTO_PAGES && p.image < h.imageCount && p.layer < LAYER_COUNT) {
+                p.on                          = 1;
+                s_rotoPage[s_rotoPageCount++] = p;
+            }
+            else {
+                g_ps1TileErrors = g_ps1TileErrors + 1;
+            }
+        }
+    }
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
     s_imgOff     = 1024 * 2;
     s_clutOff    = s_imgOff + s_imageCount * sizeof(PS1TileImage);
