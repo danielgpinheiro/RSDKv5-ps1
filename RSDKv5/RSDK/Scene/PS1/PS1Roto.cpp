@@ -153,8 +153,13 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
     PS1TileImage pageImg;
     int32 pageOx, pageOy;
     if (g_ps1RotoPageDraw && PS1TileRotoPage((int32)(layer - tileLayers), &pageImg, &pageOx, &pageOy)
-        && g_ps1RotoPageDraw(layer, &pageImg, pageOx, pageOy, bank, t0))
+        && g_ps1RotoPageDraw(layer, &pageImg, pageOx, pageOy, bank, t0)) {
+        uint32 dt     = PS1HblanksSince(t0); // (here: an overlay naming the layer counters confuses GDB's lookup of them)
+        g_ps1RotoHbl  = g_ps1RotoHbl + dt;
+        g_ps1LayerHbl = g_ps1LayerHbl + dt;
+        g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
         return;
+    }
 
     PS1RotoTileDraw(layer, bank, t0);
 }

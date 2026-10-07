@@ -4,13 +4,11 @@
 // PS1DrawLayerRotozoom (RSDK/Scene/PS1/PS1Roto.cpp, g_ps1RotoPageDraw).
 #include "RSDK/Core/RetroEngine.hpp"
 #include "../../../../ps1/gpu_chain_raw.hh"
-#include "../../../../ps1/video.hh" // PS1Hblanks
 
 using namespace RSDK;
 
 extern "C" {
-extern volatile uint32 g_ps1RotoQuads, g_ps1RotoLayers, g_ps1RotoPageLayers, g_ps1RotoPageCuts, g_ps1RotoHbl; // (g_ps1LayerHbl: Scene.hpp)
-extern volatile uint32 g_ps1LayerHblBy[8];
+extern volatile uint32 g_ps1RotoQuads, g_ps1RotoLayers, g_ps1RotoPageLayers, g_ps1RotoPageCuts;
 }
 
 namespace
@@ -243,11 +241,7 @@ bool PS1RotoPageDraw(TileLayer *layer, const PS1TileImage *img, int32 ox, int32 
     g_ps1RotoQuads      = g_ps1RotoQuads + quads;
     g_ps1RotoLayers     = g_ps1RotoLayers + 1;
     g_ps1RotoPageLayers = g_ps1RotoPageLayers + 1;
-    uint32 dt           = PS1HblanksSince(t0);
-    g_ps1RotoHbl        = g_ps1RotoHbl + dt;
-    g_ps1LayerHbl       = g_ps1LayerHbl + dt;
-    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
-    return true;
+    return true; // (the caller adds the time: the layer counters live in the resident)
 }
 } // namespace
 
