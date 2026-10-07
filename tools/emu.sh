@@ -47,7 +47,11 @@ PYEOF
       sed -i '' 's/^Enable8MBRAM = false/Enable8MBRAM = true/' "$EMU_CFG"
       echo "8 MB debug EXE (SP $EMU_SP): DuckStation Enable8MBRAM on for this run"
     fi
-    "$EMU_DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
+    # EMU_DS_FASTBOOT=0: through the BIOS's boot screens, as a player starts it (docs/32 9f)
+    # (started paused: the BIOS boot is over before the GDB stub is up; GDB's first continue starts it)
+    local fb=-fastboot
+    [ "${EMU_DS_FASTBOOT:-1}" = 0 ] && fb= && sed -i '' 's/^StartPaused = false/StartPaused = true/' "$EMU_CFG"
+    "$EMU_DS" -batch $fb -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
     EMU_PID=$!
     # its GDB stub listens once the app is up: slower while another emulator runs (a fixed 6 s missed it, 9b.2)
     sleep 4
