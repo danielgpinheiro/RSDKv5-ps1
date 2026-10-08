@@ -133,6 +133,7 @@ void PS1ReadChunkPool(FileInfo *info)
 
 extern "C" {
 volatile uint32 g_ps1SetTileOutside = 0; // 7b: SetTile past a layer's size (the PC writes its padding; total)
+volatile uint32 g_ps1LayoutWrites = 0;   // 9f: tiles changed by PS1SetTile (caches of the layout key on it)
 }
 void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
 {
@@ -146,6 +147,7 @@ void RSDK::PS1SetTile(TileLayer *layer, int32 tx, int32 ty, uint16 tile)
     uint32 r = ty & 3, c = tx & 3;
     if (ps1RowPool[((uint32)ps1ChunkPool[((uint32)*index << 2) + r] << 2) + c] == tile)
         return;
+    g_ps1LayoutWrites = g_ps1LayoutWrites + 1;
     PS1TileSolidDrop((int32)(layer - tileLayers)); // its one-colour lines were computed from the file's layout
     if (*seg < ps1SegShared) {
         // a segment from the file may stand for other places too: this place gets its own copy

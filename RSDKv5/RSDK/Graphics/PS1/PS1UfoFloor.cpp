@@ -27,6 +27,7 @@ extern volatile uint32_t g_ps1PerfFrames; // ps1/rsdk5_main.cpp: frames run
 
 extern "C" {
 extern volatile uint32 g_ps1FadeCalls, g_ps1FadeOpaque, g_ps1TintGrey; // RSDK/Scene/PS1/PS1Layers.cpp
+extern volatile uint32 g_ps1LayoutWrites;                                  // RSDK/Scene/Scene.cpp PS1SetTile
 volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
 volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
 #if UFO_FLOOR_NEAR // 9f: a detail cut (Makefile UFO_FLOOR_NEAR=1)
@@ -238,7 +239,9 @@ struct PS1FloorRows {
         topXY = botXY, topZ = botZ, botXY = x, botZ = z, topA = botA, topN = botN, topBad = botBad;
     }
 };
-uint16 s_t[PS1_FLOOR_MAX_COLS + 4]; // a row's tiles (0xFFFF: empty)
+uint16 s_t[PS1_FLOOR_MAX_COLS + 4]; // a row's drawable tiles (9f: their image and column too)
+uint16 s_tImg[PS1_FLOOR_MAX_COLS + 4];
+uint8 s_tCol[PS1_FLOOR_MAX_COLS + 4];
 struct PS1FloorCtx {
     int32 sA, cA, sX, cX;  // yaw and pitch sin / cos (1024 = 1)
     int32 camX, camY, hq;  // quarter pixels
@@ -258,6 +261,12 @@ void PS1FloorRegion(const PS1FloorCtx &c, int32 f0, int32 f1, int32 V[4][2])
     for (int32 k = 0; k < 4; ++k) V[k][0] += c.camX, V[k][1] += c.camY;
 }
 
+// 9f (UFO item 3b): whether a minimap cell has a chunk that is not chunk 0 (the four-lookup test below), kept per cell
+// (bit pairs: known, non-empty) until the layout changes (PS1SetTile's counter) or another layer / scene is drawn
+#define PS1_LOD_CELLS 4096
+uint32 s_lodKnown[PS1_LOD_CELLS / 32], s_lodSet[PS1_LOD_CELLS / 32];
+const TileLayer *s_lodLayer = NULL;
+uint32 s_lodWrites = 0, s_lodLoads = 0xFFFFFFFF;
 // The minimap cells (8 x 8 tiles, 512 quarter pixels) between forward distances fA (the real tiles' end: cells wholly
 // nearer are skipped) and f1; the GTE is set up. Cells over four empty chunks are skipped.
 __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &c, TileLayer *layer, int32 fA, int32 f1)
@@ -273,6 +282,12 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
     int32 minY = V[0][1], maxY = V[0][1];
     for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
     const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
+    const uint32 cellsW = (uint32)(wMask + 1) >> 3, cells = cellsW * ((uint32)(hMask + 1) >> 3);
+    const bool cache = cells <= PS1_LOD_CELLS;
+    if (cache && (layer != s_lodLayer || g_ps1LayoutWrites != s_lodWrites || g_ps1TileLoads != s_lodLoads)) {
+        memset(s_lodKnown, 0, sizeof(s_lodKnown));
+        s_lodLayer = layer, s_lodWrites = g_ps1LayoutWrites, s_lodLoads = g_ps1TileLoads;
+    }
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 quads = 0;
     const int32 cy0 = minY >> 9;
@@ -308,9 +323,19 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
         for (int32 i = 0; i < n; ++i, fd += fStep) {
             const int32 mx = ((ca + i) << 3) & wMask;
             const uint32 c0 = (uint32)mx >> 2;
-            if (!(PS1ChunkAt(layer, chunkRow0, c0) | PS1ChunkAt(layer, chunkRow0, c0 + 1) | PS1ChunkAt(layer, chunkRow1, c0)
-                  | PS1ChunkAt(layer, chunkRow1, c0 + 1)))
-                continue; // four empty chunks
+            const uint32 cell = ((uint32)my >> 3) * cellsW + ((uint32)mx >> 3), cw = cell >> 5, cb = 1u << (cell & 31);
+            if (cache && (s_lodKnown[cw] & cb)) {
+                if (!(s_lodSet[cw] & cb))
+                    continue; // four empty chunks
+            }
+            else {
+                const bool any = PS1ChunkAt(layer, chunkRow0, c0) | PS1ChunkAt(layer, chunkRow0, c0 + 1)
+                                 | PS1ChunkAt(layer, chunkRow1, c0) | PS1ChunkAt(layer, chunkRow1, c0 + 1);
+                if (cache)
+                    s_lodKnown[cw] |= cb, s_lodSet[cw] = any ? s_lodSet[cw] | cb : s_lodSet[cw] & ~cb;
+                if (!any)
+                    continue; // four empty chunks
+            }
             const int32 fc = fd >> 10;
             if (fc + 363 < fA || fc - 363 > f1)
                 continue;
@@ -608,31 +633,38 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);
         const uint16 *rowSel   = ps1ChunkPool + (ty & 3);
         const int32 n          = txb - txa + 1;
+        // 9f (UFO item 3b): only the row's drawable tiles (most of a row's span is the empty space around the playfield):
+        // column, tile and image, in column order
+        int32 nn = 0;
         for (int32 i = 0, tx = txa; i < n;) {
             uint32 ch = PS1ChunkAt(layer, chunkRow, (uint32)(tx & wMask) >> 2);
             int32 k   = 4 - (tx & 3); // to the chunk's end
             k         = k > n - i ? n - i : k;
-            if (!ch)
-                for (int32 e = 0; e < k; ++e) s_t[i + e] = 0xFFFF;
-            else {
+            if (ch) {
                 const uint16 *q = PS1ChunkTiles(rowSel, ch) + (tx & 3);
-                for (int32 e = 0; e < k; ++e) s_t[i + e] = q[e];
+                for (int32 e = 0; e < k; ++e) {
+                    const uint32 t = q[e];
+                    if (t == 0xFFFF)
+                        continue;
+                    const uint32 img = table[t & 0x3FF];
+                    if (img == PS1_TILE_NONE)
+                        continue;
+                    s_t[nn] = (uint16)t, s_tImg[nn] = (uint16)img, s_tCol[nn] = (uint8)(i + e), ++nn;
+                }
             }
             i += k, tx += k;
         }
         // the quads; each tile takes the bank of its centre's forward distance (x 1024)
-        int32 fd          = sA * (((txa << 6) + 32) - camX) + cA * (zq + 32);
+        const int32 fd0   = sA * (((txa << 6) + 32) - camX) + cA * (zq + 32);
         const int32 fStep = sA * 64;
         const bool check  = topBad || botBad; // corners flagged: test each tile's
-        for (int32 i = 0; i < n; ++i, fd += fStep) {
-            const uint32 t = s_t[i];
-            if (t == 0xFFFF)
-                continue;
+        for (int32 j = 0; j < nn; ++j) {
+            const int32 i  = s_tCol[j];
+            const int32 fd = fd0 + fStep * i;
+            const uint32 t = s_t[j];
             if (check && (!tZ[i] || !tZ[i + 1] || !bZ[i] || !bZ[i + 1]))
                 continue;
-            const uint32 img = table[t & 0x3FF];
-            if (img == PS1_TILE_NONE)
-                continue;
+            const uint32 img = s_tImg[j];
             const PS1TileImage &ti = images[img];
             int32 bank = fd >> 19;
             bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
