@@ -1043,6 +1043,7 @@ __attribute__((optimize("O2"))) static uint32 PS1LitColour(const Scene3D *scn, i
 // its visible pixels are all front faces'); the sign a front face's screen winding is checked against (-1, picked by
 // pictures: +1 dropped the visible side), 0: none dropped
 volatile int32 g_ps1S3DOrthoCull = -1;
+volatile int32 g_ps1S3DAsm = 1; // 9f: the UFO 3D faces through ps1/s3d_faces.s (0: the C loop; PS1Scene3D.cpp)
 // 9f: a normal component (int8, x 127) as LoadMesh keeps it (x 0x10000 / 127), from a table: the same quotients
 static int32 s_ps1Nrm127[256];
 static bool s_ps1Nrm127Ok = false;

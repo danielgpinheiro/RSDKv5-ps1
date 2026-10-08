@@ -29,4 +29,5 @@ extern "C" {
 extern volatile uint32 g_ps1S3DDraws, g_ps1S3DFaces, g_ps1S3DCulled, g_ps1S3DOverflow, g_ps1S3DTodo, g_ps1S3DMatrix;
 extern volatile uint32 g_ps1S3DHbl[4];
 extern volatile int32 g_ps1S3DBackCull;
+extern volatile int32 g_ps1S3DAsm; // 9f: the triangle loop in assembly (ps1/s3d_faces.s)
 }

@@ -63,6 +63,7 @@ ps1/xa_music.cpp \
 ps1/mdec.cpp \
 ps1/video.cpp \
 ps1/gte3d.cpp \
+ps1/s3d_faces.s \
 ps1/fmv.cpp \
 ps1/loading.cpp \
 ps1/memcard.cpp \

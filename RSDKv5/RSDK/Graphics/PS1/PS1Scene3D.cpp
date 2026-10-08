@@ -133,6 +133,50 @@ __attribute__((optimize("O2"), noinline)) static void PS1S3DFaces(const uint16 *
     }
     o.w = w, o.wend = wend, o.drawn += drawn, o.culled += culled;
 }
+// 9f (UFO 60 fps plan, step B): the gouraud triangles' loop in assembly (ps1/s3d_faces.s: the same decisions, keys,
+// buckets and words; every value in a register). g_ps1S3DAsm 0: the C loop (A/B pictures; Scene3D.cpp, resident)
+struct PS1S3DAsmCtx {
+    const uint16 *idx;
+    const uint32 *cols;
+    const uint16 *idxEnd;
+    const uint32 *xyp;
+    const uint16 *szp;
+    const uint8 *ocp;
+    int32 k, cull;
+    uint32 sideMask, inside;
+    uint32 *w, *wend;
+    uint32 kmin, kmax, cmd;
+    int32 shift;
+    uint32 *ot;
+};
+static_assert(sizeof(PS1S3DAsmCtx) == 68, "ps1/s3d_faces.s reads these offsets");
+extern "C" int PS1S3DFacesTriAsm(PS1S3DAsmCtx *c);
+static void PS1S3DFacesTri(const uint16 *idx, const uint32 *cols, int32 faces, const uint32 *xyp, const uint16 *szp,
+                           const uint8 *ocp, int32 k, int32 cull, bool inside, PS1S3DOt &o)
+{
+    PS1S3DAsmCtx c = { idx, cols, idx + 3 * faces, xyp, szp, ocp, k, cull, inside ? 0u : 15u, inside, o.w, o.wend,
+                       o.kmin, o.kmax, o.cmd, o.shift, o.ot };
+    for (;;) {
+        const uint16 *i0 = c.idx;
+        uint32 *w0       = c.w;
+        const int32 st   = PS1S3DFacesTriAsm(&c);
+        const uint32 drawn = (uint32)(c.w - w0) / 7;
+        o.w = c.w, o.drawn += drawn, o.culled += (uint32)(c.idx - i0) / 3 - drawn;
+        if (st == 0)
+            return;
+        if (st == 1) { // the reserved words are full
+            if (!PS1S3DOtRefill(o, 7))
+                return;
+            c.w = o.w, c.wend = o.wend;
+            continue;
+        }
+        // a corner past the GPU-limit band: the exact span test (C) for this face
+        PS1S3DFaces<3, false>(c.idx, c.cols, 1, xyp, szp, ocp, k, cull, inside, o);
+        if (o.full)
+            return;
+        c.idx += 3, c.cols += 3, c.w = o.w, c.wend = o.wend;
+    }
+}
 // 7.5: S3D_WIREFRAME_SHADED_SCREEN (the UFO item box) as stock: positions through the matrix, projected (a face with a
 // corner nearer than 0x100 left out), each face's edges as lines in the entity's colour lit by its corners' mean normal y
 // (the mesh keeps its normals: PMD6 flag bit3). Faces in mesh order (lines: the sort changes nothing seen).
@@ -362,7 +406,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                      : PS1S3DFaces<3, true>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o);
         else
             fvc == 4 ? PS1S3DFaces<4, false>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o)
-                     : PS1S3DFaces<3, false>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o);
+                     : g_ps1S3DAsm ? PS1S3DFacesTri(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o)
+                                   : PS1S3DFaces<3, false>(fidx, cols, faces, sxy, sz, oc, k, cull, inside, o);
         g_ps1S3DModelFaces[it.model] = g_ps1S3DModelFaces[it.model] + faces;
         g_ps1S3DModelDraws[it.model] = g_ps1S3DModelDraws[it.model] + 1;
         t0 = PS1_HBL();
