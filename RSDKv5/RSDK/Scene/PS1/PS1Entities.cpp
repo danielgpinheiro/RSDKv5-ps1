@@ -169,6 +169,7 @@ void RSDK::PS1EntityStorageClear()
     s_arena = s_spare = s_spareEnd = s_arenaAt = NULL;
     DormClear(); // 7b: the dormant records lived in the arena
     g_ps1EntityArenaBytes = 0;
+    memset(ps1LiveBits, 0xFF, sizeof(ps1LiveBits)); // 9f: every slot looked at again
     ps1SceneSlotEnd       = RESERVE_ENTITY_COUNT;
     ps1TempSlotEnd        = TEMPENTITY_START + ps1TempBlocks;
 }
@@ -1028,6 +1029,7 @@ void RSDK::PS1SceneEntitiesPlace()
     s_spare         = p;
     s_spareEnd      = s_arena + bytes;
     ps1SceneSlotEnd = slot; // (a range block extends it when the game copies an entity in: CopyEntity)
+    memset(ps1LiveBits, 0xFF, sizeof(ps1LiveBits)); // 9f: every slot looked at again
     ps1TempSlotEnd  = TEMPENTITY_START + ps1TempBlocks;
 
     // (the candidates' scratch: STG's tail, released below with the records)

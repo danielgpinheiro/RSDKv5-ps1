@@ -508,19 +508,38 @@ extern "C" {
 volatile uint32 g_ps1ScanSettled = 0, g_ps1ScanWrong = 0; // bounds slots settled out of range; of them, in range for stock
 }
 #endif
+#if PS1_CHECK_LIVEBITS
+extern "C" {
+volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: classed slots whose bit was clear (must stay 0)
+}
+#endif
+// 9f: 32 slots with their bits clear (blank, settled: inRange already false) are passed over; a blank slot found has
+// its bit cleared after its stock write (the UFO stages' scene ranges: 1,427 of 2,112 slots blank)
+#define PS1_LIVE_SKIP()                                                                                                \
+    if (!(s & 31) && !ps1LiveBits[s >> 5]) {                                                                           \
+        if (pend - p <= 32)                                                                                            \
+            return pend;                                                                                               \
+        p += 31, s += 31;                                                                                              \
+        continue;                                                                                                      \
+    }
 PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
 {
+    uint32 s = (uint32)(p - objectEntityPtr);
     if (!s_camUnionOk) { // the stock loop decides every live slot
-        for (; p < pend; ++p) {
+        for (; p < pend; ++p, ++s) {
+            PS1_LIVE_SKIP();
             EntityBase *ent = *p;
             if (ent->classID && ent->active != ACTIVE_NEVER && ent->active != ACTIVE_PAUSED)
                 return p;
             ent->inRange = false;
+            if (!ent->classID)
+                ps1LiveBits[s >> 5] &= ~(1u << (s & 31));
         }
         return p;
     }
     const uint32 minX = (uint32)s_camMinX, minY = (uint32)s_camMinY, w = s_camW, h = s_camH;
-    for (; p < pend; ++p) {
+    for (; p < pend; ++p, ++s) {
+        PS1_LIVE_SKIP();
         EntityBase *ent = *p;
         uint32 cls    = ent->classID;
         uint32 active = ent->active;
@@ -562,6 +581,8 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
         }
 #endif
         ent->inRange = false;
+        if (!cls)
+            ps1LiveBits[s >> 5] &= ~(1u << (s & 31));
     }
     return p;
 }
@@ -638,6 +659,13 @@ PS1_HOT void PS1UpdatePass()
 {
     PS1DormantUpdate(); // 7b: dormant entities the cameras reach become entities first (PS1Entities.cpp)
     PS1CameraUnion();
+#if PS1_CHECK_LIVEBITS
+    g_ps1LiveChecks = g_ps1LiveChecks + 1;
+    for (int32 r = 0; r < 2; ++r)
+        for (int32 sl = r ? TEMPENTITY_START : 0; sl < (r ? ps1TempSlotEnd : ps1SceneSlotEnd); ++sl)
+            if (objectEntityPtr[sl]->classID && !(ps1LiveBits[sl >> 5] & (1u << (sl & 31))))
+                g_ps1LiveWrong = g_ps1LiveWrong + 1;
+#endif
     EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
     int32 phase     = 0;
     EntityBase *ent = NULL; // the last slot visited
@@ -2023,6 +2051,7 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
 }
 #if RETRO_PLATFORM == RETRO_PS1
 uint16 RSDK::ps1ClassLo[OBJECT_COUNT], RSDK::ps1ClassHi[OBJECT_COUNT];
+uint32 RSDK::ps1LiveBits[ENTITY_COUNT / 32]; // 9f (Object.hpp)
 static uint8 s_ps1ClassGen[OBJECT_COUNT], s_ps1ClassGenNow = 1; // a range is measured when its gen is not the frame's
 extern "C" {
 volatile uint32 g_ps1ClassMeasures = 0; // ranges measured (GDB)

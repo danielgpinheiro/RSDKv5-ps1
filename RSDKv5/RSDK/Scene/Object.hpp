@@ -349,8 +349,13 @@ bool32 GetAllEntities(uint16 classID, Entity **entity);
 // 16 frames, every load: ps1/gen) and widened by every path that gives a slot a class in between (PS1ClassNote: create,
 // reset, copy, dormant wakes, scene placement; PS1ClassNoteEntity: the game's own writes), so it is always a superset.
 extern uint16 ps1ClassLo[OBJECT_COUNT], ps1ClassHi[OBJECT_COUNT];
+// docs/32 9f: slots that may hold a class, one bit each (a superset: set by every class write below, all-ones after a
+// load; the update scan clears a bit only when it finds the slot blank and settled): words of 32 blank slots are skipped
+extern uint32 ps1LiveBits[ENTITY_COUNT / 32];
 inline void PS1ClassNote(uint16 classID, int32 slot)
 {
+    if (classID && slot >= 0 && slot < ENTITY_COUNT)
+        ps1LiveBits[slot >> 5] |= 1u << (slot & 31);
     if (classID && classID < OBJECT_COUNT && slot >= 0) {
         if (slot < ps1ClassLo[classID])
             ps1ClassLo[classID] = (uint16)slot;
