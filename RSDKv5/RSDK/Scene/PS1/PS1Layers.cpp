@@ -398,6 +398,7 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
         g_ps1BankTodo = g_ps1BankTodo + 1;
     uint16 tg              = PS1T();
     const uint16 *tileImage = TileTable();
+    const bool flipAll      = PS1TileFlipCopiesAll();
     const uint8 *images     = s_ps1TileBlob + s_imgOff; // PS1TileImage: u8 u, v; u16 tpage, clut
     uint32 bankClut         = (uint32)(0 | (240 + bank) << 6); // GPU CLUT attribute of the bank's 256 entries
     int32 ty = ly >> 4, v0 = ly & 15;
@@ -427,6 +428,10 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
         if (t == 0xFFFF)
             continue;
         uint16 img = tileImage[t & 0x3FF];
+        if ((t & 0xC00) && flipAll && img != PS1_TILE_NONE) { // 9f: the flipped copy: a sprite, not a 9-word quad
+            img = PS1TileHFlipImage((t & 0x800) ? (t & 0xFFF) : (t & 0x3FF));
+            t &= ~0xC00;
+        }
         if (img == PS1_TILE_NONE) {
             ++misses;
             continue;
@@ -507,6 +512,7 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     }
     // the table: columns c0 + dmin .. (walking the 4x4 chunks as DrawBand)
     const uint16 *tileImage = TileTable();
+    const bool flipAll      = PS1TileFlipCopiesAll(); // 9f
     const uint8 *images     = s_ps1TileBlob + s_imgOff;
     uint32 bankClut         = (uint32)(0 | (240 + bands[0].bank) << 6);
     bool banked             = bands[0].bank && PS1BankReady(bands[0].bank); // 7b.7
@@ -542,7 +548,14 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
             col->pf = PS1_COL_MISS << 16;
             continue;
         }
-        if (t & 0x400) { // an H-flipped copy (the .ptl's pairs, 3.3b) makes the piece a sprite
+        if (flipAll) { // 9f: every flipped tile has its copy (H, V, HV): a sprite
+            if (t & 0xC00) {
+                uint16 flipped = PS1TileHFlipImage((t & 0x800) ? (t & 0xFFF) : (t & 0x3FF));
+                if (flipped != PS1_TILE_NONE)
+                    img = flipped, t &= ~0xC00;
+            }
+        }
+        else if (t & 0x400) { // an H-flipped copy (the .ptl's pairs, 3.3b) makes the piece a sprite
             uint16 flipped = PS1TileHFlipImage(t & 0x3FF);
             if (flipped != PS1_TILE_NONE)
                 img = flipped, t &= ~0x400;

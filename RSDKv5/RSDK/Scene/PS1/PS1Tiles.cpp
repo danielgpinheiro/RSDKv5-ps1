@@ -43,6 +43,7 @@ uint32 s_solidOff[LAYER_COUNT];
 uint16 s_solidHeight[LAYER_COUNT];
 uint32 s_solidMaskOff = 0;
 uint32 s_hflipOff = 0, s_hflipCount = 0; // (tile, image) pairs, sorted by tile
+bool s_flipAll = false; // 9f: the scene stores every flipped tile's copy (V / HV keys: the pairs' last is >= 0x800)
 uint32 s_lodInfo = 0;                    // 7.4: lodFirst | pagesW << 16 | pagesH << 24 (0: no minimap)
 uint16 s_patternImage = 0;               // 7.5: the 3D floor / roof texture's image (0: none)
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
@@ -61,6 +62,7 @@ inline const uint16 *Cells() { return (const uint16 *)(s_ps1TileBlob + s_cellOff
 } // namespace
 
 uint16 RSDK::PS1TileImageOf(uint16 tile) { return s_ps1TileBlob && tile < 1024 ? TileTable()[tile] : PS1_TILE_NONE; }
+bool RSDK::PS1TileFlipCopiesAll() { return s_ps1TileBlob && s_flipAll; }
 const uint16 *RSDK::PS1TileImageTable() { return s_ps1TileBlob ? TileTable() : NULL; }
 uint32 RSDK::PS1TileLodInfo() { return s_ps1TileBlob ? s_lodInfo : 0; }
 uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; }
@@ -78,7 +80,7 @@ void PS1HFlipCacheClear()
 
 uint16 RSDK::PS1TileHFlipImage(uint16 tile)
 {
-    uint32 &c = s_hflipCache[tile & 31];
+    uint32 &c = s_hflipCache[(tile ^ tile >> 6) & 31]; // (9f: keys carry the V flips in bits 10-11)
     if ((c >> 16) == tile)
         return (uint16)c;
     // 4.2e: the pairs are sorted by tile: a binary search (the linear one cost ~60 hblanks a frame in the ruby's
@@ -226,6 +228,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     }
     s_hflipOff   = s_cellOff + s_cellCount * 2 + h.solidBytes;
     s_hflipCount = h.hflipCount;
+    s_flipAll    = h.hflipCount && ((const uint16 *)(s_ps1TileBlob + s_hflipOff))[(h.hflipCount - 1) * 2] >= 0x800; // 9f
     s_lodInfo    = h.lodFirst && h.lodFirst < h.imageCount ? h.lodFirst | (uint32)h.lodPagesW << 16 | (uint32)h.lodPagesH << 24 : 0;
     s_patternImage = h.patternImage < h.imageCount ? h.patternImage : 0;
     PS1HFlipCacheClear();

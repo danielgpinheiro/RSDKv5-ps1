@@ -41,7 +41,8 @@ void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer); a
 // page's origin in the layer's map (texels; the page repeats with the map). False: none (or SetTile turned it off)
 bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy);
 // The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
-uint16 PS1TileHFlipImage(uint16 tile);
+uint16 PS1TileHFlipImage(uint16 tile); // key: the tile (H), tile | 0x800 (V), tile | 0xC00 (both); PS1_TILE_NONE: no copy
+bool PS1TileFlipCopiesAll(); // 9f: every flipped tile of the scene's layers has its copy (FLIP_COPIES folders)
 
 extern "C" {
 extern volatile uint32 g_ps1TileLoads;     // .ptl files loaded

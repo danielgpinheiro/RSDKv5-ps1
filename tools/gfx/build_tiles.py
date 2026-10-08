@@ -74,6 +74,10 @@ ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island')}
 # 9e.2: folders whose tile images drawn flipped are packed away from a page's edge texels (u or v 0 / 240): a flipped
 # tile there would pass the page's edge (u - 1 or u + 16) and is split out of line (PS1Layers.cpp EmitFlipped). Holes
 # in the column instead; opt-in (other scenes' .ptl unchanged): D.A. Garden's Horizon has 57 flipped tiles
+# 9f (UFO 60 fps plan): folders whose layers' flipped tiles all get flipped copies (H, V and both: the pairs' keys are
+# the tile, tile | 0x800, tile | 0xC00), so every band draws them as sprites instead of 9-word quads (PS1Layers.cpp);
+# 128 bytes of VRAM each. Other folders keep the per-line rows' H copies only (their .ptl unchanged)
+FLIP_COPIES = {'UFO1', 'UFO2', 'UFO3', 'UFO4', 'UFO5', 'UFO6', 'UFO7'}
 EDGE_FREE_FLIPS = {'DAGarden', 'UFO1', 'UFO2', 'UFO3', 'UFO4', 'UFO5', 'UFO6', 'UFO7'}
 
 
@@ -238,6 +242,18 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     for t in sorted(hflip_tiles([L for li, L in enumerate(layers) if li not in paged])):
         if t < ntiles:
             hflip[t] = image_of(np.ascontiguousarray(gif[t * TILE:(t + 1) * TILE, ::-1]))
+    if folder in FLIP_COPIES:  # 9f: every flipped tile of the band-drawn layers (type 0: H-scroll; the floors flip by UVs)
+        for L in [L for li, L in enumerate(layers) if li not in paged and L['type'] == 0]:
+            for v in L['tiles']:
+                if v == 0xFFFF or not v & 0xC00 or (v & 0x3FF) >= ntiles:
+                    continue
+                t, f = v & 0x3FF, v & 0xC00
+                key = t if f == 0x400 else t | f
+                if key not in hflip:
+                    px = gif[t * TILE:(t + 1) * TILE]
+                    px = px[:, ::-1] if f & 0x400 else px
+                    px = px[::-1, :] if f & 0x800 else px
+                    hflip[key] = image_of(np.ascontiguousarray(px))
     sheets = []                     # (name, cellsW, cellsH, firstCell)
     cells = []
     for name in ANI_SHEETS.get(folder, []):
@@ -338,9 +354,12 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         if not np.array_equal(images[tile_image[t]], gif[t * TILE:(t + 1) * TILE]):
             raise TileError('%s%s: tile %d maps to the wrong image' % (folder, scene_id, t))
 
-    for t, i in hflip.items():
-        if not np.array_equal(images[i], gif[t * TILE:(t + 1) * TILE, ::-1]):
-            raise TileError('%s%s: tile %d: its H-flipped image is wrong' % (folder, scene_id, t))
+    for key, i in hflip.items():
+        t = key & 0x3FF
+        want = gif[t * TILE:(t + 1) * TILE]
+        want = want[::-1, ::-1] if key & 0xC00 == 0xC00 else want[::-1, :] if key & 0x800 else want[:, ::-1]
+        if not np.array_equal(images[i], want):
+            raise TileError('%s%s: tile %d: its flipped image (key %x) is wrong' % (folder, scene_id, t, key))
     hflip_tab = b''.join(struct.pack('<HH', t, hflip[t]) for t in sorted(hflip))
 
     # one-colour lines, from the GIF; checked again through the stored images
