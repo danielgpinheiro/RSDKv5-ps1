@@ -20,6 +20,10 @@ extern int32 g_ps1S3DCount;
 extern uint8 *g_ps1S3DWork; // STG block: projected positions, depths, face keys / links / owners, buckets
 extern uint32 g_ps1S3DWorkVerts, g_ps1S3DWorkFaces;
 inline uint8 *PS1MeshData(const RSDK::Model *m) { return (uint8 *)m->vertices; }
+// PMD6 positions (frame 0): after the corners' colours and indices, at a 4-byte boundary (9f: whole-word keyframes,
+// tools/mesh/build_meshes.py)
+inline uint32 PS1MeshPosOffset(const RSDK::Model *m) { return (6u * m->indexCount + 3) & ~3u; }
+inline uint8 *PS1MeshPos(const RSDK::Model *m) { return PS1MeshData(m) + PS1MeshPosOffset(m); }
 struct PS1Scene3DOps {
     void (*draw)(uint16 sceneID);
     void (*floor)(RSDK::TileLayer *layer); // 7.4: the UFO floor (PS1UfoFloor.cpp), for a layer whose scanlines carry a camera

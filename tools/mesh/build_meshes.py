@@ -14,8 +14,10 @@ Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK
   u8 frame step (1, or 2: every other keyframe kept, the engine interpolating across twice the span), u8 0,
   u16 scale (8-bit positions: engine units (float x 256) = value * scale >> 8), u16 index count;
   colours (one per face corner, index count x u32: the GPU's colour word, 0x00BBGGRR, from the baked lighting), indices
-  (u16 each, into the positions), then per stored frame the positions (positions x 3 x i8 or i16, engine fixed point as
-  LoadMesh keeps them: float x 256 for 16-bit).
+  (u16 each, into the positions), 0-2 bytes to a 4-byte boundary, then per stored frame the positions (positions x 3 x
+  i8 or i16, engine fixed point as LoadMesh keeps them: float x 256 for 16-bit). 9f (UFO item 1): the position count is
+  padded to even (16-bit) or a multiple of 4 (8-bit) with copies of the last one (no corner uses them), so every frame
+  starts 4-aligned and the keyframe blend reads whole words (ps1/s3d_blend.s).
   Flag bit3 (7.4, the meshes NORMALS lists: drawn with the scene's lighting, as the special ring): after the LOD (or the
   positions), a normal per face corner: i8 x, y, z (x 127), 0.
   Flag bit4 (9f): the LOD is a detail cut's (drawn only by UFO_LOWPOLY builds), not a distance LOD.
@@ -169,11 +171,14 @@ def convert(path, src, pos8, culled):
         if qv[v] not in pos_of:
             pos_of[qv[v]] = len(uniq)
             uniq.append(qv[v])
-    pc = len(uniq)
     cidx = [pos_of[qv[v]] for v in idx]          # corner -> position
+    while len(uniq) % (4 if pos8 else 2):         # (9f: whole-word frames; copies of the last position, never indexed)
+        uniq.append(uniq[-1])
+    pc = len(uniq)
     ccol = [colors[v] for v in idx]              # corner -> colour
     out = struct.pack('<4sBBHHBBHH', b'PMD6', (0 if pos8 else 1) | (2 if culled else 0), fvc, pc, len(kept), step, 0, scale, len(idx))
     out += struct.pack('<%dI' % len(idx), *ccol) + struct.pack('<%dH' % len(idx), *cidx)
+    out += b'\0' * (-len(out) % 4)               # (9f: the positions 4-aligned)
     fmt = '<%db' % (3 * pc) if pos8 else '<%dh' % (3 * pc)
     for fi in range(len(kept)):
         out += struct.pack(fmt, *[x for u in uniq for x in u[fi]])
@@ -201,7 +206,8 @@ def convert(path, src, pos8, culled):
     cols_b = struct.unpack_from('<%dI' % ic, out, p)
     p += 4 * ic
     idx_b = struct.unpack_from('<%dH' % ic, out, p)
-    p += 2 * ic
+    p = (p + 2 * ic + 3) & ~3
+    assert p % 4 == 0 and ((3 if pos8 else 6) * pc) % 4 == 0, path  # every frame 4-aligned
     worst = 0
     for f in kept:
         vals = struct.unpack_from(fmt, out, p)

@@ -450,7 +450,7 @@ static void PS1Scene3DModelLoaded(Model *model)
 {
     uint32 faces = model->indexCount / model->faceVertCount;
     if (model->flags & PS1_MESH_POS16) {
-        const int16 *p = (const int16 *)(PS1MeshData(model) + 6 * model->indexCount);
+        const int16 *p = (const int16 *)PS1MeshPos(model);
         int32 r = 0;
         for (uint32 i = 0; i < 3u * model->vertCount * model->frameCount; ++i) r = abs(p[i]) > r ? abs(p[i]) : r;
         model->ps1Radius = (uint16)r;
@@ -551,7 +551,7 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
             return -1;
         // 7.4: a distance LOD after the positions (u16 corners, u16 0, colours, indices)
         model->ps1LodIndexCount = 0, model->ps1LodOffset = 0, model->ps1NormOffset = 0;
-        uint32 off = (6u * model->indexCount + (uint32)model->frameCount * model->vertCount * ((head[4] & 1) ? 6 : 3) + 3) & ~3u;
+        uint32 off = (PS1MeshPosOffset(model) + (uint32)model->frameCount * model->vertCount * ((head[4] & 1) ? 6 : 3) + 3) & ~3u;
         if (head[4] & 4) {
             uint32 n = off + 4 <= size ? *(uint16 *)((uint8 *)model->vertices + off) : 0;
             if (n && off + 4 + 6 * n <= size && n % model->faceVertCount == 0)
@@ -1044,7 +1044,9 @@ __attribute__((optimize("O2"))) static uint32 PS1LitColour(const Scene3D *scn, i
 // its visible pixels are all front faces'); the sign a front face's screen winding is checked against (-1, picked by
 // pictures: +1 dropped the visible side), 0: none dropped
 volatile int32 g_ps1S3DOrthoCull = -1;
-volatile int32 g_ps1S3DAsm = 1; // 9f: the UFO 3D faces through ps1/s3d_faces.s (0: the C loop; PS1Scene3D.cpp)
+volatile int32 g_ps1S3DAsm = 1; // 9f: the UFO 3D faces / keyframe blend in assembly (ps1/s3d_faces.s, s3d_blend.s; 0: C)
+extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
+volatile uint32 g_ps1BlendWrong = 0, g_ps1BlendChecked = 0; // 9f: PS1_CHECK_BLEND builds: components compared, wrong
 // 9f: a normal component (int8, x 127) as LoadMesh keeps it (x 0x10000 / 127), from a table: the same quotients
 static int32 s_ps1Nrm127[256];
 static bool s_ps1Nrm127Ok = false;
@@ -1076,7 +1078,7 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
         }
         const uint8 *data = PS1MeshData(mdl);
         const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
-        const int16 *pos  = (const int16 *)(data + 6 * mdl->indexCount); // frame 0
+        const int16 *pos  = (const int16 *)PS1MeshPos(mdl); // frame 0
         const Matrix &m   = it.m;
         int32 pz[PS1_S3D_ORTHO];
         base[i] = positions;

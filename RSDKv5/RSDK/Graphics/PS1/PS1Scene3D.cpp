@@ -155,6 +155,42 @@ struct PS1S3DAsmCtx {
 };
 static_assert(sizeof(PS1S3DAsmCtx) == 68, "ps1/s3d_faces.s reads these offsets");
 extern "C" int PS1S3DFacesTriAsm(PS1S3DAsmCtx *c);
+// 9f (UFO item 1): the keyframe blend in assembly (ps1/s3d_blend.s: whole-word reads of the 4-aligned PMD6 frames, the
+// blend factor as the multiply's rs); the C loops' results exactly. PS1_CHECK_BLEND: both run, g_ps1BlendWrong counts
+// the components that differ (GDB evidence).
+extern "C" void PS1S3DBlend16(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
+extern "C" void PS1S3DBlend8(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
+extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
+static void PS1S3DBlendC(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
+{
+    if (pos16) {
+        const int16 *a = (const int16 *)fa, *b = (const int16 *)fb;
+        for (int32 i = 0; i < n; ++i) out[i] = (int16)(a[i] + (((b[i] - a[i]) * t) >> 8));
+    }
+    else {
+        const int8 *a = (const int8 *)fa, *b = (const int8 *)fb;
+        for (int32 i = 0; i < n; ++i) out[i] = (int16)((a[i] << 7) + (((b[i] - a[i]) * t) >> 1));
+    }
+}
+// n components of frames fa / fb (from the same vertex) into out (4-aligned), blended by t
+static void PS1S3DBlend(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
+{
+    const uint32 per = pos16 ? 2 : 4; // components a word
+    if (!g_ps1S3DAsm || (((uintptr_t)fa | (uintptr_t)fb) & 3) || (n & (per - 1))) {
+        PS1S3DBlendC(pos16, fa, fb, out, n, t); // (a mesh built before the padding)
+        return;
+    }
+    if (pos16)
+        PS1S3DBlend16((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 2, t);
+    else
+        PS1S3DBlend8((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 4, t);
+#if PS1_CHECK_BLEND
+    int16 ref[3 * 96];
+    PS1S3DBlendC(pos16, fa, fb, ref, n, t);
+    for (int32 i = 0; i < n; ++i) g_ps1BlendWrong = g_ps1BlendWrong + (ref[i] != out[i]);
+    g_ps1BlendChecked = g_ps1BlendChecked + n;
+#endif
+}
 static void PS1S3DFacesTri(const uint16 *idx, const uint32 *cols, int32 faces, const uint32 *xyp, const uint16 *szp,
                            const uint8 *ocp, int32 k, int32 cull, bool inside, PS1S3DOt &o)
 {
@@ -208,7 +244,7 @@ static void PS1Scene3DWire(uint16 sceneID)
         }
         const uint8 *data = PS1MeshData(mdl);
         const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
-        const uint8 *pos  = data + 6 * mdl->indexCount; // frame 0
+        const uint8 *pos  = PS1MeshPos(mdl); // frame 0
         const int8 *nrm   = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) : NULL;
         const Matrix &m   = it.m;
         int32 sx[64], sy[64], sz[64];
@@ -334,7 +370,7 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     o.shift = PS1BitLen(kmax - kmin) - nbBits;
     o.shift = o.shift < 0 ? 0 : o.shift;
     o.flatBgr = flatBgr;
-    int16 chunk[3 * 96];
+    alignas(4) int16 chunk[3 * 96];
     for (int32 j = 0; j < n && !o.full; ++j) {
         const PS1S3DItem &it = g_ps1S3DItems[list[j]];
         const Model *mdl     = &modelList[it.model];
@@ -364,7 +400,7 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         // the vertices (keyframes blended), 96 at a time
         const uint8 *data  = PS1MeshData(mdl);
         const uint16 *idx  = (const uint16 *)(data + 4 * mdl->indexCount); // PMD6: a colour per corner first
-        const uint8 *pos   = data + 6 * mdl->indexCount;
+        const uint8 *pos   = PS1MeshPos(mdl);
         const int32 vc     = mdl->vertCount;
         const uint32 fstride = (pos16 ? 6u : 3u) * vc;
         const uint8 *fa = pos + fstride * (it.frameA < mdl->frameCount ? it.frameA : 0);
@@ -374,14 +410,8 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
             PS1Gte3DProjectOc((const int16_t *)fa, vc, (uint32_t *)sxy, sz, oc, zmin, sw, sh);
         for (int32 v0 = 0; v0 < vc && !(pos16 && (!t || it.frameA == it.frameB)); v0 += 96) {
             int32 cnt = vc - v0 < 96 ? vc - v0 : 96;
-            if (pos16) {
-                const int16 *a = (const int16 *)fa + 3 * v0, *b = (const int16 *)fbp + 3 * v0;
-                for (int32 i = 0; i < 3 * cnt; ++i) chunk[i] = t ? (int16)(a[i] + (((b[i] - a[i]) * t) >> 8)) : a[i];
-            }
-            else {
-                const int8 *a = (const int8 *)fa + 3 * v0, *b = (const int8 *)fbp + 3 * v0;
-                for (int32 i = 0; i < 3 * cnt; ++i) chunk[i] = (int16)((a[i] << 7) + (((b[i] - a[i]) * t) >> 1));
-            }
+            const uint32 o = (pos16 ? 6u : 3u) * v0; // (t is never 0 for 16-bit here: that case projects the frame as it is)
+            PS1S3DBlend(pos16, fa + o, fbp + o, chunk, 3 * cnt, t);
             PS1Gte3DProjectOc(chunk, cnt, (uint32_t *)(sxy + v0), sz + v0, oc + v0, zmin, sw, sh);
         }
         uint16 t1 = PS1_HBL();
