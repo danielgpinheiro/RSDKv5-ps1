@@ -397,6 +397,19 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
                       currentScreen->center.x << 16, currentScreen->center.y << 16);
         const uint32 zmin = (0x100u >> k) ? (0x100u >> k) : 1; // nearer corners: the face is not drawn
         const int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+        // the model's bounding sphere wholly on screen and within the GPU's limits: its faces need no box test (9f, UFO
+        // item 5b: decided before the projection, which then leaves out the outcodes' other bits: nothing reads them)
+        const int32 cz = m.values[2][3], cr = (int32)(bound - (uint32)abs(m.values[2][3]));
+        bool inside    = false;
+        int32 rs       = 0x7FFF;
+        if (cz - cr > 0x100) {
+            rs = PS1ShiftDiv(cr, scn->projectionX, cz - cr) + 2; // its radius on screen, rounded out
+            const int32 sx = currentScreen->center.x + PS1ShiftDiv(m.values[0][3], scn->projectionX, cz);
+            const int32 sy = currentScreen->center.y - PS1ShiftDiv(m.values[1][3], scn->projectionX, cz);
+            inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
+        }
+        int (*const project)(const int16_t *, int, uint32_t *, uint16_t *, uint8_t *, uint32_t, int32_t, int32_t) =
+            inside ? PS1Gte3DProjectNear : PS1Gte3DProjectOc;
         // the vertices (keyframes blended), 96 at a time
         const uint8 *data  = PS1MeshData(mdl);
         const uint16 *idx  = (const uint16 *)(data + 4 * mdl->indexCount); // PMD6: a colour per corner first
@@ -407,27 +420,17 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
         const uint8 *fbp = pos + fstride * (it.frameB < mdl->frameCount ? it.frameB : 0);
         const int32 t = it.interp;
         if (pos16 && (!t || it.frameA == it.frameB)) // no blend: the stored positions go to the GTE as they are
-            PS1Gte3DProjectOc((const int16_t *)fa, vc, (uint32_t *)sxy, sz, oc, zmin, sw, sh);
+            project((const int16_t *)fa, vc, (uint32_t *)sxy, sz, oc, zmin, sw, sh);
         for (int32 v0 = 0; v0 < vc && !(pos16 && (!t || it.frameA == it.frameB)); v0 += 96) {
             int32 cnt = vc - v0 < 96 ? vc - v0 : 96;
             const uint32 o = (pos16 ? 6u : 3u) * v0; // (t is never 0 for 16-bit here: that case projects the frame as it is)
             PS1S3DBlend(pos16, fa + o, fbp + o, chunk, 3 * cnt, t);
-            PS1Gte3DProjectOc(chunk, cnt, (uint32_t *)(sxy + v0), sz + v0, oc + v0, zmin, sw, sh);
+            project(chunk, cnt, (uint32_t *)(sxy + v0), sz + v0, oc + v0, zmin, sw, sh);
         }
         uint16 t1 = PS1_HBL();
         tx += (uint16)(t1 - t0);
         const int32 fvc  = mdl->faceVertCount;
         const int32 cull = (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DBackCull : 0;
-        // the model's bounding sphere wholly on screen and within the GPU's limits: its faces need no box test
-        const int32 cz = m.values[2][3], cr = (int32)(bound - (uint32)abs(m.values[2][3]));
-        bool inside    = false;
-        int32 rs       = 0x7FFF;
-        if (cz - cr > 0x100) {
-            rs = PS1ShiftDiv(cr, scn->projectionX, cz - cr) + 2; // its radius on screen, rounded out
-            const int32 sx = currentScreen->center.x + PS1ShiftDiv(m.values[0][3], scn->projectionX, cz);
-            const int32 sy = currentScreen->center.y - PS1ShiftDiv(m.values[1][3], scn->projectionX, cz);
-            inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
-        }
         // 7.4: small on screen: its distance LOD (the same positions, fewer faces)
 #if UFO_LOWPOLY
         const bool lod     = mdl->ps1LodIndexCount && rs < g_ps1S3DLodPx;

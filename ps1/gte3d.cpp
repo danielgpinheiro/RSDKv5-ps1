@@ -37,7 +37,9 @@ inline uint8_t outcode(uint32_t a, uint32_t z, uint32_t zmin, int32_t sw, int32_
     return (uint8_t)(oc | ((uint32_t)(x + 352) > 1023u || (uint32_t)(y + 136) > 511u) << 5);
 }
 
-template <bool OC>
+// OC: 0 none, 1 the full outcode, 2 the near bit only (9f, UFO item 5b: a model wholly on screen, where the face loops
+// read no other bit)
+template <int OC>
 __attribute__((always_inline)) inline int project(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc,
                                                   uint32_t zmin, int32_t sw, int32_t sh) {
     using namespace psyqo::GTE;
@@ -52,16 +54,17 @@ __attribute__((always_inline)) inline int project(const int16_t *xyz, int count,
         Kernels::rtpt();
         int32_t flag = (int32_t)readRaw<Register::FLAG, Safe>();
         if (flag >= 0) {
-            sxy[v]     = readRaw<Register::SXY0, Safe>();
-            sxy[v + 1] = readRaw<Register::SXY1, Safe>();
-            sxy[v + 2] = readRaw<Register::SXY2, Safe>();
-            sz[v]      = (uint16_t)readRaw<Register::SZ1, Safe>();
-            sz[v + 1]  = (uint16_t)readRaw<Register::SZ2, Safe>();
-            sz[v + 2]  = (uint16_t)readRaw<Register::SZ3, Safe>();
+            // (9f: kept in locals: the outcodes no longer reload them from the arrays they were just stored to)
+            const uint32_t a0 = readRaw<Register::SXY0, Safe>(), a1 = readRaw<Register::SXY1, Safe>();
+            const uint32_t a2 = readRaw<Register::SXY2, Safe>();
+            const uint32_t z0 = (uint16_t)readRaw<Register::SZ1, Safe>(), z1 = (uint16_t)readRaw<Register::SZ2, Safe>();
+            const uint32_t z2 = (uint16_t)readRaw<Register::SZ3, Safe>();
+            sxy[v] = a0, sxy[v + 1] = a1, sxy[v + 2] = a2;
+            sz[v] = (uint16_t)z0, sz[v + 1] = (uint16_t)z1, sz[v + 2] = (uint16_t)z2;
             if (OC) {
-                oc[v]     = outcode(sxy[v], sz[v], zmin, sw, sh);
-                oc[v + 1] = outcode(sxy[v + 1], sz[v + 1], zmin, sw, sh);
-                oc[v + 2] = outcode(sxy[v + 2], sz[v + 2], zmin, sw, sh);
+                oc[v]     = OC == 2 ? (uint8_t)((z0 < zmin) << 4) : outcode(a0, z0, zmin, sw, sh);
+                oc[v + 1] = OC == 2 ? (uint8_t)((z1 < zmin) << 4) : outcode(a1, z1, zmin, sw, sh);
+                oc[v + 2] = OC == 2 ? (uint8_t)((z2 < zmin) << 4) : outcode(a2, z2, zmin, sw, sh);
             }
             continue;
         }
@@ -74,7 +77,7 @@ __attribute__((always_inline)) inline int project(const int16_t *xyz, int count,
             sxy[v + k] = readRaw<Register::SXY2, Safe>();
             sz[v + k]  = fl < 0 ? 0 : (uint16_t)readRaw<Register::SZ3, Safe>();
             if (OC)
-                oc[v + k] = outcode(sxy[v + k], sz[v + k], zmin, sw, sh);
+                oc[v + k] = OC == 2 ? (uint8_t)((sz[v + k] < zmin) << 4) : outcode(sxy[v + k], sz[v + k], zmin, sw, sh);
             flagged += fl < 0;
         }
     }
@@ -86,7 +89,7 @@ __attribute__((always_inline)) inline int project(const int16_t *xyz, int count,
         sxy[v]     = readRaw<Register::SXY2, Safe>();
         sz[v]      = fl < 0 ? 0 : (uint16_t)readRaw<Register::SZ3, Safe>();
         if (OC)
-            oc[v] = outcode(sxy[v], sz[v], zmin, sw, sh);
+            oc[v] = OC == 2 ? (uint8_t)((sz[v] < zmin) << 4) : outcode(sxy[v], sz[v], zmin, sw, sh);
         flagged += fl < 0;
     }
     g_ps1GteVertices = g_ps1GteVertices + count;
@@ -96,9 +99,13 @@ __attribute__((always_inline)) inline int project(const int16_t *xyz, int count,
 } // namespace
 
 int PS1Gte3DProject(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz) {
-    return project<false>(xyz, count, sxy, sz, nullptr, 0, 0, 0);
+    return project<0>(xyz, count, sxy, sz, nullptr, 0, 0, 0);
 }
 int PS1Gte3DProjectOc(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
                       int32_t sh) {
-    return project<true>(xyz, count, sxy, sz, oc, zmin, sw, sh);
+    return project<1>(xyz, count, sxy, sz, oc, zmin, sw, sh);
+}
+int PS1Gte3DProjectNear(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
+                        int32_t sh) {
+    return project<2>(xyz, count, sxy, sz, oc, zmin, sw, sh);
 }

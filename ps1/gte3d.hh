@@ -17,6 +17,10 @@ int PS1Gte3DProject(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz);
 // 9f: the same, plus each vertex's outcode (PS1Scene3D.cpp's face test; the screen sw x sh, depth zmin)
 int PS1Gte3DProjectOc(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
                       int32_t sh);
+// 9f (UFO item 5b): the same with only the near bit (PS1_OC_NEAR) in each outcode: a model wholly on screen (the face
+// loops read no other bit of its corners)
+int PS1Gte3DProjectNear(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
+                        int32_t sh);
 
 extern volatile uint32_t g_ps1GteVertices; // vertices projected (total)
 extern volatile uint32_t g_ps1GteFlagged;  // ... of them flagged (total)
