@@ -532,7 +532,8 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
         }
         model->scope         = scope;
         HASH_COPY_MD5(model->hash, hash);
-        model->flags         = ((head[4] & 1) ? PS1_MESH_POS16 : 0) | ((head[4] & 2) ? PS1_MESH_CLOSED : 0);
+        model->flags         = ((head[4] & 1) ? PS1_MESH_POS16 : 0) | ((head[4] & 2) ? PS1_MESH_CLOSED : 0)
+                       | ((head[4] & 16) ? PS1_MESH_CUTLOD : 0);
         model->faceVertCount = head[5];
         model->vertCount     = head[6] | head[7] << 8;
         model->frameCount    = head[8] | head[9] << 8;

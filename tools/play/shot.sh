@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../.."
 R=$PWD; W=$R/build/shots; mkdir -p $W $R/build/boss
 NAME=$1; BOOT=$2; FRAMES=$3; PRE=${4:-}
 until mkdir $R/build/boss/tree.lock 2>/dev/null; do sleep 5; done
-( make -j8 MEASURE_RAM=8M BOOT=$BOOT > $W/b_$NAME.log 2>&1 && make disc > $W/d_$NAME.log 2>&1 && tools/play/boss/snap.sh shot_$NAME > /dev/null ); ok=$?
+( make -j8 MEASURE_RAM=8M BOOT=$BOOT ${SHOT_MAKE:-} > $W/b_$NAME.log 2>&1 && make disc > $W/d_$NAME.log 2>&1 && tools/play/boss/snap.sh shot_$NAME > /dev/null ); ok=$?
 make -j8 BOOT=$BOOT > /dev/null 2>&1   # the tree back to a 2 MB link
 rmdir $R/build/boss/tree.lock
 [ $ok = 0 ] || { echo "BUILD FAIL"; exit 1; }

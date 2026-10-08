@@ -18,6 +18,7 @@ Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK
   LoadMesh keeps them: float x 256 for 16-bit).
   Flag bit3 (7.4, the meshes NORMALS lists: drawn with the scene's lighting, as the special ring): after the LOD (or the
   positions), a normal per face corner: i8 x, y, z (x 127), 0.
+  Flag bit4 (9f): the LOD is a detail cut's (drawn only by UFO_LOWPOLY builds), not a distance LOD.
   Flag bit2 (7.4): a distance LOD follows the positions (4-aligned): u16 index count, u16 0, colours (u32 per corner),
   indices (into the same positions): the engine draws it when the model is small on screen.
   docs/32 7.4 (PMD5 -> PMD6): the baked colours had split the vertices (Sonic's jog: 698 vertices, 251 positions): the
@@ -65,6 +66,10 @@ POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase
 # by eye (rendered side by side): the UFO and the bird keep their shape; the grid collapsed thin parts elsewhere (the
 # tree's trunk, the pillars' caps, the fish's fins, the flowers' stems), so those have none
 LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.3 lost its stripes
+# 9f (UFO 60 fps plan, step C): the characters' meshes get a LOD too (about half their faces), flagged bit4 ("a cut's
+# LOD"): drawn only by the UFO_LOWPOLY cut (the stock look draws the characters whole at any size)
+CUT_LODS = {'Special/%s%s.bin' % (c, a) for c in ('Sonic', 'Tails', 'Knux') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')}
+LOD_SHARE.update({'Special/%s%s.bin' % (c, a): 0.5 for c in ('Sonic', 'Tails', 'Knux') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')})
 # docs/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
 NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
 # docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
@@ -177,7 +182,7 @@ def convert(path, src, pos8, culled):
     if path in LOD_SHARE and fvc == 3:
         lod = cluster_lod(uniq, cidx, ccol, fvc, LOD_SHARE[path])
         out = bytearray(out)
-        out[4] |= 4
+        out[4] |= 4 | (16 if path in CUT_LODS else 0)
         out += struct.pack('<HH', len(lod[0]), 0) + struct.pack('<%dI' % len(lod[1]), *lod[1])
         out += struct.pack('<%dH' % len(lod[0]), *lod[0]) + b'\0' * (-2 * len(lod[0]) % 4)
         out = bytes(out)

@@ -94,6 +94,7 @@ struct Model {
 #if RETRO_PLATFORM == RETRO_PS1
 #define PS1_MESH_POS16 (0x80) // Model::flags on the PS1: 16-bit positions
 #define PS1_MESH_CLOSED (0x40) // ... a closed mesh: faces turned away dropped (7.3)
+#define PS1_MESH_CUTLOD (0x20) // ... its LOD is the UFO_LOWPOLY cut's: drawn only in those builds (9f)
 #endif
 
 struct Scene3DVertex {

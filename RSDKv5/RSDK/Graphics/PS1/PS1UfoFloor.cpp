@@ -29,7 +29,11 @@ extern "C" {
 extern volatile uint32 g_ps1FadeCalls, g_ps1FadeOpaque, g_ps1TintGrey; // RSDK/Scene/PS1/PS1Layers.cpp
 volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
 volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
+#if UFO_FLOOR_NEAR // 9f: a detail cut (Makefile UFO_FLOOR_NEAR=1)
+volatile int32 g_ps1FloorFar    = 12;
+#else
 volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dreamcast: 40, then its LOD)
+#endif
 volatile int32 g_ps1FloorLodFar = 160; // the minimap's (up to the horizon's clip line)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
 }

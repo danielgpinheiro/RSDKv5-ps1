@@ -118,6 +118,16 @@ endif
 ifneq ($(PERF_HUD),)
 CPPFLAGS += -DPS1_PERF_HUD=1
 endif
+# docs/32 9f (UFO 60 fps plan, step C): the UFO stages' detail cuts, each its own switch (off: the stock look)
+#   UFO_FLOOR_NEAR=1  the floor's real tiles to 12 rows (24), the rest from the minimap
+#   UFO_LOWPOLY=1     the 3D models drawn with their distance LOD at any size (the characters ~1/2, the UFO 0.4)
+UFO_CUTS := $(if $(UFO_FLOOR_NEAR),floornear )$(if $(UFO_LOWPOLY),lowpoly )
+ifneq ($(UFO_FLOOR_NEAR),)
+CPPFLAGS += -DUFO_FLOOR_NEAR=1
+endif
+ifneq ($(UFO_LOWPOLY),)
+CPPFLAGS += -DUFO_LOWPOLY=1
+endif
 ifneq ($(BOOT),)
 CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
 endif
@@ -136,6 +146,7 @@ PS1_BOOT_OBJS    := ps1/rsdk5_main.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/PS1/PS1RenderDevice.o ps1/perf_hud.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
+PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
 define ps1_stamp
@@ -146,11 +157,13 @@ $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
+$(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
 $(PS1_BOOT_OBJS): build/gen/boot.txt
 $(PS1_RAM_OBJS): build/gen/ram.txt
 $(PS1_PROFILE_OBJS): build/gen/profile.txt
 $(PS1_SAMPLE_OBJS): build/gen/sample.txt
 $(PS1_HUD_OBJS): build/gen/perfhud.txt
+$(PS1_UFOCUT_OBJS): build/gen/ufocut.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).

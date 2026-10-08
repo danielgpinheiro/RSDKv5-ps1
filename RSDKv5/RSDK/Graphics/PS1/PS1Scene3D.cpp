@@ -8,7 +8,11 @@
 using namespace RSDK;
 
 extern "C" {
+#if UFO_LOWPOLY // 9f: a detail cut (Makefile UFO_LOWPOLY=1): the LOD at any size
+volatile int32 g_ps1S3DLodPx = 0x7FFF;
+#else
 volatile int32 g_ps1S3DLodPx = 40;   // 7.4: a model with a distance LOD uses it below this radius on screen (pixels)
+#endif
 volatile uint32 g_ps1S3DLodDraws = 0; // models drawn with their LOD (total)
 volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
 volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
@@ -395,7 +399,11 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
             inside = rs < 255 && sx - rs >= 0 && sx + rs < currentScreen->size.x && sy - rs >= 0 && sy + rs < currentScreen->size.y;
         }
         // 7.4: small on screen: its distance LOD (the same positions, fewer faces)
+#if UFO_LOWPOLY
         const bool lod     = mdl->ps1LodIndexCount && rs < g_ps1S3DLodPx;
+#else // (9f: the characters' LODs are the cut's only)
+        const bool lod     = mdl->ps1LodIndexCount && !(mdl->flags & PS1_MESH_CUTLOD) && rs < g_ps1S3DLodPx;
+#endif
         const uint32 *cols = (const uint32 *)(lod ? data + mdl->ps1LodOffset : data);
         const uint16 *fidx = lod ? (const uint16 *)(data + mdl->ps1LodOffset + 4 * mdl->ps1LodIndexCount) : idx;
         const int32 faces  = (lod ? mdl->ps1LodIndexCount : mdl->indexCount) / fvc;
