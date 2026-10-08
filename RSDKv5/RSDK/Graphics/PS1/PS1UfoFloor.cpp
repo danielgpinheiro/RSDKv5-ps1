@@ -201,12 +201,43 @@ uint16 s_zA[PS1_FLOOR_MAX_COLS + 2], s_zB[PS1_FLOOR_MAX_COLS + 2];
 int16 s_rowA[PS1_FLOOR_MAX_ROWS], s_rowB[PS1_FLOOR_MAX_ROWS]; // per tile row: first / last column (b < a: none)
 
 // -> the corners the GTE flagged (depth 0: behind, too near — nearer than H / 2, 32 pixels — or far off screen)
-inline int32 PS1FloorProject(int32 x0, int32 hq, int32 zq, int32 n, uint32 *xy, uint16 *z)
+inline int32 PS1FloorProject(int32 x0, int32 hq, int32 zq, int32 n, uint32 *xy, uint16 *z, int32 step = 64)
 {
     int16 v[3 * (PS1_FLOOR_MAX_COLS + 2)];
-    for (int32 i = 0; i < n; ++i, x0 += 64) v[3 * i] = (int16)x0, v[3 * i + 1] = (int16)hq, v[3 * i + 2] = (int16)zq;
+    for (int32 i = 0; i < n; ++i, x0 += step) v[3 * i] = (int16)x0, v[3 * i + 1] = (int16)hq, v[3 * i + 2] = (int16)zq;
     return PS1Gte3DProject(v, n, (uint32_t *)xy, z);
 }
+// 9f (UFO item 3): a pass's corner rows shared. Row r's cells span columns s_rowA[r]..s_rowB[r] (b < a: none); the
+// corner row between rows r and r + 1 is projected once, over both rows' columns (the real tiles' pass did this already):
+// the same corners (x = column x step, z = the row line), half the projections. Sets *t* (the top corners of row r, from
+// column ta) and *b* (its bottom ones, from column ba); keeps the bottom as the next row's top.
+struct PS1FloorRows {
+    uint32 *topXY = s_xyA, *botXY = s_xyB;
+    uint16 *topZ = s_zA, *botZ = s_zB;
+    int32 topA = 0, topN = 0, topBad = 0, botA = 0, botN = 0, botBad = 0;
+    // r's corners: (x0 + column * step) - camX, hq, z (its top line; the bottom one at z + step)
+    void Row(int32 r, int32 nRows, int32 step, int32 shift, int32 camX, int32 hq, int32 zq)
+    {
+        const int32 txa = s_rowA[r], txb = s_rowB[r];
+        if (!topN || txa < topA || txb + 1 >= topA + topN) { // the row above had no corners here: project them
+            topA = txa, topN = txb - txa + 2;
+            topBad = PS1FloorProject((txa << shift) - camX, hq, zq, topN, topXY, topZ, step);
+        }
+        int32 ba = txa, bb = txb;
+        if (r + 1 < nRows && s_rowB[r + 1] >= s_rowA[r + 1])
+            ba = s_rowA[r + 1] < ba ? s_rowA[r + 1] : ba, bb = s_rowB[r + 1] > bb ? s_rowB[r + 1] : bb;
+        if (bb - ba + 1 > PS1_FLOOR_MAX_COLS) // the union too wide: this row's only (the next projects its own)
+            ba = txa, bb = txb;
+        botA = ba, botN = bb - ba + 2;
+        botBad = PS1FloorProject((ba << shift) - camX, hq, zq + step, botN, botXY, botZ, step);
+    }
+    void Next()
+    {
+        uint32 *x = topXY;
+        uint16 *z = topZ;
+        topXY = botXY, topZ = botZ, botXY = x, botZ = z, topA = botA, topN = botN, topBad = botBad;
+    }
+};
 uint16 s_t[PS1_FLOOR_MAX_COLS + 4]; // a row's tiles (0xFFFF: empty)
 struct PS1FloorCtx {
     int32 sA, cA, sX, cX;  // yaw and pitch sin / cos (1024 = 1)
@@ -244,19 +275,31 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
     const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 quads = 0;
-    for (int32 cyy = minY >> 9; cyy <= maxY >> 9; ++cyy) {
-        int32 xmin, xmax;
+    const int32 cy0 = minY >> 9;
+    int32 nRows = (maxY >> 9) - cy0 + 1;
+    nRows = nRows > PS1_FLOOR_MAX_ROWS ? PS1_FLOOR_MAX_ROWS : nRows;
+    for (int32 r = 0; r < nRows; ++r) { // each row's cells (9f: first, so that corner rows are shared)
+        int32 xmin, xmax, cyy = cy0 + r;
+        s_rowA[r] = 1, s_rowB[r] = 0;
         if (!PS1FloorSpan(V, cyy << 9, (cyy << 9) + 511, xmin, xmax))
             continue;
         int32 ca = xmin >> 9, cb = xmax >> 9;
         if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
             cb = ca + PS1_FLOOR_MAX_COLS - 1;
-        const int32 n = cb - ca + 1, zq = (cyy << 9) - c.camY;
-        int16 v[3 * (PS1_FLOOR_MAX_COLS + 2)]; // the cells' corners, 512 apart
-        for (int32 i = 0; i <= n; ++i) v[3 * i] = (int16)(((ca + i) << 9) - c.camX), v[3 * i + 1] = (int16)c.hq, v[3 * i + 2] = (int16)zq;
-        const int32 badT = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyA, s_zA);
-        for (int32 i = 0; i <= n; ++i) v[3 * i + 2] = (int16)(zq + 512);
-        const int32 badB = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyB, s_zB);
+        s_rowA[r] = (int16)ca, s_rowB[r] = (int16)cb;
+    }
+    PS1FloorRows rows;
+    for (int32 r = 0; r < nRows; ++r, rows.Next()) {
+        if (s_rowB[r] < s_rowA[r]) {
+            rows.botN = 0; // (Next: no top corners for the row below)
+            continue;
+        }
+        const int32 cyy = cy0 + r, ca = s_rowA[r];
+        const int32 n = s_rowB[r] - ca + 1, zq = (cyy << 9) - c.camY;
+        rows.Row(r, nRows, 512, 9, c.camX, c.hq, zq);
+        const uint32 *s_xyA = rows.topXY + (ca - rows.topA), *s_xyB = rows.botXY + (ca - rows.botA);
+        const uint16 *s_zA = rows.topZ + (ca - rows.topA), *s_zB = rows.botZ + (ca - rows.botA);
+        const int32 badT = rows.topBad, badB = rows.botBad;
         const uint16 *chunkRow0 = PS1ChunkRow(layer, (uint32)((cyy << 3) & hMask) >> 2);
         const uint16 *chunkRow1 = PS1ChunkRow(layer, ((uint32)((cyy << 3) & hMask) >> 2) + 1);
         const int32 my = (cyy << 3) & hMask;
@@ -331,19 +374,31 @@ __attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx
     for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 quads = 0;
-    for (int32 cyy = minY >> 10; cyy <= maxY >> 10; ++cyy) {
-        int32 xmin, xmax;
+    const int32 cy0 = minY >> 10;
+    int32 nRows = (maxY >> 10) - cy0 + 1;
+    nRows = nRows > PS1_FLOOR_MAX_ROWS ? PS1_FLOOR_MAX_ROWS : nRows;
+    for (int32 r = 0; r < nRows; ++r) { // each row's cells (9f: first, so that corner rows are shared)
+        int32 xmin, xmax, cyy = cy0 + r;
+        s_rowA[r] = 1, s_rowB[r] = 0;
         if (!PS1FloorSpan(V, cyy << 10, (cyy << 10) + 1023, xmin, xmax))
             continue;
         int32 ca = xmin >> 10, cb = xmax >> 10;
         if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
             cb = ca + PS1_FLOOR_MAX_COLS - 1;
-        const int32 n = cb - ca + 1, zq = (cyy << 10) - c.camY;
-        int16 v[3 * (PS1_FLOOR_MAX_COLS + 2)];
-        for (int32 i = 0; i <= n; ++i) v[3 * i] = (int16)(((ca + i) << 10) - c.camX), v[3 * i + 1] = (int16)c.hq, v[3 * i + 2] = (int16)zq;
-        const int32 badT = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyA, s_zA);
-        for (int32 i = 0; i <= n; ++i) v[3 * i + 2] = (int16)(zq + 1024);
-        const int32 badB = PS1Gte3DProject(v, n + 1, (uint32_t *)s_xyB, s_zB);
+        s_rowA[r] = (int16)ca, s_rowB[r] = (int16)cb;
+    }
+    PS1FloorRows rows;
+    for (int32 r = 0; r < nRows; ++r, rows.Next()) {
+        if (s_rowB[r] < s_rowA[r]) {
+            rows.botN = 0;
+            continue;
+        }
+        const int32 cyy = cy0 + r, ca = s_rowA[r];
+        const int32 n = s_rowB[r] - ca + 1, zq = (cyy << 10) - c.camY;
+        rows.Row(r, nRows, 1024, 10, c.camX, c.hq, zq);
+        const uint32 *s_xyA = rows.topXY + (ca - rows.topA), *s_xyB = rows.botXY + (ca - rows.botA);
+        const uint16 *s_zA = rows.topZ + (ca - rows.topA), *s_zB = rows.botZ + (ca - rows.botA);
+        const int32 badT = rows.topBad, badB = rows.botBad;
         const uint32 vv = 0, vB = 255;
         int32 fd = c.sA * (((ca << 10) + 512) - c.camX) + c.cA * (zq + 512);
         const int32 fStep = c.sA * 1024;
