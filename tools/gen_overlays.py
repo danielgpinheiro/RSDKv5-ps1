@@ -44,7 +44,7 @@ MAGIC = 0x314C564F         # 'OVL1'
 # docs/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects (7.4: with their floor)
 EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o'], 'PS1VideoLink'),
           's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o',
-                                                             'ps1/gte3d.o', 'ps1/s3d_faces.o', 'ps1/s3d_blend.o'],
+                                                             'ps1/gte3d.o', 'ps1/s3d_faces.o', 'ps1/s3d_blend.o', 'ps1/floor_quads.o'],
                   'PS1Scene3DLink'),
           'deform': ({'UFO_Plasma', 'Smog'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Deform.o'], 'PS1DeformLink'),  # 7.5
           'rotopage': ({'TitleBG'}, ['RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o'], 'PS1RotoPageLink')}  # 9e: the title's paged layers

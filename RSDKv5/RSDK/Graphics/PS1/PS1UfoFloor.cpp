@@ -37,6 +37,7 @@ volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dream
 #endif
 volatile int32 g_ps1FloorLodFar = 160; // the minimap's (up to the horizon's clip line)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
+volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
 }
 
 namespace
@@ -239,6 +240,21 @@ struct PS1FloorRows {
         topXY = botXY, topZ = botZ, botXY = x, botZ = z, topA = botA, topN = botN, topBad = botBad;
     }
 };
+// 9f (UFO item 3c): ps1/floor_quads.s's arguments (byte offsets in its header); g_ps1FloorAsm 0: the C loop (A/B)
+struct PS1FloorAsmCtx {
+    int32 j, nn;
+    const uint8 *col;
+    const uint16 *tiles, *imgs;
+    const uint32 *tXY, *bXY;
+    const uint16 *tZ, *bZ;
+    int32 check, fd0, fStep;
+    const PS1TileImage *images;
+    const uint8 *imgClut;
+    const uint16 *attr;
+    uint32 *w, *wend;
+};
+static_assert(sizeof(PS1FloorAsmCtx) == 68, "ps1/floor_quads.s reads these offsets");
+extern "C" int PS1FloorQuadsAsm(PS1FloorAsmCtx *c);
 uint16 s_t[PS1_FLOOR_MAX_COLS + 4]; // a row's drawable tiles (9f: their image and column too)
 uint16 s_tImg[PS1_FLOOR_MAX_COLS + 4];
 uint8 s_tCol[PS1_FLOOR_MAX_COLS + 4];
@@ -658,6 +674,44 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const int32 fd0   = sA * (((txa << 6) + 32) - camX) + cA * (zq + 32);
         const int32 fStep = sA * 64;
         const bool check  = topBad || botBad; // corners flagged: test each tile's
+        if (g_ps1FloorAsm) { // 9f (UFO item 3c): ps1/floor_quads.s, the same quads
+            PS1FloorAsmCtx c = { 0, nn, s_tCol, s_t, s_tImg, tXY, bXY, tZ, bZ, check, fd0, fStep, images, s_imgClut,
+                                 &s_attr[0][0], w, wend };
+            int32 lastClut = -1;
+            for (;;) {
+                uint32 *w0 = c.w;
+                const int32 st = PS1FloorQuadsAsm(&c);
+                w = c.w, quads += (uint32)(w - w0) / 10;
+                if (!st)
+                    break;
+                if (st == 1) { // the bulk full (or none open)
+                    if (w)
+                        PS1ChainBulkEnd(32);
+                    w = bulk = (uint32 *)PS1ChainBulkBegin(32, 9);
+                    if (!w)
+                        goto done;
+                    wend = w + 32 * 10, c.w = w, c.wend = wend;
+                    continue;
+                }
+                // the tile's CLUT copy for its bank: as the C loop (close the bulk, fill, go on)
+                const int32 j = c.j, i = s_tCol[j];
+                const uint32 img = s_tImg[j], k = s_imgClut[img];
+                int32 bank = (fd0 + fStep * i) >> 19;
+                bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
+                if (w) {
+                    PS1ChainBulkEnd((int)((w - bulk) / 10));
+                    w = wend = NULL, c.w = c.wend = NULL;
+                }
+                PS1FloorClutFill(k, (uint32)bank, images[img].clut);
+                banks |= 1u << bank;
+                if (lastClut == j || !s_attr[k][bank]) { // (an attribute of 0, never seen: CLUT slots are on rows 240+): skipped, counted
+                    g_ps1FloorTodo = g_ps1FloorTodo + 1;
+                    ++c.j;
+                }
+                lastClut = j;
+            }
+            goto rowDone;
+        }
         for (int32 j = 0; j < nn; ++j) {
             const int32 i  = s_tCol[j];
             const int32 fd = fd0 + fStep * i;
@@ -710,6 +764,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             w += 10;
             ++quads;
         }
+    rowDone:
         // the bottom corners become the next row's top ones
         uint32 *sx = topXY;
         uint16 *sz = topZ;

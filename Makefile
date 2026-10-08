@@ -65,6 +65,7 @@ ps1/video.cpp \
 ps1/gte3d.cpp \
 ps1/s3d_faces.s \
 ps1/s3d_blend.s \
+ps1/floor_quads.s \
 ps1/fmv.cpp \
 ps1/loading.cpp \
 ps1/memcard.cpp \
