@@ -46,7 +46,7 @@ BIG = ['--simplify', '--simplify-index-threshold', '0.05', '--simplify-target-er
 # base Mania's meshes (every LoadMesh literal in the game, less Pinball (Encore) and Mighty / Ray) and the Dreamcast's
 # settings for each; POS8: 8-bit positions
 MESHES = {}
-for c in ('Sonic', 'Tails', 'Knux'):
+for c in ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray'):  # (9g: Mighty and Ray, the Plus characters setting)
     for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble'):
         MESHES['Special/%s%s.bin' % (c, a)] = CHAR_PS1
 for e in ('Blue', 'Cyan', 'Green', 'Grey', 'Purple', 'Red', 'Yellow'):
@@ -68,8 +68,8 @@ POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase
 LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.3 lost its stripes
 # 9f (UFO 60 fps plan, step C): the characters' meshes get a LOD too (about half their faces), flagged bit4 ("a cut's
 # LOD"): drawn only by the UFO_LOWPOLY cut (the stock look draws the characters whole at any size)
-CUT_LODS = {'Special/%s%s.bin' % (c, a) for c in ('Sonic', 'Tails', 'Knux') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')}
-LOD_SHARE.update({'Special/%s%s.bin' % (c, a): 0.5 for c in ('Sonic', 'Tails', 'Knux') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')})
+CUT_LODS = {'Special/%s%s.bin' % (c, a) for c in ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')}
+LOD_SHARE.update({p: 0.5 for p in CUT_LODS})
 # docs/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
 NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
 # docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the

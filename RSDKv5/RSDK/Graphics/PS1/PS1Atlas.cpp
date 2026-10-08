@@ -149,7 +149,17 @@ static const char *PS1AtlasCharSuffix()
     if (!globalVarsPtr)
         return "";
     int32 id = *(const int32 *)((const uint8 *)globalVarsPtr + ps1GlobalsPlayerIDOffset) & 0xFF;
-    return id == (1 << 1) ? "_tails" : id == (1 << 2) ? "_knux" : ""; // ID_TAILS, ID_KNUCKLES (GameVariables.h)
+    return id == (1 << 1) ? "_tails" : id == (1 << 2) ? "_knux" : id == (1 << 3) ? "_mighty" : id == (1 << 4) ? "_ray" : "";
+    // ID_TAILS, ID_KNUCKLES, ID_MIGHTY, ID_RAY (GameVariables.h; 9g: Mighty / Ray with the Plus characters setting)
+}
+// 9g: the SFX bank variant's suffix: Mighty's / Ray's own sounds (the Plus characters setting), else none
+extern "C" volatile int g_ps1PlusChars; // ps1/rsdk5_main.cpp
+const char *RSDK::PS1CharSfxSuffix()
+{
+    if (!g_ps1PlusChars || !globalVarsPtr)
+        return "";
+    int32 id = *(const int32 *)((const uint8 *)globalVarsPtr + ps1GlobalsPlayerIDOffset) & 0xFF;
+    return id == (1 << 3) ? "_mighty" : id == (1 << 4) ? "_ray" : "";
 }
 // The scene's file `ext` for the character, else the scene's one (Sonic's, or every character's); its path in s_atlasPath
 static bool PS1AtlasOpen(FileInfo *info, const char *folder, const char *sceneID, const char *ext)

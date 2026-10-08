@@ -239,7 +239,7 @@ objects:
 # and, for the scenes with a sprite manifest (tools/gfx/manifests), Scene<N>.atl (the sprite atlas; it reads the
 # disc's sprite files: run tools/data_disc.sh first)
 GAME_DATA ?= ../SonicMania_Extracted/Data
-GFX_CHARACTERS ?= sonic tails knux # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; presentation scenes: one)
+GFX_CHARACTERS ?= sonic tails knux mighty ray # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; 9g: _mighty, _ray; presentation scenes: one)
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \
 	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
@@ -255,8 +255,12 @@ gfx:
 
 # Build-time SFX (docs/32 5.1): one SPU-ADPCM bank per scene of the STAGES folders -> build/sfx/Stages/<Folder>/PS1Sfx<N>.bin
 # (tools/audio/sfx_sets.py picks what each scene's objects play; rates in build/sfx_rates.txt)
+# 9g: SFX_CHARACTERS (Mighty, Ray: the Plus characters setting) get bank variants with their own sounds where a scene's
+# set changes (PS1Sfx<N>_<char>.bin)
+SFX_CHARACTERS ?= mighty ray
 sfx:
 	/usr/bin/python3 tools/audio/build_sfx.py $(GAME_DATA) build/sfx $(subst $(comma), ,$(STAGES))
+	for c in $(SFX_CHARACTERS); do /usr/bin/python3 tools/audio/build_sfx.py --char $$c $(GAME_DATA) build/sfx $(subst $(comma), ,$(STAGES)) || exit 1; done
 
 # Build-time music (docs/32 5.2): Data/Music/*.ogg -> build/music/Music/Music.xa (CD-XA, 8 channels) + Music.bin
 music:
@@ -270,6 +274,11 @@ video:
 meshes:
 	/usr/bin/python3 tools/mesh/build_meshes.py $(GAME_DATA) build/meshes
 
+# docs/32 9g: PLUS=1 puts Mighty and Ray on the disc (their atlases, SFX banks and UFO meshes, built by `make gfx sfx meshes`
+# with the default GFX_CHARACTERS / SFX_CHARACTERS) and writes Data/PS1Config.txt (plus_characters=1), which turns them on
+# at boot (ps1/rsdk5_main.cpp PS1ReadConfig). Off by default: the DLC's characters only when the disc's owner asks.
+PLUS ?= 0
+
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
@@ -278,6 +287,10 @@ disc:
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl $$d*.pda build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
 	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi
+	rm -f build/iso/Data/PS1Config.txt
+	if [ "$(PLUS)" = 1 ]; then printf 'plus_characters=1\n' > build/iso/Data/PS1Config.txt; \
+	else rm -f build/iso/Data/Stages/*/*_mighty.* build/iso/Data/Stages/*/*_ray.* build/iso/Data/Stages/*/PS1Sfx*_mighty.bin \
+	build/iso/Data/Stages/*/PS1Sfx*_ray.bin build/iso/Data/Meshes/Special/Mighty*.bin build/iso/Data/Meshes/Special/Ray*.bin; fi
 	if [ -d build/video/Video ]; then mkdir -p build/iso/Data/Video && cp build/video/Video/*.str build/video/Video/*.sti build/video/Video/PS1Video.bin build/iso/Data/Video/; fi
 	if [ -d build/music/Music ]; then mkdir -p build/iso/Data/Music && cp build/music/Music/Music.xa build/music/Music/Music.bin build/iso/Data/Music/; fi
 	rm -rf build/iso/Data/Stages/*/PS1Local

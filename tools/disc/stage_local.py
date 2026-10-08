@@ -123,15 +123,18 @@ def main():
             for n in sorted(os.listdir(mesh_dir)):
                 shared('Data/Meshes/%s/%s' % (folder, n))
         # 9b.1: the other characters' atlases after the scene's files (a Sonic load reads past none of them)
-        for c in ('tails', 'knux'):
+        for c in ('tails', 'knux', 'mighty', 'ray'):  # (9g: Mighty / Ray: on a disc made with PLUS=1 only)
             for ext in ('pda', 'atl'):
                 add(stage + 'Scene%s_%s.%s' % (sid, c, ext))
+        for c in ('mighty', 'ray'):
+            add(stage + 'PS1Sfx%s_%s.bin' % (sid, c))
     # each folder's index of its copies (tools/disc/build_disc.py fills it with their LBAs after the first mastering
     # pass; the disc index leaves the copies out: it lives in RAM from boot, the folders' tables only during a load)
     for folder in sorted(first, key=lambda f: -first[f]):
         # (9b.1: the other characters' atlases go in the table too, 9b.2b: every .pda: tools/disc/build_disc.py local_entry)
         d = os.path.join(iso, 'Data', 'Stages', folder)
-        alts = [f for f in os.listdir(d) if re.match(r'scene[^/]*_(tails|knux)\.atl$', f.lower()) or re.match(r'scene[^/]*\.pda$', f.lower())]
+        alts = [f for f in os.listdir(d) if re.match(r'scene[^/]*_(tails|knux|mighty|ray)\.atl$', f.lower())
+                or re.match(r'scene[^/]*\.pda$', f.lower()) or re.match(r'ps1sfx[^/]*_(mighty|ray)\.bin$', f.lower())]
         n = len(copies[folder]) + len(alts)
         if not n:
             continue

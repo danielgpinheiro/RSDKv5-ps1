@@ -136,14 +136,22 @@ def write_bank(path, entries):
 
 def main():
     a = sys.argv[1:]
+    character = None
+    if '--char' in a:  # 9g: mighty / ray: PS1Sfx<id>_<char>.bin for the scenes whose set changes (a player in them)
+        i = a.index('--char')
+        character = a[i + 1]
+        a = a[:i] + a[i + 2:]
     src_data, out_data, folders = a[0], a[1], a[2:] or None
-    sets = sfx_sets.sets(src_data, folders)
+    sets = sfx_sets.sets(src_data, folders, character)
+    base = sfx_sets.sets(src_data, folders) if character else None
     src_sfx = os.path.join(src_data, 'SoundFX')
     budget = min(SPU_SAMPLE_END - SPU_SAMPLE_START, BANK_CAP)
     log = []
     with tempfile.TemporaryDirectory() as tmp:
         enc = Encoder(src_sfx, tmp)
         for (folder, sid), names in sets.items():
+            if base is not None and base.get((folder, sid)) == names:
+                continue  # 9g: no sound of the character's own: the scene's bank serves
             # 7b: a name the game asks for that the data pack lacks (CPZ's Staircase: CPZ2HitBlocks.wav): on the PC its
             # GetSfx finds nothing and nothing plays; left out of the bank the same way
             missing = [n for n in names if not os.path.exists(os.path.join(src_sfx, n))]
@@ -159,7 +167,7 @@ def main():
                 r = RATES[rate[n]]
                 frames44 = -(-info[n][0] * 44100 // info[n][1])
                 entries.append((n, r, frames44, enc.encode(n, r)))
-            size = write_bank(os.path.join(out_data, 'Stages', folder, 'PS1Sfx%s.bin' % sid), entries)
+            size = write_bank(os.path.join(out_data, 'Stages', folder, 'PS1Sfx%s%s.bin' % (sid, '_' + character if character else '')), entries)
             hist = {}
             for n in names:
                 hist[RATES[rate[n]]] = hist.get(RATES[rate[n]], 0) + 1
@@ -167,7 +175,7 @@ def main():
                                                       ' '.join('%d:%d' % (r, c) for r, c in sorted(hist.items(), reverse=True))))
             log.append('%s%s' % (folder, sid))
             log += ['  %6d Hz %s' % (RATES[rate[n]], n) for n in names]
-    rates_txt = os.path.join(HERE, '..', '..', 'build', 'sfx_rates.txt')
+    rates_txt = os.path.join(HERE, '..', '..', 'build', 'sfx_rates%s.txt' % ('_' + character if character else ''))
     os.makedirs(os.path.dirname(rates_txt), exist_ok=True)
     open(rates_txt, 'w').write('\n'.join(log) + '\n')
 

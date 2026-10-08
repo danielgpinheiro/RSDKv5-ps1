@@ -1,0 +1,10 @@
+# 9g: a new save as mighty (Plus characters on): Title (Start), the autosave notice (A), Mania Mode (A), Up x3 on the
+# blank slot (Sonic -> mighty), A; the AIZ intro skipped (Start); the run ends in GHZ1
+1 400 0x400 4
+2 200 0x10 4
+2 320 0x10 4
+2 400 0x1 4
+2 440 0x1 4
+2 480 0x1 4
+2 580 0x10 4
+0xFFFE 300 0x400 4

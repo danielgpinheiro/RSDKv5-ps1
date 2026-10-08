@@ -58,6 +58,10 @@ OUT_OF_SCOPE = {'Global/RaySwoop.wav', 'Global/RayDive.wav', 'Global/MightyDrill
                 'Global/MightyUnspin.wav', 'Global/MightyDeflect.wav', 'Global/SignPost2p.wav', 'VO/SonicWins.wav',
                 'VO/TailsWins.wav', 'VO/KnuxWins.wav', 'VO/MightyWins.wav', 'VO/RayWins.wav', 'VO/ItsADraw.wav',
                 'VO/ItsADraw_Set.wav'}
+# 9g: a Plus character's own sounds (its bank variant, PS1Sfx<id>_<char>.bin: the Plus characters setting)
+PLUS_OWN_SFX = {'mighty': {'Global/MightyDrill.wav', 'Global/MightyLand.wav', 'Global/MightyUnspin.wav',
+                           'Global/MightyDeflect.wav'},
+                'ray': {'Global/RaySwoop.wav', 'Global/RayDive.wav'}}
 # objects every scene with a player runs without an entity in the scene file (the engine / Zone / Player create them)
 ALWAYS = {'Player', 'Camera', 'HUD', 'PauseMenu', 'Zone', 'Music', 'Soundboard', 'SaveGame', 'Localization', 'UIWidgets',
           'UIButton', 'UIControl', 'UIDialog', 'DialogRunner', 'Explosion', 'Shield', 'ImageTrail', 'Dust', 'Debris',
@@ -91,8 +95,9 @@ def scene_objects(data, folder, names):
     return out
 
 
-def sets(data, folders=None):
-    """{(folder, scene id): [sfx path, ...]}: per scene, what the objects it runs ask for"""
+def sets(data, folders=None, character=None):
+    """{(folder, scene id): [sfx path, ...]}: per scene, what the objects it runs ask for (9g: `character` mighty / ray:
+    that character's own sounds kept too)"""
     gc = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
     if folders is None:
         folders = sorted({s['folder'] for c in gc['categories'] for s in c['scenes']})
@@ -123,7 +128,7 @@ def sets(data, folders=None):
             wanted = set()
             for o in live:
                 wanted |= object_sfx(o)
-            wanted -= OUT_OF_SCOPE
+            wanted -= OUT_OF_SCOPE - PLUS_OWN_SFX.get(character, set())
             loaded = [p for p, _ in gc['sfx']] + [p for p, _ in sc['sfx']]
             seen, lst = set(), []
             for p in loaded:

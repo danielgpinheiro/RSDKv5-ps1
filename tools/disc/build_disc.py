@@ -108,8 +108,11 @@ def local_entry(n, real_path):
     low, real_path = n.replace(os.sep, '/').lower(), real_path.replace(os.sep, '/')
     if '/ps1local/' in low:
         return os.path.dirname(os.path.dirname(real_path)), int(os.path.splitext(os.path.basename(n))[0], 16)
-    # (9b.2b: every scene's .pda too: PS1AtlasLoad reads it once, while its folder loads; 86 entries out of the index)
-    if re.search(r'/scene[^/]*_(tails|knux)\.atl$', low) or re.search(r'/scene[^/]*\.pda$', low):
+    # (9b.2b: every scene's .pda too: PS1AtlasLoad reads it once, while its folder loads; 86 entries out of the index;
+    # 9g: Mighty's / Ray's atlases and SFX banks, read only while their folder loads: the disc index lives in the heap
+    # from boot, and their 226 entries there (2.7 KB) left the Menu's card access without memory)
+    if (re.search(r'/scene[^/]*_(tails|knux|mighty|ray)\.atl$', low) or re.search(r'/scene[^/]*\.pda$', low)
+            or re.search(r'/ps1sfx[^/]*_(mighty|ray)\.bin$', low)):
         return os.path.dirname(real_path), path_hash(real_path)
     return None
 

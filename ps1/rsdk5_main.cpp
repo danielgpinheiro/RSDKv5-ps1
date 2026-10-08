@@ -52,6 +52,9 @@ psyqo::CDRomDevice *g_ps1CDRom = nullptr;
 extern "C" char __heap_start, __stack_start;
 #include "psyqo/alloc.h" // psyqo_heap_end (docs/32 9d)
 extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
+bool PS1FsFind(const char *path, uint32_t *lba, uint32_t *size);             // ps1/cdrom_fs.cpp
+extern "C" volatile int g_ps1PlusChars;                                      // docs/32 9g: PS1ReadConfig below
+volatile int g_ps1PlusChars = 0;
 
 // docs/32 9b.5 (test harness): GDB breaks on ps1TestStop, called only at the frames it asked for (g_ps1TestStops, 0 =
 // unused), instead of a breakpoint whose condition GDB evaluates every frame (that ran the emulator at a few fps)
@@ -78,6 +81,16 @@ void readPad() {
                 held2 |= 1 << i;
     g_ps1PadButtons  = held;
     g_ps1Pad2Buttons = held2;
+}
+
+// docs/32 9g: Mighty and Ray (SonicMania/Game.h PS1_PLUS_CHARS), off unless the disc holds Data/PS1Config.txt (the
+// builder's option writes it, "plus_characters=1"). Its presence is the switch: a file-index lookup, no read (a read
+// would take a CD window from the heap at boot).
+static void PS1ReadConfig()
+{
+    uint32_t lba, size;
+    if (PS1FsFind("Data/PS1Config.txt", &lba, &size))
+        g_ps1PlusChars = 1;
 }
 
 __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
@@ -140,6 +153,7 @@ class ManiaPS1App final : public psyqo::Application {
         if (ok) {
             SKU::InitUserCore();
             LoadSettingsINI(); // PS1: the PC's no-Settings.ini defaults (UserCore.cpp)
+            PS1ReadConfig();   // 9g: the disc's settings (Mighty and Ray)
             SKU::curSKU.platform = SKU::userCore->GetUserPlatform();
             ok = SKU::userCore->CheckAPIInitialized();
         }

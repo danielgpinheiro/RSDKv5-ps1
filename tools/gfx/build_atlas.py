@@ -109,11 +109,15 @@ def md5_words(text):
 # Mean Bean boss, Blue Spheres): the manifests were captured as Sonic, so another character's scene takes its own in
 # their place (boots as each character check that no frame is missing: g_ps1SpriteMissing)
 CHAR_FILES = {
-    'Players/Sonic.bin': {'tails': ['Players/Tails.bin', 'Players/TailSprite.bin'], 'knux': ['Players/Knux.bin']},
-    'Players/SuperSonic.bin': {'tails': [], 'knux': []},
-    'Players/ChibiSonic.bin': {'tails': ['Players/ChibiTails.bin', 'Players/CTailSprite.bin'], 'knux': ['Players/ChibiKnux.bin']},
-    'CPZ/MBMSonic.bin': {'tails': ['CPZ/MBMTails.bin'], 'knux': ['CPZ/MBMKnux.bin']},
-    'SpecialBS/Sonic.bin': {'tails': ['SpecialBS/Tails.bin'], 'knux': ['SpecialBS/Knuckles.bin']},
+    'Players/Sonic.bin': {'tails': ['Players/Tails.bin', 'Players/TailSprite.bin'], 'knux': ['Players/Knux.bin'],
+                          'mighty': ['Players/Mighty.bin'], 'ray': ['Players/Ray.bin']},  # 9g
+    'Players/SuperSonic.bin': {'tails': [], 'knux': [], 'mighty': [], 'ray': []},
+    'Players/ChibiSonic.bin': {'tails': ['Players/ChibiTails.bin', 'Players/CTailSprite.bin'], 'knux': ['Players/ChibiKnux.bin'],
+                               'mighty': ['Players/ChibiMighty.bin'], 'ray': ['Players/ChibiRay.bin']},
+    'CPZ/MBMSonic.bin': {'tails': ['CPZ/MBMTails.bin'], 'knux': ['CPZ/MBMKnux.bin'], 'mighty': ['CPZ/MBMMighty.bin'],
+                         'ray': ['CPZ/MBMRay.bin']},
+    'SpecialBS/Sonic.bin': {'tails': ['SpecialBS/Tails.bin'], 'knux': ['SpecialBS/Knuckles.bin'], 'mighty': ['SpecialBS/Mighty.bin'],
+                            'ray': ['SpecialBS/Ray.bin']},
 }
 
 
@@ -247,8 +251,10 @@ class Bin:
 # --- selection (docs/32 3.1: user decisions: single characters, players 4-bit; groups swapped where the music changes)
 PLAYER_FILES = {'sonic': {'Players/Sonic.bin': 'normal', 'Players/SuperSonic.bin': 'super'},
                 'tails': {'Players/Tails.bin': 'normal', 'Players/TailSprite.bin': 'normal'},
-                'knux': {'Players/Knux.bin': 'normal'}}
-PLAYER_ANIMATED = {'Players/Sonic.bin', 'Players/SuperSonic.bin', 'Players/Tails.bin', 'Players/Knux.bin'}  # ANI_* order
+                'knux': {'Players/Knux.bin': 'normal'},
+                'mighty': {'Players/Mighty.bin': 'normal'}, 'ray': {'Players/Ray.bin': 'normal'}}  # 9g: Mania Plus
+PLAYER_ANIMATED = {'Players/Sonic.bin', 'Players/SuperSonic.bin', 'Players/Tails.bin', 'Players/Knux.bin',
+                   'Players/Mighty.bin', 'Players/Ray.bin'}  # ANI_* order
 # the player region's alternates beyond the character's own files (Super's sparkles swap in with Super Sonic)
 PLAYER_EXTRA = {'Global/SuperSparkle.bin': 'super'}
 # 9b.2b: scenes where the player turns Super without Super's music (ERZ's cutscene transforms him for the final fight,
@@ -375,7 +381,7 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
 # 7b: art made per character (the zones' intro cutscenes: Players/Cutscene<Zone>.bin draws from <Char>Cutscene<Zone>.gif;
 # CPZ2's Mean Bean Machine: CPZ/MBM<Char>.bin): only the atlas's character's (single characters; Mighty / Ray out of
 # scope), by file name or by the sheets an animation's frames use
-CHAR_NAMES = {'sonic': 'Sonic', 'tails': 'Tails', 'knux': 'Knux'}
+CHAR_NAMES = {'sonic': 'Sonic', 'tails': 'Tails', 'knux': 'Knux', 'mighty': 'Mighty', 'ray': 'Ray'}
 ALL_CHAR_NAMES = ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray')
 
 
@@ -409,7 +415,8 @@ def other_character(name, character):
 # character art too: 687 KB at 8-bit, more than all the texture VRAM)
 PLAYER_LIKE = {'Title/Sonic.bin', 'SpecialBS/Sonic.bin', 'SpecialBS/Tails.bin', 'SpecialBS/Knuckles.bin'}
 # docs/32 7.1: Blue Spheres' own character files (BSS_Player loads every one): single characters, one per atlas
-BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bin', 'knux': 'SpecialBS/Knuckles.bin'}
+BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bin', 'knux': 'SpecialBS/Knuckles.bin',
+                    'mighty': 'SpecialBS/Mighty.bin', 'ray': 'SpecialBS/Ray.bin'}
 # What may be stored at half resolution (user decision 2026-09-26: bosses, big effects, UI art); everything else (badniks,
 # springs, rings, platforms…) stays full size. HALF_PLAN degrades the least visible first: bosses (on screen at an act's
 # end), then big effects, then presentation art, the always-visible HUD last; each step adds to the previous ones and
@@ -491,6 +498,10 @@ SCOPE_DROP = {'Global/SignPost.bin': {3, 4},                 # Mighty, Ray
               'SpecialBS/Mighty.bin': None, 'SpecialBS/Ray.bin': None,
               'AIZ/SchrodingersCapsule.bin': None,           # the Encore capsule (Mighty and Ray inside)
               'UI/Diorama.bin': {3, 4, 6, 10, 11}}           # the Plus upsell, Encore, Competition (+ its FBZ platform)
+# 9g (Mighty and Ray, a setting off by default): a Plus character's own atlas keeps its files and its sign post face
+PLUS_OWN = {'Players/Mighty.bin': 'mighty', 'Players/Ray.bin': 'ray', 'SpecialBS/Mighty.bin': 'mighty',
+            'SpecialBS/Ray.bin': 'ray'}
+PLUS_SIGNPOST = {'mighty': {4}, 'ray': {3}}  # Global/SignPost.bin: 3 Mighty, 4 Ray (the other one dropped)
 SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}},  # the Competition diorama's Knuckles
                      # 4.2d: in the Mania-mode intro no Heavy is on screen (HeavyMystic / CutsceneHBH: no entity in
                      # Scene1, only the Encore intro makes them); HeavyMystic's StageLoad loads its sheets regardless
@@ -660,6 +671,10 @@ def select(folder, scene_id, character, files):
     for path, spr, _ in files:
         n = len(spr['anims'])
         drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
+        if PLUS_OWN.get(path) == character:  # 9g
+            drop = set()
+        elif path == 'Global/SignPost.bin' and character in PLUS_SIGNPOST:
+            drop = PLUS_SIGNPOST[character]
         if drop is None:
             sel[path], why[path] = [None] * n, 'out of scope (base Mania)'
             continue

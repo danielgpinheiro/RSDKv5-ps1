@@ -927,7 +927,7 @@ void UISaveSlot_ProcessButtonCB(void)
 
         if (UIControl->anyConfirmPress) {
 #if MANIA_USE_PLUS
-            if (API.CheckDLC(DLC_PLUS) || self->frameID < 4) {
+            if (API.CheckDLC(DLC_PLUS) || PS1_PLUS_CHARS || self->frameID < 4) { // (9g: Mighty / Ray: PS1_PLUS_CHARS)
                 UISaveSlot_SelectedCB();
             }
             else {
@@ -1002,7 +1002,7 @@ void UISaveSlot_NextCharacter(void)
     int32 player = self->frameID;
 
 #if MANIA_USE_PLUS
-    int32 max = API.CheckDLC(DLC_PLUS) ? 6 : 4;
+    int32 max = (API.CheckDLC(DLC_PLUS) || PS1_PLUS_CHARS) ? 6 : 4; // (9g)
 #else
     int32 max = 4;
 #endif
@@ -1029,7 +1029,7 @@ void UISaveSlot_PrevCharacter(void)
     int32 player = self->frameID;
 
 #if MANIA_USE_PLUS
-    int32 max = API.CheckDLC(DLC_PLUS) ? 6 : 4;
+    int32 max = (API.CheckDLC(DLC_PLUS) || PS1_PLUS_CHARS) ? 6 : 4; // (9g)
 #else
     int32 max = 4;
 #endif

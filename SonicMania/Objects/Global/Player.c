@@ -17,7 +17,7 @@ void Player_Update(void)
 
 #if MANIA_USE_PLUS
     // Cheat prevention, you can't play as mighty or ray if you don't have plus installed & active
-    if (!API.CheckDLC(DLC_PLUS) && self->characterID > ID_KNUCKLES)
+    if (!API.CheckDLC(DLC_PLUS) && !PS1_PLUS_CHARS && self->characterID > ID_KNUCKLES) // (9g: PS1_PLUS_CHARS)
         Player_ChangeCharacter(self, ID_SONIC);
 
     StateMachine_Run(self->stateInputReplay);

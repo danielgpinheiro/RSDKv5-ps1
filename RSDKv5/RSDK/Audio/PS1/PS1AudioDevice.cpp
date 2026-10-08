@@ -90,7 +90,16 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) s_voiceSound[c] = -1;
 
     char path[0x40];
-    sprintf_s(path, sizeof(path), "Data/Stages/%s/PS1Sfx%s.bin", folder, id);
+    // 9g: Mighty / Ray (the Plus characters setting): the scene's bank with their own sounds, where the disc has one
+    const char *chr = PS1CharSfxSuffix();
+    sprintf_s(path, sizeof(path), "Data/Stages/%s/PS1Sfx%s%s.bin", folder, id, chr);
+    if (*chr) { // (fopen: every index the loads use, the folder's local one too)
+        FILE *probe = fopen(path, "rb");
+        if (probe)
+            fclose(probe);
+        else
+            sprintf_s(path, sizeof(path), "Data/Stages/%s/PS1Sfx%s.bin", folder, id);
+    }
     // the same scene again (a restart): its folder's SFX stayed registered (LoadSceneFolder keeps a same-folder
     // StageConfig) with the samples already bound
     if (!strcmp(path, s_bankPath))
