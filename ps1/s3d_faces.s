@@ -78,28 +78,16 @@ PS1S3DFacesTriAsm:
         addu    $t5, $s3, $t5
         beqz    $v1, .Lkey
         lw      $t5, 0($t5)             # (delay)
-        # turned away: (bx - ax) * (cy - ay) - (cx - ax) * (by - ay), as int32
-        sll     $v0, $t3, 16
-        sra     $v0, $v0, 16            # ax
-        sll     $t6, $t4, 16
-        sra     $t6, $t6, 16
-        subu    $t6, $t6, $v0           # bx - ax
-        sll     $t7, $t5, 16
-        sra     $t7, $t7, 16
-        subu    $t7, $t7, $v0           # cx - ax
-        sra     $v0, $t3, 16            # ay
-        sra     $at, $t5, 16
-        subu    $at, $at, $v0           # cy - ay
-        mult    $t6, $at
-        sra     $at, $t4, 16
-        subu    $at, $at, $v0           # by - ay
-        mflo    $t6
+        # turned away: (bx - ax) * (cy - ay) - (cx - ax) * (by - ay), the GTE's NCLIP (9f, UFO item 5: the same
+        # determinant of the GTE's own screen words, within +-1024: no overflow)
+        mtc2    $t3, $12                # SXY0
+        mtc2    $t4, $13                # SXY1
+        mtc2    $t5, $14                # SXY2
+        nop                             # (the cop2 store delay: 2 cycles)
         nop
-        nop
-        mult    $t7, $at
-        mflo    $t7
-        nop
-        subu    $t6, $t6, $t7           # cross
+        cop2    0x01400006              # NCLIP
+        mfc2    $t6, $24                # MAC0 (waits for the op)
+        nop                             # (the load delay)
         bltz    $v1, .Lcullneg
         nop
         bltz    $t6, .Lnext             # cull > 0: front faces have cross >= 0
