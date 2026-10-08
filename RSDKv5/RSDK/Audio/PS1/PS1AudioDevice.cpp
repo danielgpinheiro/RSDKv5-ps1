@@ -168,8 +168,8 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
 
 void RSDK::PS1StreamQueue(int32 c)
 {
-    if (s_xaChannel == c) { // a new stream on the music's channel: the old track stops now
-        PS1XaStop();
+    if (s_xaChannel == c) { // a new stream on the music's channel: the old track stops now (9f: without waiting)
+        PS1XaStopAsync();
         s_xaChannel = -1;
     }
     s_pendChannel = (int8)c;
@@ -224,7 +224,7 @@ void AudioDevice::InitAudioChannels() { AudioDeviceBase::InitAudioChannels(); }
 static void PS1StreamFrame(ChannelInfo *channel)
 {
     if ((channel->state & ~CHANNEL_PAUSED) != CHANNEL_STREAM) {
-        PS1XaStop();
+        PS1XaStopAsync(); // (9f: without waiting: a real drive's Pause took ~7 vblanks)
         s_xaChannel = -1;
         PS1SpuSetCdVolume(0, 0), s_cdVolume = 0;
         return;
@@ -277,6 +277,8 @@ void AudioDevice::FrameInit()
 {
     const uint32 frameSamples = AUDIO_FREQUENCY / 60;
     bool video                = sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK; // the video owns the CD (ps1/fmv)
+    if (!video)
+        PS1XaService(); // 9f: a track queued behind a stop that didn't wait
     PS1AudioStartPending();
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         ChannelInfo *channel = &channels[c];

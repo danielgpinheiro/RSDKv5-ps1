@@ -16,6 +16,10 @@ fi
   fi
   [ -n "${SETS:-}" ] && printf '%b\n' "$SETS" # GDB lines run at main (e.g. 'set var g_ps1UfoLite = 1')
   printf 'continue\nend\n'
+  # STOP_AT_LOAD=1: the window ends at the next scene load (a stage that ends before TO: its load is not timed)
+  if [ "${STOP_AT_LOAD:-0}" = 1 ]; then
+    printf 'break RSDK::LoadSceneFolder if g_ps1PerfFrames > %s\ncommands\nsilent\nset $n = g_ps1PerfFrames - $winF\nprintf "T frames=%%u vsyncs/frame x100=%%u slow=%%u worstV=%%u cpu=%%u max=%%u gpuWait=%%u flip=%%u flipMax=%%u scene=%%d\\n", $n, (g_ps1PerfVsyncs - $winVs) * 100 / $n, g_ps1PerfSlowFrames, g_ps1PerfWorstVsyncs, g_ps1PerfSumHbl / $n, g_ps1PerfMaxHbl, (g_ps1ChainIdleWaitHbl - $winIw) / $n, g_ps1PerfSumFlip / $n, g_ps1PerfFlipMax, RSDK::sceneInfo.listPos\nquit\nend\n' "$FROM"
+  fi
   sed "s/g_ps1PerfFrames == 300 || g_ps1PerfFrames == 600/g_ps1PerfFrames == $FROM || g_ps1PerfFrames == $TO/; s/set \$winA = 300/set \$winA = $FROM/; s/set \$winB = 600/set \$winB = $TO/" tools/play/scene_timing.gdb
 } > $OUT/$NAME.gdb
 for e in ${EMUS:-redux ds}; do

@@ -27,6 +27,8 @@ uint32_t PS1XaTrackPad(int track);                  // the silence before its fi
 int PS1XaCurrentTrack();                            // the last track played, -1 before any
 bool PS1XaCurrentLoop();
 void PS1XaStop();                                   // pause the drive and wait until the action ended
+void PS1XaStopAsync();                              // 9f: pause the drive, don't wait (a start meanwhile is queued)
+void PS1XaService();                                // 9f: each frame: a queued start once the drive is idle
 void PS1XaPause();                                  // PauseSound: stop reading, keep the position
 void PS1XaResume();                                 // ResumeSound: ReadS again from the current position
 bool PS1XaPlaying();                                // reading (not ended, not paused/stopped)

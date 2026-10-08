@@ -70,6 +70,16 @@ struct Xa {
     // rebased at the start, each loop (IRQ) and pause.
     volatile uint32_t posBase = 0;
     volatile uint32_t posT0   = 0;
+    // docs/32 9f: a stop that doesn't wait (PS1XaStopAsync: the drive's Pause takes ~1,800 hblanks on a real drive /
+    // DuckStation, a 7-vblank freeze each time the music stopped or changed) and a start queued until the drive is
+    // idle (PS1XaService, each frame)
+    volatile bool stopping = false;
+    struct {
+        bool on;
+        int track;
+        bool loop;
+        uint32_t row, loopRow;
+    } pend = {};
 };
 Xa s_xa;
 
@@ -232,6 +242,7 @@ void waitIdle() {
 
 void startAction(bool resume) {
     PS1FsStopStream();
+    s_xa.stopping = false;
     s_xa.running = true;
     s_action.clearPauseRequest();
     eastl::atomic_signal_fence(eastl::memory_order_release);
@@ -289,6 +300,12 @@ void PS1XaPlay(int track, bool loop) { PS1XaPlayAt(track, loop, 0, 0); }
 void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow) {
     if (!s_ready || !g_ps1CDRom || track < 0 || track >= s_trackCount)
         return;
+    if (s_xa.running) { // 9f: the drive is still busy: stop it without waiting, start this one when it is idle
+        PS1XaStopAsync();
+        s_xa.pend = { true, track, loop, row, loopRow };
+        return;
+    }
+    s_xa.pend.on = false;
     PS1XaStop();
     s_xa.track   = track;
     s_xa.channel = s_tracks[track].channel;
@@ -307,11 +324,33 @@ void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow) {
 }
 
 void PS1XaStop() {
+    s_xa.pend.on = false;
     if (s_xa.running) {
-        s_action.requestPause();
+        if (!s_xa.stopping)
+            s_action.requestPause();
         waitIdle();
     }
+    s_xa.stopping = false;
+    s_xa.paused   = false;
+}
+
+void PS1XaStopAsync() {
+    s_xa.pend.on = false;
+    if (s_xa.running && !s_xa.stopping) {
+        s_action.requestPause();
+        s_xa.stopping = true;
+    }
     s_xa.paused = false;
+}
+
+void PS1XaService() {
+    if (s_xa.running)
+        return;
+    s_xa.stopping = false;
+    if (s_xa.pend.on) {
+        s_xa.pend.on = false;
+        PS1XaPlayAt(s_xa.pend.track, s_xa.pend.loop, s_xa.pend.row, s_xa.pend.loopRow);
+    }
 }
 
 void PS1XaPause() {
@@ -346,8 +385,8 @@ uint32_t PS1XaTrackPad(int track) { return track >= 0 && track < s_trackCount ? 
 int PS1XaCurrentTrack() { return s_xa.track; }
 bool PS1XaCurrentLoop() { return s_xa.loop; }
 
-bool PS1XaPlaying() { return s_xa.running && !s_xa.ended; }
-bool PS1XaEnded() { return s_xa.ended; }
+bool PS1XaPlaying() { return (s_xa.running && !s_xa.ended && !s_xa.stopping) || s_xa.pend.on; }
+bool PS1XaEnded() { return s_xa.ended && !s_xa.pend.on && !s_xa.stopping; } // (9f: not the old track a queued start replaces)
 
 // cdrom_fs safety net: a file read while music plays (one CD action at a time).
 bool PS1XaStopForFileRead() {
