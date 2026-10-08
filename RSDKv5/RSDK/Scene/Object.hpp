@@ -352,8 +352,13 @@ extern uint16 ps1ClassLo[OBJECT_COUNT], ps1ClassHi[OBJECT_COUNT];
 // docs/32 9f: slots that may hold a class, one bit each (a superset: set by every class write below, all-ones after a
 // load; the update scan clears a bit only when it finds the slot blank and settled): words of 32 blank slots are skipped
 extern uint32 ps1LiveBits[ENTITY_COUNT / 32];
+// docs/32 9f (UFO item 2): groups of 8 slots the update scan passes over while asleep (Object.cpp PS1UpdateScan); every
+// class write into a group wakes it
+extern uint32 ps1SleepBits[(ENTITY_COUNT / 8 + 31) / 32];
 inline void PS1ClassNote(uint16 classID, int32 slot)
 {
+    if (slot >= 0 && slot < ENTITY_COUNT)
+        ps1SleepBits[slot >> 8] &= ~(1u << ((slot >> 3) & 31));
     if (classID && slot >= 0 && slot < ENTITY_COUNT)
         ps1LiveBits[slot >> 5] |= 1u << (slot & 31);
     if (classID && classID < OBJECT_COUNT && slot >= 0) {

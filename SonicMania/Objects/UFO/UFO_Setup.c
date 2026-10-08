@@ -55,8 +55,16 @@ void UFO_Setup_Create(void *data)
     self->state     = UFO_Setup_State_ShowStartMessage;
 }
 
+#if defined RETRO_PS1_BUILD
+extern volatile int32 g_ps1ScanSleepWant; // RSDKv5/RSDK/Scene/Object.cpp
+#endif
 void UFO_Setup_StageLoad(void)
 {
+#if defined RETRO_PS1_BUILD
+    // docs/32 9f (UFO item 2): the update scan's sleeping groups for these stages (reviewed: no object writes an
+    // out-of-range ring / sphere / item box / decoration's position, range or active; StaticUpdates empty)
+    g_ps1ScanSleepWant = 1;
+#endif
     RSDK.ResetEntitySlot(SLOT_UFO_SETUP, UFO_Setup->classID, NULL);
 
     UFO_Setup->playFieldLayer = RSDK.GetTileLayerID("Playfield");
