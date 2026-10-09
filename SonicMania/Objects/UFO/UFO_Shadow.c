@@ -88,6 +88,9 @@ void UFO_Shadow_Draw(void)
     extern volatile int32 g_ps1UfoLite; // Zone.c (docs/32 9f)
     if (g_ps1UfoLite & 2)
         return;
+#if UFO_NO_SHADOWS // docs/32 9f, the UFO stages' last-resort cut (Makefile UFO_NO_SHADOWS; user 2026-10-08)
+    return;
+#endif
     if (!self->parent) { // the spheres' shadows had the lowest slots (drawn first), then the rings'
         foreach_all(UFO_Sphere, sphere) { UFO_Shadow_DrawFor(self, (Entity *)sphere, 0x100); }
         foreach_all(UFO_Ring, ring) { UFO_Shadow_DrawFor(self, (Entity *)ring, 0xC0); }

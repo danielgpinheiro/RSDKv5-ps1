@@ -123,7 +123,24 @@ endif
 # docs/32 9f (UFO 60 fps plan, step C): the UFO stages' detail cuts, each its own switch (off: the stock look)
 #   UFO_FLOOR_NEAR=1  the floor's real tiles to 12 rows (24), the rest from the minimap
 #   UFO_LOWPOLY=1     the 3D models drawn with their distance LOD at any size (the characters ~1/2, the UFO 0.4)
-UFO_CUTS := $(if $(UFO_FLOOR_NEAR),floornear )$(if $(UFO_LOWPOLY),lowpoly )
+# and the last resort (user 2026-10-08, after every other optimisation: "go to decorations and shadow off path"):
+#   UFO_DECOR_FAR=N   the decorations' draw distance, N quarters of their update range (3: the Dreamcast port's)
+#   UFO_NO_DECOR=1    no decorations (trees, flowers, pillars, birds: each removes itself in its Create); ON by default
+#   UFO_NO_SHADOWS=1  no shadows (the player's, the UFO's, the rings' and spheres'); ON by default (0: the stock look)
+# Measured (docs/32 9f, all 7 stages, both emulators): the draw distance cut changes nothing (decorations are drawn close up
+# only); decorations off is the big step (UFO1 472 -> 379 CPU hblanks a frame), shadows off a further 2-5.
+UFO_NO_DECOR   ?= 1
+UFO_NO_SHADOWS ?= 1
+UFO_CUTS := $(if $(UFO_FLOOR_NEAR),floornear )$(if $(UFO_LOWPOLY),lowpoly )$(if $(UFO_DECOR_FAR),decorfar$(UFO_DECOR_FAR) )$(if $(filter 1,$(UFO_NO_DECOR)),nodecor )$(if $(filter 1,$(UFO_NO_SHADOWS)),noshadows )
+ifneq ($(UFO_DECOR_FAR),)
+CPPFLAGS += -DUFO_DECOR_FAR=$(UFO_DECOR_FAR)
+endif
+ifeq ($(UFO_NO_DECOR),1)
+CPPFLAGS += -DUFO_NO_DECOR=1
+endif
+ifeq ($(UFO_NO_SHADOWS),1)
+CPPFLAGS += -DUFO_NO_SHADOWS=1
+endif
 ifneq ($(UFO_FLOOR_NEAR),)
 CPPFLAGS += -DUFO_FLOOR_NEAR=1
 endif
@@ -148,7 +165,8 @@ PS1_BOOT_OBJS    := ps1/rsdk5_main.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/PS1/PS1RenderDevice.o ps1/perf_hud.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
-PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o
+PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o \
+                    SonicMania/Objects/UFO/UFO_Decoration.o SonicMania/Objects/UFO/UFO_Shadow.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
 define ps1_stamp

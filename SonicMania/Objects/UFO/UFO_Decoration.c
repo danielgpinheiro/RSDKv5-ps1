@@ -58,8 +58,11 @@ void UFO_Decoration_Draw(void)
     RSDK_THIS(UFO_Decoration);
 
 #if defined RETRO_PS1_BUILD
-    // docs/32 7.3: the Dreamcast port's draw distance (3/4 of the update range)
-    if (self->zdepth >= 0x4000 && self->zdepth < 0x2000000 * 3 / 4) {
+    // docs/32 7.3: the Dreamcast port's draw distance (3/4 of the update range); 9f: Makefile UFO_DECOR_FAR (quarters)
+#if !defined UFO_DECOR_FAR
+#define UFO_DECOR_FAR 3
+#endif
+    if (self->zdepth >= 0x4000 && self->zdepth < 0x2000000 * UFO_DECOR_FAR / 4) {
 #else
     if (self->zdepth >= 0x4000) {
 #endif
@@ -93,6 +96,12 @@ void UFO_Decoration_Create(void *data)
     RSDK_THIS(UFO_Decoration);
 
     if (!SceneInfo->inEditor) {
+#if defined RETRO_PS1_BUILD && UFO_NO_DECOR
+        // docs/32 9f, the UFO stages' last-resort cut (Makefile UFO_NO_DECOR; user 2026-10-08): no decorations. Nothing
+        // reads them (no collision, no foreach of the class): the slot is blank from the start
+        destroyEntity(self);
+        return;
+#endif
         if (!self->size)
             self->size = 0x400;
 
