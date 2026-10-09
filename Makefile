@@ -330,6 +330,10 @@ dist:
 	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
 	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
+	# 9l (2026-10-09): build/iso's overlays are linked against the EXE that made them; a dist after another link's
+	# make disc (an 8 MB picture run) shipped 8 MB overlays with the 2 MB EXE (black screen at the SEGA logo): the disc
+	# tree is always rebuilt from this EXE first
+	$(MAKE) disc
 	mkdir -p build/dist
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe $(LICENSE) $(DIST)
 	/usr/bin/python3 tools/disc/verify_disc.py $(DIST).bin build/iso rsdkv5.ps-exe $(LICENSE)

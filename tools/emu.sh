@@ -43,6 +43,10 @@ body = (['Card1Type = Shared', 'Card1Path = ' + card] if card else ['Card1Type =
 s = s[:m.start(1)] + '\n'.join(body) + '\n' + s[m.end(1):]
 open(p, 'w').write(s)
 PYEOF
+    # (user 2026-10-09: test runs are silent; the settings come back after the run)
+    if grep -q '^OutputMuted = ' "$EMU_CFG"; then sed -i '' 's/^OutputMuted = .*/OutputMuted = true/' "$EMU_CFG"
+    else sed -i '' 's/^\[Audio\]$/[Audio]\
+OutputMuted = true/' "$EMU_CFG"; fi
     if [ "$EMU_SP" != "0x801fff00" ]; then
       sed -i '' 's/^Enable8MBRAM = false/Enable8MBRAM = true/' "$EMU_CFG"
       echo "8 MB debug EXE (SP $EMU_SP): DuckStation Enable8MBRAM on for this run"
