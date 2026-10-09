@@ -1,5 +1,8 @@
 #include "RSDK/Core/RetroEngine.hpp"
 #if RETRO_PLATFORM == RETRO_PS1
+extern "C" volatile int32 g_ps1LogicSteps; // ps1/rsdk5_main.cpp (docs/32 9f: the UFO stages' two logic steps a frame)
+#endif
+#if RETRO_PLATFORM == RETRO_PS1
 #include "../../../ps1/loading.hh"
 #endif
 
@@ -435,6 +438,17 @@ void RSDK::ProcessEngine()
                 ProcessObjects();
                 ProcessParallaxAutoScroll();
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            // docs/32 9f (user 2026-10-08, the UFO stages only: g_ps1LogicSteps from UFO_Setup's StageLoad): 30 fps with
+            // the game at full speed, a second logic step before the frame's one draw; with its input, as a 60 fps frame
+            // reads it (the pad is the same: a press counts once)
+            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_REGULAR; ++i) {
+                ProcessInput();
+                ProcessSceneTimer();
+                ProcessObjects();
+                ProcessParallaxAutoScroll();
+            }
+#endif
 
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
             SKU::ProcessAchievements();
@@ -464,6 +478,12 @@ void RSDK::ProcessEngine()
 
                 ProcessPausedObjects();
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_PAUSED; ++i) { // (9f: see REGULAR)
+                ProcessInput();
+                ProcessPausedObjects();
+            }
+#endif
 
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
             SKU::ProcessAchievements();
@@ -481,6 +501,12 @@ void RSDK::ProcessEngine()
 
                 ProcessFrozenObjects();
             }
+#if RETRO_PLATFORM == RETRO_PS1
+            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_FROZEN; ++i) { // (9f: see REGULAR)
+                ProcessInput();
+                ProcessFrozenObjects();
+            }
+#endif
 
 #if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
             SKU::ProcessAchievements();

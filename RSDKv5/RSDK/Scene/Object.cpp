@@ -621,9 +621,11 @@ extern "C" volatile int32 g_ps1ScanSleepWant;
 volatile int32 g_ps1ScanSleepWant = 0; // set by a scene's StageLoad (SonicMania/Objects/UFO/UFO_Setup.c)
 namespace
 {
+extern "C" volatile int32 g_ps1LogicSteps; // ps1/rsdk5_main.cpp
 void PS1ScanSleepBegin()
 {
     g_ps1ScanSleepWant = 0;
+    g_ps1LogicSteps    = 1; // 9f: a StageLoad asks for two (UFO_Setup)
     s_sleep            = NULL; // (STG was reset by the load)
     s_grp              = ~0u;
     for (uint32 i = 0; i < sizeof(ps1SleepBits) / 4; ++i) ps1SleepBits[i] = 0;

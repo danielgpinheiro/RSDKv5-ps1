@@ -12,6 +12,10 @@
 #include <psyqo/application.hh>
 #include <psyqo/cdrom-device.hh>
 #include <psyqo/gpu.hh>
+#include <psyqo/kernel.hh>
+
+#include "common/kernel/events.h"
+#include "common/syscalls/syscalls.h"
 
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
@@ -93,6 +97,18 @@ static void PS1ReadConfig()
         g_ps1PlusChars = 1;
 }
 
+// docs/32 9f (user 2026-10-08, the UFO stages only): "30 fps, 2 logic steps". UFO_Setup's StageLoad sets g_ps1LogicSteps
+// to 2 (every scene load resets it to 1, RSDK/Scene/Object.cpp): the engine runs two logic steps a frame
+// (RSDK/Core/RetroEngine.cpp) and each frame is shown at least that many vblanks, so the game keeps its full speed at a
+// steady 30 fps. psyqo flips as soon as one vblank has passed since the last flip: a frame that finishes early waits
+// for its second, counted by the port's own BIOS VBlank event.
+extern "C" {
+volatile int32 g_ps1LogicSteps   = 1;
+volatile uint32_t g_ps1VblankCount = 0; // vblanks (the port's VBlank event)
+volatile uint32_t g_ps1PaceWaitHbl = 0; // hblanks the last frame waited for its pace
+}
+static uint32_t s_frameVbl = 0; // the vblank count when the frame began (right after the last flip)
+
 __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
     uint32_t now = gpu.getFrameCount();
     if (g_ps1PerfFrames) {
@@ -142,6 +158,10 @@ class ManiaPS1App final : public psyqo::Application {
         PS1SamplerInstall(); // PC sampler (ps1/pc_sampler.cpp)
 #endif
         m_pad.initialize(psyqo::AdvancedPad::PollingMode::Fast);
+        { // 9f: the port's vblank count (the UFO stages' pace)
+            uint32_t ev = psyqo::Kernel::openEvent(0xf2000003, 2, EVENT_MODE_CALLBACK, []() { g_ps1VblankCount = g_ps1VblankCount + 1; });
+            syscall_enableEvent(ev);
+        }
         g_ps1Pad = &m_pad;
 
         // RunRetroEngine's initialisation in its order (RSDKv5/RSDK/Core/RetroEngine.cpp, no mod loader), without the
@@ -245,6 +265,7 @@ class ManiaPS1App final : public psyqo::Application {
         SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
+        s_frameVbl  = g_ps1VblankCount;
         if (s_frameEnd) {
             uint32_t gap     = (t0 - s_frameEnd) & 0xFFFF; // root counter 1 wraps at 16 bits
             g_ps1PerfFlipHbl = gap;
@@ -271,6 +292,11 @@ class ManiaPS1App final : public psyqo::Application {
             g_ps1PerfMaxHbl = cpu;
         if (cpu > 262)
             g_ps1PerfOverHbl = g_ps1PerfOverHbl + 1;
+        if (g_ps1LogicSteps > 1) { // 9f: the UFO stages' pace: the frame shown until that many vblanks since it began
+            uint32_t w0 = PS1Hblanks();
+            while (g_ps1VblankCount - s_frameVbl < (uint32_t)g_ps1LogicSteps) gpu().pumpCallbacks();
+            g_ps1PaceWaitHbl = PS1HblanksSince(w0);
+        }
         perfTick(gpu());
         s_frameEnd = PS1Hblanks();
     }
