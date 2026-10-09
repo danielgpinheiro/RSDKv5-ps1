@@ -1,0 +1,1 @@
+printf "L SUP f=%u superState=%d aniFrames=%d anim=%d region0=%d region1=%d missing=%u\n", g_ps1PerfFrames, $p->superState, $p->aniFrames, $p->animator.animationID, '(anonymous namespace)::s_region'[0], '(anonymous namespace)::s_region'[1], *(unsigned *)&g_ps1SpriteMissing

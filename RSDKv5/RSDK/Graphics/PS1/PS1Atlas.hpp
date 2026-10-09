@@ -40,6 +40,7 @@ void PS1AtlasBindEnd();                                      // after InitObject
 bool PS1AtlasLoadGroup(const char *name);                    // a group into its region (a CD read: where the music changes)
 void PS1AtlasServiceRequests();                              // frame() start: a GDB-requested group load (g_ps1AtlasGroupReq)
 void PS1AtlasMusicGroups(const char *track);
+void PS1AtlasPlayerGroup(); // 9l: each frame after the music's groups: the player group the game needs (Super Sonic)
 const uint8 *PS1AtlasDropped(const uint32 *hash); // 7b: a sprite file's dropped animations (Scene<N>.pda entry), or NULL // 7b: the groups a music track brings (AudioDevice::FrameInit, before its XA)
 const PS1AtlasClut *PS1AtlasCluts();
 uint16 PS1AtlasClutCount();

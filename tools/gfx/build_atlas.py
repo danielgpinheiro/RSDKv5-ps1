@@ -469,13 +469,17 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
 LOSSY = 'lossy'  # 7b: HALF_PLAN's colour step (after the bosses: fewer colours shows less than half resolution)
-# 9c (user 2026-10-04: bosses, Hydrocity's Eggman, read blocky; choice 161): fewer colours first, then Super Sonic (seen
-# only with the emeralds), effects, pictures, presentation, set pieces and the HUD's art; the bosses last (measured over
+# 9c (user 2026-10-04: bosses, Hydrocity's Eggman, read blocky; choice 161): fewer colours first, then effects, pictures, presentation, set pieces and the HUD's art; the bosses last (measured over
 # the 93 atlases that halve anything: bosses halved in 14 instead of 84)
 HALF_PLAN = [(LOSSY, 0), (HALF_SUPER, 32), (HALF_EFFECT, 64), (HALF_PICTURE, 96), (HALF_PRESENT, 96), (HALF_EFFECT, 48),
              (HALF_PRESENT, 64), (HALF_PRESENT, 48), (HALF_EFFECT, 32), (HALF_PRESENT, 32), (HALF_LEVEL, 96), (HALF_LEVEL, 64),
              (HALF_HUD, 48), (HALF_HUD, 32), (HALF_LEVEL, 48), (HALF_LEVEL, 32),
              (HALF_BOSS, 64), (HALF_BOSS, 48), (HALF_BOSS, 32), (HALF_BOSS, 16)]
+# 9l (user 2026-10-09: Super Sonic read pixelated; choice 180): Super Sonic full size where the scene then fits by halving
+# no more than big effects (>= 48 px), pictures and the big presentation art (>= 96 px: no sign post / egg prison); else
+# HALF_PLAN as it was (Super halved first), so no scene halves anything it did not before. Measured over every scene as
+# Sonic: GHZ, CPZ, FBZ, OOZ, MMZ, LRZ2, SSZ, TMZ2, the Title keep Super full size
+SUPER_FULL_PLAN = [step for step in HALF_PLAN[:6] if step[0] is not HALF_SUPER]
 # 7b.12: backdrops far larger than VRAM allows at any plan step, stored at quarter resolution (each texel drawn 4x4) at
 # 15 colours whatever the step: Titanic Monarch's sky backdrop (the Monarch, two 1024 x 1024 frames drawn mirrored)
 QUARTER = {'TMZ1/MonarchBG.bin'}
@@ -695,6 +699,13 @@ def select(folder, scene_id, character, files):
                 sel[path], why[path] = [None] * n, 'no Super in a cutscene'
                 continue
             sel[path] = [('player', alt) if (path not in PLAYER_ANIMATED or ai in keep_player) else None for ai in range(n)]
+            # 9l (user 2026-10-09: the transformation drew nothing): Player_TryTransform switches Sonic to SuperSonic.bin and
+            # plays its ANI_TRANSFORM, but Super.ogg (the super group's load) starts only when that animation ends: its
+            # frames go with the normal ones
+            if alt == 'super':
+                tr = player_ani_ids()['ANI_TRANSFORM']
+                if tr < n and sel[path][tr] is not None:
+                    sel[path][tr] = ('player', 'normal')
             # 7b: the victory pose shows only after the act clear (ActClear sets it frames after the act-clear music, which
             # loads the end group): with the end group, out of the player region
             if alt == 'normal' and path in PLAYER_ANIMATED and 'end' in groups:
@@ -1303,14 +1314,24 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
 
 
 def build_fit(data, disc_data, folder, scene_id, character='sonic'):
-    """build() with the fewest HALF_PLAN steps that fit (full resolution when it all fits)."""
+    """build() with the fewest plan steps that fit (full resolution when it all fits): SUPER_FULL_PLAN first (9l), else
+    HALF_PLAN."""
+    if character == 'sonic':
+        res = build_fit_plan(data, disc_data, folder, scene_id, character, SUPER_FULL_PLAN, False)
+        if res is not None and res[0] is not None:
+            return res
+    return build_fit_plan(data, disc_data, folder, scene_id, character, HALF_PLAN, True)
+
+
+def build_fit_plan(data, disc_data, folder, scene_id, character, plan, last_resort):
     global HALF_RULES, KEEP_TEXT, LOSSY_LEVEL
     last = None
-    for keep, n in [(True, n) for n in range(len(HALF_PLAN) + 1)] + [(False, n) for n in range(len(HALF_PLAN) + 1)]:
+    steps = [(True, n) for n in range(len(plan) + 1)] + ([(False, n) for n in range(len(plan) + 1)] if last_resort else [])
+    for keep, n in steps:
         KEEP_TEXT = keep
         HALF_RULES = {}
         LOSSY_LEVEL = False
-        for files_, side in HALF_PLAN[:n]:
+        for files_, side in plan[:n]:
             if files_ == LOSSY:
                 LOSSY_LEVEL = True
                 continue

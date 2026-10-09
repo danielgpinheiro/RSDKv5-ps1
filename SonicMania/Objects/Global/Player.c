@@ -6763,3 +6763,20 @@ void Player_EditorLoad(void)
 #endif
 
 void Player_Serialize(void) { RSDK_EDITABLE_VAR(Player, VAR_ENUM, characterID); }
+
+#if defined RETRO_PS1_BUILD
+// docs/32 9l: the PS1 atlas keeps Super Sonic's frames loaded (the player region's super group) while a Sonic draws from
+// SuperSonic.bin past the transformation; its ANI_TRANSFORM frames are with the normal ones (Super.ogg starts only after it)
+int32 PS1GameWantsSuperGroup(void)
+{
+    if (!Player || !Player->classID)
+        return false;
+    for (int32 i = 0; i < PLAYER_COUNT; ++i) {
+        EntityPlayer *player = RSDK_GET_ENTITY(i, Player);
+        if (player->classID == Player->classID && player->characterID == ID_SONIC && player->aniFrames == Player->superFrames
+            && player->superState == SUPERSTATE_SUPER && player->animator.animationID != ANI_TRANSFORM)
+            return true;
+    }
+    return false;
+}
+#endif

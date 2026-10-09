@@ -455,6 +455,7 @@ void RSDK::ProcessEngine()
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
             PS1AudioStartPending(); // 9b.2: music the updates started, with its sprite groups, before the draws
+            PS1AtlasPlayerGroup();  // 9l: the player group the game needs (Super Sonic) when no music change brought it
 #endif
 #if PS1_PROFILE
         {

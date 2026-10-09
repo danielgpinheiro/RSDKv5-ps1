@@ -394,6 +394,40 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
 // stopped: the CD is free for the group's read): a boss track (and the Heavies' theme) brings the boss group, the act
 // clear the end group, Super's track Super's frames; a jingle (1-up, power-ups, drowning, game over) changes nothing;
 // any other track (the stage's, again after Super) the normal frames. A group the scene's atlas lacks is no error.
+// 9l (user 2026-10-09: Super Sonic drawn transparent in SSZ1's and Metal Sonic's fights): the player region's group the
+// game needs: Super Sonic's frames while a Sonic draws from SuperSonic.bin past the transformation (Player.c; its
+// ANI_TRANSFORM frames are with the normal ones), else the normal frames
+extern "C" int32 PS1GameWantsSuperGroup(void) __attribute__((weak));
+namespace
+{
+const char *PS1PlayerGroupName() { return (PS1GameWantsSuperGroup && PS1GameWantsSuperGroup()) ? "super" : "normal"; }
+int32 PS1FindGroup(const char *name)
+{
+    for (int32 g = 0; g < s_groupCount; ++g)
+        if (!strncmp(Groups()[g].name, name, 8))
+            return g;
+    return -1;
+}
+void PS1LoadGroupIfAny(const char *name)
+{
+    if (PS1FindGroup(name) >= 0)
+        PS1AtlasLoadGroup(name);
+}
+} // namespace
+
+// Each frame between the updates and the draws (after the music's groups): the player region follows the game when it
+// changes without a music change (a boss track already playing when Super starts or ends, Super's music off, a
+// respawn). A swap outside a music change stops the XA for the read; the stream resumes where it was (PS1StreamFrame)
+void RSDK::PS1AtlasPlayerGroup()
+{
+    if (!s_ps1AtlasBlob || !PS1GameWantsSuperGroup)
+        return;
+    const char *name = PS1PlayerGroupName();
+    int32 g          = PS1FindGroup(name);
+    if (g >= 0 && Groups()[g].region <= 1 && s_region[Groups()[g].region] != g)
+        PS1AtlasLoadGroup(name);
+}
+
 void RSDK::PS1AtlasMusicGroups(const char *track)
 {
     if (!s_ps1AtlasBlob || !track)
@@ -402,13 +436,7 @@ void RSDK::PS1AtlasMusicGroups(const char *track)
     for (const char *j : jingles)
         if (!strcmp(track, j))
             return;
-    auto load = [](const char *name) {
-        for (int32 g = 0; g < s_groupCount; ++g)
-            if (!strncmp(Groups()[g].name, name, 8)) {
-                PS1AtlasLoadGroup(name);
-                return;
-            }
-    };
+    auto load = PS1LoadGroupIfAny;
     if (!strcmp(track, "Super.ogg")) {
         load("super");
         return;
@@ -419,7 +447,7 @@ void RSDK::PS1AtlasMusicGroups(const char *track)
     }
     if (!strncmp(track, "Boss", 4) || !strcmp(track, "MetalSonic.ogg") || !strcmp(track, "HBHMischief.ogg"))
         load("boss");
-    load("normal");
+    load(PS1PlayerGroupName()); // 9l: Super Sonic keeps his frames under a boss track
 }
 
 void RSDK::PS1AtlasServiceRequests()
