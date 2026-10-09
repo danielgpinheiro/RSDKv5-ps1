@@ -20,6 +20,10 @@ Usage:
                                         payload (header, CRC, N bytes of (i*7+3)&0xFF)
   mcd.py absent IMAGE NAME              succeed if NAME is not on the card
   mcd.py msv IMAGE NAME [--dump DIR]    Mania's payload sections (docs/32 phase 8), each unpacked to DIR/<name>
+  mcd.py mania IMAGE SAVEDATA.bin [--out OUT.mcd]
+                                        a PC Mania save RAM (65,536 B) as the port's card file (BAHBRW-00006MANIA,
+                                        SaveData.bin = its first 0xA00 words); the file's blocks reused, else a new
+                                        one-block file; the rest of the card untouched (manual tests: DuckStation cards)
 """
 import os, re, struct, sys, zlib
 
@@ -165,6 +169,77 @@ def expected_icon(symbol):
     return [int(v, 16) for v in m[1].split(',') if v.strip()], bytes(int(v, 16) for v in m[2].split(',') if v.strip())
 
 
+MANIA_FILE, MANIA_TITLE, MANIA_KEEP = 'BAHBRW-00006MANIA', 'SONIC MANIA', 0xA00 * 4
+
+
+def msv_pack(src):
+    """UserStorage.cpp PS1CardPack: zero runs -> 0x80000000 | n; literal runs (which go on over a single zero word
+    between non-zero ones) -> n, then the n words"""
+    w = struct.unpack('<%dI' % (len(src) // 4), src)
+    out, i = [], 0
+    while i < len(w):
+        z = i
+        while z < len(w) and not w[z]:
+            z += 1
+        if z > i:
+            out.append(0x80000000 | (z - i)); i = z; continue
+        lit = i
+        while lit < len(w) and (w[lit] or (lit + 1 < len(w) and w[lit + 1])):
+            lit += 1
+        out.append(lit - i); out += w[i:lit]; i = lit
+    return struct.pack('<%dI' % len(out), *out)
+
+
+def mania_payload(save):
+    """ps1/memcard's header + Mania's MSV1 payload with one section, SaveData.bin"""
+    raw = save[:MANIA_KEEP]
+    packed = msv_pack(raw)
+    d = struct.pack('<4sHH', b'MSV1', 1, 0) + b'SaveData.bin'.ljust(16, b'\0') + struct.pack('<II', len(raw), len(packed)) + packed
+    return struct.pack('<4sHHII', b'RSDK', 1, 0, len(d), zlib.crc32(d) & 0xFFFFFFFF) + d
+
+
+def mania_card(card, save):
+    """card with the save in MANIA_FILE (in place)"""
+    clut, pixels = expected_icon('s_ps1McIconMania')
+    payload = mania_payload(save)
+    f = read_file(card, MANIA_FILE)
+    if f is None:  # a new one-block file in the first free block: directory frame, title frame, icon frame
+        free = [n for n in range(1, 16) if struct.unpack_from('<I', frame(card, n), 0)[0] & 0xF0 == 0xA0]
+        if not free:
+            raise SystemExit('no free block on the card')
+        n = free[0]
+        d = bytearray(FRAME)
+        struct.pack_into('<IIH', d, 0, 0x51, BLOCK, 0xFFFF)
+        d[0x0a:0x0a + len(MANIA_FILE)] = MANIA_FILE.encode()
+        d[0x7f] = cksum(d)
+        card[n * FRAME:(n + 1) * FRAME] = d
+        t = bytearray(FRAME)
+        t[0:4] = b'SC\x11\x01'
+        enc = {v: k for k, v in sjis_table().items()}
+        for i, ch in enumerate(MANIA_TITLE):
+            struct.pack_into('>H', t, 4 + 2 * i, enc[ch])
+        struct.pack_into('<16H', t, 0x60, *clut)
+        body = bytearray(BLOCK)
+        body[0:FRAME] = t
+        body[FRAME:2 * FRAME] = pixels
+        card[n * BLOCK:(n + 1) * BLOCK] = body
+        f = read_file(card, MANIA_FILE)
+    start = (1 + len(f['icon'])) * FRAME  # the payload after the title and icon frames
+    room = len(f['blocks']) * BLOCK - start
+    if len(payload) > room:
+        raise SystemExit('payload %d B > the file\'s room %d B' % (len(payload), room))
+    body = bytearray(b''.join(card[b * BLOCK:(b + 1) * BLOCK] for b in f['blocks']))
+    body[start:] = payload + bytes(room - len(payload))
+    for k, b in enumerate(f['blocks']):
+        card[b * BLOCK:(b + 1) * BLOCK] = body[k * BLOCK:(k + 1) * BLOCK]
+    # self-check: the card reads back as the save's kept part
+    r = read_file(card, MANIA_FILE)
+    secs = msv_sections(payload_data(r['payload'])[1])
+    if [(s[0], s[3]) for s in secs] != [('SaveData.bin', save[:MANIA_KEEP])]:
+        raise SystemExit('self-check failed')
+    return card, len(payload), r['blocks']
+
+
 def main():
     a = sys.argv[1:]
     if not a:
@@ -189,6 +264,16 @@ def main():
             card[(1 + k) * BLOCK:(2 + k) * BLOCK] = body
         open(a[1], 'wb').write(card); print('card %s: %d one-block file(s), %d free' % (a[1], n, 15 - n)); return
     data = open(a[1], 'rb').read()
+    if cmd == 'mania':
+        save = open(a[2], 'rb').read()
+        if len(save) < MANIA_KEEP:
+            raise SystemExit('%s: %d B, not a Mania save RAM' % (a[2], len(save)))
+        card, n, blocks = mania_card(bytearray(data), save)
+        out = opt('--out') or a[1]
+        open(out, 'wb').write(card)
+        print('%s: %s blocks %s, payload %d B (SaveData.bin %d of %d B, %d B dropped past it non-zero)' % (
+            out, MANIA_FILE, blocks, n, MANIA_KEEP, len(save), sum(1 for b in save[MANIA_KEEP:] if b)))
+        return
     if cmd == 'list':
         fs = directory(data)
         print('%d file(s), %d free block(s)' % (len(fs), 15 - sum(len(f['blocks']) for f in fs)))
