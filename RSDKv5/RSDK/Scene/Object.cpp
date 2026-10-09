@@ -355,6 +355,12 @@ void RSDK::InitObjects()
     cameraCount          = 0;
 #if RETRO_PLATFORM == RETRO_PS1
     PS1ScanSleepBegin();
+    // docs/32 9i: the second planned STG compaction, before the StageLoads: LoadSceneAssets leaves holes, and a StageLoad's
+    // allocation that found no room at the tail forced a compaction that moved the frame tables earlier StageLoads' class
+    // animators point into (FBZ2: UIWidgets_StageLoad after Spikes_StageLoad; at frame 147 Spikes' vertical animator read
+    // a duration of 0 there and ProcessAnimation never returned). After this one the StageLoads and Creates allocate at a
+    // hole-free tail (g_ps1StorageForcedDefrags[STG] stays 0: a guard of the harnesses' L AT lines)
+    DefragmentAndGarbageCollectStorage(DATASET_STG);
 #endif
 
     for (int32 o = 0; o < sceneInfo.classCount; ++o) {
@@ -2184,6 +2190,20 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
     return entity;
 }
 
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9i: a type group's slots as foreach_active walks them (its entries, in order; foreach_active also skips an entry
+// whose class is no longer the group's), for game loops that walk one many times a frame (FBZTrash's pairs)
+extern "C" const uint16 *PS1TypeGroupSlots(uint16 group, int32 *count, void ***entities)
+{
+    *entities = (void **)objectEntityPtr;
+    if (group >= TYPEGROUP_COUNT) {
+        *count = 0;
+        return NULL;
+    }
+    *count = typeGroups[group].entryCount;
+    return typeGroups[group].entries;
+}
+#endif
 bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
 {
     if (group >= TYPEGROUP_COUNT)

@@ -20,6 +20,12 @@ set \$lf = 0
 set \$armed = 1
 set \$n = 0
 set \$ph = 0
+set \$pv0 = 0
+set \$pf0 = 0
+set \$fw = 0
+set \$fh = 0
+set \$gl = 0
+set \$sf0 = 0
 set \$pf = 0
 set \$seen = 0
 set \$psl = -1
@@ -29,6 +35,14 @@ commands
 silent
 printf "L SCENE f=%u cat=%d pos=%d folder=%s name=%s\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].folder, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].name
 printf "L SCENEMISS total=%u\n", g_ps1SpriteMissing
+if ${SHEETS:-0} && \$ph >= 2
+  dump binary memory $S/$OUT.sheets1.bin g_ps1SheetDraws ((char *)g_ps1SheetDraws) + 256
+end
+if ${SAMPLED:-0} && \$ph >= 2
+  set var g_ps1SampleOn = 0
+  dump binary memory $S/$OUT.hist.bin 0x80400000 0x80600000
+  printf "L SAMPLED f=%u frames=%u\n", g_ps1PerfFrames, g_ps1PerfFrames - \$sf0
+end
 set \$i = 0
 while \$i < 8
   set \$e = g_ps1MissingSheet[\$i]
@@ -52,7 +66,7 @@ break perfTick if \$armed && g_ps1PerfFrames == \$lf + 300
 commands
 silent
 set \$p = (struct EntityPlayer *)RSDK::objectEntityPtr[0]
-printf "L AT f=%u pos=%d state=%d x=%d y=%d rings=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u acMissing=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, \$p->position.x >> 16, \$p->position.y >> 16, \$p->rings, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1SpriteOutside
+printf "L AT f=%u pos=%d state=%d x=%d y=%d rings=%d hbl=%u headroom=%u oom=%u missing=%u spriteMissing=%u relocations=%u ghost=%u stgFail=%u acMissing=%u defrag=%u\n", g_ps1PerfFrames, RSDK::sceneInfo.listPos, RSDK::sceneInfo.state, \$p->position.x >> 16, \$p->position.y >> 16, \$p->rings, g_ps1PerfLastHbl, g_ps1HeapHeadroom, g_ps1OutOfMemory, RSDK::g_ps1StageObjectsMissing, *(unsigned *)&g_ps1SpriteMissing, RSDK::g_ps1EntityRelocations, RSDK::g_ps1EntityGhostWrites, g_ps1StorageFail[0], g_ps1SpriteOutside, g_ps1StorageForcedDefrags[0]
 set \$armed = 0
 set \$i = 0
 while \$i < 8
@@ -91,7 +105,21 @@ end
 break perfTick if \$ph >= 1 && \$ph <= 11 && g_ps1PerfFrames % ${TICK:-60} == 0
 commands
 silent
-printf "L B f=%u ph=%d slot=%d hits=%d x=%d y=%d rings=%d st=%d hbl=%u miss=%u\n", g_ps1PerfFrames, \$ph, g_ps1TestBossSlot, g_ps1TestBossHits, \$p->position.x >> 16, \$p->position.y >> 16, \$p->rings, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1SpriteMissing
+# 9i: the fight's worst frame from the ticks with no sprite group load (a swap's CD read is a load stall: GL, apart)
+if g_ps1AtlasGroupLoads != \$gl
+  printf "L GL f=%u loads=%u worstV=%u maxHbl=%u\n", g_ps1PerfFrames, g_ps1AtlasGroupLoads, g_ps1PerfWorstVsyncs, g_ps1PerfMaxHbl
+  set \$gl = g_ps1AtlasGroupLoads
+else
+  if g_ps1PerfWorstVsyncs > \$fw
+    set \$fw = g_ps1PerfWorstVsyncs
+  end
+  if g_ps1PerfMaxHbl > \$fh
+    set \$fh = g_ps1PerfMaxHbl
+  end
+end
+set var g_ps1PerfWorstVsyncs = 0
+set var g_ps1PerfMaxHbl = 0
+printf "L B f=%u ph=%d slot=%d hits=%d x=%d y=%d rings=%d st=%d hbl=%u miss=%u avg=%u wv=%u mh=%u\n", g_ps1PerfFrames, \$ph, g_ps1TestBossSlot, g_ps1TestBossHits, \$p->position.x >> 16, \$p->position.y >> 16, \$p->rings, RSDK::sceneInfo.state, g_ps1PerfLastHbl, g_ps1SpriteMissing, (g_ps1PerfVsyncs - \$pv0) * 100 / (g_ps1PerfFrames - \$pf0 + (g_ps1PerfFrames == \$pf0)), \$fw, \$fh
 @PER@
 if (\$ph == 10 || \$ph == 2) && ${FJUMP:-0}
   set var g_ps1PadTestMask = ((g_ps1PerfFrames / ${TICK:-60}) & 1) * 16
@@ -107,6 +135,21 @@ if \$ph == 4 && ${PPAD:-0}
 end
 if \$ph == 10 && (${READY:-1})
   printf "L READY f=%u\n", g_ps1PerfFrames
+  if ${SAMPLED:-0}
+    set var g_ps1SampleOn = 1
+    set \$sf0 = g_ps1PerfFrames
+  end
+  if ${SHEETS:-0}
+    dump binary memory $S/$OUT.sheets0.bin g_ps1SheetDraws ((char *)g_ps1SheetDraws) + 256
+    dump binary memory $S/$OUT.surfaces.bin RSDK::gfxSurface ((char *)RSDK::gfxSurface) + sizeof(RSDK::gfxSurface)
+  end
+  set \$pv0 = g_ps1PerfVsyncs
+  set \$pf0 = g_ps1PerfFrames
+  set var g_ps1PerfWorstVsyncs = 0
+  set var g_ps1PerfMaxHbl = 0
+  set \$fw = 0
+  set \$fh = 0
+  set \$gl = g_ps1AtlasGroupLoads
   ${ACTION:-echo}
   set var \$p->rings = 50
   set var g_ps1TestBossHit = (void (*)(void))0x$ADDR
