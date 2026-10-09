@@ -70,6 +70,10 @@ void RSDK::BlendColors(uint8 destBankID, uint32 *srcColorsA, uint32 *srcColorsB,
         int32 g = blendAmount * ((*srcColorsB >> 0x08) & 0xFF) + blendA * ((*srcColorsA >> 0x08) & 0xFF);
         int32 b = blendAmount * ((*srcColorsB >> 0x00) & 0xFF) + blendA * ((*srcColorsA >> 0x00) & 0xFF);
 
+#if RETRO_PLATFORM == RETRO_PS1
+        if (!destBankID)
+            PS1PaletteWrite((uint8)i, PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8))); // 9m
+#endif
         *paletteColor = PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8));
 
         srcColorsA++;
@@ -100,6 +104,10 @@ void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int1
         int32 g = blendAmount * ((clrB >> 0x08) & 0xFF) + blendA * ((clrA >> 0x08) & 0xFF);
         int32 b = blendAmount * ((clrB >> 0x00) & 0xFF) + blendA * ((clrA >> 0x00) & 0xFF);
 
+#if RETRO_PLATFORM == RETRO_PS1
+        if (!destBankID && i < 0x100)
+            PS1PaletteWrite((uint8)i, PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8))); // 9m
+#endif
         *paletteColor = PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8));
 
         ++paletteColor;

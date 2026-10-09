@@ -70,6 +70,17 @@ inline uint32 GetPaletteEntry(uint8 bankID, uint8 index)
 // docs/32 9f: a bank-0 write (RSDK/Scene/PS1/PS1Layers.cpp): counts the entries that now differ from the CLUTs uploaded at
 // the draw phase's start, so the draws after it take CLUTs of the palette as it is (CutsceneHBH: each Heavy's colours)
 void PS1PaletteWrite(uint8 index, uint16 value);
+// 9m (user 2026-10-09: no hit flash on the Stardust Speedway bosses): every bank-0 write goes through it, not only
+// SetPaletteEntry's (Metal Sonic's flash is a CopyPalette around its draws)
+#define PS1_PAL_SET(bank, index, value)                                                                                 \
+    do {                                                                                                               \
+        uint16 v_ = (value);                                                                                           \
+        if (!(bank))                                                                                                   \
+            PS1PaletteWrite((uint8)(index), v_);                                                                       \
+        fullPalette[bank][index] = v_;                                                                                 \
+    } while (0)
+#else
+#define PS1_PAL_SET(bank, index, value) (fullPalette[bank][index] = (value))
 #endif
 inline void SetPaletteEntry(uint8 bankID, uint8 index, uint32 color)
 {
@@ -101,7 +112,7 @@ inline void CopyPalette(uint8 sourceBank, uint8 srcBankStart, uint8 destinationB
 {
     if (sourceBank < PALETTE_BANK_COUNT && destinationBank < PALETTE_BANK_COUNT) {
         for (int32 i = 0; i < count; ++i) {
-            fullPalette[destinationBank][destBankStart + i] = fullPalette[sourceBank][srcBankStart + i];
+            PS1_PAL_SET(destinationBank, destBankStart + i, fullPalette[sourceBank][srcBankStart + i]);
         }
     }
 }
@@ -110,13 +121,13 @@ inline void RotatePalette(uint8 bankID, uint8 startIndex, uint8 endIndex, bool32
 {
     if (right) {
         uint16 startClr = fullPalette[bankID][endIndex];
-        for (int32 i = endIndex; i > startIndex; --i) fullPalette[bankID][i] = fullPalette[bankID][i - 1];
-        fullPalette[bankID][startIndex] = startClr;
+        for (int32 i = endIndex; i > startIndex; --i) PS1_PAL_SET(bankID, i, fullPalette[bankID][i - 1]);
+        PS1_PAL_SET(bankID, startIndex, startClr);
     }
     else {
         uint16 startClr = fullPalette[bankID][startIndex];
-        for (int32 i = startIndex; i < endIndex; ++i) fullPalette[bankID][i] = fullPalette[bankID][i + 1];
-        fullPalette[bankID][endIndex] = startClr;
+        for (int32 i = startIndex; i < endIndex; ++i) PS1_PAL_SET(bankID, i, fullPalette[bankID][i + 1]);
+        PS1_PAL_SET(bankID, endIndex, startClr);
     }
 }
 

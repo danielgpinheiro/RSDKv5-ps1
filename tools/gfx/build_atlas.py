@@ -319,7 +319,9 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None), ('Eggman/EggmanPSZ.bin', None),
                                  ('PSZ2/ControlPanel.bin', None), ('Global/PhantomRuby.bin', None)]},
                 # 7b: SSZ1's Hotaru Hi-Watt; SSZ2M is the Metal Sonic fight from its start (level frames, halvable)
-                'SSZ1': {'start': [('Global/TitleCard.bin', None)],
+                # 9i: the Hotaru Hi-Watt's heads and bulb (anims 0, 1, 5) form before its boss music brings the boss group (14 draws
+                # of nothing in the fight's harness run): in the title card's group too
+                'SSZ1': {'start': [('Global/TitleCard.bin', None), ('SSZ1/HotaruHiWatt.bin', {0, 1, 5})],
                          'boss': [('SSZ1/HotaruHiWatt.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'SSZ2': {'start': [('Global/TitleCard.bin', None)],
