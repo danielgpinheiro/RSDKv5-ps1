@@ -296,8 +296,10 @@ meshes:
 
 # docs/32 9g: PLUS=1 puts Mighty and Ray on the disc (their atlases, SFX banks and UFO meshes, built by `make gfx sfx meshes`
 # with the default GFX_CHARACTERS / SFX_CHARACTERS) and writes Data/PS1Config.txt (plus_characters=1), which turns them on
-# at boot (ps1/rsdk5_main.cpp PS1ReadConfig). Off by default: the DLC's characters only when the disc's owner asks.
-PLUS ?= 0
+# at boot (ps1/rsdk5_main.cpp PS1ReadConfig). On by default for this repository's builds (user 2026-10-09); PLUS=0 for a
+# disc without them. The public builder (phase 11) keeps them OFF by default, an option there: the engine's license wants
+# DLC off by default in pre-built executables.
+PLUS ?= 1
 
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
