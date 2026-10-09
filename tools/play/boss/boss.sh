@@ -107,7 +107,7 @@ commands
 silent
 # 9i: the fight's worst frame from the ticks with no sprite group load (a swap's CD read is a load stall: GL, apart)
 if g_ps1AtlasGroupLoads != \$gl
-  printf "L GL f=%u loads=%u worstV=%u maxHbl=%u\n", g_ps1PerfFrames, g_ps1AtlasGroupLoads, g_ps1PerfWorstVsyncs, g_ps1PerfMaxHbl
+  printf "L GL f=%u loads=%u worstV=%u maxHbl=%u iconShown=%u chainBusy=%u loadUs=%u\n", g_ps1PerfFrames, g_ps1AtlasGroupLoads, g_ps1PerfWorstVsyncs, g_ps1PerfMaxHbl, g_ps1LoadingShown, '(anonymous namespace)::g_ps1ChainExtraBusy', g_ps1LoadingLastUs
   set \$gl = g_ps1AtlasGroupLoads
 else
   if g_ps1PerfWorstVsyncs > \$fw

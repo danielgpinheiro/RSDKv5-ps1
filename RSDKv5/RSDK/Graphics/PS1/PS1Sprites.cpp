@@ -430,8 +430,16 @@ inline int32 PS1LineBank(int32 y)
 }
 
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
+#if PS1_COUNT_SHEETS // docs/32 9i (evidence build): frames asked for, per sprite sheet (GDB dumps it around a boss fight)
+extern "C" {
+volatile uint32 g_ps1SheetDraws[SURFACE_COUNT];
+}
+#endif
 bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &shift)
 {
+#if PS1_COUNT_SHEETS
+    g_ps1SheetDraws[frame->sheetID] = g_ps1SheetDraws[frame->sheetID] + 1;
+#endif
     uint16 attr = frame->ps1Attr;
     if (attr == PS1_ATLAS_MISSING) {
         if (frame->ps1U == PS1_ATLAS_OUTSIDE && frame->ps1V == PS1_ATLAS_OUTSIDE) { // 4.2d: no texels to draw (the PC

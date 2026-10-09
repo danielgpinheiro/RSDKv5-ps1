@@ -1,6 +1,7 @@
 // PS1 port (docs/32 3.1c): the scene's sprite atlas (see PS1Atlas.hpp; the file format is tools/gfx/build_atlas.py's).
 // Included by Animation.cpp.
 #include "../../../../ps1/vram.hh"
+#include "../../../../ps1/loading.hh"
 
 extern "C" {
 volatile uint32 g_ps1AtlasLoads        = 0;
@@ -339,6 +340,12 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
     int32 r = Groups()[g].region;
     if (s_region[r] == g)
         return true;
+    // 9i (user 2026-10-09): a boss's group can take a second of CD reads (HCZ1): the loading icon (shown only past
+    // PS1_LOADING_DELAY_US, so a short swap shows nothing)
+    struct LoadingBracket {
+        LoadingBracket() { PS1LoadingBegin(); }
+        ~LoadingBracket() { PS1LoadingEnd(); }
+    } bracket;
     // staging: the STG tail (a group swap happens in play, where DATASET_TMP may be in use); 7b.3c: a zone that leaves
     // less STG free (FBZ2: ~7 KB) stages in a TMP block, else in a 4 KB tail (the pixels stream through it)
     uint32 stageBytes = 8 * 1024;
