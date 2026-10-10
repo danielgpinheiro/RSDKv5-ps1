@@ -51,7 +51,8 @@ def scenes(data):
 
 def units():
     out = {}
-    path = os.path.join(REPO, 'build', 'gen', 'ovl', 'units.txt')
+    # (phase 11: PS1_OVL_UNITS, the builder's copy next to its prebuilt overlays)
+    path = os.environ.get('PS1_OVL_UNITS') or os.path.join(REPO, 'build', 'gen', 'ovl', 'units.txt')
     for line in open(path):
         p = line.split()
         if len(p) == 3:

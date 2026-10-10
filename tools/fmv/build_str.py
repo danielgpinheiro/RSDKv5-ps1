@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.join(HERE, '..', 'audio'))
 import xa_adpcm  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
-PSXAVENC = os.environ.get('PSXAVENC') or os.path.join(REPO, '..', 'psxavenc', 'build', 'psxavenc')
+PSXAVENC = os.environ.get('PSXAVENC') or next((p for p in [os.path.join(REPO, '..', 'psxavenc', 'build', 'psxavenc')] if os.path.exists(p)), 'psxavenc')  # (phase 11: else PATH)
 FFMPEG = os.environ.get('FFMPEG') or 'ffmpeg'
 FFPROBE = os.environ.get('FFPROBE') or 'ffprobe'
 S = 2336

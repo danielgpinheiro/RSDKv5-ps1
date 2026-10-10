@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 import xa_adpcm  # noqa: E402
 import rsdk5_formats as F  # noqa: E402
 
-PSXAVENC = os.environ.get('PSXAVENC') or os.path.join(HERE, '../../../psxavenc/build/psxavenc')
+PSXAVENC = os.environ.get('PSXAVENC') or next((p for p in [os.path.join(HERE, '../../../psxavenc/build/psxavenc')] if os.path.exists(p)), 'psxavenc')  # (phase 11: else PATH)
 FFMPEG = os.environ.get('FFMPEG') or 'ffmpeg'
 GAME = os.path.join(HERE, '..', '..', 'SonicMania')
 SECTOR = 2336

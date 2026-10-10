@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import sfx_sets  # noqa: E402
 
-PSXAVENC = os.environ.get('PSXAVENC') or os.path.join(HERE, '../../../psxavenc/build/psxavenc')
+PSXAVENC = os.environ.get('PSXAVENC') or next((p for p in [os.path.join(HERE, '../../../psxavenc/build/psxavenc')] if os.path.exists(p)), 'psxavenc')  # (phase 11: else PATH)
 FFMPEG = os.environ.get('FFMPEG') or 'ffmpeg'
 SPU_SAMPLE_START = 0x1000
 SPU_SAMPLE_END = 0x80000 - 32
