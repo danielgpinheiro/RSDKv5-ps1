@@ -1044,6 +1044,7 @@ __attribute__((optimize("O2"))) static uint32 PS1LitColour(const Scene3D *scn, i
 // its visible pixels are all front faces'); the sign a front face's screen winding is checked against (-1, picked by
 // pictures: +1 dropped the visible side), 0: none dropped
 volatile int32 g_ps1S3DOrthoCull = -1;
+volatile int32 g_ps1S3DWireBulk  = 1; // 9o: the wireframe's lines in bulks (0: DrawLine each, for A/B pictures)
 volatile int32 g_ps1S3DAsm = 1; // 9f: the UFO 3D faces / keyframe blend in assembly (ps1/s3d_faces.s, s3d_blend.s; 0: C)
 extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
 volatile uint32 g_ps1BlendWrong = 0, g_ps1BlendChecked = 0; // 9f: PS1_CHECK_BLEND builds: components compared, wrong
@@ -1105,13 +1106,47 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
         }
         positions += mdl->vertCount;
     }
-    // far first (stock's insertion sort: equal depths keep their order)
-    for (int32 i = 1; i < faces; ++i) {
-        int32 d = depth[i], j = i - 1;
-        uint16 f = fIdx[i];
-        uint8 t  = fItem[i];
-        for (; j >= 0 && depth[j] < d; --j) depth[j + 1] = depth[j], fIdx[j + 1] = fIdx[j], fItem[j + 1] = fItem[j];
-        depth[j + 1] = d, fIdx[j + 1] = f, fItem[j + 1] = t;
+    // far first (stock's insertion sort: equal depths keep their order). 9o: as one key a face, depth << 8 | 255 - its
+    // place in the list: a total order whose descending sort is stock's result whatever order it starts from, so it
+    // starts from the previous frame's (the ring turns slowly: nearly sorted, a few moves instead of ~1,600); the
+    // three-array sort when a depth leaves the key's 23 bits or the list is not the previous frame's
+    static uint8 s_prevOrder[PS1_S3D_ORTHO];
+    static int32 s_prevFaces = -1;
+    static uint16 s_prevScene = 0xFFFF;
+    bool keyed = faces <= 256;
+    for (int32 i = 0; i < faces && keyed; ++i) keyed = depth[i] >= -(1 << 22) && depth[i] < (1 << 22);
+    if (keyed) {
+        uint32 key[PS1_S3D_ORTHO];
+        const bool seed = s_prevFaces == faces && s_prevScene == sceneID;
+        for (int32 i = 0; i < faces; ++i) {
+            const int32 k = seed ? s_prevOrder[i] : i;
+            key[i]        = (uint32)(depth[k] + (1 << 22)) << 8 | (uint32)(255 - k);
+        }
+        for (int32 i = 1; i < faces; ++i) {
+            const uint32 v = key[i];
+            int32 j        = i - 1;
+            for (; j >= 0 && key[j] < v; --j) key[j + 1] = key[j];
+            key[j + 1] = v;
+        }
+        int32 d2[PS1_S3D_ORTHO];
+        uint16 f2[PS1_S3D_ORTHO];
+        uint8 t2[PS1_S3D_ORTHO];
+        for (int32 i = 0; i < faces; ++i) {
+            const int32 k = 255 - (int32)(key[i] & 0xFF);
+            d2[i] = depth[k], f2[i] = fIdx[k], t2[i] = fItem[k], s_prevOrder[i] = (uint8)k;
+        }
+        for (int32 i = 0; i < faces; ++i) depth[i] = d2[i], fIdx[i] = f2[i], fItem[i] = t2[i];
+        s_prevFaces = faces, s_prevScene = sceneID;
+    }
+    else {
+        s_prevFaces = -1;
+        for (int32 i = 1; i < faces; ++i) {
+            int32 d = depth[i], j = i - 1;
+            uint16 f = fIdx[i];
+            uint8 t  = fItem[i];
+            for (; j >= 0 && depth[j] < d; --j) depth[j + 1] = depth[j], fIdx[j + 1] = fIdx[j], fItem[j + 1] = fItem[j];
+            depth[j + 1] = d, fIdx[j + 1] = f, fItem[j + 1] = t;
+        }
     }
     Entity *entity = sceneInfo.entity;
     Vector2 vertPos[4];
@@ -1121,6 +1156,10 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
     uint32 f3dBgr, f3dSemi;
     const bool bulk = scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED && entity->inkEffect == INK_NONE
                       && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
+    // 9o: the wireframe (the used giant ring) the same way: its lines into the bulks (PS1LineBulk), the face's colour
+    // through PS1FlatInk once instead of once a line
+    const bool wireBulk = g_ps1S3DWireBulk && scn->drawMode == S3D_WIREFRAME_SHADED && entity->inkEffect == INK_NONE
+                          && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
     for (int32 f = 0; f < faces; ++f) {
         const PS1S3DItem &it = g_ps1S3DItems[fItem[f]];
         const Model *mdl     = &modelList[it.model];
@@ -1149,6 +1188,16 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             int32 ny = 0;
             for (int32 v = 0; v < n; ++v) ny += nys[v];
             uint32 colour = PS1LitColour(scn, ny / n, it.colour);
+            if (wireBulk) { // DrawLine's arithmetic (16.16 -> screen), PS1FlatInk's INK_NONE colour
+                const uint32 bgr = (colour & 0xFF) << 16 | (colour & 0xFF00) | ((colour >> 16) & 0xFF);
+                const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+                for (int32 v = 0; v < n; ++v) {
+                    int32 w = v + 1 < n ? v + 1 : 0;
+                    PS1LineBulk(FROM_FIXED(px[b + c[v]] << 8) - sx, FROM_FIXED(py[b + c[v]] << 8) - sy,
+                                FROM_FIXED(px[b + c[w]] << 8) - sx, FROM_FIXED(py[b + c[w]] << 8) - sy, bgr);
+                }
+                continue;
+            }
             for (int32 v = 0; v < n; ++v) {
                 int32 w = v + 1 < n ? v + 1 : 0;
                 DrawLine(px[b + c[v]] << 8, py[b + c[v]] << 8, px[b + c[w]] << 8, py[b + c[w]] << 8, colour, entity->alpha,
@@ -1156,7 +1205,7 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             }
         }
     }
-    if (bulk)
+    if (bulk || wireBulk)
         PS1Face3DEnd();
     g_ps1S3DDraws = g_ps1S3DDraws + 1;
     g_ps1S3DFaces = g_ps1S3DFaces + faces;

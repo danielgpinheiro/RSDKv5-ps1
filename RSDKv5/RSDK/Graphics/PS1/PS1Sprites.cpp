@@ -1458,6 +1458,23 @@ void RSDK::PS1BlendedFaceBulk(Vector2 *vertices, uint32 *colors, int32 vertCount
     }
 #endif
 }
+// 9o: PS1DrawLine's words for an INK_NONE line (bgr = PS1FlatInk's for INK_NONE) into the open Face3D bulk (Scene3D's
+// wireframe: the used giant ring); the same range check
+void RSDK::PS1LineBulk(int32 x1, int32 y1, int32 x2, int32 y2, uint32 bgr)
+{
+    if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023)
+        return;
+    uint32 *w = PS1Face3DSlot(3);
+    if (!w)
+        return;
+    w[0] = 0x40000000 | bgr;
+    w[1] = (uint32)(uint16)y1 << 16 | (uint16)x1;
+    w[2] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+    g_ps1PrimApprox = g_ps1PrimApprox + 1;
+#if PS1_DEBUG_BIGRAM
+    PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
+#endif
+}
 void RSDK::PS1Face3DEnd()
 {
     PS1Face3DFlush();

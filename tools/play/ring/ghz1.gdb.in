@@ -1,0 +1,21 @@
+# docs/32 9o: the giant ring's cost (shot.sh PRE file; BOOT=1,0). The boss hook warps Sonic 60 px left of GHZ1's first
+# SpecialRing (its slot in g_ps1TestBossSlot); at every stop the ring's `enabled` (EntitySpecialRing + 140, from the
+# resident ELF's DWARF) is set to @ENABLED@ (0: used, drawn as a wireframe; 1: the solid ring) and the frame's CPU
+# hblanks are printed (L RING)
+define ps1_onstop
+  set $p = (struct EntityPlayer *)RSDK::objectEntityPtr[0]
+  if !$warp_set
+    set var g_ps1TestBossClass = *(short *)SpecialRing
+    set var g_ps1TestBossNth = 0
+    set var g_ps1TestBossPin = -1
+    set var g_ps1TestBossDX = -60
+    set var g_ps1TestBossDY = 0
+    set var g_ps1TestBossWarp = 1
+    set $warp_set = 1
+  end
+  if g_ps1TestBossSlot >= 0
+    set var *(int *)((char *)RSDK::objectEntityPtr[g_ps1TestBossSlot] + 140) = @ENABLED@
+  end
+  printf "L RING f=%u slot=%d hbl=%u x=%d y=%d\n", g_ps1PerfFrames, g_ps1TestBossSlot, g_ps1PerfLastHbl, $p->position.x >> 16, $p->position.y >> 16
+end
+set $warp_set = 0
