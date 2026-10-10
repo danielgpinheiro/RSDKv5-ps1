@@ -294,7 +294,10 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                 # 9b.2b: the flying prison comes in under the boss music (the Weather Mobile turns into it), and the
                 # weather TV (WeatherTV draws from WeatherMobile.bin) stays on screen through the act clear and the outro:
                 # both in the boss and the end group
-                'SPZ2': {'start': [('Global/TitleCard.bin', None)],
+                # 9i: the arena's giant Weather TV (WeatherMobile.bin's Television / Background, anims 0 / 1) is on screen
+                # before the boss music brings the boss group (377 missing draws in the fight's harness run): in the
+                # title card's group too
+                'SPZ2': {'start': [('Global/TitleCard.bin', None), ('SPZ2/WeatherMobile.bin', {0, 1})],
                          'boss': [('SPZ2/WeatherMobile.bin', None), ('Eggman/EggMobile.bin', None),
                                   ('Global/Explosions.bin', {2, 3}), ('Global/EggPrison.bin', None)],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None),
