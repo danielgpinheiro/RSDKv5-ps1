@@ -31,7 +31,7 @@ cp tools/mesh/build_meshes.py "$B/tools/mesh/"
 cp tools/disc/build_disc.py tools/disc/stage_local.py tools/disc/verify_disc.py tools/disc/load_order.txt "$B/tools/disc/"
 # the mesh optimiser (michael-fadely/mania-mesh-optimizer, MIT, with meshoptimizer, MIT): sources only
 mkdir -p "$B/tools/mesh/optimizer"
-( cd "$OPTSRC" && tar cf - CMakeLists.txt LICENSE source dependencies --exclude='.git' --exclude='cmake-build-*' ) | ( cd "$B/tools/mesh/optimizer" && tar xf - )
+( cd "$OPTSRC" && tar cf - --exclude='.git' --exclude='.gitmodules' --exclude='cmake-build-*' CMakeLists.txt LICENSE source dependencies ) | ( cd "$B/tools/mesh/optimizer" && tar xf - )
 # the decompilation's object sources (the atlas tools read which animations each object sets) and its license
 ( find SonicMania/Objects -name '*.c' -o -name '*.h' ) | tar cf - -T - | ( cd "$B" && tar xf - )
 cp LICENSE.md "$B/SonicMania/LICENSE.md"
