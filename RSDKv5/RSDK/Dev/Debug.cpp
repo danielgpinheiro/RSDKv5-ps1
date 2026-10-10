@@ -20,7 +20,11 @@ char RSDK::outputString[0x400];
 
 #if RETRO_REV02
 int32 RSDK::viewableVarCount = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+ViewableVariable RSDK::viewableVarList[1];
+#else
 ViewableVariable RSDK::viewableVarList[VIEWVAR_LIST_COUNT];
+#endif
 #endif
 
 DevMenu RSDK::devMenu = DevMenu();
@@ -120,6 +124,9 @@ void RSDK::PrintLog(int32 mode, const char *message, ...)
 #if RETRO_REV02
 void RSDK::AddViewableVariable(const char *name, void *value, int32 type, int32 min, int32 max)
 {
+#if RETRO_PLATFORM == RETRO_PS1
+    return; // docs/32 9n: only the PC's dev menu reads them
+#endif
     if (viewableVarCount < VIEWVAR_COUNT) {
         ViewableVariable *viewVar = &viewableVarList[viewableVarCount++];
 

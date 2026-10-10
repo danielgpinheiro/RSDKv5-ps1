@@ -70,7 +70,9 @@ static Window s_fallback = {s_fallbackBuf, 0, 0, 0, false};
 /* findEntry reads the volume descriptor and every directory on the path; the disc is read-only, so
  * those sectors are cached (LRU). With the file index (below) only paths outside it walk directories:
  * three entries (volume descriptor, root, one more). */
-#define DIR_CACHE 3
+// (docs/32 9n: 3 -> 1: with the file index (PS1FILES.IDX) directory sectors are read only to find the index at boot;
+// 4 KB back for STG: FBZ2's load fits again)
+#define DIR_CACHE 1
 static uint8_t s_dirCache[DIR_CACHE][ISO_SECTOR];
 static uint32_t s_dirCacheLba[DIR_CACHE];
 static uint32_t s_dirCacheAge[DIR_CACHE];

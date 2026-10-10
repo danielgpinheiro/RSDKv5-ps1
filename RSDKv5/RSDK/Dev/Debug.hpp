@@ -96,7 +96,11 @@ typedef enum {
 } DebugVarDisplayTypes;
 
 extern int32 viewableVarCount;
+#if RETRO_PLATFORM == RETRO_PS1
+extern ViewableVariable viewableVarList[1]; // docs/32 9n: no dev menu to show them: nothing is registered (2.3 KB for STG)
+#else
 extern ViewableVariable viewableVarList[VIEWVAR_LIST_COUNT];
+#endif
 
 inline void ClearViewableVariables() { viewableVarCount = 0; }
 void AddViewableVariable(const char *name, void *value, int32 type, int32 min, int32 max);
