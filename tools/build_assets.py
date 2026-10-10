@@ -34,7 +34,7 @@ def stages():
 
 
 def run(args, env=None):
-    print('$ ' + ' '.join(os.path.relpath(a, os.getcwd()) if os.path.isabs(a) else a for a in args), flush=True)
+    print('$ ' + ' '.join(os.path.basename(a) if os.path.isabs(a) else a for a in args), flush=True)
     subprocess.run(args, check=True, env=env)
 
 
@@ -127,7 +127,9 @@ def main():
             shutil.copyfile(os.path.join(music, 'Music', n), os.path.join(D, 'Music', n))
     for p in glob.glob(os.path.join(D, 'Stages', '*', 'PS1Local')):
         shutil.rmtree(p)
-    run([PY, tool('disc', 'stage_local.py'), iso], env)
+    order = os.path.join(work, 'load_order.txt')  # (the work folder's: never the tools' own copy)
+    run([PY, tool('disc', 'stage_local.py'), iso, order], env)
+    env['PS1_LOAD_ORDER'] = order
     lic = os.path.abspath(a.license) if a.license != 'none' else 'none'
     run([PY, tool('disc', 'build_disc.py'), iso, os.path.abspath(a.exe), lic, os.path.abspath(a.out)], env)
     run([PY, tool('disc', 'verify_disc.py'), os.path.abspath(a.out) + '.bin', iso, os.path.abspath(a.exe), lic], env)
