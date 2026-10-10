@@ -1475,6 +1475,34 @@ void RSDK::PS1LineBulk(int32 x1, int32 y1, int32 x2, int32 y2, uint32 bgr)
     PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
 #endif
 }
+// 9o: a face's edges (corner v to v + 1, the last to the first) as PS1LineBulk would write them, with the bulk's slot
+// bookkeeping inline: xs / ys the positions' screen coordinates, c the face's position indices
+__attribute__((optimize("O2"))) void RSDK::PS1LineFace(const int32 *xs, const int32 *ys, const uint16 *c, int32 n, uint32 bgr)
+{
+    const uint32 cmd = 0x40000000 | bgr;
+    for (int32 v = 0; v < n; ++v) {
+        const int32 w = v + 1 < n ? v + 1 : 0;
+        const int32 x1 = xs[c[v]], y1 = ys[c[v]], x2 = xs[c[w]], y2 = ys[c[w]];
+        if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023)
+            continue;
+        if (!s_ps1F3DBase || s_ps1F3DWpp != 3 || s_ps1F3DN == 32) {
+            PS1Face3DFlush();
+            s_ps1F3DBase = (uint32 *)PS1ChainBulkBegin(32, 3);
+            if (!s_ps1F3DBase)
+                return;
+            s_ps1F3DWpp = 3;
+        }
+        uint32 *wr = s_ps1F3DBase + s_ps1F3DN++ * 4;
+        wr[0] = cmd;
+        wr[1] = (uint32)(uint16)y1 << 16 | (uint16)x1;
+        wr[2] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+#if PS1_DEBUG_BIGRAM
+        PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2);
+#endif
+    }
+    g_ps1Face3DDrawn = g_ps1Face3DDrawn + n;
+    g_ps1PrimApprox  = g_ps1PrimApprox + n;
+}
 void RSDK::PS1Face3DEnd()
 {
     PS1Face3DFlush();

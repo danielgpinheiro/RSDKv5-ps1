@@ -245,7 +245,7 @@ static void PS1Scene3DWire(uint16 sceneID)
         const uint8 *data = PS1MeshData(mdl);
         const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
         const uint8 *pos  = PS1MeshPos(mdl); // frame 0
-        const int8 *nrm   = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) : NULL;
+        const bool nrm    = mdl->ps1NormOffset != 0;
         const Matrix &m   = it.m;
         int32 sx[64], sy[64], sz[64];
         for (int32 v = 0; v < mdl->vertCount; ++v) {
@@ -271,7 +271,7 @@ static void PS1Scene3DWire(uint16 sceneID)
             int32 ny = 0, v = 0;
             for (; v < fvc && sz[c[v]] >= 0x100; ++v) {
                 if (nrm) {
-                    const int8 *n = nrm + 4 * (f + v);
+                    const int8 *n = PS1MeshNormal(mdl, (uint32)(f + v));
                     ny += (n[1] * 0x10000 / 127 * it.n1[1] >> 8) + (n[2] * 0x10000 / 127 * it.n1[2] >> 8) + (n[0] * 0x10000 / 127 * it.n1[0] >> 8);
                 }
             }

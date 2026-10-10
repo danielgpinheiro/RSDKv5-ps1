@@ -194,10 +194,21 @@ def convert(path, src, pos8, culled):
     nrm = read_mdl.normals if path in NORMALS else None
     if nrm:
         out = bytearray(out)
-        out[4] |= 8
         q8 = lambda x: max(-127, min(127, int(round(x * 127))))
-        for v in idx:
-            out += struct.pack('<bbbb', q8(nrm[v][0]), q8(nrm[v][1]), q8(nrm[v][2]), 0)
+        corner = [(q8(nrm[v][0]), q8(nrm[v][1]), q8(nrm[v][2])) for v in idx]
+        table = sorted(set(corner), key=corner.index)  # first use order
+        if len(table) <= 256:
+            # 9o: indexed (bit 32): u16 count, u16 0, the unique normals (i8 x, y, z, 0), a u8 index a corner (padded to
+            # 4): the runtime lights each unique normal once (the giant ring: 80 for 320 corners), 640 B less
+            out[4] |= 8 | 32
+            out += struct.pack('<HH', len(table), 0)
+            for nv in table:
+                out += struct.pack('<bbbb', nv[0], nv[1], nv[2], 0)
+            out += bytes(table.index(nv) for nv in corner) + b'\0' * (-len(corner) % 4)
+        else:
+            out[4] |= 8
+            for nv in corner:
+                out += struct.pack('<bbbb', nv[0], nv[1], nv[2], 0)
         out = bytes(out)
     # read back: every corner's position (each frame) and colour as the Dreamcast pass left them
     magic, fl, fv, v2, f2, st, _, sc, ic = struct.unpack_from('<4sBBHHBBHH', out, 0)

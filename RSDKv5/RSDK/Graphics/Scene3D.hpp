@@ -88,13 +88,14 @@ struct Model {
     uint16 ps1Radius; // 7.3: the largest |coordinate| in engine units (the GTE unit shift's bound)
     uint16 ps1LodIndexCount; // 7.4: the distance LOD's corners (0: none), its colours at ps1LodOffset in the block
     uint32 ps1LodOffset;
-    uint32 ps1NormOffset; // 7.4: normals per face corner (i8 x, y, z x 127, 0), 0: none
+    uint32 ps1NormOffset; // 7.4: normals per face corner (i8 x, y, z x 127, 0), 0: none (9o: or indexed, PS1_MESH_NRMIDX)
 #endif
 };
 #if RETRO_PLATFORM == RETRO_PS1
 #define PS1_MESH_POS16 (0x80) // Model::flags on the PS1: 16-bit positions
 #define PS1_MESH_CLOSED (0x40) // ... a closed mesh: faces turned away dropped (7.3)
 #define PS1_MESH_CUTLOD (0x20) // ... its LOD is the UFO_LOWPOLY cut's: drawn only in those builds (9f)
+#define PS1_MESH_NRMIDX (0x10) // ... its normals indexed (9o): at ps1NormOffset u16 count, u16 0, count x (i8 x, y, z, 0), u8 a corner
 #endif
 
 struct Scene3DVertex {

@@ -64,6 +64,7 @@ uint32 *PS1Face3DSlot(int32 wpp);
 void PS1Face3DEnd();
 void PS1BlendedFaceBulk(Vector2 *vertices, uint32 *colors, int32 vertCount); // 9f: an opaque blended face into the open Face3D bulk
 void PS1LineBulk(int32 x1, int32 y1, int32 x2, int32 y2, uint32 bgr); // 9o: an INK_NONE line into the open Face3D bulk
+void PS1LineFace(const int32 *xs, const int32 *ys, const uint16 *c, int32 n, uint32 bgr); // 9o: a face's edges, the same way
 // 3.4c-d: rotated / scaled frames (DrawSpriteRotozoom's geometry), DrawTile's pieces from the scene's tile images
 void PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int32 scaleX, int32 scaleY, int32 direction, int32 rotation,
                           int32 inkEffect, int32 alpha);

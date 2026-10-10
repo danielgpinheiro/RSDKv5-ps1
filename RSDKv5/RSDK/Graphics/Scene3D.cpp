@@ -561,8 +561,14 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
             off = (off + 4 + 6 * n + 3) & ~3u;
         }
         if (head[4] & 8) { // normals per corner (the lit modes that don't project)
-            if (off + 4u * model->indexCount <= size)
+            uint32 need = 4u * model->indexCount;
+            if ((head[4] & 32) && off + 4 <= size) // 9o: indexed
+                need = 4 + 4u * *(uint16 *)((uint8 *)model->vertices + off) + model->indexCount;
+            if (off + need <= size) {
                 model->ps1NormOffset = off;
+                if (head[4] & 32)
+                    model->flags |= PS1_MESH_NRMIDX;
+            }
             else
                 g_ps1MeshErrors = g_ps1MeshErrors + 1;
         }
@@ -1160,24 +1166,61 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
     // through PS1FlatInk once instead of once a line
     const bool wireBulk = g_ps1S3DWireBulk && scn->drawMode == S3D_WIREFRAME_SHADED && entity->inkEffect == INK_NONE
                           && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
+    // 9o: the wireframe's line ends on screen once a position (DrawLine's 16.16 -> screen arithmetic), not twice an edge
+    int32 sxv[PS1_S3D_ORTHO], syv[PS1_S3D_ORTHO];
+    if (wireBulk) {
+        const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+        for (int32 i = 0; i < positions; ++i) sxv[i] = FROM_FIXED(px[i] << 8) - sx, syv[i] = FROM_FIXED(py[i] << 8) - sy;
+    }
+    // 9o: indexed normals (PS1_MESH_NRMIDX): each unique normal's y through matNormals once for the item being drawn
+    // (and, solid, its lit colour once), not once a corner: the same values
+    int32 nyU[PS1_S3D_ORTHO]; // (a mesh with more unique normals takes the per-corner path)
+    uint32 colU[PS1_S3D_ORTHO];
+    uint8 colHave[PS1_S3D_ORTHO];
+    int32 nyItem = -1;
     for (int32 f = 0; f < faces; ++f) {
         const PS1S3DItem &it = g_ps1S3DItems[fItem[f]];
         const Model *mdl     = &modelList[it.model];
         const int32 n        = mdl->faceVertCount, first = fIdx[f] * n, b = base[fItem[f]];
         const uint8 *data    = PS1MeshData(mdl);
         const uint16 *c      = (const uint16 *)(data + 4 * mdl->indexCount) + first;
-        const int8 *nrm      = mdl->ps1NormOffset ? (const int8 *)(data + mdl->ps1NormOffset) + 4 * first : NULL;
+        const bool nidx      = (mdl->flags & PS1_MESH_NRMIDX) && *(const uint16 *)(data + mdl->ps1NormOffset) <= PS1_S3D_ORTHO;
         int32 nys[4];
-        for (int32 v = 0; v < n; ++v) { // the corner's normal y through matNormals (LoadMesh keeps normals x 0x10000)
-            int32 nx = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v]] : 0, ny = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v + 1]] : 0;
-            int32 nz = nrm ? s_ps1Nrm127[(uint8)nrm[4 * v + 2]] : 0;
-            nys[v]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
+        int32 nk[4] = { -1, -1, -1, -1 }; // (indexed) each corner's normal index, for the colour cache
+        if (nidx) {
+            const uint8 *nb   = data + mdl->ps1NormOffset;
+            const uint32 U    = *(const uint16 *)nb;
+            const uint8 *cidx = nb + 4 + 4 * U + first;
+            if (nyItem != fItem[f]) {
+                nyItem = fItem[f];
+                for (uint32 u = 0; u < U; ++u) {
+                    const int8 *nr = (const int8 *)(nb + 4 + 4 * u);
+                    int32 nx = s_ps1Nrm127[(uint8)nr[0]], ny = s_ps1Nrm127[(uint8)nr[1]], nz = s_ps1Nrm127[(uint8)nr[2]];
+                    nyU[u]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
+                    colHave[u] = 0;
+                }
+            }
+            for (int32 v = 0; v < n; ++v) nk[v] = cidx[v], nys[v] = nyU[cidx[v]];
+        }
+        else {
+            for (int32 v = 0; v < n; ++v) { // the corner's normal y through matNormals (LoadMesh keeps normals x 0x10000)
+                const int8 *nrm = mdl->ps1NormOffset ? PS1MeshNormal(mdl, (uint32)(first + v)) : NULL;
+                int32 nx = nrm ? s_ps1Nrm127[(uint8)nrm[0]] : 0, ny = nrm ? s_ps1Nrm127[(uint8)nrm[1]] : 0;
+                int32 nz = nrm ? s_ps1Nrm127[(uint8)nrm[2]] : 0;
+                nys[v]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
+            }
         }
         if (scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED) {
             for (int32 v = 0; v < n; ++v) {
                 vertPos[v].x = (px[b + c[v]] << 8) - (currentScreen->position.x << 16);
                 vertPos[v].y = (py[b + c[v]] << 8) - (currentScreen->position.y << 16);
-                vertClrs[v]  = PS1LitColour(scn, nys[v], it.colour);
+                if (nk[v] >= 0) {
+                    if (!colHave[nk[v]])
+                        colU[nk[v]] = PS1LitColour(scn, nys[v], it.colour), colHave[nk[v]] = 1;
+                    vertClrs[v] = colU[nk[v]];
+                }
+                else
+                    vertClrs[v] = PS1LitColour(scn, nys[v], it.colour);
             }
             if (bulk)
                 PS1BlendedFaceBulk(vertPos, vertClrs, n);
@@ -1188,14 +1231,9 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             int32 ny = 0;
             for (int32 v = 0; v < n; ++v) ny += nys[v];
             uint32 colour = PS1LitColour(scn, ny / n, it.colour);
-            if (wireBulk) { // DrawLine's arithmetic (16.16 -> screen), PS1FlatInk's INK_NONE colour
+            if (wireBulk) { // PS1FlatInk's INK_NONE colour; the face's edges in order (PS1LineFace)
                 const uint32 bgr = (colour & 0xFF) << 16 | (colour & 0xFF00) | ((colour >> 16) & 0xFF);
-                const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
-                for (int32 v = 0; v < n; ++v) {
-                    int32 w = v + 1 < n ? v + 1 : 0;
-                    PS1LineBulk(FROM_FIXED(px[b + c[v]] << 8) - sx, FROM_FIXED(py[b + c[v]] << 8) - sy,
-                                FROM_FIXED(px[b + c[w]] << 8) - sx, FROM_FIXED(py[b + c[w]] << 8) - sy, bgr);
-                }
+                PS1LineFace(sxv + b, syv + b, c, n, bgr);
                 continue;
             }
             for (int32 v = 0; v < n; ++v) {

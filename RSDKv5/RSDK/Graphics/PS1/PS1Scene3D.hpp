@@ -24,6 +24,14 @@ inline uint8 *PS1MeshData(const RSDK::Model *m) { return (uint8 *)m->vertices; }
 // tools/mesh/build_meshes.py)
 inline uint32 PS1MeshPosOffset(const RSDK::Model *m) { return (6u * m->indexCount + 3) & ~3u; }
 inline uint8 *PS1MeshPos(const RSDK::Model *m) { return PS1MeshData(m) + PS1MeshPosOffset(m); }
+// 7.4 / 9o: face corner k's normal (i8 x, y, z): per corner, or through the corner's index into the unique normals
+inline const int8 *PS1MeshNormal(const RSDK::Model *m, uint32 k)
+{
+    const uint8 *b = PS1MeshData(m) + m->ps1NormOffset;
+    if (m->flags & PS1_MESH_NRMIDX)
+        return (const int8 *)(b + 4 + 4u * b[4 + 4u * *(const uint16 *)b + k]);
+    return (const int8 *)(b + 4u * k);
+}
 struct PS1Scene3DOps {
     void (*draw)(uint16 sceneID);
     void (*floor)(RSDK::TileLayer *layer); // 7.4: the UFO floor (PS1UfoFloor.cpp), for a layer whose scanlines carry a camera
