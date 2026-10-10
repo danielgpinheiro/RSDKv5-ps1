@@ -1,10 +1,19 @@
-# docs/32 9m: Metal Sonic's hit flash (shot.sh PRE file; BOOT=1,12 = SSZ2M, the race and the fight). Sonic holds right
-# with 50 rings; the first stop finds Metal Sonic's slot; at each later stop where he is visible and on screen his
+# docs/32 9m: Metal Sonic's hit flash (shot.sh PRE file; BOOT=1,12 = SSZ2M). The boss hook warps Sonic 100 px left of
+# Metal Sonic (the act's start is walled off), who holds right with 50 rings; the first stop finds Metal Sonic's slot; at each later stop where he is visible and on screen his
 # invincibilityTimer (EntityMetalSonic + 148, the SSZ2 overlays' DWARF; visible +85, onScreen +86) is set to 48: the next
 # frame's update makes it 47 and MetalSonic_Draw copies bank 2's entries 240-247 over bank 0's around his draws
 define ps1_onstop
   set $p = (struct EntityPlayer *)RSDK::objectEntityPtr[0]
   set var $p->rings = 50
+  if !$warp_set
+    set var g_ps1TestBossClass = *(short *)MetalSonic
+    set var g_ps1TestBossNth = 0
+    set var g_ps1TestBossPin = -1
+    set var g_ps1TestBossDX = -100
+    set var g_ps1TestBossDY = 0
+    set var g_ps1TestBossWarp = 1
+    set $warp_set = 1
+  end
   set var g_ps1PadTestMask = 8
   if $ms < 0
     set $i = 0
@@ -26,4 +35,5 @@ define ps1_onstop
   set $flash_last = g_ps1PerfFrames
 end
 set $ms = -1
+set $warp_set = 0
 set $flash_last = 0
