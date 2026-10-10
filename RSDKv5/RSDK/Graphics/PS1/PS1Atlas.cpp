@@ -48,6 +48,7 @@ struct PS1AtlasPatch {
 
 // STG block: file table, CLUTs, groups, then the sprite slot of each file (0xFF: not loaded)
 uint8 *s_ps1AtlasBlob = NULL;
+char s_ps1TrackReq[32]; // 9i: PS1AtlasRequestTrackGroups' pending track (cleared with the atlas)
 uint8 *s_ps1AtlasBind = NULL; // the STG tail from LoadSceneAssets' end to InitObjects' end
 uint8 *s_ps1AtlasBindTmp = NULL; // 7b.3c: or a DATASET_TMP block (its owner: a TMP compaction may move it)
 bool s_bindInTmp         = false;
@@ -133,6 +134,7 @@ void RSDK::PS1AtlasRelease()
 {
     if (s_ps1AtlasBlob)
         RemoveStorageEntry((void **)&s_ps1AtlasBlob);
+    s_ps1TrackReq[0] = 0;
     s_ps1AtlasBlob = NULL;
     if (s_ps1Pda)
         RemoveStorageEntry((void **)&s_ps1Pda);
@@ -418,8 +420,25 @@ void PS1LoadGroupIfAny(const char *name)
 // Each frame between the updates and the draws (after the music's groups): the player region follows the game when it
 // changes without a music change (a boss track already playing when Super starts or ends, Super's music off, a
 // respawn). A swap outside a music change stops the XA for the read; the stream resumes where it was (PS1StreamFrame)
+// 9i: a track's groups asked for before the track starts (Music_TransitionTrack: the boss on screen during the old
+// track's fade), loaded at the next PS1AtlasPlayerGroup (between the updates and the draws); the track's own start
+// finds them loaded
+extern "C" void PS1AtlasRequestTrackGroups(const char *track)
+{
+    if (!track)
+        return;
+    strncpy(s_ps1TrackReq, track, sizeof(s_ps1TrackReq) - 1);
+    s_ps1TrackReq[sizeof(s_ps1TrackReq) - 1] = 0;
+}
+
 void RSDK::PS1AtlasPlayerGroup()
 {
+    if (s_ps1TrackReq[0]) {
+        char name[sizeof(s_ps1TrackReq)];
+        memcpy(name, s_ps1TrackReq, sizeof(name));
+        s_ps1TrackReq[0] = 0;
+        PS1AtlasMusicGroups(name);
+    }
     if (!s_ps1AtlasBlob || !PS1GameWantsSuperGroup)
         return;
     const char *name = PS1PlayerGroupName();

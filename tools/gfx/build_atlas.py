@@ -260,6 +260,14 @@ PLAYER_EXTRA = {'Global/SuperSparkle.bin': 'super'}
 # 9b.2b: scenes where the player turns Super without Super's music (ERZ's cutscene transforms him for the final fight,
 # under its own boss track): the Super frames sit with the normal ones from the start (the region swaps on Super.ogg)
 SUPER_FROM_START = {('ERZ', '1')}
+# 9i (user 2026-10-09: pixelated bosses; choice 181): the zone's own sheets a boss fight never draws (measured: the fight
+# harness's sheet counts, tools/play/boss/fight_sheets.py, READY to the next scene) go with the act's start group instead
+# of the resident region: they share the event region with the boss group, which the boss music swaps in, so the boss
+# takes their VRAM at full size. Only zone sheets: the Global ones a fight can show stay resident (Items: rings scattered
+# by a hit; Shields; Explosions; Display; Animals; Objects*), and an animation moves only if all its frames are on them
+# (as much as the boss needs: the event region is the largest of its groups, in 32 KB columns; SPZ1's Heavy Gunner is
+# in its start group already, so it gains nothing)
+BOSS_SHARE = {('PSZ1', '1'): {'PSZ1/Enemies.gif'}}
 # per folder: event groups, one at a time in the event region: the title card at the act start, the boss where the boss
 # music starts, the sign post / prison where the act-clear music starts
 # 9b.2b: the boss explosions (Explosions.bin 2 / 3) stay resident where level objects make them too: FBZ's missiles and
@@ -312,6 +320,7 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                                 ('FBZ/BigSqueeze.bin', {0})]},
                 # 7b: PSZ1's Shiversaw, PSZ2's Heavy Shinobi (PSZ1's hang glider is its intro, under the stage music:
                 # level frames; PSZ2's outro art too, unless VRAM needs it)
+                # (9i: Shiversaw comes on screen as its music's transition starts: Music.c asks for the boss group then)
                 'PSZ1': {'start': [('Global/TitleCard.bin', None)],
                          'boss': [('PSZ1/Shiversaw.bin', None), ('Global/Explosions.bin', {2, 3})],
                          'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
@@ -765,6 +774,10 @@ def select(folder, scene_id, character, files):
                 where = ('event', gs[0])
             elif gs:  # 9b.2b: in several event groups (boss art still on screen after the act-clear music): a copy in each
                 where = ('events', tuple(gs))
+            share = BOSS_SHARE.get((folder, scene_id))
+            if (where == 'resident' and share and 'boss' in groups and 'start' in groups and fr
+                    and all(f['sheet'] < len(spr['sheets']) and spr['sheets'][f['sheet']] in share for f in fr)):
+                where = ('event', 'start')  # 9i: level art the boss fight never draws: its VRAM goes to the boss group
             place.append(where)
         sel[path] = place
         why[path] = 'animations %s' % ('all' if anims is None else sorted(anims))
@@ -1319,6 +1332,21 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
 
 
 def build_fit(data, disc_data, folder, scene_id, character='sonic'):
+    """build_fit_share(); 9i: when the scene's BOSS_SHARE leaves it no plan step that fits (Knuckles' larger player
+    region in PSZ1), the build without it."""
+    res = build_fit_share(data, disc_data, folder, scene_id, character)
+    if (res is None or res[0] is None) and (folder, scene_id) in BOSS_SHARE:
+        share = BOSS_SHARE.pop((folder, scene_id))
+        try:
+            res = build_fit_share(data, disc_data, folder, scene_id, character)
+            if res is not None and res[0] is not None:
+                res = (res[0], res[1] + '\n  (boss share off: it left no plan step that fits)', *res[2:])
+        finally:
+            BOSS_SHARE[(folder, scene_id)] = share
+    return res
+
+
+def build_fit_share(data, disc_data, folder, scene_id, character='sonic'):
     """build() with the fewest plan steps that fit (full resolution when it all fits): SUPER_FULL_PLAN first (9l), else
     HALF_PLAN."""
     if character == 'sonic':

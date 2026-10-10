@@ -36,7 +36,7 @@ silent
 printf "L SCENE f=%u cat=%d pos=%d folder=%s name=%s\n", g_ps1PerfFrames, RSDK::sceneInfo.activeCategory, RSDK::sceneInfo.listPos, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].folder, RSDK::sceneInfo.listData[RSDK::sceneInfo.listPos].name
 printf "L SCENEMISS total=%u\n", g_ps1SpriteMissing
 if ${SHEETS:-0} && \$ph >= 2
-  dump binary memory $S/$OUT.sheets1.bin g_ps1SheetDraws ((char *)g_ps1SheetDraws) + 256
+  dump binary memory $S/$OUT.sheets1.bin (char*)&g_ps1SheetDraws (char*)&g_ps1SheetDraws+256
 end
 if ${SAMPLED:-0} && \$ph >= 2
   set var g_ps1SampleOn = 0
@@ -140,7 +140,7 @@ if \$ph == 10 && (${READY:-1})
     set \$sf0 = g_ps1PerfFrames
   end
   if ${SHEETS:-0}
-    dump binary memory $S/$OUT.sheets0.bin g_ps1SheetDraws ((char *)g_ps1SheetDraws) + 256
+    dump binary memory $S/$OUT.sheets0.bin (char*)&g_ps1SheetDraws (char*)&g_ps1SheetDraws+256
     dump binary memory $S/$OUT.surfaces.bin RSDK::gfxSurface ((char *)RSDK::gfxSurface) + sizeof(RSDK::gfxSurface)
   end
   set \$pv0 = g_ps1PerfVsyncs

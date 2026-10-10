@@ -85,6 +85,10 @@ typedef struct {
 extern "C"
 #endif
 void PS1ClassNoteEntity(void *entity);
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1AtlasRequestTrackGroups(const char *track); // docs/32 9i: a track's sprite groups at the next update / draw boundary
 
 /* docs/32 9b.2b: a blank temp entity sized for the class the caller copies into it next (Zone_ReloadStoredEntities: the
  * carried sign post / item boxes), not the blank object's full EntityBase (no temp block is that big: a spare block). */
