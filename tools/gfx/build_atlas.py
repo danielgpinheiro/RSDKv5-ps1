@@ -130,7 +130,7 @@ def has_ta_gates(folder, scene_id):
 
 def read_manifest(folder, scene_id, character='sonic'):
     path = os.path.join(HERE, 'manifests', '%s%s.txt' % (folder, scene_id))
-    data = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data', 'Sprites')
+    data = os.path.join(F.data_root(), 'Sprites')
     out = []
     for line in open(path):
         t = line.split()
@@ -689,8 +689,8 @@ def select(folder, scene_id, character, files):
     groups = EVENT_GROUPS.get(folder + scene_id, EVENT_GROUPS.get(folder, {}))  # 7b.8: a scene's own entry first
     all_players = set().union(*[set(v) for v in PLAYER_FILES.values()])
     sel, why = {}, {}
-    present = folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))
-    no_super = folder in no_super_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data'))
+    present = folder in presentation_folders(F.data_root())
+    no_super = folder in no_super_folders(F.data_root())
     for path, spr, _ in files:
         n = len(spr['anims'])
         drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
@@ -1397,7 +1397,7 @@ def main():
     data, disc, outdir, folder, sid = a[:5]
     character = a[5] if len(a) > 5 else 'sonic'
     # 9b.1: a presentation scene's atlas holds every character (select keeps all player files): one, Sonic's name
-    if character != 'sonic' and folder in presentation_folders(os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data')):
+    if character != 'sonic' and folder in presentation_folders(F.data_root()):
         print('%s%s/%s: a presentation scene (one atlas for every character)' % (folder, sid, character))
         return
     blob, rep, clusters, _, sel, why = build_fit(data, disc, folder, sid, character)

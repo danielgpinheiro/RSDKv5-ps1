@@ -258,7 +258,8 @@ objects:
 # Build-time graphics (docs/32 3.1): each scene of the STAGES folders -> build/gfx/<Folder>/Scene<N>.ptl (tile images)
 # and, for the scenes with a sprite manifest (tools/gfx/manifests), Scene<N>.atl (the sprite atlas; it reads the
 # disc's sprite files: run tools/data_disc.sh first)
-GAME_DATA ?= ../SonicMania_Extracted/Data
+# phase 11: MANIA_DATA (the builder's data), as rsdk5_formats.data_root()
+GAME_DATA ?= $(or $(MANIA_DATA),../SonicMania_Extracted/Data)
 GFX_CHARACTERS ?= sonic tails knux mighty ray # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; 9g: _mighty, _ray; presentation scenes: one)
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \

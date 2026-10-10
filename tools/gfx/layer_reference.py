@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..'))
 import rsdk5_formats as F  # noqa: E402
 
-DATA = os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data')
+DATA = F.data_root()
 
 
 MASK_PS1 = None  # the mask colour as a PS1 pixel (bit 15 clear), set per capture

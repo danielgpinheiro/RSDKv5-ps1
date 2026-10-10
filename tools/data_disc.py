@@ -532,7 +532,7 @@ def gif_palette(src):
 
 def main():
     a = sys.argv[1:]
-    src = os.path.abspath(a[0] if a else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data'))
+    src = os.path.abspath(a[0] if a else F.data_root())
     root = os.path.abspath(a[1] if len(a) > 1 else os.path.join(REPO, 'build', 'iso'))
     dst = os.path.join(root, 'Data')
     if os.path.exists(dst):

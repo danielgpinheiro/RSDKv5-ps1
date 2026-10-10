@@ -173,7 +173,7 @@ def plan(argv):
     stages = ['Logos', 'Title', 'Menu', 'AIZ', 'GHZCutscene', 'GHZ']
     if '--stages' in argv:
         i = argv.index('--stages'); stages = argv[i + 1].split(','); del argv[i:i + 2]
-    data = argv[0] if argv else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
+    data = argv[0] if argv else F.data_root()
     srcs = sources()
     res = resident_set(data, srcs)
     os.makedirs(OVL, exist_ok=True)
@@ -238,7 +238,8 @@ def resident_game_objs():
     return [s[:-2] + '.o' for s in open(os.path.join(GEN, 'game_srcs.txt')).read().split()]
 
 
-def light_folders(data=os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')):
+def light_folders(data=None):
+    data = data or F.data_root()
     """docs/32 4.2a: the folders only the GameConfig's Presentation category lists (Logos, Title, Menu, Credits, ...):
     their scenes have STG to spare, zones do not. A resident object's function only light overlays reach is linked into
     them (overlay_reach); what any other folder reaches stays resident, shared by every zone."""
@@ -475,7 +476,7 @@ def unit_members(fo, sid, names, res_undef):
     act places that only those reach (their helpers: the Mean Bean Machine's beans). -> (kept names, left-out names)"""
     if not sid:
         return names, []
-    data = os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data', 'Stages', fo)
+    data = os.path.join(F.data_root(), 'Stages', fo)
     placed = {}
     for n in os.listdir(data):
         m = re.match(r'Scene(.+)\.bin$', n)

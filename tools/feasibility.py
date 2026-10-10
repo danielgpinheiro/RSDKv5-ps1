@@ -92,7 +92,7 @@ def main():
     cats = None
     if '--scenes' in a:
         i = a.index('--scenes'); cats = a[i + 1].split(','); del a[i:i + 2]
-    data = a[0] if a else os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
+    data = a[0] if a else F.data_root()
     sizes_path = a[1] if len(a) > 1 else os.path.join(REPO, 'build', 'codesize', 'sizes.txt')
     g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
     srcs = object_sources(REPO)

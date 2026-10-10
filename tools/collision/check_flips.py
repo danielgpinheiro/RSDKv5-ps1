@@ -60,7 +60,7 @@ def accessor(B, kind, flip, i):  # PS1Collision.hpp
 
 
 def main():
-    data = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, '..', '..', '..', 'SonicMania_Extracted', 'Data')
+    data = sys.argv[1] if len(sys.argv) > 1 else F.data_root()
     files = sorted(glob.glob(os.path.join(data, 'Stages', '*', 'TileConfig.bin')))
     checked = 0
     for path in files:

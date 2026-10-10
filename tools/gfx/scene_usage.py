@@ -24,7 +24,7 @@ REPO = os.path.abspath(os.path.join(HERE, '..', '..'))
 sys.path.insert(0, os.path.join(HERE, '..'))
 import rsdk5_formats as F  # noqa: E402
 
-DATA = os.path.join(REPO, '..', 'SonicMania_Extracted', 'Data')
+DATA = F.data_root()
 RUNTIME_OWNERS = {'Players/Sonic.bin': {'Player'}, 'Players/SuperSonic.bin': {'Player'}, 'Players/Tails.bin': {'Player'},
                   'Players/TailSprite.bin': {'Player'}, 'Players/Knux.bin': {'Player'}, 'Players/Mighty.bin': {'Player'},
                   'Players/Ray.bin': {'Player'}, 'UI/TextEN.bin': {'UIWidgets'}}
