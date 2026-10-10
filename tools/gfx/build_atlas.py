@@ -267,7 +267,10 @@ SUPER_FROM_START = {('ERZ', '1')}
 # by a hit; Shields; Explosions; Display; Animals; Objects*), and an animation moves only if all its frames are on them
 # (as much as the boss needs: the event region is the largest of its groups, in 32 KB columns; SPZ1's Heavy Gunner is
 # in its start group already, so it gains nothing)
-BOSS_SHARE = {('PSZ1', '1'): {'PSZ1/Enemies.gif'}}
+BOSS_SHARE = {('PSZ1', '1'): {'PSZ1/Enemies.gif'},
+              ('PSZ2', '2'): {'PSZ2/Enemies.gif', 'PSZ2/Objects2.gif', 'PSZ2/Objects4.gif', 'PSZ2/Objects-Temp.gif'},
+              ('MSZ', '2'): {'MSZ/Enemies.gif', 'MSZ/Objects1.gif', 'MSZ/Train.gif'},
+              ('SPZ2', '1'): {'SPZ2/Enemies.gif', 'SPZ2/Objects2.gif', 'SPZ2/Objects3.gif', 'SPZ2/Electric.gif'}}
 # per folder: event groups, one at a time in the event region: the title card at the act start, the boss where the boss
 # music starts, the sign post / prison where the act-clear music starts
 # 9b.2b: the boss explosions (Explosions.bin 2 / 3) stay resident where level objects make them too: FBZ's missiles and
@@ -358,7 +361,9 @@ EVENT_GROUPS = {'GHZ': {'start': [('Global/TitleCard.bin', None)],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 # 7b: MSZ's Heavy Magician and the Rogues it summons; the boss explosions stay level frames (MSZ1K's
                 # objects use them); Sonic's MSZ1 (the train) shows the Heavy Magician all along: no boss group
-                'MSZ': {'start': [('Global/TitleCard.bin', None)],
+                # 9i: the Heavy Magician's magic box (anim 10) stands in view from its Create, before the boss music's
+                # transition (72 missing draws in MSZ2's fight run): in the title card's group too
+                'MSZ': {'start': [('Global/TitleCard.bin', None), ('MSZ/HeavyMystic.bin', {10})],
                         'boss': [('MSZ/HeavyMystic.bin', None), ('MSZ/Rogues.bin', None)],
                         'end': [('Global/SignPost.bin', None), ('Global/EggPrison.bin', None)]},
                 'MSZ1': {'start': [('Global/TitleCard.bin', None)],
