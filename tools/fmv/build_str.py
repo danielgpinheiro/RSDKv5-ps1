@@ -61,6 +61,10 @@ SEQUENCES = {
     'EndG': ([('GoodEnd.ogv', 0.0)], 'GoodEnd.ogg'),
     'EndTK': ([('TrueEnd.png', 0.0)], 'TrueEnd.ogg', {'show': 32.0, 'fade': 1.0, 'stream': 36.0}),
 }
+# (user 2026-10-10) the pack's Mania.ogv opens on a frozen picture (ffmpeg freezedetect: 0.04 - 7.340667 s), which puts
+# the intro's picture 7.3 s behind its music; that file starts at the freeze's end (an input seek: the frames after it
+# exactly). Another Mania.ogv (a copy already trimmed) is used as it is
+TRIM = {('Mania.ogv', '15e40f9e8e57eb3768c139821db0ee89cefa20307ef5ef2cca75bcc03831cf41'): 7.340667}
 LOOKUP = [('Mania.ogv', 'IntroHP.ogg', '', 'IntroHP'), ('Mania.ogv', 'IntroTee.ogg', '', 'IntroTee'),
           ('BadEnd.ogv', 'BadEnd.ogg', 'BS', 'EndBS'), ('BadEnd.ogv', 'BadEnd.ogg', 'BT', 'EndBT'),
           ('BadEnd.ogv', 'BadEnd.ogg', 'BK', 'EndBK'), ('BadSonic.ogv', '', '', ''), ('BadTails.ogv', '', '', ''),
@@ -79,7 +83,9 @@ def compose(data, name, tmp):
             cmd += ['-loop', '1', '-framerate', '15', '-t', '%.3f' % (still['show'] + 2 * still['fade']),
                     '-i', os.path.join(data, 'Images', v)]
         else:
-            cmd += ['-i', os.path.join(data, 'Video', v)]
+            src = os.path.join(data, 'Video', v)
+            skip = TRIM.get((v, sha256(src)))
+            cmd += (['-ss', '%.6f' % skip] if skip else []) + ['-i', src]
     if still:
         cmd += ['-t', '%.3f' % still['stream']]
     cmd += ['-i', os.path.join(data, 'Music', stream)]
@@ -107,6 +113,15 @@ def compose(data, name, tmp):
 
 def run(cmd):
     subprocess.run(cmd, check=True)
+
+
+def sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def xa_sectors(path):
