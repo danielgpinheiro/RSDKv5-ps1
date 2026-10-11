@@ -64,7 +64,8 @@ OutputMuted = true/' "$EMU_CFG"; fi
   else
     # 4.2e: other sessions run isolated copies (-portable config, their own GDB port): only an instance on the default
     # config (this harness's pcsx.json and GDB port 3333) blocks this run
-    ps -Ao command | grep "[P]CSX-Redux.app/Contents/MacOS/PCSX-Redux" | grep -qv -- "-portable" && { echo "PCSX-Redux is already running on the default config (another session?): not starting it" >&2; exit 2; }
+    # (the processes named PCSX-Redux only: a grep over every command line matched shells waiting on that path)
+    for p in $(pgrep -x PCSX-Redux); do ps -o command= -p $p; done | grep -qv -- "-portable" && { echo "PCSX-Redux is already running on the default config (another session?): not starting it" >&2; exit 2; }
     EMU_CFG=$EMU_PCSX_CFG; EMU_BAK="$1.pcsx.json.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
     local ram=-2mb
     if [ "$EMU_SP" != "0x801fff00" ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
