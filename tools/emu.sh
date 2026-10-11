@@ -67,6 +67,14 @@ OutputMuted = true/' "$EMU_CFG"; fi
     # (the processes named PCSX-Redux only: a grep over every command line matched shells waiting on that path)
     for p in $(pgrep -x PCSX-Redux); do ps -o command= -p $p; done | grep -qv -- "-portable" && { echo "PCSX-Redux is already running on the default config (another session?): not starting it" >&2; exit 2; }
     EMU_CFG=$EMU_PCSX_CFG; EMU_BAK="$1.pcsx.json.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
+    # (user 2026-10-09 / 10-11: test runs are silent: SPU.Mute for this run; the settings come back after it)
+    /usr/bin/python3 - "$EMU_CFG" <<'PYEOF'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d.setdefault('SPU', {})['Mute'] = True
+json.dump(d, open(p, 'w'), indent=4)
+PYEOF
     local ram=-2mb
     if [ "$EMU_SP" != "0x801fff00" ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
     [ "$EMU_RAM" = 8mb ] && ram=-8mb
