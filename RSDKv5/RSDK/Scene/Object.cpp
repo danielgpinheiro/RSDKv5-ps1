@@ -874,6 +874,8 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
     return p;
 }
 
+// 9q: libc's abs, inline (it was a call per test: ~20 hblanks a frame in HCZ2): (v ^ v >> 31) - (v >> 31), INT_MIN stays
+__attribute__((always_inline)) inline int32 PS1Abs(int32 v) { return (int32)(((uint32)v ^ (uint32)(v >> 31)) - (uint32)(v >> 31)); }
 // The update passes' range decision for a live slot the scan returned (stock's switch): sets and returns inRange
 __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
 {
@@ -891,8 +893,8 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
         case ACTIVE_BOUNDS:
             inRange = false;
             for (int32 s = 0; s < cameraCount; ++s) {
-                int32 sx = abs(ent->position.x - cameras[s].position.x);
-                int32 sy = abs(ent->position.y - cameras[s].position.y);
+                int32 sx = PS1Abs(ent->position.x - cameras[s].position.x);
+                int32 sy = PS1Abs(ent->position.y - cameras[s].position.y);
                 if (sx <= ent->updateRange.x + cameras[s].offset.x && sy <= ent->updateRange.y + cameras[s].offset.y) {
                     inRange = true;
                     break;
@@ -904,7 +906,7 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
         case ACTIVE_XBOUNDS:
             inRange = false;
             for (int32 s = 0; s < cameraCount; ++s) {
-                int32 sx = abs(ent->position.x - cameras[s].position.x);
+                int32 sx = PS1Abs(ent->position.x - cameras[s].position.x);
                 if (sx <= ent->updateRange.x + cameras[s].offset.x) {
                     inRange = true;
                     break;
@@ -916,7 +918,7 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
         case ACTIVE_YBOUNDS:
             inRange = false;
             for (int32 s = 0; s < cameraCount; ++s) {
-                int32 sy = abs(ent->position.y - cameras[s].position.y);
+                int32 sy = PS1Abs(ent->position.y - cameras[s].position.y);
                 if (sy <= ent->updateRange.y + cameras[s].offset.y) {
                     inRange = true;
                     break;
@@ -928,8 +930,8 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
         case ACTIVE_RBOUNDS:
             inRange = false;
             for (int32 s = 0; s < cameraCount; ++s) {
-                int32 sx = FROM_FIXED(abs(ent->position.x - cameras[s].position.x));
-                int32 sy = FROM_FIXED(abs(ent->position.y - cameras[s].position.y));
+                int32 sx = FROM_FIXED(PS1Abs(ent->position.x - cameras[s].position.x));
+                int32 sy = FROM_FIXED(PS1Abs(ent->position.y - cameras[s].position.y));
                 if (sx * sx + sy * sy <= ent->updateRange.x + cameras[s].offset.x) {
                     inRange = true;
                     break;
