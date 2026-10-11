@@ -548,9 +548,30 @@ extern "C" {
 volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: classed slots whose bit was clear (must stay 0)
 }
 #endif
-// 9f: 32 slots with their bits clear (blank, settled: inRange already false) are passed over; a blank slot found has
-// its bit cleared after its stock write (the UFO stages' scene ranges: 1,427 of 2,112 slots blank)
+// 9f: slots with their bits clear (blank, settled: inRange already false) are passed over; a blank slot found has
+// its bit cleared after its stock write (the UFO stages' scene ranges: 1,427 of 2,112 slots blank). 9q: each such slot,
+// not only words of 32 (a zone's ~550 live slots are spread over nearly every word of its ~2,200: the scan loaded every
+// slot's pointer and class): the scan goes to the next set bit (the rest of the word clear: to the next word)
 #define PS1_LIVE_SKIP()                                                                                                \
+    {                                                                                                                  \
+        uint32 lw_ = ps1LiveBits[s >> 5] >> (s & 31);                                                                  \
+        if (!lw_) {                                                                                                    \
+            uint32 adv_ = 32 - (s & 31);                                                                               \
+            if ((uint32)(pend - p) <= adv_)                                                                            \
+                return pend;                                                                                           \
+            p += adv_ - 1, s += adv_ - 1;                                                                              \
+            continue;                                                                                                  \
+        }                                                                                                              \
+        if (!(lw_ & 1)) {                                                                                              \
+            uint32 z_ = 1;                                                                                             \
+            while (!((lw_ >> z_) & 1)) ++z_;                                                                           \
+            if ((uint32)(pend - p) <= z_)                                                                              \
+                return pend;                                                                                           \
+            p += z_, s += z_;                                                                                          \
+        }                                                                                                              \
+    }
+// the whole-word skip only (9f): with sleeping groups on, a group goes to sleep at its last slot, which must be visited
+#define PS1_LIVE_SKIP_WORDS()                                                                                          \
     if (!(s & 31) && !ps1LiveBits[s >> 5]) {                                                                           \
         if (pend - p <= 32)                                                                                            \
             return pend;                                                                                               \
@@ -779,7 +800,11 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
     }
     const uint32 send = (uint32)(pend - objectEntityPtr);
     for (; p < pend; ++p, ++s) {
-        PS1_LIVE_SKIP();
+        if (sleepOn) {
+            PS1_LIVE_SKIP_WORDS();
+        }
+        else
+            PS1_LIVE_SKIP();
         if (sleepOn && !(s & 7)) {
             const uint32 g = s >> 3;
             if ((ps1SleepBits[g >> 5] >> (g & 31)) & 1) {
