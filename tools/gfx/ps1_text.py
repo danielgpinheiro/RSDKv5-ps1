@@ -28,13 +28,16 @@ SPRITE = 'UI/TextEN.bin'
 SHEET = 'UI/TextEN.gif'
 LIST = 17
 FACE, SHADOW = 185, 178  # the font's two colours in TextEN.gif's palette
-# list 17's labels (frame: text) the glyphs are cut from
-SOURCES = {0: 'EXIT', 1: 'DEFAULT', 2: 'SCREEN FILTER', 3: 'NONE', 4: 'CLEAN', 7: 'WINDOW SIZE', 12: 'BIG PICTURE',
-           13: 'WINDOW BORDER', 14: 'FULL SCREEN', 15: 'VSYNC', 16: 'TRIPLE BUFFERING', 17: 'OFF', 18: 'ON'}
-# the new frames, in order (21, 22, 23): text, centred
-LABELS = [('UNCAPPED FPS', False), ('NO', True), ('YES', True)]
+# the labels ((list, frame): text) the glyphs are cut from: list 17's, and list 8's ("Character Names", the same 11-px
+# font: MIGHTY's I / G / T / Y are the PC menu's pixel for pixel) for the M list 17 lacks
+SOURCES = {(LIST, 0): 'EXIT', (LIST, 1): 'DEFAULT', (LIST, 2): 'SCREEN FILTER', (LIST, 3): 'NONE', (LIST, 4): 'CLEAN',
+           (LIST, 7): 'WINDOW SIZE', (LIST, 12): 'BIG PICTURE', (LIST, 13): 'WINDOW BORDER', (LIST, 14): 'FULL SCREEN',
+           (LIST, 15): 'VSYNC', (LIST, 16): 'TRIPLE BUFFERING', (LIST, 17): 'OFF', (LIST, 18): 'ON',
+           (8, 3): 'MIGHTY'}  # (list 8's TAILS kerns its T against the A: the other names are left out)
+# the new frames, in order (21, 22, 23): text ('\n': a second line below, left-aligned), centred
+LABELS = [('UNCAPPED FPS\nMORE PRONE TO SLOWDOWNS', False), ('NO', True), ('YES', True)]
 FIRST_NEW = 21
-ROW_PITCH = 12  # the new rows below the sheet: one label each
+LINE_PITCH = 16  # a label's lines: 11 px + 5, the second line clear of the row's bar and the choice's lower edge
 
 
 def _frame_px(px, f):
@@ -60,11 +63,14 @@ def glyphs(data_root):
     """{char: cell pixels (11 rows; the letter's columns + its shadow column)}, space advance; checked."""
     spr = F.read_sprite(os.path.join(data_root, 'Sprites', SPRITE))
     px = np.array(Image.open(os.path.join(data_root, 'Sprites', SHEET)))
-    frames = spr['anims'][LIST]['frames']
-    assert len(frames) == FIRST_NEW, 'list 17 changed: %d frames' % len(frames)
+    assert len(spr['anims'][LIST]['frames']) == FIRST_NEW, 'list 17 changed: %d frames' % len(spr['anims'][LIST]['frames'])
+    def frame(key):
+        f = spr['anims'][key[0]]['frames'][key[1]]
+        assert f['sheet'] == 0 and f['h'] == 11, (key, f)
+        return f
     cells, space = {}, None
     for k, text in SOURCES.items():
-        img = _frame_px(px, frames[k])
+        img = _frame_px(px, frame(k))
         assert set(np.unique(img).tolist()) <= {0, FACE, SHADOW}, (k, text)
         runs = _segments(img)
         letters = [c for c in text if c != ' ']
@@ -86,35 +92,48 @@ def glyphs(data_root):
     assert space is not None
     # self-check: every source label re-composed equals the original frame
     for k, text in SOURCES.items():
-        img = _frame_px(px, frames[k])
+        img = _frame_px(px, frame(k))
         assert np.array_equal(compose(text, cells, space), img), 're-composed %r differs' % text
     return cells, space
 
 
-def compose(text, cells, space):
+def compose_line(text, cells, space):
     parts = []
     for c in text:
         parts.append(np.zeros((11, space), np.uint8) if c == ' ' else cells[c])
     return np.concatenate(parts, axis=1)
 
 
+def compose(text, cells, space):
+    """One line, or lines stacked LINE_PITCH apart, left-aligned (the frame as wide as the widest)."""
+    lines = [compose_line(t, cells, space) for t in text.split('\n')]
+    if len(lines) == 1:
+        return lines[0]
+    out = np.zeros((LINE_PITCH * (len(lines) - 1) + 11, max(l.shape[1] for l in lines)), np.uint8)
+    for i, l in enumerate(lines):
+        out[LINE_PITCH * i:LINE_PITCH * i + 11, :l.shape[1]] = l
+    return out
+
+
 def new_frames(data_root):
     """[(pixels, frame dict)] for frames 21.. (their place: rows added below the sheet)."""
     cells, space = glyphs(data_root)
     h = Image.open(os.path.join(data_root, 'Sprites', SHEET)).size[1]
-    out = []
-    for i, (text, centred) in enumerate(LABELS):
+    out, y = [], h
+    for text, centred in LABELS:
         img = compose(text, cells, space)
-        w = img.shape[1]
-        out.append((img, {'sheet': 0, 'duration': 0, 'unicode': 0, 'x': 0, 'y': h + ROW_PITCH * i, 'w': w, 'h': 11,
+        fh, w = img.shape
+        # pivot y -5: the first line where a one-line label sits (on the row's bar), the others below it
+        out.append((img, {'sheet': 0, 'duration': 0, 'unicode': 0, 'x': 0, 'y': y, 'w': w, 'h': fh,
                           'pivot_x': -(w // 2) if centred else 0, 'pivot_y': -5, 'hitboxes': []}))
+        y += fh + 1
     return out
 
 
 def extend_sheet(data_root, px):
     """UI/TextEN.gif's pixels with the new labels' rows below (index 0 elsewhere: transparent)."""
     nf = new_frames(data_root)
-    rows = len(nf) * ROW_PITCH
+    rows = nf[-1][1]['y'] + nf[-1][1]['h'] - px.shape[0]
     ext = np.zeros((px.shape[0] + rows, px.shape[1]), px.dtype)
     ext[:px.shape[0]] = px
     for img, f in nf:
