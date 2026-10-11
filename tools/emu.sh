@@ -85,4 +85,13 @@ OutputMuted = true/' "$EMU_CFG"; fi
   fi
 }
 
-emu_stop() { [ -n "$EMU_PID" ] && { kill $EMU_PID 2>/dev/null; wait $EMU_PID 2>/dev/null; }; emu_restore; }
+# a TERM sent while GDB detaches can be lost (DuckStation idled 25 min in the 9q sweep): TERM again each second, KILL
+# after 15 s
+emu_stop() {
+  if [ -n "$EMU_PID" ]; then
+    for i in $(seq 1 15); do kill $EMU_PID 2>/dev/null || break; sleep 1; done
+    kill -9 $EMU_PID 2>/dev/null
+    wait $EMU_PID 2>/dev/null
+  fi
+  emu_restore
+}
