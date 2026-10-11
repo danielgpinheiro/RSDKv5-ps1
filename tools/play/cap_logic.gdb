@@ -39,7 +39,7 @@ if $n % 30 == 0
   printf "S %d state=%d x=%d y=%d gv=%d vx=%d vy=%d ground=%d rings=%d score=%d time=%u:%02u.%02u anim=%d frame=%d rand=%u\n", $n, RSDK::sceneInfo.state, $p->position.x, $p->position.y, $p->groundVel, $p->velocity.x, $p->velocity.y, $p->onGround, $p->rings, $p->score, RSDK::sceneInfo.minutes, RSDK::sceneInfo.seconds, RSDK::sceneInfo.milliseconds, $p->animator.animationID, $p->animator.frameID, RSDK::randSeed
 end
 if $n >= 1500
-  printf "V drawn=%u steps=%d logicSteps=%d\n", g_ps1PerfFrames, $n, g_ps1LogicSteps
+  printf "V drawn=%u steps=%d logicSteps=%d sfxPlays=%u sfxUnloaded=%u\n", g_ps1PerfFrames, $n, g_ps1LogicSteps, g_ps1SfxPlays, g_ps1SfxUnloaded
   quit
 end
 continue

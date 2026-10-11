@@ -29,7 +29,8 @@ emu_restore() { [ -n "$EMU_BAK" ] && [ -f "$EMU_BAK" ] && cp "$EMU_BAK" "$EMU_CF
 # emu_start BACKUP_PREFIX: exits 2 when the emulator already runs (another session)
 emu_start() {
   if [ "$EMU" = ds ]; then
-    pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
+    # the executable by name (-x): -f matched other sessions' shells polling with that path in their own command line
+    pgrep -x DuckStation >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
     EMU_CFG=$EMU_DS_SET; EMU_BAK="$1.settings.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
     # docs/32 9f: never the user's own card (memcards/<title>_1.mcd): slot 1 is a non-persistent card (formatted fresh
     # at every boot), or EMU_DS_CARD=FILE (absolute path; a missing file is created formatted), for this run only
