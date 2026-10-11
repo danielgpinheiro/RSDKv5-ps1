@@ -93,6 +93,13 @@ void PS1AtlasRequestTrackGroups(const char *track); // docs/32 9i: a track's spr
 extern "C"
 #endif
 void PS1SetUncapped(int on); // docs/32 choice 182: Options > Video > Uncapped FPS (zones capped at 30 fps when 0)
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int n); // docs/32 9q: DrawLine INK_NONE x n, one bulk
+#ifndef PS1_LINE_BATCH
+#define PS1_LINE_BATCH 1 // docs/32 9q: PaperRoller's lines through PS1DrawLinesWorld (framebuffers identical)
+#endif
 
 /* docs/32 9b.2b: a blank temp entity sized for the class the caller copies into it next (Zone_ReloadStoredEntities: the
  * carried sign post / item boxes), not the blank object's full EntityBase (no temp block is that big: a spare block). */

@@ -1475,6 +1475,23 @@ void RSDK::PS1LineBulk(int32 x1, int32 y1, int32 x2, int32 y2, uint32 bgr)
     PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
 #endif
 }
+// 9q: DrawLine(x1, y1, x2, y2, colors[i], alpha, INK_NONE, false) for n lines in world coordinates (16.16; xy: 4 a line),
+// the lines in one Face3D bulk instead of a chain span each (PS1DrawLine): the same GP0 40h words, in the same order.
+// PSZ's paper rollers draw up to 6 x 64 four-pixel lines each a frame. A mask colour set: each through DrawLine.
+extern "C" void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int n)
+{
+    if (maskColor) {
+        for (int32 i = 0; i < n; ++i, xy += 4) DrawLine(xy[0], xy[1], xy[2], xy[3], colors[i], 0x7F, INK_NONE, false);
+        return;
+    }
+    const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+    for (int32 i = 0; i < n; ++i, xy += 4) {
+        const uint32 c = colors[i];
+        PS1LineBulk(FROM_FIXED(xy[0]) - sx, FROM_FIXED(xy[1]) - sy, FROM_FIXED(xy[2]) - sx, FROM_FIXED(xy[3]) - sy,
+                    (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF));
+    }
+    PS1Face3DFlush();
+}
 // 9o: a face's edges (corner v to v + 1, the last to the first) as PS1LineBulk would write them, with the bulk's slot
 // bookkeeping inline: xs / ys the positions' screen coordinates, c the face's position indices
 __attribute__((optimize("O2"))) void RSDK::PS1LineFace(const int32 *xs, const int32 *ys, const uint16 *c, int32 n, uint32 bgr)

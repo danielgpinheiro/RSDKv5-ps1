@@ -697,6 +697,9 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
         for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
     if (!s_camUnionOk && s_camExact) { // 9q: cameras past the union's range: stock's ACTIVE_BOUNDS test here
         const int32 n = s_exN;
+        const int32 c1 = n > 1 ? 1 : 0; // one camera: tested twice (the same answer)
+        const uint32 x0 = s_exX[0], y0 = s_exY[0], ox0 = s_exOX[0], oy0 = s_exOY[0];
+        const uint32 x1 = s_exX[c1], y1 = s_exY[c1], ox1 = s_exOX[c1], oy1 = s_exOY[c1];
         for (; p < pend; ++p, ++s) {
             PS1_LIVE_SKIP();
             EntityBase *ent = *p;
@@ -705,8 +708,28 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
             if (cls) {
                 if (active == ACTIVE_BOUNDS) {
                     // per camera: abs(position - camera) <= updateRange + offset on both axes, each in int32 as stock
-                    // (wrapping; abs of INT_MIN stays negative, as libc's)
+                    // (wrapping; abs of INT_MIN stays negative, as libc's); one or two cameras (a zone: the player's
+                    // and the Camera object's) from registers
                     const uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
+                    if (n <= 2) {
+                        int32 dx = (int32)(x - x0);
+                        dx       = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
+                        if (dx <= (int32)(rx + ox0)) {
+                            int32 dy = (int32)((uint32)ent->position.y - y0);
+                            dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
+                            if (dy <= (int32)((uint32)ent->updateRange.y + oy0))
+                                return p;
+                        }
+                        dx = (int32)(x - x1);
+                        dx = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
+                        if (dx <= (int32)(rx + ox1)) {
+                            int32 dy = (int32)((uint32)ent->position.y - y1);
+                            dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
+                            if (dy <= (int32)((uint32)ent->updateRange.y + oy1))
+                                return p;
+                        }
+                    }
+                    else
                     for (int32 c = 0; c < n; ++c) {
                         int32 dx = (int32)(x - s_exX[c]);
                         dx       = dx < 0 ? (int32)(0u - (uint32)dx) : dx;

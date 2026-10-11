@@ -108,6 +108,23 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
     RSDK_THIS(PaperRoller);
 
     int32 count = (self->length / 4) + ((self->length % 4) > 0);
+#if defined RETRO_PS1_BUILD && PS1_LINE_BATCH
+    // docs/32 9q: the lines this call draws, sent at the end in one bulk (PS1DrawLinesWorld: DrawLine's INK_NONE words)
+    int32 ps1Lines[4 * 64];
+    uint32 ps1Colors[64];
+    int32 ps1N = 0;
+#define PS1_PAPER_LINE(ax, ay, bx, by, c)                                                                              \
+    do {                                                                                                               \
+        if (ps1N < 64) {                                                                                               \
+            ps1Lines[4 * ps1N] = (ax), ps1Lines[4 * ps1N + 1] = (ay), ps1Lines[4 * ps1N + 2] = (bx);                   \
+            ps1Lines[4 * ps1N + 3] = (by), ps1Colors[ps1N++] = (c);                                                    \
+        }                                                                                                              \
+        else                                                                                                           \
+            RSDK.DrawLine((ax), (ay), (bx), (by), (c), 0x7F, INK_NONE, false);                                         \
+    } while (0)
+#else
+#define PS1_PAPER_LINE(ax, ay, bx, by, c) RSDK.DrawLine((ax), (ay), (bx), (by), (c), 0x7F, INK_NONE, false)
+#endif
     if (count) {
         int32 negAngle = -self->angle & 0xFF;
 
@@ -122,8 +139,7 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
             uint32 lineColor = color ? *color : PaperRoller->colors[(Zone->timer + colorID) % count];
 
             if (!deformY) {
-                RSDK.DrawLine(offsetX + currentX, offsetY + currentY, offsetX + (currentX + moveX), offsetY + (currentY + moveY), lineColor, 0x7F,
-                              INK_NONE, false);
+                PS1_PAPER_LINE(offsetX + currentX, offsetY + currentY, offsetX + (currentX + moveX), offsetY + (currentY + moveY), lineColor);
             }
             else {
                 int32 distX = (currentX - self->position.x) >> 8;
@@ -181,7 +197,7 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
                 offset2.x = self->position.x + distY * RSDK.Sin256(negAngle) + distX * RSDK.Cos256(negAngle);
                 offset2.y = self->position.y - distX * RSDK.Sin256(negAngle) + distY * RSDK.Cos256(negAngle);
 
-                RSDK.DrawLine(offsetX + offset1.x, offsetY + offset1.y, offsetX + offset2.x, offsetY + offset2.y, lineColor, 0x7F, INK_NONE, false);
+                PS1_PAPER_LINE(offsetX + offset1.x, offsetY + offset1.y, offsetX + offset2.x, offsetY + offset2.y, lineColor);
             }
 
             ++len;
@@ -190,6 +206,11 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
             currentY += moveY;
         }
     }
+#if defined RETRO_PS1_BUILD && PS1_LINE_BATCH
+    if (ps1N)
+        PS1DrawLinesWorld(ps1Lines, ps1Colors, ps1N);
+#endif
+#undef PS1_PAPER_LINE
 }
 
 void PaperRoller_DrawPaperLines(void)
