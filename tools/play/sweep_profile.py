@@ -9,7 +9,7 @@ here = os.path.dirname(os.path.abspath(__file__))
 names = [os.path.basename(f)[:-2] for f in glob.glob(os.path.join(here, '..', '..', 'SonicMania', 'Objects', '*', '*.h'))]
 by_hash = {F.name_hash(n): n for n in names}
 top = int(sys.argv[sys.argv.index('--top') + 1]) if '--top' in sys.argv else 6
-k0, k1, nm, p0, p1, sx = {}, {}, {}, {}, {}, {}
+k0, k1, nm, p0, p1, sx, kd = {}, {}, {}, {}, {}, {}, {}
 for line in open(sys.argv[1], errors='replace'):
     t = line.split()
     if not t:
@@ -24,6 +24,8 @@ for line in open(sys.argv[1], errors='replace'):
         p0[int(t[1])] = [int(v) for v in t[2:]]
     elif t[0] == 'KP1':
         p1[int(t[1])] = [int(v) for v in t[2:]]
+    elif t[0] == 'KD':
+        kd[int(t[1])] = ' '.join(t[2:])
     elif t[0] == 'S':
         sx[len(sx) + 1] = line.split()[1]
 W = 60 * TICKS_PER_HBL
@@ -35,8 +37,12 @@ for k in sorted(p1):
         b = k0.get((k, o), (0, 0, 0))
         rows.append(((u - b[0]) / W, (d - b[1]) / W, (c - b[2]) / 60, nm[o]))
     rows.sort(key=lambda r: -(r[0] + r[1]))
-    parts = [(a - b) / W for a, b in zip(p1[k], p0.get(k, p1[k]))]
-    print('k=%d %s classes %.0f (upd %.0f draw %.0f) parts static %.0f update %.0f typegroups %.0f late %.0f draws %.0f' % (
-        k, sx.get(k, ''), sum(r[0] + r[1] for r in rows), sum(r[0] for r in rows), sum(r[1] for r in rows), *parts))
+    d = [(a - b) / 60 for a, b in zip(p1[k], p0.get(k, p1[k]))]  # hblanks (root counter 1) a drawn frame
+    print('k=%d %s classes %.0f (upd %.0f draw %.0f)' % (k, sx.get(k, ''), sum(r[0] + r[1] for r in rows),
+          sum(r[0] for r in rows), sum(r[1] for r in rows)))
+    print('    parts static %.0f update %.0f typegroups %.0f late %.0f draws %.0f scanlines %.0f layers %.0f' % tuple(d[:7]))
+    if k in kd:
+        print('    ' + kd[k])
+    print('    phases input %.0f objects %.0f parallax %.0f drawlists %.0f engine %.0f' % tuple(d[7:12]))
     for u, d, c, n in rows[:top]:
         print('   %-20s %5.1f (upd %5.1f draw %5.1f) %5.1f calls' % (n, u + d, u, d, c))

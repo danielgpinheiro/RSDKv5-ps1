@@ -33,7 +33,7 @@ if g_ps1PerfFrames % 150 == 90
     end
     set $o = $o + 1
   end
-  printf "KP0 %d %u %u %u %u %u\n", $swK, g_ps1ProfPart[0], g_ps1ProfPart[1], g_ps1ProfPart[2], g_ps1ProfPart[3], g_ps1ProfPart[4]
+  printf "KP0 %d %u %u %u %u %u %u %u %u %u %u %u %u\n", $swK, g_ps1ProfPart[0], g_ps1ProfPart[1], g_ps1ProfPart[2], g_ps1ProfPart[3], g_ps1ProfPart[4], g_ps1ProfPart[5], g_ps1ProfPart[6], g_ps1ProfPhase[0], g_ps1ProfPhase[1], g_ps1ProfPhase[2], g_ps1ProfPhase[3], g_ps1ProfEngine
 else
   if $swActive
     set $winN = g_ps1PerfFrames - $winF
@@ -44,7 +44,27 @@ else
       end
       set $o = $o + 1
     end
-    printf "KP1 %d %u %u %u %u %u\n", $swK, g_ps1ProfPart[0], g_ps1ProfPart[1], g_ps1ProfPart[2], g_ps1ProfPart[3], g_ps1ProfPart[4]
+    printf "KP1 %d %u %u %u %u %u %u %u %u %u %u %u %u\n", $swK, g_ps1ProfPart[0], g_ps1ProfPart[1], g_ps1ProfPart[2], g_ps1ProfPart[3], g_ps1ProfPart[4], g_ps1ProfPart[5], g_ps1ProfPart[6], g_ps1ProfPhase[0], g_ps1ProfPhase[1], g_ps1ProfPhase[2], g_ps1ProfPhase[3], g_ps1ProfEngine
+    set $lv = 0
+    set $w = 0
+    while $w < sizeof(RSDK::ps1LiveBits) / 4
+      set $b = RSDK::ps1LiveBits[$w]
+      while $b
+        set $b = $b & ($b - 1)
+        set $lv = $lv + 1
+      end
+      set $w = $w + 1
+    end
+    set $ar = 0
+    set $sl = 0
+    while $sl < RSDK::ps1SceneSlotEnd
+      set $e = (RSDK::EntityBase *)RSDK::objectEntityPtr[$sl]
+      if $e->classID && ($e->active == 1 || $e->active == 2)
+        set $ar = $ar + 1
+      end
+      set $sl = $sl + 1
+    end
+    printf "KD %d live=%d alwaysNormal=%d sceneEnd=%d tempEnd=%d dormantLive=%u records=%u created=%u returned=%u\n", $swK, $lv, $ar, RSDK::ps1SceneSlotEnd, RSDK::ps1TempSlotEnd, RSDK::g_ps1DormantLive, RSDK::g_ps1DormantRecords, RSDK::g_ps1DormantCreated, RSDK::g_ps1DormantReturned
     printf "S x=%d px=%d py=%d vsyncs x100=%u slow=%u worstV=%u cpu=%u max=%u gpuWait=%u flip=%u sprites=%u\n", $swX0 + ($swK - 1) * $swStep, $swP->position.x >> 16, $swP->position.y >> 16, (g_ps1PerfVsyncs - $winVs) * 100 / $winN, g_ps1PerfSlowFrames, g_ps1PerfWorstVsyncs, g_ps1PerfSumHbl / $winN, g_ps1PerfMaxHbl, (g_ps1ChainIdleWaitHbl - $winIw) / $winN, g_ps1PerfSumFlip / $winN, *(unsigned *)&g_ps1SpriteDraws
   end
   if $swX0 + $swK * $swStep > $swEnd

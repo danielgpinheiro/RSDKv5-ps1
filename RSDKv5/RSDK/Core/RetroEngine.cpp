@@ -443,10 +443,24 @@ void RSDK::ProcessEngine()
             // the game at full speed, a second logic step before the frame's one draw; with its input, as a 60 fps frame
             // reads it (the pad is the same: a press counts once)
             for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_REGULAR; ++i) {
+#if PS1_PROFILE
+                uint16 t0 = *(volatile uint16 *)0xBF801110;
+                ProcessInput();
+                uint16 t1 = *(volatile uint16 *)0xBF801110;
+                ProcessSceneTimer();
+                ProcessObjects();
+                uint16 t2 = *(volatile uint16 *)0xBF801110;
+                ProcessParallaxAutoScroll();
+                uint16 t3 = *(volatile uint16 *)0xBF801110;
+                g_ps1ProfPhase[0] += (uint16)(t1 - t0); // (choice 182: every step timed)
+                g_ps1ProfPhase[1] += (uint16)(t2 - t1);
+                g_ps1ProfPhase[2] += (uint16)(t3 - t2);
+#else
                 ProcessInput();
                 ProcessSceneTimer();
                 ProcessObjects();
                 ProcessParallaxAutoScroll();
+#endif
             }
 #endif
 
