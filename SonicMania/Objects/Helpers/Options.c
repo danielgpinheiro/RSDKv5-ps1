@@ -9,6 +9,14 @@
 
 ObjectOptions *Options;
 
+#if defined RETRO_PS1_BUILD
+// docs/32 choice 182: the PS1 reports PLATFORM_PC (choice 169) but keeps its options on the memory card as a console does
+// (Options.bin, a section of the port's card file: RSDK/User/Core/UserStorage.cpp); the PC path writes Settings.ini
+#define OPTIONS_IN_USER_FILE (true)
+#else
+#define OPTIONS_IN_USER_FILE (sku_platform != PLATFORM_PC && sku_platform != PLATFORM_DEV)
+#endif
+
 void Options_Update(void) {}
 
 void Options_LateUpdate(void) {}
@@ -103,7 +111,7 @@ void Options_LoadCallback(bool32 success)
 
 void Options_LoadFile(void (*callback)(bool32 success))
 {
-    if (sku_platform != PLATFORM_PC && sku_platform != PLATFORM_DEV) {
+    if (OPTIONS_IN_USER_FILE) {
         if (globals->optionsLoaded != STATUS_CONTINUE) {
             if (globals->optionsLoaded == STATUS_OK) {
                 if (callback)
@@ -131,7 +139,7 @@ void Options_SaveFile(void (*callback)(void))
 #endif
 {
     if (Options->changed) {
-        if (sku_platform != PLATFORM_PC && sku_platform != PLATFORM_DEV) {
+        if (OPTIONS_IN_USER_FILE) {
             if (globals->optionsLoaded == STATUS_OK) {
                 Options->saveEntityPtr = SceneInfo->entity;
                 Options->saveCallback  = callback;
@@ -227,6 +235,9 @@ void Options_LoadOptionsCallback(int32 status)
         RSDK.SetVideoSetting(VIDEOSETTING_SHADERID, options->screenShader);
         RSDK.SetVideoSetting(VIDEOSETTING_STREAM_VOL, options->volMusic);
         RSDK.SetVideoSetting(VIDEOSETTING_SFX_VOL, options->volSfx);
+#if defined RETRO_PS1_BUILD
+        PS1SetUncapped(options->ps1Uncapped); // from the next scene load (a new file: 0, the zones at 30 fps)
+#endif
     }
     else {
         success                = false;

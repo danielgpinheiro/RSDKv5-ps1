@@ -150,6 +150,11 @@ endif
 ifneq ($(BOOT),)
 CPPFLAGS += -DPS1_BOOT_CATEGORY=$(word 1,$(subst $(comma), ,$(BOOT))) -DPS1_BOOT_INDEX=$(word 2,$(subst $(comma), ,$(BOOT)))
 endif
+# docs/32 choice 182: the zones run at 30 fps with two logic steps unless Options > Video > Uncapped FPS is Yes. A BOOT=
+# build skips the menu (no options loaded) and starts uncapped, as every harness measured before; `CAP=1` starts capped.
+ifneq ($(and $(BOOT),$(CAP)),)
+CPPFLAGS += -DPS1_BOOT_CAP=1
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -172,7 +177,7 @@ PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/C
 define ps1_stamp
 $(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || { echo "$(2)" > build/gen/$(1).txt; rm -f $(3); })
 endef
-$(call ps1_stamp,boot,$(BOOT),$(PS1_BOOT_OBJS))
+$(call ps1_stamp,boot,$(BOOT)$(if $(and $(BOOT),$(CAP)), cap),$(PS1_BOOT_OBJS))
 $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))

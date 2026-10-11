@@ -20,6 +20,7 @@ volatile int32 g_ps1SfxUnloadedLast = -1;
 volatile uint32 g_ps1SfxVerify      = 0; // GDB sets it: each upload read back and compared (half-size chunks)
 volatile uint32 g_ps1SfxVerifyBytes = 0;
 volatile uint32 g_ps1SfxVerifyFail  = 0; // chunks that read back different
+extern volatile int32 g_ps1LogicSteps; // ps1/rsdk5_main.cpp (9f / choice 182)
 // docs/32 5.2: music
 volatile uint32 g_ps1MusicReady   = 0; // Music.xa + Music.bin found
 volatile uint32 g_ps1MusicStarts  = 0; // PlayStream -> an XA track
@@ -284,7 +285,7 @@ void RSDK::PS1AudioStartPending()
 
 void AudioDevice::FrameInit()
 {
-    const uint32 frameSamples = AUDIO_FREQUENCY / 60;
+    const uint32 frameSamples = AUDIO_FREQUENCY / 60 * g_ps1LogicSteps; // one drawn frame = g_ps1LogicSteps logic frames
     bool video                = sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK; // the video owns the CD (ps1/fmv)
     if (!video)
         PS1XaService(); // 9f: a track queued behind a stop that didn't wait

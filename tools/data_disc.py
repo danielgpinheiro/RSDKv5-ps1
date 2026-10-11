@@ -26,6 +26,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, '..'))
 sys.path.insert(0, HERE)
 import rsdk5_formats as F
+sys.path.insert(0, os.path.join(HERE, 'gfx'))
+import ps1_text  # noqa: E402  (docs/32 choice 182)
 
 SKIP_EXT = ('.gif', '.wav', '.ogg', '.ogv', '.png', '.tga', '.vso', '.fso')
 
@@ -603,6 +605,14 @@ def main():
                         assert fa == fb
                 n['copied'] += 1
                 print('data_disc: %s: frames of animations %s cropped to the PS1 screen' % (f, sorted(rules)))
+            elif os.path.relpath(s, src).replace(os.sep, '/') == 'Sprites/' + ps1_text.SPRITE:
+                # docs/32 choice 182: the PS1 Video page's labels (UNCAPPED FPS, NO, YES), composed from the font's own
+                # glyphs into list 17 (tools/gfx/ps1_text.py, glyphs self-checked); the atlas reads the extended sheet
+                open(d, 'wb').write(ps1_text.extend_sprite(src, open(s, 'rb').read()))
+                ps1_text.check_sprite(src, s, d)
+                n['copied'] += 1
+                print('data_disc: %s: %d labels added to list %d (frames %d-%d), self-checked' % (
+                    f, len(ps1_text.LABELS), ps1_text.LIST, ps1_text.FIRST_NEW, ps1_text.FIRST_NEW + len(ps1_text.LABELS) - 1))
             elif os.path.relpath(s, src).replace(os.sep, '/') in ANIM_TRIM:
                 drop = ANIM_TRIM[os.path.relpath(s, src).replace(os.sep, '/')]
                 out = trim_sprite(open(s, 'rb').read(), lambda uc, ai: ai not in drop)

@@ -119,38 +119,36 @@ void OptionsMenu_Initialize(void)
     }
 
 #if defined RETRO_PS1_BUILD
-    // docs/32 9b.5: the PS1 has no video settings (the PC menu sets window size, borders, vsync, triple buffering; a
-    // console's the shader filter): Video leaves the Options grid and Data takes its place (2 x 2: Data | Sound,
-    // Controls | Language); the grids' columns closer to the middle for the 320-pixel screen (the 424 layout ran Controls,
-    // Saved Games, Medallions, English and Français to its edges)
+    // docs/32 9b.5 / choice 182: the Options grid on the PS1 is Video | Sound, Controls | Data (2 x 2): Language leaves it
+    // (only English is in the Menu's atlas) and Data takes its place; the grids' columns closer to the middle for the
+    // 320-pixel screen (the 424 layout ran Controls, Saved Games and Medallions to its edges)
     EntityUIControl *optionsControl = OptionsMenu->optionsControl;
-    EntityUIButton *videoButton = NULL, *dataButton = NULL;
+    EntityUIButton *languageButton = NULL, *dataButton = NULL;
     for (int32 i = 0; i < optionsControl->buttonCount; ++i) {
-        if (optionsControl->buttons[i]->frameID == 0)
-            videoButton = optionsControl->buttons[i];
+        if (optionsControl->buttons[i]->frameID == 3)
+            languageButton = optionsControl->buttons[i];
         else if (optionsControl->buttons[i]->frameID == 4)
             dataButton = optionsControl->buttons[i];
     }
-    if (videoButton && dataButton) {
-        dataButton->position = videoButton->position;
-        dataButton->size     = videoButton->size;
-        videoButton->visible = false;
-        videoButton->active  = ACTIVE_NEVER;
-        int32 kept           = 0;
+    if (languageButton && dataButton) {
+        dataButton->position    = languageButton->position;
+        dataButton->size        = languageButton->size;
+        int32 kept              = 0;
         for (int32 i = 0; i < optionsControl->buttonCount; ++i) {
             EntityUIButton *button = optionsControl->buttons[i];
             if (button == dataButton)
                 continue;
-            optionsControl->buttons[kept++] = button == videoButton ? dataButton : button;
+            optionsControl->buttons[kept++] = button == languageButton ? dataButton : button;
         }
         for (int32 i = kept; i < optionsControl->buttonCount; ++i) optionsControl->buttons[i] = NULL;
         optionsControl->buttonCount = kept;
         optionsControl->rowCount    = 2;
         optionsControl->columnCount = 2;
+        OptionsMenu_PS1MoveOut(languageButton);
     }
-    EntityUIControl *insetControls[] = { optionsControl, OptionsMenu->dataOptionsControl, OptionsMenu->languageControl };
-    const int32 insets[]               = { 24, 12, 16 }; // (Data's two top buttons are wide: 24 px made them touch)
-    for (int32 c = 0; c < 3; ++c) {
+    EntityUIControl *insetControls[] = { optionsControl, OptionsMenu->dataOptionsControl };
+    const int32 insets[]               = { 24, 12 }; // (Data's two top buttons are wide: 24 px made them touch)
+    for (int32 c = 0; c < 2; ++c) {
         foreach_all(UIButton, button)
         {
             if (!UIControl_ContainsPos(insetControls[c], &button->position))
@@ -162,8 +160,91 @@ void OptionsMenu_Initialize(void)
                 button->position.x += TO_FIXED(insets[c]);
         }
     }
+    OptionsMenu_PS1SetupVideoMenu();
 #endif
 }
+
+#if defined RETRO_PS1_BUILD
+// docs/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to one
+// row, UNCAPPED FPS NO / YES (the VSYNC row and its OFF / ON choices relabelled with frames the build adds to TextEN's
+// "PC Menu" list: tools/gfx/ps1_text.py), centred on the page's panel; the other rows, their choices and the apply
+// prompt hidden
+void OptionsMenu_PS1SetupVideoMenu(void)
+{
+    EntityUIControl *control = OptionsMenu->videoControl_Windows;
+    EntityUIButton *row      = NULL;
+    for (int32 i = 0; i < control->buttonCount; ++i) {
+        EntityUIButton *button = control->buttons[i];
+        if (button->listID == 17 && button->frameID == 15) {
+            row = button;
+            continue;
+        }
+        OptionsMenu_PS1MoveOut(button);
+    }
+    if (!row)
+        return;
+
+    int32 dy = control->position.y + TO_FIXED(PS1_VIDEO_ROW_Y) - row->position.y;
+    row->position.y += dy;
+    row->firstChoicePos.y += dy;
+    row->position.x += TO_FIXED(4); // the label off the 320-pixel screen's edge (the PC's 424 layout ran it to x 2)
+    row->size.x = TO_FIXED(96);
+    row->frameID      = PS1_TEXT_UNCAPPEDFPS;
+    row->startFrameID = PS1_TEXT_UNCAPPEDFPS;
+    RSDK.SetSpriteAnimation(UIWidgets->textFrames, row->listID, &row->animator, true, row->frameID);
+    for (int32 c = 0; c < row->choiceCount; ++c) {
+        EntityUIChoice *choice = RSDK_GET_ENTITY(RSDK.GetEntitySlot(row) - row->choiceCount + c, UIChoice);
+        choice->position.y += dy;
+        choice->frameID = c ? PS1_TEXT_YES : PS1_TEXT_NO;
+        RSDK.SetSpriteAnimation(UIWidgets->textFrames, choice->listID, &choice->labelAnimator, true, choice->frameID);
+    }
+    control->buttons[0]  = row;
+    for (int32 i = 1; i < control->buttonCount; ++i) control->buttons[i] = NULL;
+    control->buttonCount = 1;
+    control->rowCount    = 1;
+    control->columnCount = 1;
+    control->buttonID    = 0;
+    control->startingID  = 0;
+
+    foreach_all(UIButtonPrompt, prompt)
+    {
+        if (UIControl_ContainsPos(control, &prompt->position) && prompt->buttonID == 3)
+            prompt->visible = false; // Y: apply (the PC's video changes)
+    }
+}
+
+// out of every control and the screen: UIControl_MenuChangeButtonInit updates every button on the page's screen
+// (re-showing its choices) whether active or not
+void OptionsMenu_PS1MoveOut(EntityUIButton *button)
+{
+    button->visible = false;
+    button->active  = ACTIVE_NEVER;
+    button->position.y -= TO_FIXED(2048);
+    for (int32 c = 0; c < button->choiceCount; ++c) {
+        Entity *choice  = RSDK_GET_ENTITY_GEN(RSDK.GetEntitySlot(button) - button->choiceCount + c);
+        choice->visible = false;
+        choice->active  = ACTIVE_NEVER;
+        choice->position.y -= TO_FIXED(2048);
+    }
+}
+
+void OptionsMenu_PS1UncappedButton_ActionCB(void)
+{
+    RSDK_THIS(UIButton);
+
+    OptionsRAM *options  = Options_GetOptionsRAM();
+    options->ps1Uncapped = self->selection; // 0 NO, 1 YES
+    PS1SetUncapped(self->selection);        // from the next scene load
+
+    Options->changed = true; // saved when the Options grid comes back (OptionsMenu_MenuSetupCB)
+}
+
+bool32 OptionsMenu_PS1VideoControl_BackPressCB(void)
+{
+    UITransition_StartTransition(UIControl_ReturnToParentMenu, 0);
+    return false;
+}
+#endif
 
 void OptionsMenu_HandleUnlocks(void)
 {
@@ -240,6 +321,9 @@ void OptionsMenu_SetupActions(void)
                 case 13: button->choiceChangeCB = OptionsMenu_BorderlessButton_ActionCB; break;
                 case 14: button->choiceChangeCB = OptionsMenu_FullScreenButton_ActionCB; break;
                 case 15: button->choiceChangeCB = OptionsMenu_VSyncButton_ActionCB; break;
+#if defined RETRO_PS1_BUILD
+                case PS1_TEXT_UNCAPPEDFPS: button->choiceChangeCB = OptionsMenu_PS1UncappedButton_ActionCB; break;
+#endif
                 case 16: button->choiceChangeCB = OptionsMenu_TripleBufferButton_ActionCB; break;
             }
         }
@@ -268,8 +352,13 @@ void OptionsMenu_SetupActions(void)
     UIInfoLabel_SetString(label, &string);
 
     videoControl_Win->menuUpdateCB = OptionsMenu_VideoControl_Win_MenuUpdateCB;
+#if defined RETRO_PS1_BUILD
+    videoControl_Win->yPressCB    = NULL; // (no video changes to apply; the option is saved with the others)
+    videoControl_Win->backPressCB = OptionsMenu_PS1VideoControl_BackPressCB;
+#else
     videoControl_Win->yPressCB     = OptionsMenu_VideoControl_Win_YPressCB;
     videoControl_Win->backPressCB  = OptionsMenu_VideoControl_Win_BackPressCB;
+#endif
 
     if (sku_platform == PLATFORM_SWITCH || sku_platform == PLATFORM_DEV) {
         optionsControl->yPressCB = OptionsMenu_ShowManual;
@@ -307,6 +396,12 @@ void OptionsMenu_HandleMenuReturn(void)
 }
 void OptionsMenu_InitVideoOptionsMenu(void)
 {
+#if defined RETRO_PS1_BUILD
+    EntityUIButton *row = OptionsMenu->videoControl_Windows->buttons[0]; // the one row (OptionsMenu_PS1SetupVideoMenu)
+    if (row && row->selection != Options_GetOptionsRAM()->ps1Uncapped)
+        UIButton_SetChoiceSelection(row, Options_GetOptionsRAM()->ps1Uncapped);
+    return;
+#endif
     if (sku_platform == PLATFORM_PC || sku_platform == PLATFORM_DEV) {
         EntityUIControl *videoControl_Win = OptionsMenu->videoControl_Windows;
         OptionsRAM *optionsRAM            = Options_GetOptionsRAM();
@@ -572,7 +667,11 @@ void OptionsMenu_MenuSetupCB(void)
 
     EntityUIControl *control = OptionsMenu->optionsControl;
 
+#if defined RETRO_PS1_BUILD
+    EntityUIButton *eraseDataButton = control->buttons[3]; // (Data: the grid's 4th, OptionsMenu_Initialize)
+#else
     EntityUIButton *eraseDataButton = control->buttons[4];
+#endif
     if (eraseDataButton)
         eraseDataButton->disabled = API_GetNoSave();
 }

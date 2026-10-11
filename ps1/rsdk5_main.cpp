@@ -102,8 +102,16 @@ static void PS1ReadConfig()
 // (RSDK/Core/RetroEngine.cpp) and each frame is shown at least that many vblanks, so the game keeps its full speed at a
 // steady 30 fps. psyqo flips as soon as one vblank has passed since the last flip: a frame that finishes early waits
 // for its second, counted by the port's own BIOS VBlank event.
+// docs/32 choice 182 (user 2026-10-10): the zones (scene category 1) run the same way unless Options > Video >
+// Uncapped FPS is Yes; g_ps1Uncapped is set from the options (SonicMania/Objects/Helpers/Options.c), 0 = capped.
 extern "C" {
 volatile int32 g_ps1LogicSteps   = 1;
+#if defined PS1_BOOT_CATEGORY && !defined PS1_BOOT_CAP
+volatile int32 g_ps1Uncapped     = 1; // a BOOT= test build (no menu, no options): uncapped unless `make CAP=1`
+#else
+volatile int32 g_ps1Uncapped     = 0; // Options > Video > Uncapped FPS (applied at the next scene load)
+#endif
+void PS1SetUncapped(int on) { g_ps1Uncapped = on ? 1 : 0; }
 volatile uint32_t g_ps1VblankCount = 0; // vblanks (the port's VBlank event)
 volatile uint32_t g_ps1PaceWaitHbl = 0; // hblanks the last frame waited for its pace
 }
@@ -256,7 +264,7 @@ class ManiaPS1App final : public psyqo::Application {
         if (!flip)
             return;
         if ((engine.focusState & 1) || engine.inFocus == 1)
-            RenderDevice::ProcessDimming();
+            for (int32 i = 0; i < g_ps1LogicSteps; ++i) RenderDevice::ProcessDimming(); // per logic step (9f)
         RenderDevice::FlipScreen();
     }
 

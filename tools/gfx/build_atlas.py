@@ -52,6 +52,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 import vram_plan as V          # noqa: E402
 import build_tiles as T        # noqa: E402
 import rsdk5_formats as F      # noqa: E402
+import ps1_text                # noqa: E402  (docs/32 choice 182: the Video page's labels)
 
 PAGE = V.PAGE
 BANK_CLUT = 0x1FF
@@ -163,6 +164,8 @@ class Sheets:
         if name not in self.px:
             im = Image.open(os.path.join(self.data, 'Sprites', name))
             self.px[name] = np.array(im)
+            if name == ps1_text.SHEET:  # docs/32 choice 182: the PS1 Video page's labels in rows below (tools/data_disc.py)
+                self.px[name] = ps1_text.extend_sheet(self.data, self.px[name])
             self.pal[name] = im.getpalette()
         return self.px[name]
 

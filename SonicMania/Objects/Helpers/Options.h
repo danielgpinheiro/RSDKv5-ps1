@@ -9,7 +9,12 @@
 // EntityOptions is no longer easily compatible across versions
 // so I gave it dummy data and will be using this struct to interact with optionsRAM
 typedef struct {
+#if defined RETRO_PS1_BUILD
+    uint8 ps1Uncapped; // docs/32 choice 182: Options > Video > Uncapped FPS (0 = zones at 30 fps), in the stock padding
+    uint8 padding[0x57];
+#else
     uint8 padding[0x58];
+#endif
 
     uint8 language;
     int32 overrideLanguage;

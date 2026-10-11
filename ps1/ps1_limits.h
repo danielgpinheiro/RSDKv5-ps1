@@ -89,6 +89,10 @@ void PS1ClassNoteEntity(void *entity);
 extern "C"
 #endif
 void PS1AtlasRequestTrackGroups(const char *track); // docs/32 9i: a track's sprite groups at the next update / draw boundary
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1SetUncapped(int on); // docs/32 choice 182: Options > Video > Uncapped FPS (zones capped at 30 fps when 0)
 
 /* docs/32 9b.2b: a blank temp entity sized for the class the caller copies into it next (Zone_ReloadStoredEntities: the
  * carried sign post / item boxes), not the blank object's full EntityBase (no temp block is that big: a spare block). */

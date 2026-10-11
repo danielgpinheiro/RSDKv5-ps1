@@ -1,5 +1,5 @@
-# Options (PS1: Data | Sound / Controls | Language): Title (Start), the autosave notice (A), Main Menu Down x2, A; then
-# Data (A, B), Right to Sound (A, B), Down to Language (A, B), Left to Controls (A)
+# Options (PS1, choice 182: Video | Sound / Controls | Data): Title (Start), the autosave notice (A), Main Menu Down x2, A;
+# then Video (A, B), Right to Sound (A, B), Down to Data (A, B), Left to Controls (A)
 1 400 0x400 4
 2 400 0x10 4
 2 480 0x2 4

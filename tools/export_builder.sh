@@ -23,7 +23,7 @@ mkdir -p "$B/tools" "$DEST/bin/ovl"
 for f in build_assets.py extract_rsdk.py rsdkv5_filelist.txt rsdk5_formats.py data_disc.py; do cp tools/$f "$B/tools/"; done
 sed -n 's/^STAGES ?= //p' Makefile | tr ',' '\n' > "$B/tools/stages.txt"
 mkdir -p "$B/tools/gfx" "$B/tools/audio" "$B/tools/fmv" "$B/tools/mesh" "$B/tools/disc"
-cp tools/gfx/build_atlas.py tools/gfx/build_tiles.py tools/gfx/vram_plan.py tools/gfx/scene_usage.py "$B/tools/gfx/"
+cp tools/gfx/build_atlas.py tools/gfx/build_tiles.py tools/gfx/vram_plan.py tools/gfx/scene_usage.py tools/gfx/ps1_text.py "$B/tools/gfx/"
 cp -R tools/gfx/manifests "$B/tools/gfx/"
 cp tools/audio/build_sfx.py tools/audio/sfx_sets.py tools/audio/build_music.py tools/audio/xa_adpcm.py "$B/tools/audio/"
 cp tools/fmv/build_str.py "$B/tools/fmv/"
