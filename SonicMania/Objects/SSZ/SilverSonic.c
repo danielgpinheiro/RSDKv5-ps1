@@ -546,7 +546,7 @@ void SilverSonic_State_Explode(void)
         }
     }
 
-    self->visible = Zone->timer & 1;
+    self->visible = PS1_FLICK(Zone->timer);
     if (++self->timer == 16)
         destroyEntity(self);
 }

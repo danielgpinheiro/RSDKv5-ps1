@@ -497,7 +497,7 @@ void ScrewMobile_Draw_ScrewMobile(void)
         RSDK.DrawSprite(&self->mobileAnimator, NULL, false);
     }
     else {
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
         self->mobileAnimator.frameID = 0;
@@ -610,7 +610,8 @@ void ScrewMobile_StateDepthCharge_Debris(void)
     self->position.x += self->velocity.x;
     self->position.y += self->velocity.y;
     self->velocity.y += 0x2800;
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+        self->visible ^= true;
 
     if (!RSDK.CheckOnScreen(self, NULL))
         destroyEntity(self);

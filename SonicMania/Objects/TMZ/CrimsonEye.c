@@ -709,7 +709,7 @@ void CrimsonEye_Draw_Container(void)
 {
     RSDK_THIS(CrimsonEye);
 
-    if (!self->animator.frameID && (CrimsonEye->invincibilityTimer & 1))
+    if (!self->animator.frameID && (PS1_FLICK(CrimsonEye->invincibilityTimer)))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->animator, NULL, false);
@@ -1066,7 +1066,7 @@ void CrimsonEye_Draw_Core(void)
 {
     RSDK_THIS(CrimsonEye);
 
-    if (CrimsonEye->invincibilityTimer & 1)
+    if (PS1_FLICK(CrimsonEye->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     if (self->state != CrimsonEye_StateCore_ContainerActive && self->state != CrimsonEye_StateCore_BreakOut) {
@@ -1209,7 +1209,9 @@ void CrimsonEye_StateSpike_Debris(void)
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     if (!RSDK.CheckOnScreen(self, &self->updateRange))
         destroyEntity(self);

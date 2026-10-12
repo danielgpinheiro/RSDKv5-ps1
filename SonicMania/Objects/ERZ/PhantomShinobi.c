@@ -32,7 +32,7 @@ void PhantomShinobi_Draw(void)
 
     RSDK.SetActivePalette(4, 0, ScreenInfo[SceneInfo->currentScreenID].size.y);
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.CopyPalette(6, 128, 4, 128, 128);
 
     self->rotation = self->rotStore >> 7;
@@ -54,7 +54,7 @@ void PhantomShinobi_Draw(void)
 
     RSDK.DrawSprite(&self->bodyAnimator, NULL, false);
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.CopyPalette(5, 128, 4, 128, 128);
 
     RSDK.SetActivePalette(0, 0, ScreenInfo[SceneInfo->currentScreenID].size.y);

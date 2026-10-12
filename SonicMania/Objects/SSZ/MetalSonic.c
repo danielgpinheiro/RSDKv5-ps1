@@ -45,7 +45,7 @@ void MetalSonic_Draw(void)
     else
         drawPos.x -= 0xE000000;
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 240, 0, 240, 8);
 
         RSDK.DrawSprite(&self->boosterAnimator, &drawPos, false);
@@ -1441,7 +1441,8 @@ void MetalSonic_State_Defeated(void)
     self->position.x += self->velocity.x;
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+        self->visible ^= true;
 
     if (!RSDK.CheckOnScreen(self, NULL)) {
         Music_TransitionTrack(TRACK_STAGE, 0.0125);
@@ -2042,7 +2043,8 @@ void MetalSonic_State_Defeated(void)
     self->position.x += self->velocity.x;
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+        self->visible ^= true;
 
     MetalSonic_HandleStageWrap();
 

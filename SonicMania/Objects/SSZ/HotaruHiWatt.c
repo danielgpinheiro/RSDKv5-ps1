@@ -341,7 +341,7 @@ void HotaruHiWatt_Draw_Boss(void)
     if (RSDK.GetFrameID(&self->headAnimator) == 'b')
         self->direction = FLIP_X;
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 240, 0, 240, 16);
 
         RSDK.DrawSprite(&self->headAnimator, NULL, false);
@@ -366,7 +366,7 @@ void HotaruHiWatt_Draw_BossLaserCharging(void)
     if (RSDK.GetFrameID(&self->headAnimator) == 'b')
         self->direction = FLIP_X;
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 240, 0, 240, 16);
         RSDK.DrawSprite(&self->headAnimator, NULL, false);
 
@@ -399,7 +399,7 @@ void HotaruHiWatt_Draw_BossLaser(void)
     if (RSDK.GetFrameID(&self->headAnimator) == 'b')
         self->direction = FLIP_X;
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 240, 0, 240, 16);
         RSDK.DrawSprite(&self->headAnimator, NULL, false);
 

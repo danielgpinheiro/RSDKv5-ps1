@@ -26,7 +26,7 @@ void HotaruMKII_Draw(void)
     if (self->state != HotaruMKII_State_CheckPlayerInRange) {
         RSDK.DrawSprite(&self->mainAnimator, NULL, false);
 
-        if (self->state != HotaruMKII_State_FlyOnScreen && ((Zone->timer & 1) || self->state == HotaruMKII_State_LaserAttack)) {
+        if (self->state != HotaruMKII_State_FlyOnScreen && ((PS1_FLICK(Zone->timer)) || self->state == HotaruMKII_State_LaserAttack)) {
             int32 ink       = self->inkEffect;
             self->inkEffect = INK_ALPHA;
             RSDK.DrawSprite(&self->flashAnimator, NULL, false);

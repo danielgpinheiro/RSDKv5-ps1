@@ -1617,7 +1617,7 @@ void Gachapandora_Draw_Prize(void)
 {
     RSDK_THIS(Gachapandora);
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->mainAnimator, NULL, false);
@@ -1750,7 +1750,7 @@ void Gachapandora_Draw_BossDebris(void)
 {
     RSDK_THIS(Gachapandora);
 
-    if (Zone->timer & 1)
+    if (PS1_FLICK(Zone->timer))
         RSDK.DrawSprite(&self->mainAnimator, NULL, false);
 }
 

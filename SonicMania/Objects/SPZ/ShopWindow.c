@@ -21,7 +21,7 @@ void ShopWindow_Update(void)
             EntityShield *shield = RSDK_GET_ENTITY((Player->playerCount + RSDK.GetEntitySlot(player)), Shield);
             if (shield->classID == Shield->classID && shield->type == SHIELD_BLUE) {
                 if (Player_CheckCollisionTouch(player, self, &self->hitboxItem))
-                    shield->forceVisible = Zone->timer & 1;
+                    shield->forceVisible = PS1_FLICK(Zone->timer);
             }
         }
     }

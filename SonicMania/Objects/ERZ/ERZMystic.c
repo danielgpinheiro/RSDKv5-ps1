@@ -177,7 +177,7 @@ void ERZMystic_Draw_CupSwap(void)
     RSDK_THIS(ERZMystic);
 
     Vector2 drawPos = self->position;
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 128, 0, 128, 128);
 
         RSDK.DrawSprite(&self->mysticAnimator, &self->mysticPos, false);

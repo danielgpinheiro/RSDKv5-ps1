@@ -1433,7 +1433,7 @@ void LaundroMobile_Draw_Boss(void)
 {
     RSDK_THIS(LaundroMobile);
 
-    if (LaundroMobile->invincibilityTimer & 1) {
+    if (PS1_FLICK(LaundroMobile->invincibilityTimer)) {
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
         RSDK.SetPaletteEntry(1, 128, 0xE0E0E0);
     }
@@ -1472,7 +1472,7 @@ void LaundroMobile_Draw_Boss_Destroyed(void)
 {
     RSDK_THIS(LaundroMobile);
 
-    if (LaundroMobile->invincibilityTimer & 1) {
+    if (PS1_FLICK(LaundroMobile->invincibilityTimer)) {
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
         RSDK.SetPaletteEntry(1, 128, 0xE0E0E0);
     }
@@ -1484,7 +1484,7 @@ void LaundroMobile_Draw_Boss_Destroyed(void)
             self->propellerAnimator.frameID = angle >> 4;
 
             self->flameAnimator.frameID = 12;
-            if (!(Zone->timer & 1))
+            if (!(PS1_FLICK(Zone->timer)))
                 self->flameAnimator.frameID = self->propellerAnimator.frameID;
 
             RSDK.DrawSprite(&self->propellerAnimator, &LaundroMobile->rocketPositions[r], false);
@@ -1507,7 +1507,7 @@ void LaundroMobile_Draw_Boss_Destroyed(void)
             self->propellerAnimator.frameID = angle >> 4;
 
             self->flameAnimator.frameID = 12;
-            if (!(Zone->timer & 1))
+            if (!(PS1_FLICK(Zone->timer)))
                 self->flameAnimator.frameID = self->propellerAnimator.frameID;
 
             angle = (angle + 64) & 0xFF;

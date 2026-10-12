@@ -1035,7 +1035,7 @@ void HeavyRider_Draw_Boss(void)
         }
     }
 
-    if (HeavyRider->invincibilityTimer & 1)
+    if (PS1_FLICK(HeavyRider->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->mainAnimator, NULL, false);

@@ -326,7 +326,7 @@ void KleptoMobile_Draw_KleptoMobile(void)
 {
     RSDK_THIS(KleptoMobile);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 112, 0, 136, 8);
         RSDK.CopyPalette(2, 120, 0, 11, 1);
         RSDK.CopyPalette(2, 121, 0, 25, 1);

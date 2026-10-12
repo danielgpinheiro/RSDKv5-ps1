@@ -69,6 +69,8 @@ typedef uint32 color;
 #define RESERVE_ENTITY_COUNT (0x40)
 #define TEMPENTITY_COUNT     (0x100)
 #define SCENEENTITY_COUNT    (0x800)
+#define PS1_FLICK(v)         ((v) & 1) // the PS1's 30 fps cap (ps1/ps1_limits.h): the stock expressions elsewhere
+#define PS1_LAST_STEP        (1)
 #endif
 #define ENTITY_COUNT         (RESERVE_ENTITY_COUNT + SCENEENTITY_COUNT + TEMPENTITY_COUNT)
 #define TEMPENTITY_START     (ENTITY_COUNT - TEMPENTITY_COUNT)

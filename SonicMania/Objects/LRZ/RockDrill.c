@@ -38,7 +38,7 @@ void RockDrill_Draw(void)
 {
     RSDK_THIS(RockDrill);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.SetPaletteEntry(0, 32, 0xE0E0E0);
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
     }

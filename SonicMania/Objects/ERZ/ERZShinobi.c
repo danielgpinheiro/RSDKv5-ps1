@@ -29,7 +29,7 @@ void ERZShinobi_Draw(void)
 {
     RSDK_THIS(ERZShinobi);
 
-    if ((self->invincibilityTimer & 1))
+    if ((PS1_FLICK(self->invincibilityTimer)))
         RSDK.CopyPalette(2, 128, 0, 128, 128);
 
     self->rotation = self->rotStore;
@@ -51,7 +51,7 @@ void ERZShinobi_Draw(void)
 
     RSDK.DrawSprite(&self->bodyAnimator, NULL, false);
 
-    if ((self->invincibilityTimer & 1))
+    if ((PS1_FLICK(self->invincibilityTimer)))
         RSDK.CopyPalette(1, 128, 0, 128, 128);
 }
 

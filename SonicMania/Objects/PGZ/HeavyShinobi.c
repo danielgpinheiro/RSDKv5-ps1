@@ -701,7 +701,7 @@ void HeavyShinobi_Draw_Shinobi(void)
     }
 
     self->inkEffect = INK_NONE;
-    if (HeavyShinobi->invincibilityTimer & 1)
+    if (PS1_FLICK(HeavyShinobi->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->mainAnimator, NULL, false);
@@ -820,7 +820,9 @@ void HeavyShinobi_StateAsteron_Debris(void)
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     if (!RSDK.CheckOnScreen(self, &self->updateRange))
         destroyEntity(self);

@@ -325,7 +325,7 @@ void WeatherMobile_Draw_Eggman(void)
 {
     RSDK_THIS(WeatherMobile);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 32, 0, 32, 10);
         RSDK.SetPaletteEntry(0, 128, 0xF0F0F0);
 

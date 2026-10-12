@@ -137,7 +137,7 @@ void DoorTrigger_Draw(void)
     RSDK.DrawSprite(&self->baseAnimator, NULL, false);
     RSDK.DrawSprite(&self->bulbAnimator, NULL, false);
 
-    if (!self->bulbAnimator.frameID && !(Zone->timer & 1)) {
+    if (!self->bulbAnimator.frameID && !(PS1_FLICK(Zone->timer))) {
         self->inkEffect            = INK_ADD;
         self->bulbAnimator.frameID = 2;
         self->alpha                = 0xB8 + ((56 * RSDK.Sin256(Zone->timer)) >> 8);

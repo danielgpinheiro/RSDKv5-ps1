@@ -356,7 +356,9 @@ void Shuriken_State_ShurikenDebris(void)
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     if (!RSDK.CheckOnScreen(self, &self->updateRange))
         destroyEntity(self);

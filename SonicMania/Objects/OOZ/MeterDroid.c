@@ -29,7 +29,7 @@ void MeterDroid_Draw(void)
 
     if (self->bgFadeAmount > 0)
         RSDK.SetLimitedFade(0, 1, 3, self->bgFadeAmount, 32, 47);
-    else if (self->invincibilityTimer & 1)
+    else if (PS1_FLICK(self->invincibilityTimer))
         RSDK.CopyPalette(2, 32, 0, 32, 16);
 
     if (self->stateDraw) {
@@ -39,7 +39,7 @@ void MeterDroid_Draw(void)
         RSDK.DrawSprite(&self->mainAnimator, NULL, false);
     }
 
-    if (self->bgFadeAmount > 0 || (self->invincibilityTimer & 1))
+    if (self->bgFadeAmount > 0 || (PS1_FLICK(self->invincibilityTimer)))
         RSDK.CopyPalette(1, 32, 0, 32, 16);
 }
 

@@ -51,7 +51,7 @@ void Hotaru_Draw(void)
         drawPos.x = self->position.x + self->offset1.x;
         drawPos.y = self->position.y + self->offset1.y;
 
-        if (self->alpha > 0 && (((Zone->timer & 1) << (self->state == Hotaru_State_FinishedAttacking)) & 0x7FFFFFFF)) {
+        if (self->alpha > 0 && (((PS1_FLICK(Zone->timer)) << (self->state == Hotaru_State_FinishedAttacking)) & 0x7FFFFFFF)) {
             self->inkEffect = INK_ADD;
             RSDK.DrawSprite(&self->bulbAnimator, &drawPos, false);
 
@@ -67,7 +67,7 @@ void Hotaru_Draw(void)
         drawPos.x = self->position.x + self->offset2.x;
         drawPos.y = self->position.y + self->offset2.y;
 
-        if (self->alpha > 0 && (((Zone->timer & 1) << (self->state == Hotaru_State_FinishedAttacking)) & 0x7FFFFFFF)) {
+        if (self->alpha > 0 && (((PS1_FLICK(Zone->timer)) << (self->state == Hotaru_State_FinishedAttacking)) & 0x7FFFFFFF)) {
             self->inkEffect = INK_ADD;
             RSDK.DrawSprite(&self->bulbAnimator, &drawPos, false);
 

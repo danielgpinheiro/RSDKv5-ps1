@@ -698,7 +698,7 @@ void MegaOctus_Draw_Body(void)
     RSDK_THIS(MegaOctus);
 
     int32 turnPos = abs(MegaOctus->turnPos) / 96;
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     Vector2 drawPos = self->position;
@@ -1196,7 +1196,7 @@ void MegaOctus_Draw_Orb(void)
     int32 angle = self->angle;
     int32 y     = self->position.y + 0xF80000;
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     Vector2 drawPos;

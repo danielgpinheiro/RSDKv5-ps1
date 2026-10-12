@@ -30,7 +30,7 @@ void UberCaterkiller_Draw(void)
     int32 clipY2 = ScreenInfo->clipBound_Y2;
 
     if (self->aniID) {
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.SetPaletteEntry(0, 160, 0xE0E0E0);
 
         // Draw Head
@@ -78,7 +78,7 @@ void UberCaterkiller_Draw(void)
         self->direction ^= FLIP_X;
         self->rotation = 0;
 
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.SetPaletteEntry(0, 160, 0xE0E0E0);
 
         // Draw Head

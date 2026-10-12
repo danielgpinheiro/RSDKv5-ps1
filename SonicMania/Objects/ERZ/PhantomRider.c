@@ -29,7 +29,7 @@ void PhantomRider_Draw(void)
 
     RSDK.SetActivePalette(4, 0, ScreenInfo[SceneInfo->currentScreenID].size.y);
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.CopyPalette(6, 128, 4, 128, 128);
 
     if (self->stateDraw) {
@@ -39,7 +39,7 @@ void PhantomRider_Draw(void)
         RSDK.DrawSprite(&self->mainAnimator, NULL, false);
     }
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.CopyPalette(5, 128, 4, 128, 128);
 
     RSDK.SetActivePalette(0, 0, ScreenInfo[SceneInfo->currentScreenID].size.y);

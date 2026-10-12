@@ -443,7 +443,7 @@ void PhantomEgg_Draw_Normal(void)
 {
     RSDK_THIS(PhantomEgg);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(3, 32, 0, 32, 10);
         RSDK.CopyPalette(3, 128, 0, 128, 16);
         RSDK.SetPaletteEntry(0, 128, 0xF0F0F0);

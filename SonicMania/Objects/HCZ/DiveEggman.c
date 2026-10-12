@@ -24,7 +24,7 @@ void DiveEggman_Draw(void)
 {
     RSDK_THIS(DiveEggman);
 
-    if (self->invincibilityTimer & 1)
+    if (PS1_FLICK(self->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 130, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->animator, NULL, false);

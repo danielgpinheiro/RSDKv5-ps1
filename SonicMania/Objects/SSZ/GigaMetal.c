@@ -26,7 +26,7 @@ void GigaMetal_Draw(void)
     RSDK_THIS(GigaMetal);
 
     if (GigaMetal->explodeTimer <= 0) {
-        if (GigaMetal->invincibleTimer & 1) {
+        if (PS1_FLICK(GigaMetal->invincibleTimer)) {
             RSDK.CopyPalette(2, 32, 0, 32, 16);
             RSDK.CopyPalette(2, 160, 0, 160, 10);
             RSDK.CopyPalette(2, 240, 0, 240, 7);

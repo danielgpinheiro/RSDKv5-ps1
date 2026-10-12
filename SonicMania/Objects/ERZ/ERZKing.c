@@ -193,7 +193,7 @@ void ERZKing_Draw_Body(void)
     RSDK_THIS(ERZKing);
 
     if (self->typeChangeTimer <= 0) {
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.CopyPalette(2, 128, 0, 128, 128);
     }
     else {
@@ -225,7 +225,7 @@ void ERZKing_Draw_Body(void)
     RSDK.DrawSprite(&self->rubyAnimator, &self->rubyPos, false);
 
     if (self->typeChangeTimer <= 0) {
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.CopyPalette(1, 128, 0, 128, 128);
     }
     else {

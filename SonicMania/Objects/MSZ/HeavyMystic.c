@@ -47,7 +47,7 @@ void HeavyMystic_Draw(void)
         StateMachine_Run(self->stateDraw);
     }
     else {
-        if (self->invincibilityTimer & 1)
+        if (PS1_FLICK(self->invincibilityTimer))
             RSDK.SetPaletteEntry(0, 158, 0xE0E0E0);
 
         RSDK.DrawSprite(&self->animator, NULL, false);
@@ -1136,7 +1136,9 @@ void HeavyMystic_StateBoss_RogueHit(void)
             self->velocity.x = 0;
     }
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
     RSDK.ProcessAnimation(&self->animator);
 
     if (self->velocity.y > 0) {
@@ -1422,7 +1424,9 @@ void HeavyMystic_StateCork_MightyRebound(void)
 {
     RSDK_THIS(HeavyMystic);
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     RSDK.ProcessAnimation(&self->animator);
 

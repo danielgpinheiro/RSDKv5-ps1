@@ -41,7 +41,7 @@ void ElectroMagnet_Draw(void)
         self->animator.frameID = Zone->timer & 3;
         RSDK.DrawSprite(&self->animator, NULL, false);
 
-        self->animator.frameID = (Zone->timer & 1) + 4;
+        self->animator.frameID = (PS1_FLICK(Zone->timer)) + 4;
         RSDK.DrawSprite(&self->animator, NULL, false);
     }
 }

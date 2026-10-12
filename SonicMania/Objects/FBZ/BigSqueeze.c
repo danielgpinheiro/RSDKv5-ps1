@@ -288,7 +288,7 @@ void BigSqueeze_Draw_Boss(void)
     RSDK_THIS(BigSqueeze);
     Vector2 drawPos;
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.SetPaletteEntry(0, 156, 0xE0E0E0);
         RSDK.SetPaletteEntry(0, 33, 0xE0E0E0);
     }

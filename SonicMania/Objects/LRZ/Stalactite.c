@@ -136,7 +136,9 @@ void Stalactite_State_Debris(void)
 {
     RSDK_THIS(Stalactite);
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     RSDK.ProcessAnimation(&self->animator);
 

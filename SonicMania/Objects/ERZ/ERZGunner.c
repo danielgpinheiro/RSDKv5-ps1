@@ -247,7 +247,7 @@ void ERZGunner_Draw_Gunner(void)
 {
     RSDK_THIS(ERZGunner);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 128, 0, 128, 128);
 
         RSDK.DrawSprite(&self->mainAnimator, NULL, false);

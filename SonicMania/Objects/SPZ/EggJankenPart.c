@@ -31,7 +31,7 @@ void EggJankenPart_Draw(void)
 {
     RSDK_THIS(EggJankenPart);
 
-    if (Zone->timer & 1)
+    if (PS1_FLICK(Zone->timer))
         RSDK.DrawSprite(&self->animator, NULL, false);
 }
 

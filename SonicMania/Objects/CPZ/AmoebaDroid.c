@@ -239,7 +239,7 @@ void AmoebaDroid_Draw_AmoebaDroid(void)
 {
     RSDK_THIS(AmoebaDroid);
 
-    if (self->invincibleTimer & 1) {
+    if (PS1_FLICK(self->invincibleTimer)) {
         RSDK.CopyPalette(1, 16, 0, 128, 10);
 
         self->direction = FLIP_NONE;

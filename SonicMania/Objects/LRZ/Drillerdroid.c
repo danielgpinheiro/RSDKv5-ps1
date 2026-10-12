@@ -1111,7 +1111,9 @@ void Drillerdroid_State_Finish(void)
     self->position.y += self->velocity.y;
     self->velocity.y += 0x3800;
 
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+
+        self->visible ^= true;
 
     Drillerdroid_Explode();
 
@@ -1145,7 +1147,7 @@ void Drillerdroid_Draw_Boss(void)
 
     RSDK.SetLimitedFade(0, 1, 2, self->alpha, 32, 41);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.SetPaletteEntry(0, 32, 0xE0E0E0);
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
     }

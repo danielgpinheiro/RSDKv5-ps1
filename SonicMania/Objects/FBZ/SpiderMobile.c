@@ -590,7 +590,7 @@ void SpiderMobile_Draw_Body(void)
     RSDK.DrawSprite(&self->orbAnimator, &self->legJointPos[1], false);
 
     self->rotation = self->headRotation + self->angle;
-    if (!(self->invincibilityTimer & 1)) {
+    if (!(PS1_FLICK(self->invincibilityTimer))) {
         RSDK.DrawSprite(&self->headAnimator, &self->headPos, false);
     }
     else {
@@ -666,7 +666,7 @@ void SpiderMobile_Draw_Bumper(void)
 {
     RSDK_THIS(SpiderMobile);
 
-    if (!(Zone->timer & 1)) {
+    if (!(PS1_FLICK(Zone->timer))) {
         self->inkEffect              = INK_NONE;
         self->bumperAnimator.frameID = 0;
         RSDK.DrawSprite(&self->bumperAnimator, NULL, false);

@@ -81,7 +81,7 @@ void Shiversaw_Draw(void)
     self->direction = FLIP_NONE;
     RSDK.DrawSprite(&self->tanksAnimator, NULL, false);
 
-    if (Shiversaw->invincibilityTimer & 1)
+    if (PS1_FLICK(Shiversaw->invincibilityTimer))
         RSDK.SetPaletteEntry(0, 128, 0xE0E0E0);
 
     RSDK.DrawSprite(&self->bellowsAnimator, NULL, false);
@@ -1257,7 +1257,8 @@ void Shiversaw_StateDust_Debris(void)
 
     self->position.x += self->velocity.x;
     self->position.y += self->velocity.y;
-    self->visible ^= true;
+    if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+        self->visible ^= true;
 
     self->position.x += self->velocity.x;
     self->position.y += self->velocity.y;

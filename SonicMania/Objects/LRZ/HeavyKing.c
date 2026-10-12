@@ -30,7 +30,7 @@ void HeavyKing_Draw(void)
 {
     RSDK_THIS(HeavyKing);
 
-    if (self->invincibilityTimer & 1) {
+    if (PS1_FLICK(self->invincibilityTimer)) {
         RSDK.CopyPalette(2, 16, 0, 16, 16);
         RSDK.CopyPalette(2, 192, 0, 192, 16);
 

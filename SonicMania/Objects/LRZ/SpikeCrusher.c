@@ -88,7 +88,7 @@ void SpikeCrusher_State_MovingDown(void)
     int32 storeY = self->position.y;
     self->velocity.y += 0x3800;
 
-    if (self->timer < 8 && (self->timer & 1))
+    if (self->timer < 8 && PS1_FLICK(self->timer))
         self->animator.frameID = self->timer >> 1;
     else
         self->animator.frameID = 4;
@@ -146,7 +146,7 @@ void SpikeCrusher_State_ActivateFlames(void)
 {
     RSDK_THIS(SpikeCrusher);
 
-    if (self->timer & 1)
+    if (PS1_FLICK(self->timer))
         self->animator.frameID = 3 - (self->timer >> 1);
     else
         self->animator.frameID = 4;
@@ -166,7 +166,7 @@ void SpikeCrusher_State_MovingUp(void)
     self->drawPos.y -= 0x10000;
 
     // Animate Flames
-    self->animator.frameID = 4 * (!(self->timer & 1));
+    self->animator.frameID = 4 * (!PS1_FLICK(self->timer));
 
     if (self->onScreen && !(self->timer & 0x1F))
         RSDK.PlaySfx(SpikeCrusher->sfxHuff, false, 255);

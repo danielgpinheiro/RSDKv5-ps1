@@ -115,4 +115,20 @@ extern "C"
 #endif
 void PS1SetFrameShift(const void *frame, int du);
 
+/* docs/32 9r / choice 185: every-other-frame visuals under the 30 fps cap (two logic steps a drawn frame). A
+ * draw-time `counter & 1` on a counter that ticks once a logic step always shows the same parity there, and a
+ * `visible ^= true` in an update toggles twice: the flicker sticks on or off (boss hit flashes, debris, the shield over
+ * a ShopWindow). PS1_FLICK(v) takes the bit that changes once a drawn frame; PS1_LAST_STEP is true on a drawn frame's
+ * last logic step. Uncapped (one step) both reduce to the stock expressions. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern volatile int g_ps1FlickShift; /* 0: one logic step a drawn frame; 1: two (ps1/rsdk5_main.cpp) */
+extern volatile int g_ps1LastStep;   /* 1 on a drawn frame's last logic step (always 1 at one step) */
+#ifdef __cplusplus
+}
+#endif
+#define PS1_FLICK(v)  ((int)(((unsigned)(v) >> g_ps1FlickShift) & 1))
+#define PS1_LAST_STEP (g_ps1LastStep)
+
 #endif /* PS1_LIMITS_H */

@@ -822,7 +822,8 @@ void Tuesday_State_Debris(void)
 
     if (RSDK.CheckOnScreen(self, NULL)) {
         if (self->type != TUESDAY_GONDOLA) {
-            self->visible ^= true;
+            if (PS1_LAST_STEP) // the PS1 at 30 fps: once a drawn frame
+                self->visible ^= true;
         }
         else if (self->velocity.y == 0x8000) {
             RSDK.PlaySfx(Tuesday->sfxDrop, false, 255);

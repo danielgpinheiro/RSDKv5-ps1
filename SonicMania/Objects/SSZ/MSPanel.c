@@ -24,7 +24,7 @@ void MSPanel_Draw(void)
 {
     RSDK_THIS(MSPanel);
 
-    if (MetalSonic->invincibilityTimerPanel & 1) {
+    if (PS1_FLICK(MetalSonic->invincibilityTimerPanel)) {
         RSDK.CopyPalette(2, 32, 0, 32, 16);
         RSDK.CopyPalette(2, 160, 0, 160, 16);
 

@@ -112,6 +112,7 @@ volatile int32 g_ps1Uncapped     = 1; // a BOOT= test build (no menu, no options
 volatile int32 g_ps1Uncapped     = 0; // Options > Video > Uncapped FPS (applied at the next scene load)
 #endif
 void PS1SetUncapped(int on) { g_ps1Uncapped = on ? 1 : 0; }
+volatile int g_ps1FlickShift = 0, g_ps1LastStep = 1; // 9r: ps1/ps1_limits.h PS1_FLICK / PS1_LAST_STEP
 volatile uint32_t g_ps1VblankCount = 0; // vblanks (the port's VBlank event)
 volatile uint32_t g_ps1PaceWaitHbl = 0; // hblanks the last frame waited for its pace
 }

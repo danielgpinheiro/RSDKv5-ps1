@@ -1239,7 +1239,7 @@ void EggJanken_Draw_Active(void)
     RSDK.DrawSprite(&self->buttonAnimator, NULL, false);
     RSDK.DrawSprite(&self->bodyAnimator, NULL, false);
 
-    if (Zone->timer & 1) {
+    if (PS1_FLICK(Zone->timer)) {
         self->inkEffect                                                    = INK_ADD;
         self->alpha                                                        = 128;
         self->eyeAnimator.frameID                                          = self->eyeFrames[0];
@@ -1262,7 +1262,7 @@ void EggJanken_Draw_Destroyed(void)
 {
     RSDK_THIS(EggJanken);
 
-    if (Zone->timer & 1) {
+    if (PS1_FLICK(Zone->timer)) {
         RSDK.DrawSprite(&self->bodyAnimator, NULL, false);
         RSDK.DrawSprite(&self->propellorLAnimator, NULL, false);
         RSDK.DrawSprite(&self->propellorRAnimator, NULL, false);

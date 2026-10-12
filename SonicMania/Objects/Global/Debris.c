@@ -153,7 +153,7 @@ void Debris_State_FallAndFlicker(void)
 
     Debris_State_Fall(); // is this cheating
 
-    self->visible = Zone->timer & 1;
+    self->visible = PS1_FLICK(Zone->timer);
 }
 
 #if GAME_INCLUDE_EDITOR
