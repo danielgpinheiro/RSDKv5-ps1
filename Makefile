@@ -155,6 +155,12 @@ endif
 ifneq ($(and $(BOOT),$(CAP)),)
 CPPFLAGS += -DPS1_BOOT_CAP=1
 endif
+# docs/32 phase 13: `make BOOT=... HWDETECT=1` runs the memory-mod probes from start() (a BOOT= build skips the Logos scene
+# whose overlay runs them; without it a test build behaves as a stock console)
+ifneq ($(and $(BOOT),$(HWDETECT)),)
+CPPFLAGS += -DPS1_HWDETECT=1
+PS1_SRCS += ps1/hwdetect.cpp
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -177,7 +183,7 @@ PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/C
 define ps1_stamp
 $(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || { echo "$(2)" > build/gen/$(1).txt; rm -f $(3); })
 endef
-$(call ps1_stamp,boot,$(BOOT)$(if $(and $(BOOT),$(CAP)), cap),$(PS1_BOOT_OBJS))
+$(call ps1_stamp,boot,$(BOOT)$(if $(and $(BOOT),$(CAP)), cap)$(if $(and $(BOOT),$(HWDETECT)), hw),$(PS1_BOOT_OBJS))
 $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
@@ -229,7 +235,9 @@ OVL_BINS    = $(foreach f,$(OVL_UNITS),build/ovl/$(f).bin)
 STUBS = build/gen/ovl_resident
 LDFLAGS += $(STUBS).o -Wl,@build/gen/ovl_keep.txt
 $(TARGET).elf: $(STUBS).o
-$(STUBS).c: $(OBJS) $(OVL_OBJS) tools/gen_overlays.py
+# objects only overlays link (tools/gen_overlays.py EXTRAS; not in the resident's SRCS: nothing of theirs stays resident)
+OVL_ONLY_OBJS = ps1/hwdetect.o
+$(STUBS).c: $(OBJS) $(OVL_OBJS) $(OVL_ONLY_OBJS) tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py stubs $@ $(OBJS)
 $(STUBS).o: $(STUBS).c
 	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<

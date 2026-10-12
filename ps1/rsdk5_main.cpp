@@ -141,6 +141,14 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
         }
 }
 
+// docs/32 phase 13: the console's memory mods (ps1/hwdetect.cpp: probes run from the Logos overlay, or from start() in a
+// `make BOOT=... HWDETECT=1` test build); a stock console reads 2 / 0
+extern "C" {
+volatile uint32_t g_ps1RamMB = 2, g_ps1Vram2MB = 0, g_ps1RamCtrl = 0, g_ps1HwFaults = 0, g_ps1ExtrasOff = 0, g_ps1Extras = 0,
+                  g_ps1HwDetected = 0;
+void PS1HwDetect();
+}
+
 class ManiaPS1App final : public psyqo::Application {
     void prepare() override {
         gpu().initialize(psyqo::GPU::Configuration{}
@@ -155,6 +163,9 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void start() override {
+#if PS1_HWDETECT
+        PS1HwDetect(); // docs/32 phase 13: a BOOT= test build skips the Logos scene that runs the probes
+#endif
 #if PS1_PROFILE
         *(volatile uint16_t *)0xBF801124 = 0x200; // root counter 2: system clock / 8, free-running (the profile's clock)
 #endif
