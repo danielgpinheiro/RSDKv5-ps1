@@ -63,6 +63,10 @@ struct EntityTVVan {
     Animator tvVanAnimator;
     Animator playerAnimator;
     Animator tvSnowAnimator;
+#if defined RETRO_PS1_BUILD
+    int32 ps1NextSlot; // docs/32 9r: nextNode's scene slot (satellites / TVs are dormant on the PS1: a woken one may take
+                       // the block the last node left, so the radio tells its nodes apart by slot, not by pointer)
+#endif
 };
 
 // Object Struct

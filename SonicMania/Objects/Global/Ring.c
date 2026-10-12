@@ -982,6 +982,9 @@ static int InvisibleBlock_PS1Range(const void *e)
 
 // Spikes: the moving ones stay entities; range: their count (Spikes_Create)
 static int Spikes_PS1Eligible(const void *e) { return !((const EntitySpikes *)e)->moving; }
+// docs/32 9r: TVVan_Create's updateRange per type (exit TVs 256 px, the rest 128); the radio keeps its last node by
+// pointer on the PC: on the PS1 by slot (TVVan.c), a woken node may take the block another one left
+static int TVVan_PS1Range(const void *e) { return ((const EntityTVVan *)e)->type == TVVAN_EXITTV ? TO_FIXED(256) : TO_FIXED(128); }
 static int Spikes_PS1Range(const void *e)
 {
     int32 r = (((const EntitySpikes *)e)->count + 6) << 20;
@@ -1073,7 +1076,7 @@ const PS1DormantSpec ps1DormantSpecs[] = {
     // comes back with its changed words); Rock'em Sock'em bumpers (raised in Create; back to their start after a hit)
     { "CircleBumper", CircleBumper_PS1Eligible, 0, CircleBumper_PS1Range, { offsetof(EntityCircleBumper, drawPos), sizeof(Vector2), 0, 0 },
       true, NULL },
-    { "TVVan", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL },
+    { "TVVan", PS1Always, 0, TVVan_PS1Range, { 0, 0, 0, 0 }, true, NULL },
     { "RockemSockem", PS1Always, TO_FIXED(128), NULL, { 0, 0, 0, 0 }, true, NULL, true },
     // (7b.12: Blastoid / DiveEggman / EggPistonsMKII read their collapsing platforms by slot: those stages keep them;
     // 9b.2b: so do BuckwildBall / RockDrill / MegaOctus, and BigSqueeze (+ FBZ1Outro) / PuyoGame walk them with

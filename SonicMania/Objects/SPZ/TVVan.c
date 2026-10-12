@@ -613,6 +613,9 @@ void TVVan_StateVan_BroadcastRadio(void)
             van->player      = self->player;
             van->angle       = 0xA0;
             van->nextNode    = self;
+#if defined RETRO_PS1_BUILD
+            van->ps1NextSlot = RSDK.GetEntitySlot(self);
+#endif
         }
         else {
             EntityTVVan *van = CREATE_ENTITY(TVVan, INT_TO_VOID(TVVAN_RADIO), self->position.x - 0x80000, self->position.y - 0x420000);
@@ -620,6 +623,9 @@ void TVVan_StateVan_BroadcastRadio(void)
             van->player      = self->player;
             van->angle       = 0xE0;
             van->nextNode    = self;
+#if defined RETRO_PS1_BUILD
+            van->ps1NextSlot = RSDK.GetEntitySlot(self);
+#endif
         }
 
         self->player = NULL;
@@ -678,13 +684,22 @@ void TVVan_StateRadio_HandleMovement(void)
     if (Player_CheckValidState(player)) {
         foreach_active(TVVan, van)
         {
+#if defined RETRO_PS1_BUILD
+            // docs/32 9r: the last node by its slot (a dormant satellite's block may be reused by the next node it wakes:
+            // the pointer then matched the new node and the radio flew past it, out of the stage)
+            if (self != van && RSDK.GetEntitySlot(van) != self->ps1NextSlot && van->type && van->type < TVVAN_RADIO) {
+#else
             if (self != van && self->nextNode != van && van->type && van->type < TVVAN_RADIO) {
+#endif
                 int32 rx = (van->position.x - self->position.x) >> 16;
                 int32 ry = (van->position.y - self->position.y) >> 16;
                 if (rx * rx + ry * ry < 0x800) {
                     self->position.x = van->position.x;
                     self->position.y = van->position.y;
                     self->nextNode   = van;
+#if defined RETRO_PS1_BUILD
+                    self->ps1NextSlot = RSDK.GetEntitySlot(van);
+#endif
                     self->visible    = true;
 
                     if (van->type == TVVAN_EXITTV) {
