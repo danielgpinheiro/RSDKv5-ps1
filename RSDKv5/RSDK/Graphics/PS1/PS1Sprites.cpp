@@ -820,6 +820,78 @@ void PS1TintInvertRect(int32 x, int32 y, int32 w, int32 h)
     g_ps1TintInvertRects = g_ps1TintInvertRects + 1;
 }
 
+// docs/32 9r: INK_UNMASKED over a rectangle (clipped to the screen): the PC writes the colour wherever the frame does not
+// hold the mask colour (SPZ1's ShopWindow: everything behind the lit panel turns dark, the player and his shield
+// included). The frame as drawn so far tells it by bit 15 (4.1b: the mask colour's CLUT entries and flats keep it
+// clear, every other pixel has it set). Per row, as PS1TintInvertRect: the row is copied to the scratch row, filled with
+// the colour (bit 15 forced), the copy drawn back as a 15-bit texture modulated to black with semi-transparency B + F:
+// texels with bit 15 (not the mask colour) blend B + 0 = the colour, the others draw opaque black with bit 15 clear;
+// then a fill of the mask colour with the mask test on restores exactly those. The PC's pixels and mask bits.
+volatile uint32 g_ps1UnmaskedRects = 0;
+void PS1UnmaskedRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr)
+{
+    int32 x1 = x + w, y1 = y + h;
+    int32 sw = currentScreen->size.x, sh = currentScreen->size.y;
+    x  = x < 0 ? 0 : x, y = y < 0 ? 0 : y;
+    x1 = x1 > sw ? sw : x1, y1 = y1 > sh ? sh : y1;
+    if (x1 <= x || y1 <= y)
+        return;
+    w = x1 - x;
+    // the mask colour as the GPU writes it (its 5-bit channels, as its CLUT entries hold them: PS1ClutColour)
+    uint16 mc   = PS1ClutColour((uint16)maskColor);
+    uint32 mbgr = (uint32)((mc >> 10) & 31) << 19 | (uint32)((mc >> 5) & 31) << 11 | (uint32)(mc & 31) << 3;
+    uint32 by   = (uint32)PS1ChainBufferY();
+    int32 pages  = ((x1 - 1) >> 8) - (x >> 8) + 1;
+    int32 perRow = 11 + pages * 6 + 6;
+    for (int32 row0 = y; row0 < y1; row0 += 16) {
+        int32 rows   = y1 - row0 < 16 ? y1 - row0 : 16;
+        uint32_t *wr = PS1ChainSpanBegin(rows * perRow);
+        if (!wr)
+            return;
+        uint32_t *hdr = NULL, *p = wr;
+        int32 lastWords = 0;
+#define PS1_UNM_FRAG(N)                                                                                                \
+    do {                                                                                                               \
+        if (hdr)                                                                                                       \
+            *hdr = (uint32_t)lastWords << 24 | ((uintptr_t)p & 0xFFFFFF);                                              \
+        hdr = p++, lastWords = (N);                                                                                    \
+    } while (0)
+        for (int32 row = row0; row < row0 + rows; ++row) {
+            PS1_UNM_FRAG(10);
+            *p++ = 0x80000000; // VRAM to VRAM: the row as drawn so far -> the scratch row
+            *p++ = (by + (uint32)row) << 16 | (uint32)x;
+            *p++ = (uint32)PS1_TINT_SCRATCH_Y << 16 | (uint32)x;
+            *p++ = 1u << 16 | (uint32)w;
+            *p++ = 0x01000000; // clear the texture cache (it may hold the scratch row's last copy)
+            *p++ = 0xE6000001; // bit 15 forced on
+            *p++ = 0x60000000 | bgr;
+            *p++ = (uint32)(uint16)row << 16 | (uint16)x;
+            *p++ = 1u << 16 | (uint32)w;
+            *p++ = 0xE6000000; // bit 15 from the texels, no test
+            for (int32 px = x; px < x1;) {
+                int32 page = px >> 8, pe = (page + 1) << 8, pw = (x1 < pe ? x1 : pe) - px;
+                PS1_UNM_FRAG(5);
+                // texpage: X base page * 256 halfwords, Y base 256 (the scratch row), semi mode 1 (B + F), 15-bit direct
+                *p++ = 0xE1000000 | (uint32)(page * 4) | 1u << 4 | 1u << 5 | 2u << 7;
+                *p++ = 0x66000000; // textured rectangle, modulated by black, semi-transparent
+                *p++ = (uint32)(uint16)row << 16 | (uint16)px;
+                *p++ = (uint32)(PS1_TINT_SCRATCH_Y - 256) << 8 | (uint32)(px & 0xFF);
+                *p++ = 1u << 16 | (uint32)pw;
+                px += pw;
+            }
+            PS1_UNM_FRAG(5);
+            *p++ = 0xE6000002; // only pixels with bit 15 clear (the mask colour's): back to it
+            *p++ = 0x60000000 | mbgr;
+            *p++ = (uint32)(uint16)row << 16 | (uint16)x;
+            *p++ = 1u << 16 | (uint32)w;
+            *p++ = 0xE6000000;
+        }
+#undef PS1_UNM_FRAG
+        PS1ChainSpanEnd(hdr, lastWords, p);
+    }
+    g_ps1UnmaskedRects = g_ps1UnmaskedRects + 1;
+}
+
 // One flat rectangle (already clipped)
 void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &ink)
 {
@@ -1148,6 +1220,11 @@ void RSDK::PS1DrawRect(int32 x, int32 y, int32 w, int32 h, uint32 color, int32 a
     }
     uint32 bgr;
     PS1Ink ink;
+    if (inkEffect == INK_UNMASKED && maskColor) { // 9r: SPZ1's ShopWindow silhouette (the PC's own rule, exact)
+        if (PS1FlatInk(color, INK_NONE, alpha, bgr, ink))
+            PS1UnmaskedRect(x, y, w, h, bgr);
+        return;
+    }
     if (PS1FlatInk(color, inkEffect, alpha, bgr, ink))
         PS1FlatRect(x, y, w, h, bgr, ink);
 }
