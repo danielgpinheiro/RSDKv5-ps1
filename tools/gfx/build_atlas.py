@@ -490,6 +490,12 @@ HALF_LEVEL = {'SPZ1/TVVan.bin', 'SPZ1/ShopWindow.bin', 'SPZ1/FilmProjector.bin',
 # 4.2b: pictures (sheets, whatever file draws them): zone previews, the menu dioramas' scenes, controller pictures; halved
 # before any presentation file, whose big frames are text (headings, buttons)
 HALF_PICTURE = {'UI/Zones.gif', 'UI/Diorama.gif', 'UI/Diorama2.gif', 'UI/Controllers.gif'}
+# docs/32 phase 13 M4: build() for a 2 MB VRAM's full-resolution atlas section (build_atx): None, or {'files': the sprite
+# files to place, 'clut_base': the first CLUT slot, 'columns': the (column, page row) pages it may use, rows 0-3}. Every
+# placement is resident (no group swaps), no plan step (no halving, no level-art colour merge), page rows 2-3 bound with
+# bit 6 (the runtime's 2 MB VRAM mask turns it into the texpage's Y bit 11); a frame that must be halved fails it.
+ATX = None
+
 LOSSY = 'lossy'  # 7b: HALF_PLAN's colour step (after the bosses: fewer colours shows less than half resolution)
 # 9c (user 2026-10-04: bosses, Hydrocity's Eggman, read blocky; choice 161): fewer colours first, then effects, pictures, presentation, set pieces and the HUD's art; the bosses last (measured over
 # the 93 atlases that halve anything: bosses halved in 14 instead of 84)
@@ -966,6 +972,14 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                     for ai, a in enumerate(s['anims']) for f in a['frames']]
             files.append((path, s, keys))
     sel, why = select(folder, scene_id, character, files)
+    if ATX is not None:
+        files = [f for f in files if f[0] in ATX['files']]
+        for p_ in sel:
+            v_ = sel[p_]
+            if isinstance(v_, dict):
+                sel[p_] = {k_: ('resident' if w_ is not None else None) for k_, w_ in v_.items()}
+            else:
+                sel[p_] = [('resident' if w_ is not None else None) for w_ in v_]
     if os.environ.get('ATLAS_FILES'):  # 7b: each file's placed texels (KB at 4-bit; rects it shares are counted per file)
         for path, _, keys in files:
             rs = {}
@@ -1072,7 +1086,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             # 4.2b: wider or taller than a texture page (the menu's 294 x 162 diorama backdrop): halved whatever the plan
             # step, when every frame using it may be (else the error below)
             if max(w, h) > PAGE and inner and all(always_halvable[k] for k in inner):
-                half = True
+                # (phase 13 .atx: a frame no taller than a page stays full size across adjacent pages)
+                half = not (ATX is not None and h <= PAGE and w <= 4 * PAGE)
             q = bool(inner) and all(quarter[k] for k in inner)
             if q:  # 7b.12: quarter resolution, 15 colours (its own merge)
                 half = 'q'
@@ -1087,6 +1102,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 px = halve(im[y:y + h, x:x + w]) if half else im[y:y + h, x:x + w]
             if px.shape[0] > PAGE or px.shape[1] > 4 * PAGE:
                 raise AtlasError('%s %s is larger than a texture page' % (sh, r))
+            if ATX is not None and half:
+                raise AtlasError('%s %s: halved whatever the plan (a full-resolution section cannot hold it)' % (sh, r))
             # 4.2b: wider than a page (the menu dioramas' 512 / 1024-texel strips): pack() gives it adjacent pages from
             # a page's left edge and the drawer takes one 256-texel piece per page
             cols = set(np.unique(px).tolist()) - {0}
@@ -1106,7 +1123,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
         else:
             groups.append(set(c['colors']))
             c['clut'] = len(groups) - 1
-    if len(groups) > V.SPRITE_CLUT_USABLE:
+    if len(groups) + (ATX['clut_base'] if ATX else 0) > V.SPRITE_CLUT_USABLE:
         raise AtlasError('%s: %d CLUTs > %d sprite CLUT slots' % (name, len(groups), V.SPRITE_CLUT_USABLE))
     clut_maps = [[0] + sorted(g) + [0] * (15 - len(g)) for g in groups]
     # 7b: the sprite CLUT rows this atlas leaves free (under the second framebuffer: page row 1, lines 240-255 of
@@ -1116,6 +1133,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
 
     # regions: resident, then the player region (its alternates share it), then the event region
     tbands = []
+    if ATX is not None:
+        columns = list(ATX['columns'])
     if columns is None:
         tbin, _, _, tblocks = T.build(data, folder, scene_id)
         # 7b: the tile CLUT rows the scene leaves free (vram_plan.TILE_CLUT_SLOTS: 32 in rows 240-247, then 20 a row from
@@ -1197,7 +1216,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
         if im.shape != (128, 128):
             raise AtlasError('%s: deform sheet %s is %s' % (name, sh, im.shape))
         cs = sorted(set(np.unique(im).tolist()) - {0})
-        if len(cs) > 15 or len(clut_maps) >= V.SPRITE_CLUT_USABLE:
+        if len(cs) > 15 or len(clut_maps) + (ATX['clut_base'] if ATX else 0) >= V.SPRITE_CLUT_USABLE:
             raise AtlasError('%s: deform sheet %s: %d colours' % (name, sh, len(cs)))
         clut_maps.append([0] + cs + [0] * (15 - len(cs)))
         ci = len(clut_maps) - 1
@@ -1213,7 +1232,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
         if not np.array_equal(np.array(clut_maps[ci], np.int32)[nib], im.astype(np.int32)):
             raise AtlasError('%s: deform sheet %s does not decode back' % (name, sh))
         blocks.append((X, Y, 32, 128))
-        deform_bind[sh] = struct.pack('<BBH', (i % 2) * 128, (i // 2) * 128, (dcol[0] & 15) | (dcol[1] & 1) << 4 | ci << 7)
+        deform_bind[sh] = struct.pack('<BBH', (i % 2) * 128, (i // 2) * 128, (dcol[0] & 15) | (dcol[1] & 1) << 4
+                                      | (1 if dcol[1] >= 2 else 0) << 6 | (ci + (ATX['clut_base'] if ATX else 0)) << 7)
         checked += 128 * 128
     group_images = {}
     for w in sorted((k for k in places if k != 'resident'), key=str):
@@ -1233,7 +1253,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 b = c['bin']
                 d = 4 if c['half'] == 'q' else 2 if c['half'] else 1
                 u, v = c['u'] + (x - cx) // d, c['v'] + (y - cy) // d
-                clut = c['clut'] if c['depth'] == 4 else BANK_CLUT
+                clut = c['clut'] + (ATX['clut_base'] if ATX else 0) if c['depth'] == 4 else BANK_CLUT
                 if c['half'] == 'q':
                     if c['depth'] != 4 or clut >= 0x1FF - QUARTER_CLUT:
                         raise AtlasError('%s: quarter-resolution %s needs a 4-bit CLUT slot < %d' % (name, sh, 0x1FF - QUARTER_CLUT))
@@ -1241,7 +1261,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if u > 255 or v > 255:
                     raise AtlasError('%s: binding past its page: %s %s' % (name, sh, (x, y)))
                 return struct.pack('<BBH', u, v, (c['page_col'] & 15) | (b.row & 1) << 4 | (1 if c['depth'] == 8 else 0) << 5
-                                   | (1 if c['half'] else 0) << 6 | clut << 7)
+                                   | (1 if c['half'] or b.row >= 2 else 0) << 6 | clut << 7)
         return None
     MISSING = struct.pack('<BBH', 0xFF, 0xFF, 0xFFFF)
     OUTSIDE = struct.pack('<BBH', 0xFE, 0xFE, 0xFFFF)  # 4.2d: wholly outside its sheet: the runtime draws nothing, uncounted
@@ -1282,7 +1302,8 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     for sh in deform[:4]: # 7.5: a file entry per deform sheet (its md5 = the path LoadSpriteSheet gets), one binding
         file_tab += struct.pack('<4IIH2x', *md5_words(sh), len(bind), 1)
         bind += deform_bind[sh]
-    clut_tab = b''.join(struct.pack('<HH', *V.SPRITE_CLUT_SLOTS[i]) + bytes(m) for i, m in enumerate(clut_maps))
+    cb = ATX['clut_base'] if ATX else 0
+    clut_tab = b''.join(struct.pack('<HH', *V.SPRITE_CLUT_SLOTS[cb + i]) + bytes(m) for i, m in enumerate(clut_maps))
 
     def blocks_bytes(img, bl):
         tab, px = bytearray(), bytearray()
@@ -1393,7 +1414,101 @@ def build_fit_plan(data, disc_data, folder, scene_id, character, plan, last_reso
     return last
 
 
+ATX_CHARS = ['sonic', 'tails', 'knux', 'mighty', 'ray']  # the section order of a .atx (the runtime: PS1Atlas.cpp)
+
+
+def build_atx(data, disc, folder, sid):
+    """docs/32 phase 13 M4: Scene<N>.atx, the scene's sprites at full resolution and full colour for a console with the
+    2 MB VRAM mod (GP1(09h): rows 512-1023): a 'common' ATL5 section (the sprite files every character's scene loads)
+    and one per character (the files only that character's loads: its player art) in a reserved run of pages at the end
+    of page row 3, the same for all characters (the most any needs), CLUT slots after the common's. No groups: all
+    resident. -> (bytes, report) or (None, why)."""
+    global ATX
+    if folder in presentation_folders(F.data_root()):
+        return None, 'presentation scene (its stock atlas)'
+    mans = {}
+    for ch in ATX_CHARS:
+        try:
+            mans[ch] = {p for k, p in read_manifest(folder, sid, ch) if k == 'SPR'}
+        except OSError:
+            pass
+    if 'sonic' not in mans:
+        return None, 'no manifest'
+    common = set.intersection(*mans.values())
+    tbin, _, _, tblocks = T.build(data, folder, sid)
+    tcols = {(c, y // V.PAGE) for (x, y, w, h) in tblocks for c in range(x // V.COL_HW, (x + w - 1) // V.COL_HW + 1)}
+    lower = [(c, r) for r in (0, 1) for c in V.TEX_COLUMNS if (c, r) not in tcols]
+    saved = (ATX, V.VRAM_H, dict(HALF_RULES), KEEP_TEXT, LOSSY_LEVEL)
+    globals().update(HALF_RULES={}, KEEP_TEXT=True, LOSSY_LEVEL=False)
+    V.VRAM_H = 1024
+    try:
+        def section(ch, files, columns, base):
+            global ATX
+            ATX = {'files': files, 'clut_base': base, 'columns': columns}
+            res = build(data, disc, folder, sid, ch)
+            return res
+        # the player run: the fewest pages at the end of row 3 every character's own files fit in
+        need = 0
+        for ch, fs in mans.items():
+            own = fs - common
+            for k in range(1, 17):
+                r = section(ch, own, [(c, 3) for c in range(16 - k, 16)], 0)
+                if r[0] is not None:
+                    need = max(need, k)
+                    break
+            else:
+                return None, '%s: its own sprites fit in no run of row 3' % ch
+        upper = [(c, r) for r in (2, 3) for c in range(16) if not (r == 3 and c >= 16 - need)]
+        com = section('sonic', common, lower + upper, 0)
+        lossy_note = ''
+        if com[0] is None:  # full resolution first: level art at 15 colours (the stock LOSSY step) when full colour won't fit
+            globals().update(LOSSY_LEVEL=True)
+            com = section('sonic', common, lower + upper, 0)
+            globals().update(LOSSY_LEVEL=False)
+            lossy_note = ' (level art at 15 colours)'
+        if com[0] is None:
+            return None, 'common: ' + com[1].split('\n')[0]
+        ncl = int.from_bytes(com[0][6:8], 'little')
+        secs = [com[0]]
+        rep = ['common%s: ' % lossy_note + com[1].split('\n')[0], 'player run: %d pages of row 3' % need]
+        for ch in ATX_CHARS:
+            if ch not in mans:
+                secs.append(b'')
+                continue
+            r = section(ch, mans[ch] - common, [(c, 3) for c in range(16 - need, 16)], ncl)
+            if r[0] is None:
+                return None, '%s: %s' % (ch, r[1].split('\n')[0])
+            secs.append(r[0])
+            rep.append('%s: %s' % (ch, r[1].split('\n')[0]))
+    except AtlasError as e:
+        return None, str(e)
+    finally:
+        ATX, V.VRAM_H = saved[0], saved[1]
+        globals().update(HALF_RULES=saved[2], KEEP_TEXT=saved[3], LOSSY_LEVEL=saved[4])
+    # 'ATX1', u16 sections (1 + characters), pad; per section u32 offset, u32 bytes (0, 0: none); sections 2 KB-aligned
+    head = 8 + 8 * len(secs)
+    out = bytearray(struct.pack('<4sHH', b'ATX1', len(secs), 0))
+    off = (head + 2047) // 2048 * 2048
+    body = bytearray()
+    for sec in secs:
+        out += struct.pack('<II', off if sec else 0, len(sec))
+        if sec:
+            body += sec + bytes((-len(sec)) % 2048)
+            off += (len(sec) + 2047) // 2048 * 2048
+    out += bytes((head + 2047) // 2048 * 2048 - len(out)) + body
+    return bytes(out), '\n  '.join(rep)
+
+
 def main():
+    if '--atx' in sys.argv:  # docs/32 phase 13: build_atlas.py DATA DISC OUT FOLDER ID --atx [--report]
+        a = [x for x in sys.argv[1:] if not x.startswith('--')]
+        data, disc, outdir, folder, sid = a[:5]
+        blob, rep = build_atx(data, disc, folder, sid)
+        print('%s%s atx: %s' % (folder, sid, ('%d bytes\n  ' % len(blob) if blob else 'SKIP: ') + rep))
+        if blob and '--report' not in sys.argv:
+            os.makedirs(os.path.join(outdir, folder), exist_ok=True)
+            open(os.path.join(outdir, folder, 'Scene%s.atx' % sid), 'wb').write(blob)
+        return
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     if len(a) not in (5, 6):
         sys.exit(__doc__)

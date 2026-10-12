@@ -167,7 +167,9 @@ extern "C" void PS1HwDetect() {
     g_ps1RamMB   = mb;
     g_ps1Vram2MB = probeVram();
     critLeave();
-    g_ps1Extras     = mb >= 8 && !g_ps1ExtrasOff;
+    // (an 8 MB measuring link, `make MEASURE_RAM=8M`, has its own heap above 2 MB: no extras there)
+    extern volatile uint32_t g_ps1LinkTop; // ps1/rsdk5_main.cpp (__stack_start: the overlays can't name it)
+    g_ps1Extras     = mb >= 8 && !g_ps1ExtrasOff && g_ps1LinkTop <= 0x80200000u;
     g_ps1HwDetected = 1;
 }
 

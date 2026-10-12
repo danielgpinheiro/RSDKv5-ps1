@@ -145,7 +145,7 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
 // `make BOOT=... HWDETECT=1` test build); a stock console reads 2 / 0
 extern "C" {
 volatile uint32_t g_ps1RamMB = 2, g_ps1Vram2MB = 0, g_ps1RamCtrl = 0, g_ps1HwFaults = 0, g_ps1ExtrasOff = 0, g_ps1Extras = 0,
-                  g_ps1HwDetected = 0, g_ps1ModsLoaded = 0;
+                  g_ps1HwDetected = 0, g_ps1ModsLoaded = 0, g_ps1LinkTop = 0;
 void PS1HwDetectLink();
 }
 
@@ -163,6 +163,7 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void start() override {
+        g_ps1LinkTop = (uint32_t)(uintptr_t)&__stack_start; // phase 13 (ps1/hwdetect.cpp: no extras in a bigger link)
 #if PS1_PROFILE
         *(volatile uint16_t *)0xBF801124 = 0x200; // root counter 2: system clock / 8, free-running (the profile's clock)
 #endif

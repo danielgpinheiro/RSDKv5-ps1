@@ -9,6 +9,7 @@
 // Linked into the overlays of the folders whose objects call it (gen_overlays EXTRAS 'deform').
 #include "RSDK/Core/RetroEngine.hpp"
 #include "../../../../ps1/gpu_chain_raw.hh"
+extern "C" volatile uint32_t g_ps1AtlasHiMask; // PS1Atlas.cpp (docs/32 phase 13: a .atx's page rows 2 / 3)
 
 using namespace RSDK;
 
@@ -50,7 +51,7 @@ __attribute__((optimize("O2"))) void PS1DeformDraw(uint16 sheetID, int32 inkEffe
     if (x2 <= x1 || y2 <= y1)
         return;
     const uint32 u0 = b & 0xFF, v0 = (b >> 8) & 0xFF;
-    const uint32 tpage = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | abr << 5;
+    const uint32 tpage = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | abr << 5 | (attr & g_ps1AtlasHiMask) << 5; // (phase 13)
     const PS1AtlasClut &c = cl[PS1_ATLAS_CLUT(attr)];
     const uint32 clut = (uint32)(c.x >> 4) | (uint32)c.y << 6;
     // the window: 128x128 (mask 16 in 8-texel units) at the sheet's place in its page

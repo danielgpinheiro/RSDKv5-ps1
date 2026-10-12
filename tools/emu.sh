@@ -20,6 +20,7 @@ EMU_VRAM=${EMU_VRAM:-} # 2mb: EMU=r16 with the 2 MB VRAM mod
 EMU_R16=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-16mb/redux16mb
 EMU_R16_DIR=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-maniamods
 EMU_R16_PORT=3344
+EMU_R16_WEB=8104 # its web API (tools/play/vshot.sh: /api/v1/gpu/vram/raw, 2 MB with -2mbvram)
 EMU_SP=$(python3 -c "import struct;print(hex(struct.unpack_from('<I',open('rsdkv5.ps-exe','rb').read(0x34),0x30)[0]))")
 EMU_PID=
 EMU_CFG=
@@ -87,7 +88,7 @@ OutputMuted = true/' "$EMU_CFG"; fi
     [ "$EMU_VRAM" = 2mb ] && mem="$mem -2mbvram"
     echo "redux16mb $mem (port $EMU_R16_PORT)"
     $EMU_R16 -portable $EMU_R16_DIR -bios $HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-16mb/openbios.bin -fastboot -exe rsdkv5.ps-exe -interpreter \
-      -debugger -gdb -gdb-port $EMU_R16_PORT $mem -memcard1 "$mc1" -memcard2 "$mc2" -iso build/game.cue >/dev/null 2>&1 &
+      -debugger -gdb -gdb-port $EMU_R16_PORT -webserver -webserver-port $EMU_R16_WEB $mem -memcard1 "$mc1" -memcard2 "$mc2" -iso build/game.cue >/dev/null 2>&1 &
     EMU_PID=$!
     sleep 4
     for _ in $(seq 1 20); do nc -z localhost $EMU_R16_PORT 2>/dev/null && break; sleep 1; done

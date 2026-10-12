@@ -15,6 +15,11 @@ volatile uint32 g_ps1AtlasGroupLoads   = 0;
 volatile uint32 g_ps1AtlasGroupErrors  = 0;
 volatile uint32 g_ps1AtlasGroupStageFallbacks = 0; // 7b.3c: swaps staged in DATASET_TMP (STG tail short)
 volatile int32 g_ps1AtlasGroupReq      = -1;
+// docs/32 phase 13 M4: 0x40 while the scene's full-resolution atlas (Scene<N>.atx, 2 MB VRAM) is loaded: binding bit 6 is
+// then texture page row 2 / 3 (texpage bit 11), never half resolution (PS1Sprites.cpp, PS1Deform.cpp)
+volatile uint32 g_ps1AtlasHiMask = 0;
+volatile uint32 g_ps1AtlasAtxLoads = 0;
+extern volatile uint32_t g_ps1Extras, g_ps1Vram2MB; // ps1/rsdk5_main.cpp (ps1/hwdetect.cpp)
 }
 
 namespace
@@ -59,6 +64,8 @@ uint32 s_clutOff = 0, s_groupOff = 0, s_slotOff = 0;
 int8 s_region[2] = { -1, -1 }; // the group each region holds
 char s_atlasPath[0x40];
 uint32 s_bindOffset = 0, s_bindBytes = 0;
+uint32 s_bindOffset2 = 0, s_bindBytes2 = 0; // phase 13: a .atx's character section's bindings (after the common's)
+bool s_atx = false;
 
 inline PS1AtlasFile *Files() { return (PS1AtlasFile *)s_ps1AtlasBlob; }
 inline PS1AtlasGroup *Groups() { return (PS1AtlasGroup *)(s_ps1AtlasBlob + s_groupOff); }
@@ -181,9 +188,74 @@ static bool PS1AtlasOpen(FileInfo *info, const char *folder, const char *sceneID
     return LoadFile(info, s_atlasPath, FMODE_RB);
 }
 
+// docs/32 phase 13 M4: Scene<N>.atx (tools/gfx/build_atlas.py build_atx): 'ATX1', u16 sections, pad, then per section
+// u32 offset, bytes: a common ATL5 section (the sprites every character's scene loads) and one per character
+// (build_atlas ATX_CHARS: Sonic, Tails, Knuckles, Mighty, Ray), all resident, CLUT slots after the common's. Both are
+// joined here into the stock tables: files and CLUTs one after the other, the character's bindings after the common's.
+namespace RSDK
+{
+static bool PS1AtlasLoadAtx(const char *folder, const char *sceneID)
+{
+    const char *suf = PS1AtlasCharSuffix();
+    uint32 ch = !*suf ? 0 : suf[1] == 't' ? 1 : suf[1] == 'k' ? 2 : suf[1] == 'm' ? 3 : 4;
+    sprintf_s(s_atlasPath, sizeof(s_atlasPath), "Data/Stages/%s/Scene%s.atx", folder, sceneID);
+    FileInfo info;
+    InitFileInfo(&info);
+    if (!LoadFile(&info, s_atlasPath, FMODE_RB))
+        return false;
+    uint32 head[2 + 2 * 6];
+    ReadBytes(&info, head, sizeof(head));
+    uint32 n = head[1] & 0xFFFF;
+    PS1AtlasHeader h[2];
+    uint32 off[2] = { head[2], ch + 1 < n ? head[2 + 2 * (ch + 1)] : 0 };
+    DataStorage *tmp = &dataStorage[DATASET_TMP];
+    bool ok = head[0] == ('A' | 'T' << 8 | 'X' << 16 | (uint32)'1' << 24) && n <= 6 && off[0] && off[1] && !tmp->usedStorage;
+    for (int32 k = 0; ok && k < 2; ++k) {
+        Seek_Set(&info, off[k]);
+        ReadBytes(&info, &h[k], sizeof(h[k]));
+        ok = !memcmp(h[k].magic, "ATL5", 4) && !h[k].groupCount && h[k].blockCount * sizeof(PS1AtlasBlock) + 1024 <= tmp->storageLimit;
+    }
+    if (!ok) {
+        g_ps1AtlasErrors = g_ps1AtlasErrors + 1;
+        CloseFile(&info);
+        return false;
+    }
+    uint32 files = h[0].fileCount + h[1].fileCount, cluts = h[0].clutCount + h[1].clutCount;
+    AllocateStorage((void **)&s_ps1AtlasBlob, files * sizeof(PS1AtlasFile) + cluts * sizeof(PS1AtlasClut) + files, DATASET_STG, false);
+    s_fileCount = (uint16)files, s_clutCount = (uint16)cluts, s_groupCount = 0;
+    s_clutOff = files * sizeof(PS1AtlasFile);
+    s_groupOff = s_slotOff = s_clutOff + cluts * sizeof(PS1AtlasClut);
+    memset(Slots(), 0xFF, files);
+    uint8 *stage = (uint8 *)tmp->memoryTable;
+    g_ps1AtlasVramBytes = 0;
+    for (int32 k = 0; k < 2; ++k) {
+        uint32 f0 = k ? h[0].fileCount : 0, c0 = k ? h[0].clutCount : 0;
+        Seek_Set(&info, off[k] + sizeof(PS1AtlasHeader));
+        ReadBytes(&info, Files() + f0, h[k].fileCount * sizeof(PS1AtlasFile));
+        ReadBytes(&info, (PS1AtlasClut *)(s_ps1AtlasBlob + s_clutOff) + c0, h[k].clutCount * sizeof(PS1AtlasClut));
+        if (k)
+            for (uint32 i = 0; i < h[1].fileCount; ++i) Files()[f0 + i].bindOffset += h[0].bindBytes;
+        uint32 blocks = h[k].blockCount * sizeof(PS1AtlasBlock);
+        ReadBytes(&info, stage, blocks);
+        uint8 *buf = stage + ((blocks + 3) & ~3u);
+        g_ps1AtlasVramBytes += PS1AtlasUpload(&info, (PS1AtlasBlock *)stage, h[k].blockCount, off[k] + h[k].dataOffset, buf,
+                                              (tmp->storageLimit - (uint32)(buf - stage)) & ~3u);
+    }
+    CloseFile(&info);
+    s_bindOffset = off[0] + h[0].bindOffset, s_bindBytes = h[0].bindBytes;
+    s_bindOffset2 = off[1] + h[1].bindOffset, s_bindBytes2 = h[1].bindBytes;
+    s_atx = true;
+    g_ps1AtlasHiMask = 0x40;
+    g_ps1AtlasLoads = g_ps1AtlasLoads + 1;
+    g_ps1AtlasAtxLoads = g_ps1AtlasAtxLoads + 1;
+    return true;
+}
+} // namespace RSDK
+
 bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
 {
     PS1AtlasRelease();
+    s_atx = false, g_ps1AtlasHiMask = 0, s_bindBytes2 = 0;
     s_fileCount = s_clutCount = s_groupCount = 0;
     s_region[0] = s_region[1] = -1;
     s_bindBytes                = 0;
@@ -202,6 +274,8 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
         }
         CloseFile(&info);
     }
+    if (g_ps1Extras && g_ps1Vram2MB && PS1AtlasLoadAtx(folder, sceneID))
+        return true; // phase 13: the full-resolution atlas (the stock one when the scene has none)
     if (!PS1AtlasOpen(&info, folder, sceneID, "atl")) {
         s_atlasPath[0] = 0;
         return false;
@@ -252,11 +326,12 @@ void RSDK::PS1AtlasLoadBindings()
     // 7b.3c: in DATASET_TMP (free while the StageLoads run: the atlas staging is done), else STG's tail: the load's STG
     // peak comes with the StageLoads (FBZ2: 9.7 KB of bindings)
     uint8 *t = NULL;
-    PS1TryAllocateStorage((void **)&s_ps1AtlasBindTmp, s_bindBytes, DATASET_TMP, false);
+    uint32 total = s_bindBytes + s_bindBytes2; // (phase 13: a .atx's two ranges, one after the other)
+    PS1TryAllocateStorage((void **)&s_ps1AtlasBindTmp, total, DATASET_TMP, false);
     if (s_ps1AtlasBindTmp)
         t = s_ps1AtlasBindTmp, s_bindInTmp = true;
     else
-        t = (uint8 *)PS1StorageTailAlloc(DATASET_STG, s_bindBytes);
+        t = (uint8 *)PS1StorageTailAlloc(DATASET_STG, total);
     FileInfo info;
     InitFileInfo(&info);
     if (!t || !LoadFile(&info, s_atlasPath, FMODE_RB)) {
@@ -265,6 +340,10 @@ void RSDK::PS1AtlasLoadBindings()
     }
     Seek_Set(&info, s_bindOffset);
     ReadBytes(&info, t, s_bindBytes);
+    if (s_bindBytes2) {
+        Seek_Set(&info, s_bindOffset2);
+        ReadBytes(&info, t + s_bindBytes, s_bindBytes2);
+    }
     CloseFile(&info);
     s_ps1AtlasBind = t;
 }
@@ -331,6 +410,8 @@ void RSDK::PS1AtlasBindEnd()
 
 bool RSDK::PS1AtlasLoadGroup(const char *name)
 {
+    if (s_atx)
+        return true; // phase 13: a .atx holds every group at once
     int32 g = 0;
     for (; g < s_groupCount; ++g)
         if (!strncmp(Groups()[g].name, name, 8))

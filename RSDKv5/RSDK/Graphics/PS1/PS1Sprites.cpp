@@ -15,6 +15,7 @@
 // add / sub = modes 1 / 2 with the texture modulated by alpha / 2 (0x80 = 1.0). Tint, masked and unmasked are counted,
 // as are DrawSpriteFlipped / DrawSpriteRotozoom calls with sheet coordinates only (no frame, no tile).
 #include "../../../../ps1/gpu_chain_raw.hh"
+extern "C" volatile uint32_t g_ps1AtlasHiMask; // PS1Atlas.cpp (docs/32 phase 13: a .atx's page rows 2 / 3)
 
 // Counters and the draw log at global scope, declared in no header: GDB then finds them by their plain names (an
 // extern "C" variable declared inside namespace RSDK gets the debug name RSDK::x, which GDB can't match to the ELF).
@@ -458,7 +459,9 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &s
         }
         return false;
     }
-    tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7;
+    uint32 hi   = attr & g_ps1AtlasHiMask; // phase 13: a .atx's page rows 2 / 3 (bit 6, else half resolution)
+    attr        = (uint16)(attr ^ hi);
+    tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7 | hi << 5;
     uint32 slot = PS1_ATLAS_CLUT(attr);
     PS1FadeRestoreSlot(slot); // a FillScreen / the pause tint earlier this frame changed the CLUTs: this one back (9b.3)
     clut = slot == PS1_ATLAS_BANK_CLUT ? (uint32)(240 << 6) : (slot % PS1_SPRITE_CLUTS_PER_ROW) | (496 + slot / PS1_SPRITE_CLUTS_PER_ROW) << 6;

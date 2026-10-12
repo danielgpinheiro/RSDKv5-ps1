@@ -282,6 +282,14 @@ objects:
 # phase 11: MANIA_DATA (the builder's data), as rsdk5_formats.data_root()
 GAME_DATA ?= $(or $(MANIA_DATA),../SonicMania_Extracted/Data)
 GFX_CHARACTERS ?= sonic tails knux mighty ray # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; 9g: _mighty, _ray; presentation scenes: one)
+# docs/32 phase 13 M4: the full-resolution atlases for the 2 MB VRAM mod (Scene<N>.atx, ~1 min a scene; scenes with a frame
+# that must be halved, and presentation scenes, keep only their .atl). ATX_JOBS in parallel.
+ATX_JOBS ?= 6
+atx:
+	for f in $(subst $(comma), ,$(STAGES)); do \
+	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
+	  for i in $$ids; do [ -f tools/gfx/manifests/$$f$$i.txt ] && echo "$$f $$i"; done; \
+	done | xargs -P $(ATX_JOBS) -L 1 sh -c '/usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx "$$0" "$$1" --atx | head -1'
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \
 	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
@@ -329,6 +337,7 @@ disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
 	for f in $(OVL_UNITS) Mods; do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl $$d*.pda build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
+	for d in build/gfx/*/; do f=$$(basename $$d); cp $$d*.atx build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
 	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi
 	rm -f build/iso/Data/PS1Config.txt
