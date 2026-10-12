@@ -1027,9 +1027,17 @@ PS1_HOT void PS1TypeGroupPass()
     sceneInfo.entitySlot = ENTITY_COUNT;
 }
 
-// Late update: the scan clears onScreen on each slot whose lateUpdate does not run
-PS1_HOT EntityBase **PS1LateScan(EntityBase **p, EntityBase **pend)
+// Late update: the scan clears onScreen on each slot whose lateUpdate does not run (`keep`: clears nothing)
+PS1_HOT EntityBase **PS1LateScan(EntityBase **p, EntityBase **pend, bool keep)
 {
+    if (keep) {
+        for (; p < pend; ++p) {
+            EntityBase *ent = *p;
+            if (ent->inRange && objectClassList[stageObjectIDs[ent->classID]].lateUpdate)
+                return p;
+        }
+        return p;
+    }
     for (; p < pend; ++p) {
         EntityBase *ent = *p;
         if (ent->inRange && objectClassList[stageObjectIDs[ent->classID]].lateUpdate)
@@ -1041,8 +1049,16 @@ PS1_HOT EntityBase **PS1LateScan(EntityBase **p, EntityBase **pend)
 
 // 3.0f: with whole bits, only the marked slots (the others have inRange false and onScreen 0 already: no callback, the
 // clear a no-op); a CopyEntity during the pass makes the rest of it visit every slot, and the next frame's passes too
+// 9r (choice 185): the stock late pass clears every onScreen and only drawing sets it, so at 30 fps (two logic
+// steps a drawn frame) the second step's updates saw every object off-screen (PSZ1's intro destroyed its gliders, Metal
+// Sonic, Splats, swinging platforms...). A drawn frame's earlier steps keep onScreen (and the slots' bits: a superset
+// stays valid); after such a pass the bits are not declared whole (an entity copy may have carried an onScreen into an
+// unmarked slot): the last step's pass clears them as stock. One step a frame: unchanged.
+static inline bool PS1KeepOnScreen() { return !g_ps1LastStep; }
+
 PS1_HOT void PS1LateUpdatePass()
 {
+    bool keep       = PS1KeepOnScreen();
     uint32 copies   = g_ps1EntityCopies;
     bool whole      = copies == s_ps1BitsFrom;
     bool wholeStart = whole;
@@ -1060,9 +1076,10 @@ PS1_HOT void PS1LateUpdatePass()
             if (whole)
                 s = PS1SlotNext(s, s1);
             else if (s < s1) { // every slot: the scan settles the ones with no callback
-                EntityBase **q = PS1LateScan(objectEntityPtr + s, objectEntityPtr + s1);
+                EntityBase **q = PS1LateScan(objectEntityPtr + s, objectEntityPtr + s1, keep);
                 int32 qs       = (int32)(q - objectEntityPtr);
-                for (int32 k = s; k < qs; ++k) PS1SlotUnmark(k); // cleared their own onScreen
+                if (!keep)
+                    for (int32 k = s; k < qs; ++k) PS1SlotUnmark(k); // cleared their own onScreen
                 if (qs != s)
                     ent = q[-1], last = qs - 1;
                 s = qs;
@@ -1074,18 +1091,22 @@ PS1_HOT void PS1LateUpdatePass()
                 sceneInfo.entitySlot = s;
                 sceneInfo.entity     = e;
                 PS1_PROF(0, stageObjectIDs[e->classID], objectClassList[stageObjectIDs[e->classID]].lateUpdate());
-                ent           = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
-                ent->onScreen = 0;
-                if (ent == objectEntityPtr[s])
-                    PS1SlotUnmark(s);
-                else
-                    PS1SlotMark(s); // its own onScreen stays: cleared by a later pass
+                ent = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
+                if (!keep) {
+                    ent->onScreen = 0;
+                    if (ent == objectEntityPtr[s])
+                        PS1SlotUnmark(s);
+                    else
+                        PS1SlotMark(s); // its own onScreen stays: cleared by a later pass
+                }
                 if (g_ps1EntityCopies != copies)
                     whole = false; // a copy: every slot from here on
             }
             else {
-                e->onScreen = 0;
-                PS1SlotUnmark(s);
+                if (!keep) {
+                    e->onScreen = 0;
+                    PS1SlotUnmark(s);
+                }
                 ent = e;
             }
             last = s;
@@ -1098,7 +1119,7 @@ PS1_HOT void PS1LateUpdatePass()
         if (s1 > s0 && last != s1 - 1)
             ent = objectEntityPtr[s1 - 1], last = s1 - 1;
     }
-    if (g_ps1EntityCopies == copies)
+    if (g_ps1EntityCopies == copies && (wholeStart || !keep))
         s_ps1BitsFrom = copies; // no copy since the bits were made whole again: whole from here
 #if PS1_CHECK_SLOTBITS
     if (g_ps1EntityCopies == copies)
@@ -1129,14 +1150,15 @@ PS1_HOT EntityBase **PS1PausedScan(EntityBase **p, EntityBase **pend)
     return p;
 }
 
-PS1_HOT EntityBase **PS1PausedLateScan(EntityBase **p, EntityBase **pend)
+PS1_HOT EntityBase **PS1PausedLateScan(EntityBase **p, EntityBase **pend, bool keep)
 {
     for (; p < pend; ++p) {
         EntityBase *ent = *p;
         uint32 act = ent->active;
         if ((act == ACTIVE_ALWAYS || act == ACTIVE_PAUSED) && objectClassList[stageObjectIDs[ent->classID]].lateUpdate)
             return p;
-        ent->onScreen = 0;
+        if (!keep) // (9r: see PS1LateUpdatePass)
+            ent->onScreen = 0;
     }
     return p;
 }
@@ -1175,6 +1197,7 @@ PS1_HOT void PS1PausedUpdatePass()
 
 PS1_HOT void PS1PausedLatePass()
 {
+    bool keep       = PS1KeepOnScreen(); // (9r: see PS1LateUpdatePass)
     EntityBase *ent = NULL;
     for (int32 phase = 0; phase < 2; ++phase) {
         int32 s = phase ? TEMPENTITY_START : 0;
@@ -1182,7 +1205,7 @@ PS1_HOT void PS1PausedLatePass()
             int32 s1 = phase ? ps1TempSlotEnd : ps1SceneSlotEnd;
             if (s >= s1)
                 break;
-            EntityBase **q = PS1PausedLateScan(objectEntityPtr + s, objectEntityPtr + s1);
+            EntityBase **q = PS1PausedLateScan(objectEntityPtr + s, objectEntityPtr + s1, keep);
             int32 qs       = (int32)(q - objectEntityPtr);
             if (qs != s) {
                 ent = q[-1], s = qs;
@@ -1192,8 +1215,9 @@ PS1_HOT void PS1PausedLatePass()
             sceneInfo.entitySlot = s;
             sceneInfo.entity     = ent;
             objectClassList[stageObjectIDs[ent->classID]].lateUpdate();
-            ent           = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
-            ent->onScreen = 0;
+            ent = (EntityBase *)sceneInfo.entity; // stock clears onScreen through sceneInfo.entity
+            if (!keep)
+                ent->onScreen = 0;
             ++s;
         }
     }
@@ -1254,6 +1278,7 @@ PS1_HOT void PS1FrozenUpdatePass()
 
 PS1_HOT void PS1FrozenLatePass()
 {
+    bool keep       = PS1KeepOnScreen(); // (9r: see PS1LateUpdatePass)
     uint32 copies   = g_ps1EntityCopies;
     bool whole      = copies == s_ps1BitsFrom;
     bool wholeStart = whole;
@@ -1280,9 +1305,10 @@ PS1_HOT void PS1FrozenLatePass()
                 if (c->interaction)
                     PS1TypeGroupsAdd((uint16)s, c->classID, c->group);
             }
-            ent           = (EntityBase *)sceneInfo.entity;
-            ent->onScreen = 0;
-            if (!wholeStart && objectEntityPtr[s]->inRange)
+            ent = (EntityBase *)sceneInfo.entity;
+            if (!keep)
+                ent->onScreen = 0;
+            if (!wholeStart && (objectEntityPtr[s]->inRange || (keep && objectEntityPtr[s]->onScreen)))
                 PS1SlotMark(s); // rebuilding the bits
             if (g_ps1EntityCopies != copies)
                 whole = false; // a copy: every slot from here on
