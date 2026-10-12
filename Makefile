@@ -161,6 +161,10 @@ ifneq ($(and $(BOOT),$(HWDETECT)),)
 CPPFLAGS += -DPS1_HWDETECT=1
 PS1_SRCS += ps1/hwdetect.cpp
 endif
+# docs/32 phase 13: `make PS1_LOGS=1` keeps the game's LogHelpers prints (off in every other build: resident RAM)
+ifneq ($(PS1_LOGS),)
+CPPFLAGS += -DPS1_GAME_LOGS=1
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -237,7 +241,9 @@ LDFLAGS += $(STUBS).o -Wl,@build/gen/ovl_keep.txt
 $(TARGET).elf: $(STUBS).o
 # objects only overlays link (tools/gen_overlays.py EXTRAS; not in the resident's SRCS: nothing of theirs stays resident)
 OVL_ONLY_OBJS = ps1/hwdetect.o
-$(STUBS).c: $(OBJS) $(OVL_OBJS) $(OVL_ONLY_OBJS) tools/gen_overlays.py
+# docs/32 phase 13: the Mods overlay, linked at 0x80200000 (above a stock console's 2 MB) and loaded only with 8 MB or more
+MODS_OBJS = ps1/mods/mods.o
+$(STUBS).c: $(OBJS) $(OVL_OBJS) $(OVL_ONLY_OBJS) $(MODS_OBJS) tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py stubs $@ $(OBJS)
 $(STUBS).o: $(STUBS).c
 	$(CC) -march=mips1 -mabi=32 -EL -fno-pic -mno-shared -mno-abicalls -msoft-float -G0 -Os -g -c -o $@ $<
@@ -250,10 +256,12 @@ build/gen/ovl/resimg.o: $(TARGET).elf tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py resimg $(TARGET).elf
 build/ovl/%.bin: $(TARGET).elf build/gen/ovl/resimg.o build/gen/ovl/%_reg.o tools/gen_overlays.py
 	@/usr/bin/python3 tools/gen_overlays.py link $* $(TARGET).elf $(CC) $(ARCHFLAGS) -msoft-float -g
-overlays: $(OVL_BINS)
+build/ovl/Mods.bin: $(TARGET).elf build/gen/ovl/resimg.o $(MODS_OBJS) tools/gen_overlays.py
+	@/usr/bin/python3 tools/gen_overlays.py modlink Mods 80200000 $(MODS_OBJS) -- $(CC) $(ARCHFLAGS) -msoft-float -g
+overlays: $(OVL_BINS) build/ovl/Mods.bin
 all: overlays
 ifneq ($(PLATFORM_TEST),1)
-$(TARGET).$(TYPE): | $(OVL_BINS)
+$(TARGET).$(TYPE): | $(OVL_BINS) build/ovl/Mods.bin
 endif
 
 # Trig tables computed at build time on the host (tools/trig/gen_trig.c), included by Math.cpp on PS1.
@@ -319,7 +327,7 @@ PLUS ?= 1
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
 	rm -rf build/iso/Data/PS1Ovl && mkdir -p build/iso/Data/PS1Ovl
-	for f in $(OVL_UNITS); do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
+	for f in $(OVL_UNITS) Mods; do cp build/ovl/$$f.bin build/iso/Data/PS1Ovl/$$f.bin; done
 	for d in build/gfx/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.ptl $$d*.atl $$d*.pda build/iso/Data/Stages/$$f/ 2>/dev/null; done; true
 	for d in build/sfx/Stages/*/; do f=$$(basename $$d); mkdir -p build/iso/Data/Stages/$$f && cp $$d*.bin build/iso/Data/Stages/$$f/; done; true
 	if [ -d build/meshes/Meshes ]; then cp -R build/meshes/Meshes/ build/iso/Data/Meshes/; fi

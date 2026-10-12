@@ -25,6 +25,7 @@
 #include "common/syscalls/syscalls.h"
 
 #include "video.hh"
+#include "mods_ops.h"
 
 extern psyqo::CDRomDevice *g_ps1CDRom;
 volatile uint32_t g_ps1VideoForcedClose = 0; // file reads that had to stop an open FMV stream
@@ -56,6 +57,10 @@ struct Window {
 };
 static Window s_win[WINDOWS];
 static bool readViaWindows(uint32_t lba, uint32_t bytes, uint8_t *dst);
+// docs/32 phase 13 M2: the Mods overlay's CD sector cache (8 MB consoles; NULL on a stock one): fread asks it first and
+// gives it every sector it reads from the CD; with it the XA music stops only for a read that goes to the CD
+const PS1ModsOps *volatile g_ps1Mods = nullptr;
+bool PS1XaStopForFileRead(); // xa_music.cpp
 static uint32_t s_winClock    = 0;
 static uint32_t s_volumeEnd   = 0; // sectors in the volume (PVD): read-ahead never goes past it
 volatile uint32_t g_ps1FsWindowHits  = 0; // buffered reads served from a window (GDB)
@@ -102,6 +107,8 @@ static void countRequest(uint32_t lba, uint32_t count, uint32_t us) {
 
 // Every file-system CD read goes through here (counted for load profiling).
 static bool cdRead(uint32_t lba, uint32_t count, void *dst) {
+    if (g_ps1Mods)
+        PS1XaStopForFileRead(); // (phase 13: fopen didn't: a cached read keeps the music)
     lsClose(); // one CD action at a time
     uint32_t t0 = g_ps1GPU->now();
     bool ok     = g_ps1CDRom->readSectorsBlocking(lba, count, dst, *g_ps1GPU);
@@ -281,6 +288,8 @@ void lsAccount() {
 }
 
 void lsStart(uint32_t lba, int win) {
+    if (g_ps1Mods)
+        PS1XaStopForFileRead(); // (phase 13: see cdRead)
     Window &w = s_win[win];
     w.count   = 0;
     w.lba     = lba;
@@ -670,8 +679,9 @@ FILE *fopen(const char *path, const char *mode) {
         }
     }
     // One CD action at a time: CD-XA music reads continuously; scripts stop it before loads,
-    // this is the safety net (counted in g_ps1XaForcedStops).
-    PS1XaStopForFileRead();
+    // this is the safety net (counted in g_ps1XaForcedStops). Phase 13: with the sector cache, at the CD request.
+    if (!g_ps1Mods)
+        PS1XaStopForFileRead();
     if (!findLocal(path, &lba, &size) && !findPin(path, &lba, &size) && !findFile(path, &lba, &size))
         return nullptr;
     FILE *f = (FILE *)malloc(sizeof(FILE));
@@ -893,6 +903,13 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *f) {
     while (remaining > 0) {
         uint32_t sector = f->lba + (f->pos / ISO_SECTOR);
         uint32_t off    = f->pos % ISO_SECTOR;
+        if (g_ps1Mods) { // phase 13 M2: the sectors the cache holds
+            uint32_t n = g_ps1Mods->fsGet(sector, off, dst, (uint32_t)remaining);
+            if (n) {
+                dst += n, f->pos += n, remaining -= n;
+                continue;
+            }
+        }
         // Big sector-aligned reads (a whole window or more) go straight into the caller's buffer:
         // one request of up to DIRECT_MAX sectors, no copy.
         // (Not during a load: the load stream delivers them without a request each.)
@@ -902,6 +919,8 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *f) {
                 n = DIRECT_MAX;
             if (!cdRead(sector, n, dst))
                 break;
+            if (g_ps1Mods)
+                g_ps1Mods->fsPut(sector, n, dst);
             dst += n * ISO_SECTOR;
             f->pos += n * ISO_SECTOR;
             remaining -= n * ISO_SECTOR;
@@ -910,6 +929,8 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *f) {
         Window *w = windowFor(sector);
         if (!w)
             break;
+        if (g_ps1Mods)
+            g_ps1Mods->fsPut(w->lba, w->count, w->buf);
         uint32_t skip  = (sector - w->lba) * ISO_SECTOR + off;
         uint32_t avail = w->count * ISO_SECTOR - skip;
         uint32_t chunk = (avail < remaining) ? avail : (uint32_t)remaining;

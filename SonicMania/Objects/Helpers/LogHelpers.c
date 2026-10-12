@@ -5,6 +5,7 @@
 // Decompiled by: Rubberduckycooly & RMGRich
 // ---------------------------------------------------------------------
 
+#define LOGHELPERS_IMPL // (the functions themselves: LogHelpers.h maps the calls away on the PS1)
 #include "Game.h"
 
 ObjectLogHelpers *LogHelpers = NULL;

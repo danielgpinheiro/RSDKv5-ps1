@@ -12,6 +12,9 @@
 //   mirror; without the mod GP1(09h) goes back to 0. (GTA3-ps1 ps1/re3/vram2mb_ps1.cpp, the same probe.)
 #include <stdint.h>
 
+#include <stdio.h>
+#include <string.h>
+
 #include "common/syscalls/syscalls.h"
 
 // The code runs from the Logos overlay (tools/gen_overlays.py EXTRAS 'hwdetect': no resident bytes on a stock console,
@@ -168,8 +171,31 @@ extern "C" void PS1HwDetect() {
     g_ps1HwDetected = 1;
 }
 
+// M2: the Mods overlay (ps1/mods/, 'MOD1' at 0x80200000) when the console has the RAM for it. Its registration fills
+// g_ps1Mods (ps1/mods_ops.h); a file that doesn't check out leaves the console stock.
+extern "C" volatile uint32_t g_ps1ModsLoaded;
+static void modsLoad() {
+    FILE *f = fopen("Data/PS1Ovl/Mods.bin", "rb");
+    if (!f)
+        return;
+    uint32_t h[4];
+    if (fread(h, 1, sizeof(h), f) == sizeof(h) && h[0] == 0x31444F4Du && h[3] == 0x80200000u && h[1] > sizeof(h) &&
+        h[1] <= 0x100000u) {
+        memcpy((void *)0x80200000u, h, sizeof(h));
+        if (fread((uint8_t *)0x80200000u + sizeof(h), 1, h[1] - sizeof(h), f) == h[1] - sizeof(h)) {
+            syscall_flushCache(); // new code in RAM
+            ((void (*)())h[2])();
+            g_ps1ModsLoaded = 1;
+        }
+    }
+    fclose(f);
+}
+
 // The Logos overlay's registration (every load of the scene): the probes run once per boot
 extern "C" void PS1HwDetectLink() {
-    if (!g_ps1HwDetected)
-        PS1HwDetect();
+    if (g_ps1HwDetected)
+        return;
+    PS1HwDetect();
+    if (g_ps1Extras)
+        modsLoad();
 }

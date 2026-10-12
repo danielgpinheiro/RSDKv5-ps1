@@ -145,8 +145,8 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
 // `make BOOT=... HWDETECT=1` test build); a stock console reads 2 / 0
 extern "C" {
 volatile uint32_t g_ps1RamMB = 2, g_ps1Vram2MB = 0, g_ps1RamCtrl = 0, g_ps1HwFaults = 0, g_ps1ExtrasOff = 0, g_ps1Extras = 0,
-                  g_ps1HwDetected = 0;
-void PS1HwDetect();
+                  g_ps1HwDetected = 0, g_ps1ModsLoaded = 0;
+void PS1HwDetectLink();
 }
 
 class ManiaPS1App final : public psyqo::Application {
@@ -163,9 +163,6 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void start() override {
-#if PS1_HWDETECT
-        PS1HwDetect(); // docs/32 phase 13: a BOOT= test build skips the Logos scene that runs the probes
-#endif
 #if PS1_PROFILE
         *(volatile uint16_t *)0xBF801124 = 0x200; // root counter 2: system clock / 8, free-running (the profile's clock)
 #endif
@@ -199,6 +196,9 @@ class ManiaPS1App final : public psyqo::Application {
         }
         if (ok) {
             InitEngine();
+#if PS1_HWDETECT
+            PS1HwDetectLink(); // docs/32 phase 13: a BOOT= test build skips the Logos scene that runs the probes
+#endif
 #if defined PS1_BOOT_CATEGORY
             // `make BOOT=cat,index` (docs/32 2.5): start at that scene of GameConfig's lists, as the dev menu's stage
             // select does (the globals keep GameConfig's defaults).

@@ -619,6 +619,47 @@ def link(argv):
     print('gen_overlays: %s.bin %d bytes at 0x%08x (top 0x%08x)' % (un, size, at, top))
 
 
+def modlink(argv):
+    """docs/32 phase 13: the Mods overlay (ps1/mods/), linked at a fixed address above 2 MB against the resident image:
+    modlink NAME BASE_HEX OBJ... -- CC FLAGS... -> build/ovl/NAME.bin (the code overlays' header; magic 'MOD1')."""
+    i = argv.index('--')
+    un, at, objs, cc = argv[0], int(argv[1], 16), argv[2:i], argv[i + 1:]
+    work = os.path.join(OVL, un)
+    os.makedirs(work, exist_ok=True)
+    img_o = os.path.join(OVL, 'resimg.o')
+    base = int(open(os.path.join(OVL, 'resimg.base')).read(), 16)
+    ld = os.path.join(work, 'ovl.ld')
+    open(ld, 'w').write('''SECTIONS {
+  .resimg 0x%x (NOLOAD) : { *(.resimg) }
+  .ovl 0x%x : {
+    __ps1_ovl_start = .;
+    KEEP(*(.ovl_header))
+    *(.text .text.*)
+    *(.rodata .rodata.* .rdata .rdata.*)
+    *(.data .data.* .sdata .sdata.*)
+    *(.sbss .sbss.* .bss .bss.* COMMON)
+    . = ALIGN(16);
+    __ps1_ovl_end = .;
+  }
+  PS1_OVL_SIZE = __ps1_ovl_end - __ps1_ovl_start;
+  /DISCARD/ : { *(.MIPS.abiflags) *(.reginfo) *(.pdr) *(.comment) *(.gnu.attributes) *(.note .note.*) *(.mdebug.*) }
+}
+''' % (base, at))
+    out = os.path.join(work, '%s.elf' % un)
+    libc = [os.path.join(REPO, 'ps1', 'libc', n) for n in ('string.o', 'stdlib.o', 'math.o', 'stdio.o')]
+    subprocess.run(cc + ['-nostdlib', '-Wl,-T,' + ld, '-Wl,--allow-multiple-definition', '-Wl,--gc-sections',
+                         '-Wl,-wrap,memcpy', '-Wl,-wrap,memset', '-Wl,-wrap,_Znwj', '-Wl,-wrap,_Znaj',
+                         '-Wl,-e,ps1OvlHeader', '-o', out, img_o] + [os.path.join(REPO, o) for o in objs] + libc + ['-lgcc'],
+                   check=True)
+    binf = os.path.join(REPO, 'build', 'ovl', un + '.bin')
+    os.makedirs(os.path.dirname(binf), exist_ok=True)
+    run([OBJCOPY, '-O', 'binary', '-j', '.ovl', out, binf])
+    data = open(binf, 'rb').read()
+    magic, hsize, _, hbase = (int.from_bytes(data[i:i + 4], 'little') for i in (0, 4, 8, 12))
+    assert magic == 0x31444F4D and hsize == len(data) and hbase == at, (hex(magic), hsize, len(data), hex(hbase), hex(at))
+    print('gen_overlays: %s.bin %d bytes at 0x%08x' % (un, len(data), at))
+
+
 if __name__ == '__main__':
     cmd, argv = sys.argv[1], sys.argv[2:]
-    {'plan': plan, 'stubs': stubs, 'resimg': resimg_cmd, 'link': link}[cmd](argv)
+    {'plan': plan, 'stubs': stubs, 'resimg': resimg_cmd, 'link': link, 'modlink': modlink}[cmd](argv)
