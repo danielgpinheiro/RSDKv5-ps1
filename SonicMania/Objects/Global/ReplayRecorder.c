@@ -679,6 +679,7 @@ void ReplayRecorder_SetupWriteBuffer(void)
 
 void ReplayRecorder_DrawGhostDisplay(void)
 {
+#if !defined RETRO_PS1_BUILD // docs/32 phase 13c: a ghost plays only from a loaded replay (none on the PS1: 988 resident bytes)
     RSDK_THIS(ReplayRecorder);
 
     EntityPlayer *player = self->player;
@@ -753,6 +754,7 @@ void ReplayRecorder_DrawGhostDisplay(void)
             }
         }
     }
+#endif
 }
 
 void ReplayRecorder_Record(EntityReplayRecorder *recorder, EntityPlayer *player)
