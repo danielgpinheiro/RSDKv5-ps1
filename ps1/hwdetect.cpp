@@ -200,4 +200,13 @@ extern "C" void PS1HwDetectLink() {
     PS1HwDetect();
     if (g_ps1Extras)
         modsLoad();
+    // a disc built without the full-resolution atlases (Scene<N>.atx): the console is used as one without the VRAM mod
+    // (no .atx to load, no Sonic & Tails: its art is only there)
+    if (g_ps1Vram2MB) {
+        FILE *f = fopen("Data/Stages/GHZ/Scene1.atx", "rb");
+        if (f)
+            fclose(f);
+        else
+            g_ps1Vram2MB = 0;
+    }
 }

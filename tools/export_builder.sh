@@ -37,6 +37,7 @@ mkdir -p "$B/tools/mesh/optimizer"
 cp LICENSE.md "$B/SonicMania/LICENSE.md"
 cp rsdkv5.ps-exe "$DEST/bin/SonicMania-PS1.exe"
 for u in $(cut -d' ' -f1 build/gen/ovl/units.txt); do cp build/ovl/$u.bin "$DEST/bin/ovl/"; done
+cp build/ovl/Mods.bin "$DEST/bin/ovl/" # docs/32 phase 13: the modded consoles' overlay (8 MB or more)
 cp build/gen/ovl/units.txt "$DEST/bin/ovl/units.txt"
 ( cd "$DEST/bin" && shasum -a 256 SonicMania-PS1.exe ovl/*.bin ovl/units.txt > SHA256SUMS )
 printf '# bin/\n\n`SonicMania-PS1.exe` and `ovl/`: the PS1 executable and its code overlays (one per stage folder or act,\n`units.txt` lists them), built from the RSDKv5-ps1 port at commit `%s` (`make`, `RSDK_AUTOBUILD=1`: the Plus\ncharacters stay off unless the disc carries `Data/PS1Config.txt`, see the README). SHA-256 in `SHA256SUMS`.\n' \

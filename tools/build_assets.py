@@ -8,7 +8,8 @@ disc recipes do it, into a work folder: the public builder runs it (and the port
 1. extract Data.rsdk (tools/extract_rsdk.py) -> WORK/src/Data; every later tool reads it through MANIA_DATA
 2. the data disc tree (tools/data_disc.py) -> WORK/iso
 3. tile images and sprite atlases for every scene of STAGES (tools/gfx/build_tiles.py, build_atlas.py), per character
-   (Sonic, Tails, Knuckles; --plus also Mighty and Ray)
+   (Sonic, Tails, Knuckles; --plus also Mighty and Ray); docs/32 phase 13: the full-resolution atlases for consoles with
+   the 2 MB VRAM mod (build_atlas.py --atx, Scene<N>.atx: in parallel, ATX_JOBS, the files the same whatever the count)
 4. SFX banks (tools/audio/build_sfx.py; --plus: the Plus characters' variants), music (build_music.py), video
    (tools/fmv/build_str.py), meshes (tools/mesh/build_meshes.py; DC_MESH_OPT: the mesh optimiser)
 5. the disc tree as `make disc` lays it out (the prebuilt overlays from OVL_DIR, with its units.txt), the stage-local
@@ -16,7 +17,7 @@ disc recipes do it, into a work folder: the public builder runs it (and the port
    (tools/disc/verify_disc.py)
 --plus writes Data/PS1Config.txt (plus_characters=1): Mighty and Ray in the save select. Off by default (the engine's
 license: DLC off by default in pre-built executables)."""
-import argparse, glob, os, re, shutil, subprocess, sys
+import argparse, concurrent.futures, glob, os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
@@ -75,6 +76,13 @@ def main():
             if os.path.exists(tool('gfx', 'manifests', '%s%s.txt' % (f, i))):
                 for c in chars:
                     run([PY, tool('gfx', 'build_atlas.py'), data, os.path.join(iso, 'Data'), gfx, f, i, c], env)
+    # phase 13: Scene<N>.atx (presentation scenes print SKIP: their .atl serves every console)
+    atx_jobs = [(f, i) for f in stages()
+                for i in sorted(os.path.basename(p)[5:-4] for p in glob.glob(os.path.join(data, 'Stages', f, 'Scene*.bin')))
+                if os.path.exists(tool('gfx', 'manifests', '%s%s.txt' % (f, i)))]
+    with concurrent.futures.ThreadPoolExecutor(int(os.environ.get('ATX_JOBS', min(8, os.cpu_count() or 1)))) as ex:
+        list(ex.map(lambda fi: run([PY, tool('gfx', 'build_atlas.py'), data, os.path.join(iso, 'Data'), gfx, fi[0], fi[1],
+                                    '--atx'], env), atx_jobs))
     sfx = os.path.join(work, 'sfx')
     shutil.rmtree(sfx, ignore_errors=True)
     run([PY, tool('audio', 'build_sfx.py'), data, sfx] + stages(), env)
@@ -94,10 +102,12 @@ def main():
         u = line.split()[0] if line.split() else None
         if u:
             shutil.copyfile(os.path.join(os.path.abspath(a.ovl), u + '.bin'), os.path.join(D, 'PS1Ovl', u + '.bin'))
+    if os.path.exists(os.path.join(os.path.abspath(a.ovl), 'Mods.bin')):  # phase 13: loaded only with 8 MB or more
+        shutil.copyfile(os.path.join(os.path.abspath(a.ovl), 'Mods.bin'), os.path.join(D, 'PS1Ovl', 'Mods.bin'))
     for d in sorted(glob.glob(os.path.join(gfx, '*', ''))):
         f = os.path.basename(os.path.dirname(d))
         os.makedirs(os.path.join(D, 'Stages', f), exist_ok=True)
-        for p in sorted(glob.glob(d + '*.ptl') + glob.glob(d + '*.atl') + glob.glob(d + '*.pda')):
+        for p in sorted(glob.glob(d + '*.ptl') + glob.glob(d + '*.atl') + glob.glob(d + '*.pda') + glob.glob(d + '*.atx')):
             shutil.copyfile(p, os.path.join(D, 'Stages', f, os.path.basename(p)))
     for d in sorted(glob.glob(os.path.join(sfx, 'Stages', '*', ''))):
         f = os.path.basename(os.path.dirname(d))
