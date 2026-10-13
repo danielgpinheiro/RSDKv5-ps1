@@ -92,6 +92,12 @@ void tickBody() {
         return;
     if (g_ps1GPU->isChainTransferring())
         return; // the previous frame's chain is still drawing: next tick
+    // docs/32 phase 13c: a load's blocking uploadToVRAM (PS1TilesLoad, the atlas) pumps callbacks while its DMA runs, and
+    // this timer fires there: the icon's own upload would be a second GPU DMA (psyqo's "Only one GPU DMA transfer at a
+    // time" abort, seen returning from a UFO stage with a 16 MB console). DMA2 CHCR bit 24 (psx-spx DMA: 1F8010A8h) is
+    // set until the transfer ends, and psyqo clears its callback in that DMA's IRQ: next tick
+    if (*(volatile uint32_t *)0xBF8010A8 & 0x01000000)
+        return;
     if (!s_shown) {
         s_dispY     = displayedY();
         int16_t hid = (int16_t)(256 - s_dispY);

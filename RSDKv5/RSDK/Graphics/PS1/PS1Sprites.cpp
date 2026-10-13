@@ -60,8 +60,15 @@ volatile uint32 g_ps1SpriteWidePieces = 0; // 4.2b: frames drawn as pieces of se
 volatile uint32 g_ps1SpriteBigClips   = 0; // 7b.12: frames past the GPU primitive size drawn as their on-screen part (GDB)
 volatile uint32 g_ps1SpriteOutside    = 0; // 4.2d: frames wholly outside their sheet (drawn as nothing; GDB)
 
+volatile uint32 g_ps1ClipAreas = 0; // phase 13c (GDB): drawing areas set for a clip (PS1ClipBoundsChanged)
+static bool s_ps1AreaClipped    = false;
+
 void PS1SpritesFrameBegin()
 {
+    if (s_ps1AreaClipped) { // (a frame that ended inside a clip: the drawing area back to the screen)
+        PS1ChainDrawAreaReset();
+        s_ps1AreaClipped = false;
+    }
     // every counter read once: the linker keeps them (one only reachable from code the compiler folded away would go,
     // and the GDB scripts that print it would stop)
     (void)g_ps1SpriteMissing, (void)g_ps1SpriteInkTodo, (void)g_ps1SpriteFxTodo, (void)g_ps1SpriteUnbound;
@@ -70,6 +77,30 @@ void PS1SpritesFrameBegin()
 #if PS1_DEBUG_BIGRAM
     g_ps1DrawLogCount = 0;
 #endif
+}
+
+// docs/32 phase 13c: SetClipBounds (Drawing.hpp) and the per-draw-group reset (Object.cpp) move the GPU's drawing area
+// (GP0 E3h / E4h, psx-spx GPU "Drawing Area"; PS1ChainDrawArea, end inclusive) with the clip, in the chain's order: every
+// primitive drawn while the game clips is clipped, as on the PC (ShopWindow's reflections ran past their window: SPZ1's
+// smear; the sprite path only counted clipped draws in g_ps1SpriteClipTodo). Empty bounds need no area: PS1PcClip
+// already rejects every draw. Roto / UFO floor set and reset their own area.
+void PS1ClipBoundsChanged(const ScreenInfo *screen)
+{
+    if (screen != currentScreen)
+        return;
+    int32 x1 = screen->clipBound_X1, y1 = screen->clipBound_Y1, x2 = screen->clipBound_X2, y2 = screen->clipBound_Y2;
+    if (x1 <= 0 && y1 <= 0 && x2 >= screen->size.x && y2 >= screen->size.y) {
+        if (s_ps1AreaClipped) {
+            PS1ChainDrawAreaReset();
+            s_ps1AreaClipped = false;
+        }
+        return;
+    }
+    if (x2 <= x1 || y2 <= y1)
+        return;
+    PS1ChainDrawArea(x1, y1, x2 - 1, y2 - 1);
+    s_ps1AreaClipped = true;
+    g_ps1ClipAreas   = g_ps1ClipAreas + 1;
 }
 
 #if PS1_DEBUG_BIGRAM

@@ -1912,6 +1912,9 @@ void RSDK::ProcessObjectDrawLists()
                     else {
                         currentScreen->clipBound_Y2 = 0;
                     }
+#if RETRO_PLATFORM == RETRO_PS1
+                    PS1ClipBoundsChanged(currentScreen); // 13c: the GPU's drawing area back to the screen
+#endif
                 }
 
                 sceneInfo.currentDrawGroup++;

@@ -350,6 +350,9 @@ inline void AddCamera(Vector2 *targetPos, int32 offsetX, int32 offsetY, bool32 w
 
 inline void ClearCameras() { cameraCount = 0; }
 
+#if RETRO_PLATFORM == RETRO_PS1
+void PS1ClipBoundsChanged(const ScreenInfo *screen); // PS1/PS1Sprites.cpp (docs/32 phase 13c: the GPU's drawing area)
+#endif
 inline void SetClipBounds(uint8 screenID, int32 x1, int32 y1, int32 x2, int32 y2)
 {
     ScreenInfo *screen;
@@ -361,6 +364,9 @@ inline void SetClipBounds(uint8 screenID, int32 x1, int32 y1, int32 x2, int32 y2
         screen->clipBound_Y1 = CLAMP(y1, 0, screen->size.y);
         screen->clipBound_X2 = CLAMP(x2, 0, screen->size.x);
         screen->clipBound_Y2 = CLAMP(y2, 0, screen->size.y);
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1ClipBoundsChanged(screen);
+#endif
     }
 }
 

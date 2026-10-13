@@ -158,6 +158,11 @@ void UISaveSlot_Draw(void)
             if (frame->sprX > 106) {
                 int32 width  = frame->sprX - 106;
                 frame->width = 86 - width;
+#if defined RETRO_PS1_BUILD
+                // docs/32 phase 13c: the PS1 draws a frame from its atlas binding (the file's sprX 0: the whole 192-px
+                // picture is stored); the scroll goes through the frame shift
+                PS1SetFrameShift(frame, frame->sprX);
+#endif
                 RSDK.DrawSprite(&self->zoneIconAnimator, &drawPos, false);
 
                 frame->pivotX += frame->width;
@@ -165,6 +170,9 @@ void UISaveSlot_Draw(void)
                 frame->width = width;
             }
 
+#if defined RETRO_PS1_BUILD
+            PS1SetFrameShift(frame, frame->sprX);
+#endif
             RSDK.DrawSprite(&self->zoneIconAnimator, &drawPos, false);
             RSDK.DrawSprite(&self->zoneNameAnimator, &drawPos, false);
         }
