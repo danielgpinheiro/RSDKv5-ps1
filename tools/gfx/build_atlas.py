@@ -962,6 +962,13 @@ def decode_check(clusters, vram, work, clut_maps, name):
 def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     name = '%s%s/%s' % (folder, scene_id, character)
     man = read_manifest(folder, scene_id, character)
+    if ATX is not None:  # phase 13 M5: a section may hold another character's files (Tails' in Sonic's): their manifests too
+        for ch2 in ATX.get('union', ()):
+            if ch2 != character:
+                try:
+                    man = man + [e for e in read_manifest(folder, scene_id, ch2) if e not in man]
+                except OSError:
+                    pass
     sheets = Sheets(data)
     files = []                                  # (path, sprite, [(anim, key)] in record order)
     for kind, path in man:
@@ -973,6 +980,26 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
             files.append((path, s, keys))
     sel, why = select(folder, scene_id, character, files)
     if ATX is not None:
+        # phase 13 M5: every animation any character's scene uses (a sidekick's whole set: Sonic & Tails)
+        for ch2 in ATX.get('union', ()):
+            if ch2 == character:
+                continue
+            s2, _ = select(folder, scene_id, ch2, files)
+            for p_ in sel:
+                if p_ not in s2:
+                    continue
+                v_, w2 = sel[p_], s2[p_]
+                keys_ = v_.keys() if isinstance(v_, dict) else range(len(v_))
+                for k_ in keys_:
+                    if v_[k_] is None and w2[k_] is not None:
+                        v_[k_] = w2[k_]
+        # and the sidekick's flight / swim poses (Sonic & Tails: Tails flies back in with Swim or Fly wherever the scene
+        # is, poses a scene's code otherwise gates by zone: FBZ2), Tails.bin animations 48-54 (Fly .. Swim Lift)
+        if 'Players/Tails.bin' in sel:
+            v_ = sel['Players/Tails.bin']
+            for k_ in range(48, 55):
+                if (k_ in v_ if isinstance(v_, dict) else k_ < len(v_)) and v_[k_] is None:
+                    v_[k_] = 'resident'
         files = [f for f in files if f[0] in ATX['files']]
         for p_ in sel:
             v_ = sel[p_]
@@ -1102,7 +1129,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 px = halve(im[y:y + h, x:x + w]) if half else im[y:y + h, x:x + w]
             if px.shape[0] > PAGE or px.shape[1] > 4 * PAGE:
                 raise AtlasError('%s %s is larger than a texture page' % (sh, r))
-            if ATX is not None and half:
+            if ATX is not None and half is True:
                 raise AtlasError('%s %s: halved whatever the plan (a full-resolution section cannot hold it)' % (sh, r))
             # 4.2b: wider than a page (the menu dioramas' 512 / 1024-texel strips): pack() gives it adjacent pages from
             # a page's left edge and the drawer takes one 256-texel piece per page
@@ -1261,7 +1288,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if u > 255 or v > 255:
                     raise AtlasError('%s: binding past its page: %s %s' % (name, sh, (x, y)))
                 return struct.pack('<BBH', u, v, (c['page_col'] & 15) | (b.row & 1) << 4 | (1 if c['depth'] == 8 else 0) << 5
-                                   | (1 if c['half'] or b.row >= 2 else 0) << 6 | clut << 7)
+                                   | (1 if (c['half'] and ATX is None) or b.row >= 2 else 0) << 6 | clut << 7)
         return None
     MISSING = struct.pack('<BBH', 0xFF, 0xFF, 0xFFFF)
     OUTSIDE = struct.pack('<BBH', 0xFE, 0xFE, 0xFFFF)  # 4.2d: wholly outside its sheet: the runtime draws nothing, uncounted
@@ -1271,7 +1298,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     for fi, (path, s, keys) in enumerate(files):
         # 7b: an animation placed nowhere keeps no frames on the PS1 (Scene<N>.pda): the file's bindings and patches
         # count the stored frames (the kept ones in order, then one placeholder: Animation.cpp LoadSpriteAnimation)
-        dropped = {ai for ai in range(len(s['anims'])) if sel[path][ai] is None and s['anims'][ai]['frames']}
+        dropped = set() if ATX is not None else {ai for ai in range(len(s['anims'])) if sel[path][ai] is None and s['anims'][ai]['frames']}
         stored = [k for k in range(len(keys)) if keys[k][0] not in dropped]
         file_tab += struct.pack('<4IIH2x', *md5_words(path), len(bind), len(stored) + (1 if dropped else 0))
         for k, (ai, (sh, x, y, w, h)) in enumerate(keys[kk] for kk in stored):
@@ -1444,13 +1471,15 @@ def build_atx(data, disc, folder, sid):
     try:
         def section(ch, files, columns, base):
             global ATX
-            ATX = {'files': files, 'clut_base': base, 'columns': columns}
+            ATX = {'files': files, 'clut_base': base, 'columns': columns, 'union': list(mans)}
             res = build(data, disc, folder, sid, ch)
             return res
         # the player run: the fewest pages at the end of row 3 every character's own files fit in
+        # M5: Sonic's section also holds Tails' own files (Sonic & Tails: the leader's section is the one loaded)
+        own_of = {ch: (fs | (mans.get('tails', set()) if ch == 'sonic' else set())) - common for ch, fs in mans.items()}
         need = 0
         for ch, fs in mans.items():
-            own = fs - common
+            own = own_of[ch]
             for k in range(1, 17):
                 r = section(ch, own, [(c, 3) for c in range(16 - k, 16)], 0)
                 if r[0] is not None:
@@ -1475,7 +1504,7 @@ def build_atx(data, disc, folder, sid):
             if ch not in mans:
                 secs.append(b'')
                 continue
-            r = section(ch, mans[ch] - common, [(c, 3) for c in range(16 - need, 16)], ncl)
+            r = section(ch, own_of[ch], [(c, 3) for c in range(16 - need, 16)], ncl)
             if r[0] is None:
                 return None, '%s: %s' % (ch, r[1].split('\n')[0])
             secs.append(r[0])

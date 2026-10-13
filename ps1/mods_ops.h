@@ -11,6 +11,11 @@ typedef struct {
     // as far as the cache holds them in a row (0: a miss); put: `count` sectors read from the CD at `lba`
     uint32_t (*fsGet)(uint32_t sector, uint32_t off, uint8_t *dst, uint32_t want);
     void (*fsPut)(uint32_t lba, uint32_t count, const uint8_t *src);
+    // M5: an arena above 2 MB for sprite data (RSDK/Graphics/Animation.cpp): stage-scope blocks from its bottom, freed
+    // all at once at each scene load (stageReset, ClearSpriteAnimations), global-scope ones from its top. NULL: full
+    void *(*alloc)(uint32_t bytes, int stage);
+    void (*trim)(void *p, uint32_t oldBytes, uint32_t newBytes); // a stage block's unused tail back (the last one only)
+    void (*stageReset)(void);
 } PS1ModsOps;
 extern const PS1ModsOps *volatile g_ps1Mods;
 #ifdef __cplusplus

@@ -52,6 +52,7 @@ inline bool PS1ReservedUnused(int32 s) { return s == 13 || s == 14 || s == 38 ||
 
 // 7b: the stage class named `name` (the game's tables), 0 if none
 extern "C" const PS1ReservedSpec ps1ReservedSpecs[]; // the game (resident: SonicMania/Objects/Global/Zone.c)
+extern "C" const int32 ps1GlobalsPlayerIDOffset;     // (Zone.c) phase 13: globals->playerID ("+duo" specs: a sidekick)
 extern "C" const char *const ps1ReservedStageMarker;
 extern "C" const PS1GrowSpec ps1GrowSpecs[];   // 7b.7: (Zone.c) scene classes whose Create becomes another class
 extern "C" const char *const ps1TempStageMarker; // 7b: (Zone.c) a stage with this class gets PS1_TEMP_BLOCKS_MANY
@@ -123,8 +124,9 @@ __attribute__((noinline)) void ReservedCaps(uint32 maxCap, uint16 *caps)
         return;
     for (const PS1ReservedSpec *r = ps1ReservedSpecs; r->first != 0xFFFF; ++r) // the named slots start empty
         for (int32 s = r->first; s <= r->last && s < RESERVE_ENTITY_COUNT; ++s) caps[s] = 0;
+    bool duo = globalVarsPtr && (*(const int32 *)((const uint8 *)globalVarsPtr + ps1GlobalsPlayerIDOffset) & 0xFF00);
     for (const PS1ReservedSpec *r = ps1ReservedSpecs; r->first != 0xFFFF; ++r) {
-        if (r->needs && !StageClassOf(r->needs))
+        if (r->needs && (r->needs[0] == '+' ? !duo : !StageClassOf(r->needs))) // (phase 13: "+duo", a sidekick)
             continue;
         uint32 cap = 0;
         for (int32 k = 0; k < 8 && r->classes[k]; ++k) {

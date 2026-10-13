@@ -1627,6 +1627,12 @@ const PS1ReservedSpec ps1ReservedSpecs[] = {
     { 1, 1, "MSZCutsceneK", { "Player" } },
     { 2, 2, NULL, { "ImageTrail" } },
     { 4, 5, "TMZ2Outro", { "Player" } },
+    // docs/32 phase 13 M5: with a sidekick (Sonic & Tails, only on a console with the extras: Player_StageLoad): player 2 in
+    // slot 1, both players' shields / sparkles / stars in 2-3 (playerCount + ID), their Super trails in 4-5 ("+duo": the
+    // engine checks globals->playerID's sidekick byte, PS1Entities.cpp)
+    { 1, 1, "+duo", { "Player" } },
+    { 2, 3, "+duo", { "Shield", "InvincibleStars", "SuperSparkle", "ImageTrail" } },
+    { 4, 5, "+duo", { "ImageTrail" } },
     { SLOT_MUSIC, SLOT_MUSIC, NULL, { "Music" } },
     { SLOT_ZONE, SLOT_ZONE, NULL, { "Zone" } },
     { SLOT_CUTSCENESEQ, SLOT_CUTSCENESEQ, NULL, { "CutsceneSeq" } },

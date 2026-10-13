@@ -461,6 +461,8 @@ bool PS1FrameTex(const SpriteFrame *frame, uint32 &tpage, uint32 &clut, int32 &s
     }
     uint32 hi   = attr & g_ps1AtlasHiMask; // phase 13: a .atx's page rows 2 / 3 (bit 6, else half resolution)
     attr        = (uint16)(attr ^ hi);
+    if (g_ps1AtlasHiMask && (attr >> 7) >= PS1_ATLAS_QUARTER_CLUT && (attr >> 7) != PS1_ATLAS_BANK_CLUT)
+        attr |= 0x40; // (a .atx's quarter-resolution frame: its CLUT field alone marks it, TMZ1's Monarch)
     tpage       = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7 | hi << 5;
     uint32 slot = PS1_ATLAS_CLUT(attr);
     PS1FadeRestoreSlot(slot); // a FillScreen / the pause tint earlier this frame changed the CLUTs: this one back (9b.3)

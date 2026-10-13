@@ -9,8 +9,10 @@
 
 #if defined RETRO_PS1_BUILD
 // docs/32 4.2c: single characters on the PS1 (user decision 2026-09-26): frame 0 (Sonic & Tails) is never offered;
-// a new save starts on Sonic (1), the choice cycles Sonic, Tails, Knuckles (1..3)
-#define UISAVESLOT_FIRST_CHARACTER (1)
+// a new save starts on Sonic (1), the choice cycles Sonic, Tails, Knuckles (1..3). Phase 13 M5: a console with 8 MB+ and
+// the 2 MB VRAM mod offers Sonic & Tails as the PC does (frame 0, a new save's first choice)
+extern volatile uint32_t g_ps1Extras, g_ps1Vram2MB; // ps1/rsdk5_main.cpp
+#define UISAVESLOT_FIRST_CHARACTER ((g_ps1Extras && g_ps1Vram2MB) ? 0 : 1)
 #else
 #define UISAVESLOT_FIRST_CHARACTER (0)
 #endif

@@ -18,6 +18,7 @@ extern "C" {
 extern volatile uint32_t g_ps1RamMB;
 extern char __ps1_ovl_end[];
 volatile uint32_t g_ps1ModsChunks = 0, g_ps1ModsHits = 0, g_ps1ModsHitBytes = 0, g_ps1ModsPuts = 0, g_ps1ModsEvictions = 0;
+volatile uint32_t g_ps1ModsArenaPeak = 0; // M5: the sprite arena's most bytes in use
 }
 
 namespace {
@@ -106,7 +107,30 @@ void fsPut(uint32_t lba, uint32_t count, const uint8_t *src) {
     g_ps1ModsPuts = g_ps1ModsPuts + 1;
 }
 
-const PS1ModsOps s_ops = {fsGet, fsPut};
+// M5: the sprite arena (the first ARENA bytes above the overlay; the cache takes the rest)
+constexpr uint32_t ARENA = 0x180000;
+uintptr_t s_aLo = 0, s_aHi = 0, s_stage = 0, s_glob = 0;
+void *alloc(uint32_t bytes, int stage) {
+    bytes = (bytes + 3) & ~3u;
+    if (s_glob - s_stage < bytes)
+        return nullptr;
+    uintptr_t p;
+    if (stage)
+        p = s_stage, s_stage += bytes;
+    else
+        s_glob -= bytes, p = s_glob;
+    uint32_t used = (uint32_t)(s_stage - s_aLo + s_aHi - s_glob);
+    if (used > g_ps1ModsArenaPeak)
+        g_ps1ModsArenaPeak = used;
+    return (void *)p;
+}
+void trim(void *p, uint32_t oldBytes, uint32_t newBytes) {
+    if ((uintptr_t)p + ((oldBytes + 3) & ~3u) == s_stage)
+        s_stage = (uintptr_t)p + ((newBytes + 3) & ~3u);
+}
+void stageReset() { s_stage = s_aLo; }
+
+const PS1ModsOps s_ops = {fsGet, fsPut, alloc, trim, stageReset};
 
 void addChunks(uintptr_t from, uintptr_t to) {
     for (from = (from + CHUNK - 1) & ~(uintptr_t)(CHUNK - 1); from + CHUNK <= to && s_count < MAX_CHUNKS; from += CHUNK) {
@@ -122,7 +146,9 @@ void addChunks(uintptr_t from, uintptr_t to) {
 extern "C" void PS1ModsRegister() {
     s_count = s_used = 0;
     s_last  = nullptr;
-    addChunks((uintptr_t)__ps1_ovl_end, 0x80800000u);
+    s_aLo = s_stage = ((uintptr_t)__ps1_ovl_end + 15) & ~(uintptr_t)15;
+    s_aHi = s_glob = s_aLo + ARENA;
+    addChunks(s_aHi, 0x80800000u);
     if (g_ps1RamMB >= 16)
         addChunks(0x80800000u, 0x81000000u);
     g_ps1ModsChunks = s_count;

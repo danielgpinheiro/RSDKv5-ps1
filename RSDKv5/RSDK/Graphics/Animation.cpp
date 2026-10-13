@@ -11,6 +11,23 @@ using namespace RSDK;
 #endif
 
 SpriteAnimation RSDK::spriteAnimationList[SPRFILE_COUNT];
+#if RETRO_PLATFORM == RETRO_PS1
+#include "../../../ps1/mods_ops.h"
+// docs/32 phase 13 M5: with the Mods overlay (8 MB or more) a sprite file's animations and frames live in its arena above
+// 2 MB, stage-scope ones freed together at each scene load: STG keeps none of them. Else (or the arena full) in STG.
+static bool PS1SprAlloc(void **ptr, uint32 bytes, uint8 scope)
+{
+    if (g_ps1Mods && (*ptr = g_ps1Mods->alloc(bytes, scope == SCOPE_STAGE)))
+        return true;
+    AllocateStorage(ptr, bytes, DATASET_STG, false);
+    return false;
+}
+void RSDK::PS1SprStageReset()
+{
+    if (g_ps1Mods)
+        g_ps1Mods->stageReset();
+}
+#endif
 
 uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 {
@@ -86,14 +103,18 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
             ReadString(&info, nameBuffer[h]);
         }
         spr->animCount = ReadInt16(&info);
+#if RETRO_PLATFORM == RETRO_PS1
+        PS1SprAlloc((void **)&spr->animations, spr->animCount * sizeof(SpriteAnimationEntry), scope);
+#else
         AllocateStorage((void **)&spr->animations, spr->animCount * sizeof(SpriteAnimationEntry), DATASET_STG, false);
+#endif
 #if RETRO_PLATFORM == RETRO_PS1
         // the frames, then their hitboxes (Animation.hpp); 7b.3c: frames whose hitboxes hold the same values share one copy
         // (a player file: ~45 distinct pairs for ~550 frames), the block allocated last so its unused tail goes back
         Hitbox *hbBase  = NULL;
         uint32 hbSets   = 0;
         Hitbox hbRead[8];
-        AllocateStorage((void **)&spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)), DATASET_STG, false);
+        bool framesHigh = PS1SprAlloc((void **)&spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)), scope);
         hbBase = (Hitbox *)(spr->frames + frameCount);
         spr->ps1Frames      = (uint16)frameCount;
         spr->ps1Placeholder = 0xFFFF;
@@ -179,7 +200,10 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 
         CloseFile(&info);
 #if RETRO_PLATFORM == RETRO_PS1
-        if (PS1StorageTrimLast((void **)&spr->frames, frameCount * sizeof(SpriteFrame) + hbSets * hitboxCount * sizeof(Hitbox), DATASET_STG))
+        if (framesHigh) // (phase 13: the arena's tail back)
+            g_ps1Mods->trim(spr->frames, frameCount * (sizeof(SpriteFrame) + hitboxCount * sizeof(Hitbox)),
+                            frameCount * sizeof(SpriteFrame) + hbSets * hitboxCount * sizeof(Hitbox));
+        else if (PS1StorageTrimLast((void **)&spr->frames, frameCount * sizeof(SpriteFrame) + hbSets * hitboxCount * sizeof(Hitbox), DATASET_STG))
             g_ps1HitboxBytesSaved = g_ps1HitboxBytesSaved + (frameCount - hbSets) * hitboxCount * sizeof(Hitbox);
         PS1AtlasBind(id); // each frame's place in VRAM (docs/32 3.1c)
 #endif

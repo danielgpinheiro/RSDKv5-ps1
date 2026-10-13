@@ -274,8 +274,10 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
         }
         CloseFile(&info);
     }
-    if (g_ps1Extras && g_ps1Vram2MB && PS1AtlasLoadAtx(folder, sceneID))
-        return true; // phase 13: the full-resolution atlas (the stock one when the scene has none)
+    if (g_ps1Extras && g_ps1Vram2MB && PS1AtlasLoadAtx(folder, sceneID)) {
+        s_ps1PdaCount = 0; // (its bindings cover every frame: no animation dropped; frames in the Mods arena, M5)
+        return true;       // phase 13: the full-resolution atlas (the stock one when the scene has none)
+    }
     if (!PS1AtlasOpen(&info, folder, sceneID, "atl")) {
         s_atlasPath[0] = 0;
         return false;

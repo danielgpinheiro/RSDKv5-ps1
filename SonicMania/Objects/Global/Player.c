@@ -689,10 +689,19 @@ void Player_Create(void *data)
     }
 }
 
+#if defined RETRO_PS1_BUILD
+extern volatile uint32_t g_ps1Extras, g_ps1Vram2MB; // ps1/rsdk5_main.cpp (docs/32 phase 13)
+#endif
 void Player_StageLoad(void)
 {
     if (!globals->playerID)
         globals->playerID = RSDK.CheckSceneFolder("MSZCutscene") ? ID_KNUCKLES : ID_DEFAULT_PLAYER;
+#if defined RETRO_PS1_BUILD
+    // phase 13 M5: a sidekick (Sonic & Tails) only on a console with 8 MB+ and the 2 MB VRAM mod (its slots, frames and
+    // art: Zone.c "+duo", Scene<N>.atx); a Sonic & Tails save on any other console plays as its leader alone
+    if (!(g_ps1Extras && g_ps1Vram2MB))
+        globals->playerID &= 0xFF;
+#endif
 
     SceneInfo->debugMode = globals->medalMods & MEDAL_DEBUGMODE;
 #if MANIA_USE_PLUS

@@ -230,6 +230,9 @@ inline void EditSpriteAnimation(uint16 aniFrames, uint16 animID, const char *nam
 int32 GetStringWidth(uint16 aniFrames, uint16 animID, String *string, int32 startIndex, int32 length, int32 spacing);
 void SetSpriteString(uint16 aniFrames, uint16 animID, String *string);
 
+#if RETRO_PLATFORM == RETRO_PS1
+void PS1SprStageReset(); // Animation.cpp (docs/32 phase 13 M5: the Mods arena's stage blocks go with them)
+#endif
 inline void ClearSpriteAnimations()
 {
     // Unload animations
@@ -239,6 +242,9 @@ inline void ClearSpriteAnimations()
             spriteAnimationList[s].scope = SCOPE_NONE;
         }
     }
+#if RETRO_PLATFORM == RETRO_PS1
+    PS1SprStageReset();
+#endif
 }
 
 #if RETRO_REV0U
