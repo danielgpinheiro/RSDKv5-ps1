@@ -8,7 +8,7 @@ draws an 11-pixel font with a one-pixel shadow.
   every copy of a letter must be the same pixels, and every source label re-composed from the cut glyphs must equal the
   original frame pixel for pixel (the spacing rules hold).
 - The new labels: composed the same way into rows added below UI/TextEN.gif (512 x 512; rows 512 and down), appended to
-  list 17 as frames 21-24 (SonicMania/Objects/Menu/OptionsMenu.h PS1_TEXT_*): left-aligned like the PC's row
+  list 17 as frames 21-25 (SonicMania/Objects/Menu/OptionsMenu.h PS1_TEXT_*): left-aligned like the PC's row
   labels (pivot x 0), the choices centred like OFF / ON (pivot x -w / 2).
 - tools/data_disc.py writes the extended UI/TextEN.bin to the disc tree; tools/gfx/build_atlas.py reads the extended
   sheet (Sheets.get) and so places the new frames in the Menu's atlas with the rest of the list (stages place only
@@ -36,9 +36,10 @@ SOURCES = {(LIST, 0): 'EXIT', (LIST, 1): 'DEFAULT', (LIST, 2): 'SCREEN FILTER', 
            (LIST, 7): 'WINDOW SIZE', (LIST, 12): 'BIG PICTURE', (LIST, 13): 'WINDOW BORDER', (LIST, 14): 'FULL SCREEN',
            (LIST, 15): 'VSYNC', (LIST, 16): 'TRIPLE BUFFERING', (LIST, 17): 'OFF', (LIST, 18): 'ON',
            (8, 3): 'MIGHTY', (8, 2): 'KNUCKLES'}  # (list 8's TAILS kerns its T against the A: left out)
-# the new frames, in order (21, 22, 23, 24): text ('\n': a second line below, left-aligned), centred
+# the new frames, in order (21-25): text ('\n': a second line below, left-aligned), centred
 LABELS = [('UNCAPPED FPS\nMORE PRONE TO SLOWDOWNS', False), ('NO', True), ('YES', True),
-          ('FRAMESKIP\nFULL SPEED WITH FEWER FRAMES', False)]  # docs/32 phase 13b
+          ('FRAMESKIP\nFULL SPEED WITH FEWER FRAMES', False),  # docs/32 phase 13b
+          ('FULL RES SPRITES\nSONIC AND TAILS NEED IT', False)]  # phase 13b, consoles with the mods
 FIRST_NEW = 21
 LINE_PITCH = 16  # a label's lines: 11 px + 5, the second line clear of the row's bar and the choice's lower edge
 

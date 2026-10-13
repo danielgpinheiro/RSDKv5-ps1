@@ -166,6 +166,9 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
 extern "C" {
 volatile uint32_t g_ps1RamMB = 2, g_ps1Vram2MB = 0, g_ps1RamCtrl = 0, g_ps1HwFaults = 0, g_ps1ExtrasOff = 0, g_ps1Extras = 0,
                   g_ps1HwDetected = 0, g_ps1ModsLoaded = 0, g_ps1LinkTop = 0;
+// phase 13b (user 2026-10-12): Options > Video > Full-res sprites Off (ps1/ps1_limits.h PS1_FULL_RES), from the next load
+volatile uint32_t g_ps1FullResOff = 0;
+void PS1SetFullResOff(int off) { g_ps1FullResOff = off ? 1 : 0; }
 void PS1HwDetectLink();
 }
 

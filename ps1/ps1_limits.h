@@ -100,6 +100,14 @@ void PS1SetFrameskip(int on); // docs/32 phase 13b: Options > Video > Frameskip 
 #ifdef __cplusplus
 extern "C"
 #endif
+void PS1SetFullResOff(int off); // docs/32 phase 13b: Options > Video > Full-res sprites Off (modded consoles)
+/* docs/32 phase 13 / 13b: the full-resolution sprites (Scene<N>.atx) and with them Sonic & Tails: 8 MB+, the 2 MB VRAM
+ * mod and Options > Video > Full-res sprites On (the default); read at each scene load. Users declare the three
+ * (extern volatile uint32_t, ps1/rsdk5_main.cpp). */
+#define PS1_FULL_RES() (g_ps1Extras && g_ps1Vram2MB && !g_ps1FullResOff)
+#ifdef __cplusplus
+extern "C"
+#endif
 void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int n); // docs/32 9q: DrawLine INK_NONE x n, one bulk
 #ifndef PS1_LINE_BATCH
 #define PS1_LINE_BATCH 1 // docs/32 9q: PaperRoller's lines through PS1DrawLinesWorld (framebuffers identical)

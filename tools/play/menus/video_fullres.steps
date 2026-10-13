@@ -1,0 +1,13 @@
+# docs/32 phase 13b (a console with the mods: Options > Video has UNCAPPED FPS, FRAMESKIP, FULL RES SPRITES): Title
+# (Start), the autosave notice (A), Main Menu Down x2, A (Options); A (Video), Down x2 (FULL RES SPRITES), Left (ON ->
+# OFF), B (back: the options saved)
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 540 0x2 4
+2 600 0x10 4
+2 760 0x10 4
+2 900 0x2 4
+2 960 0x2 4
+2 1040 0x4 4
+2 1160 0x20 4

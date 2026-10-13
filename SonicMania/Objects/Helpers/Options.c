@@ -238,6 +238,7 @@ void Options_LoadOptionsCallback(int32 status)
 #if defined RETRO_PS1_BUILD
         PS1SetUncapped(options->ps1Uncapped); // from the next scene load (a new file: 0, the zones at 30 fps)
         PS1SetFrameskip(options->ps1Frameskip); // phase 13b: from the next frame (a new or older file: 0, off)
+        PS1SetFullResOff(options->ps1FullResOff); // phase 13b: from the next scene load (0: on)
 #endif
     }
     else {

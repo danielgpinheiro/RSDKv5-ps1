@@ -19,7 +19,7 @@ volatile int32 g_ps1AtlasGroupReq      = -1;
 // then texture page row 2 / 3 (texpage bit 11), never half resolution (PS1Sprites.cpp, PS1Deform.cpp)
 volatile uint32 g_ps1AtlasHiMask = 0;
 volatile uint32 g_ps1AtlasAtxLoads = 0;
-extern volatile uint32_t g_ps1Extras, g_ps1Vram2MB; // ps1/rsdk5_main.cpp (ps1/hwdetect.cpp)
+extern volatile uint32_t g_ps1Extras, g_ps1Vram2MB, g_ps1FullResOff; // ps1/rsdk5_main.cpp (ps1/hwdetect.cpp)
 }
 
 namespace
@@ -274,7 +274,7 @@ bool RSDK::PS1AtlasLoad(const char *folder, const char *sceneID)
         }
         CloseFile(&info);
     }
-    if (g_ps1Extras && g_ps1Vram2MB && PS1AtlasLoadAtx(folder, sceneID)) {
+    if (PS1_FULL_RES() && PS1AtlasLoadAtx(folder, sceneID)) { // (13b: unless Options > Video > Full-res sprites is Off)
         s_ps1PdaCount = 0; // (its bindings cover every frame: no animation dropped; frames in the Mods arena, M5)
         return true;       // phase 13: the full-resolution atlas (the stock one when the scene has none)
     }

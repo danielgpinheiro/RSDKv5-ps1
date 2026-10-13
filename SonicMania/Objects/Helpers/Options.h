@@ -12,7 +12,8 @@ typedef struct {
 #if defined RETRO_PS1_BUILD
     uint8 ps1Uncapped; // docs/32 choice 182: Options > Video > Uncapped FPS (0 = zones at 30 fps), in the stock padding
     uint8 ps1Frameskip; // docs/32 phase 13b: Options > Video > Frameskip (0 = off, also an older file's)
-    uint8 padding[0x56];
+    uint8 ps1FullResOff; // docs/32 phase 13b: Options > Video > Full-res sprites (0 = on, the default, also an older file's)
+    uint8 padding[0x55];
 #else
     uint8 padding[0x58];
 #endif

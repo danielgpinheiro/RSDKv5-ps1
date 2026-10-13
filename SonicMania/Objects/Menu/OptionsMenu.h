@@ -61,14 +61,18 @@ void OptionsMenu_InitVideoOptionsMenu(void);
 #define PS1_TEXT_NO          (22)
 #define PS1_TEXT_YES         (23)
 #define PS1_TEXT_FRAMESKIP   (24) // phase 13b
+#define PS1_TEXT_FULLRES     (25) // phase 13b, consoles with the mods only
 #define PS1_TEXT_OFF         (17) // the stock OFF / ON
 #define PS1_TEXT_ON          (18)
 #define PS1_VIDEO_ROW_Y      (4)  // the first row's y from the page's centre (13b: two rows around the option panel's middle)
 #define PS1_VIDEO_ROW_DY     (40) // between rows (each label has a second line below its bar)
+#define PS1_VIDEO_ROW_Y3     (-18) // three rows (a console with the mods: Full-res sprites), the same pitch: a newly selected
+#define PS1_VIDEO_ROW_DY3    (40)  // row's label pops up ~8 px and a closer row's second line would be under it
 void OptionsMenu_PS1SetupVideoMenu(void);
 void OptionsMenu_PS1MoveOut(EntityUIButton *button);
 void OptionsMenu_PS1UncappedButton_ActionCB(void);
 void OptionsMenu_PS1FrameskipButton_ActionCB(void);
+void OptionsMenu_PS1FullResButton_ActionCB(void);
 bool32 OptionsMenu_PS1VideoControl_BackPressCB(void);
 #endif
 void OptionsMenu_VideoControl_Win_MenuUpdateCB(void);
