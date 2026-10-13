@@ -237,6 +237,7 @@ void Options_LoadOptionsCallback(int32 status)
         RSDK.SetVideoSetting(VIDEOSETTING_SFX_VOL, options->volSfx);
 #if defined RETRO_PS1_BUILD
         PS1SetUncapped(options->ps1Uncapped); // from the next scene load (a new file: 0, the zones at 30 fps)
+        PS1SetFrameskip(options->ps1Frameskip); // phase 13b: from the next frame (a new or older file: 0, off)
 #endif
     }
     else {

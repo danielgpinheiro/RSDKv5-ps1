@@ -9,7 +9,7 @@
 
 ObjectKabasira *Kabasira;
 #if defined RETRO_PS1_BUILD
-extern volatile int32 g_ps1LogicSteps; // ps1/rsdk5_main.cpp
+extern volatile int32 g_ps1FrameSteps; // ps1/rsdk5_main.cpp
 #endif
 
 void Kabasira_Update(void)
@@ -34,8 +34,8 @@ void Kabasira_Draw(void)
 
         // Probably shouldn't be in Draw?
 #if defined RETRO_PS1_BUILD
-        // docs/32 choice 182: one draw per g_ps1LogicSteps logic steps (zones capped at 30 fps)
-        for (int32 s = 0; s < g_ps1LogicSteps; ++s) RSDK.ProcessAnimation(&self->wingsAnimator);
+        // docs/32 choice 182 / 13b: one draw per g_ps1FrameSteps logic steps (zones capped at 30 fps, Frameskip)
+        for (int32 s = 0; s < g_ps1FrameSteps; ++s) RSDK.ProcessAnimation(&self->wingsAnimator);
 #else
         RSDK.ProcessAnimation(&self->wingsAnimator);
 #endif

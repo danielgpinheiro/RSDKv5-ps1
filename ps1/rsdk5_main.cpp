@@ -65,6 +65,24 @@ volatile int g_ps1PlusChars = 0;
 volatile uint32_t g_ps1TestStops[8] = {};
 __attribute__((noinline)) void ps1TestStop() { __asm__ volatile(""); }
 
+extern volatile uint32_t g_ps1LoadingLoads; // ps1/loading.cpp (phase 13b: no frameskip across a load)
+
+extern "C" {
+// docs/32 phase 13b (user 2026-10-12): Options > Video > Frameskip (default Off). g_ps1LogicSteps is the scene's base (1,
+// or 2 for the capped zones and the UFO stages); with Frameskip on a drawn frame runs as many logic steps as the vblanks
+// the last frame took (at least the base, at most PS1_SKIP_MAX: 15 drawn fps at worst; the rest dropped, never caught
+// up), so a slow stretch keeps the game's speed and draws fewer frames. A frame after a load runs the base. (At file
+// scope, outside the anonymous namespace: GDB reads them by name.)
+#if defined PS1_BOOT_CATEGORY && defined PS1_BOOT_FSKIP
+volatile int32 g_ps1Frameskip    = 1; // `make BOOT=... FSKIP=1`
+#else
+volatile int32 g_ps1Frameskip    = 0; // Options > Video > Frameskip (from the next frame)
+#endif
+void PS1SetFrameskip(int on) { g_ps1Frameskip = on ? 1 : 0; }
+volatile int32 g_ps1FrameSteps   = 1; // this drawn frame's logic steps (RSDK/Core/RetroEngine.cpp)
+volatile uint32_t g_ps1StepsTotal = 0, g_ps1SkipFrames = 0; // logic steps run; frames that ran more than the base
+}
+
 namespace {
 
 // Pad 1 -> g_ps1PadButtons (RSDK/Input/PS1): Up Down Left Right, A = Cross, B = Circle, C = L1, X = Square,
@@ -117,6 +135,8 @@ volatile uint32_t g_ps1VblankCount = 0; // vblanks (the port's VBlank event)
 volatile uint32_t g_ps1PaceWaitHbl = 0; // hblanks the last frame waited for its pace
 }
 static uint32_t s_frameVbl = 0; // the vblank count when the frame began (right after the last flip)
+static uint32_t s_skipLoads = 0; // g_ps1LoadingLoads at the last frame's start (a load in between: no skip)
+#define PS1_SKIP_MAX 4
 
 __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
     uint32_t now = gpu.getFrameCount();
@@ -277,7 +297,7 @@ class ManiaPS1App final : public psyqo::Application {
         if (!flip)
             return;
         if ((engine.focusState & 1) || engine.inFocus == 1)
-            for (int32 i = 0; i < g_ps1LogicSteps; ++i) RenderDevice::ProcessDimming(); // per logic step (9f)
+            for (int32 i = 0; i < g_ps1FrameSteps; ++i) RenderDevice::ProcessDimming(); // per logic step (9f, 13b)
         RenderDevice::FlipScreen();
     }
 
@@ -286,7 +306,21 @@ class ManiaPS1App final : public psyqo::Application {
         SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
-        s_frameVbl  = g_ps1VblankCount;
+        uint32_t vbl = g_ps1VblankCount;
+        {
+            int32 steps = g_ps1LogicSteps, base = steps; // phase 13b: the vblanks the last frame took (its pace wait too)
+            if (g_ps1Frameskip && s_skipLoads == g_ps1LoadingLoads) {
+                int32 took = (int32)(vbl - s_frameVbl);
+                if (took > steps)
+                    steps = took > PS1_SKIP_MAX ? PS1_SKIP_MAX : took;
+            }
+            s_skipLoads     = g_ps1LoadingLoads;
+            g_ps1FrameSteps = steps;
+            g_ps1StepsTotal = g_ps1StepsTotal + steps;
+            if (steps > base)
+                g_ps1SkipFrames = g_ps1SkipFrames + 1;
+        }
+        s_frameVbl  = vbl;
         if (s_frameEnd) {
             uint32_t gap     = (t0 - s_frameEnd) & 0xFFFF; // root counter 1 wraps at 16 bits
             g_ps1PerfFlipHbl = gap;
@@ -300,6 +334,11 @@ class ManiaPS1App final : public psyqo::Application {
             PS1RenderBeginFrame(); // this frame's chain (docs/32 3.2)
             engineFrame();
             PS1RenderEndFrame();
+#if defined PS1_TEST_SLOW
+            // phase 13b test switch (`make EXTRA_CPPFLAGS=-DPS1_TEST_SLOW=N`): N / 2, N, 3N / 2 hblanks of extra work on
+            // successive frames, so Frameskip's step counts vary under GDB (tools/play/fskip_logic.gdb)
+            for (uint32_t w = PS1Hblanks(), n = PS1_TEST_SLOW * (1 + g_ps1PerfFrames % 3) / 2; PS1HblanksSince(w) < n;) {}
+#endif
             if (g_ps1PerfFrames % 60 == 0)
                 PS1EntityCheckGhosts(); // empty entity slots must read as blank (docs/32 2.3)
         }

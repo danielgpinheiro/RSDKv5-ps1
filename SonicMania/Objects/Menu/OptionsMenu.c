@@ -165,43 +165,57 @@ void OptionsMenu_Initialize(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// docs/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to one
-// row, UNCAPPED FPS NO / YES (the VSYNC row and its OFF / ON choices relabelled with frames the build adds to TextEN's
-// "PC Menu" list: tools/gfx/ps1_text.py), centred on the page's panel; the other rows, their choices and the apply
-// prompt hidden
+// docs/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to the
+// PS1's rows (PS1VideoRows: PC rows and their OFF / ON choices relabelled with frames the build adds to TextEN's
+// "PC Menu" list, tools/gfx/ps1_text.py), on the page's panel; the other rows, their choices and the apply prompt hidden.
+// Phase 13b (user 2026-10-12): a second row, FRAMESKIP OFF / ON (the FULL SCREEN row)
+typedef struct {
+    uint8 pcFrame, label, choices[2];
+} PS1VideoRow;
+static const PS1VideoRow PS1VideoRows[] = {
+    { 15, PS1_TEXT_UNCAPPEDFPS, { PS1_TEXT_NO, PS1_TEXT_YES } }, // VSYNC
+    { 14, PS1_TEXT_FRAMESKIP, { PS1_TEXT_OFF, PS1_TEXT_ON } },   // FULL SCREEN
+};
+#define PS1_VIDEO_ROWS ((int32)(sizeof(PS1VideoRows) / sizeof(PS1VideoRows[0])))
+
 void OptionsMenu_PS1SetupVideoMenu(void)
 {
-    EntityUIControl *control = OptionsMenu->videoControl_Windows;
-    EntityUIButton *row      = NULL;
+    EntityUIControl *control             = OptionsMenu->videoControl_Windows;
+    EntityUIButton *rows[PS1_VIDEO_ROWS] = { NULL };
     for (int32 i = 0; i < control->buttonCount; ++i) {
         EntityUIButton *button = control->buttons[i];
-        if (button->listID == 17 && button->frameID == 15) {
-            row = button;
-            continue;
-        }
-        OptionsMenu_PS1MoveOut(button);
+        int32 r                = 0;
+        while (r < PS1_VIDEO_ROWS && !(button->listID == 17 && button->frameID == PS1VideoRows[r].pcFrame)) ++r;
+        if (r < PS1_VIDEO_ROWS && !rows[r])
+            rows[r] = button;
+        else
+            OptionsMenu_PS1MoveOut(button);
     }
-    if (!row)
-        return;
 
-    int32 dy = control->position.y + TO_FIXED(PS1_VIDEO_ROW_Y) - row->position.y;
-    row->position.y += dy;
-    row->firstChoicePos.y += dy;
-    row->position.x += TO_FIXED(4); // the label off the 320-pixel screen's edge (the PC's 424 layout ran it to x 2)
-    row->size.x = TO_FIXED(96);
-    row->frameID      = PS1_TEXT_UNCAPPEDFPS;
-    row->startFrameID = PS1_TEXT_UNCAPPEDFPS;
-    RSDK.SetSpriteAnimation(UIWidgets->textFrames, row->listID, &row->animator, true, row->frameID);
-    for (int32 c = 0; c < row->choiceCount; ++c) {
-        EntityUIChoice *choice = RSDK_GET_ENTITY(RSDK.GetEntitySlot(row) - row->choiceCount + c, UIChoice);
-        choice->position.y += dy;
-        choice->frameID = c ? PS1_TEXT_YES : PS1_TEXT_NO;
-        RSDK.SetSpriteAnimation(UIWidgets->textFrames, choice->listID, &choice->labelAnimator, true, choice->frameID);
+    int32 count = 0;
+    for (int32 r = 0; r < PS1_VIDEO_ROWS; ++r) {
+        EntityUIButton *row = rows[r];
+        if (!row)
+            continue;
+        int32 dy = control->position.y + TO_FIXED(PS1_VIDEO_ROW_Y + PS1_VIDEO_ROW_DY * count) - row->position.y;
+        row->position.y += dy;
+        row->firstChoicePos.y += dy;
+        row->position.x += TO_FIXED(4); // the label off the 320-pixel screen's edge (the PC's 424 layout ran it to x 2)
+        row->size.x       = TO_FIXED(96);
+        row->frameID      = PS1VideoRows[r].label;
+        row->startFrameID = PS1VideoRows[r].label;
+        RSDK.SetSpriteAnimation(UIWidgets->textFrames, row->listID, &row->animator, true, row->frameID);
+        for (int32 c = 0; c < row->choiceCount; ++c) {
+            EntityUIChoice *choice = RSDK_GET_ENTITY(RSDK.GetEntitySlot(row) - row->choiceCount + c, UIChoice);
+            choice->position.y += dy;
+            choice->frameID = PS1VideoRows[r].choices[c ? 1 : 0];
+            RSDK.SetSpriteAnimation(UIWidgets->textFrames, choice->listID, &choice->labelAnimator, true, choice->frameID);
+        }
+        control->buttons[count++] = row;
     }
-    control->buttons[0]  = row;
-    for (int32 i = 1; i < control->buttonCount; ++i) control->buttons[i] = NULL;
-    control->buttonCount = 1;
-    control->rowCount    = 1;
+    for (int32 i = count; i < control->buttonCount; ++i) control->buttons[i] = NULL;
+    control->buttonCount = count;
+    control->rowCount    = count;
     control->columnCount = 1;
     control->buttonID    = 0;
     control->startingID  = 0;
@@ -235,6 +249,17 @@ void OptionsMenu_PS1UncappedButton_ActionCB(void)
     OptionsRAM *options  = Options_GetOptionsRAM();
     options->ps1Uncapped = self->selection; // 0 NO, 1 YES
     PS1SetUncapped(self->selection);        // from the next scene load
+
+    Options->changed = true; // saved when the Options grid comes back (OptionsMenu_MenuSetupCB)
+}
+
+void OptionsMenu_PS1FrameskipButton_ActionCB(void)
+{
+    RSDK_THIS(UIButton);
+
+    OptionsRAM *options   = Options_GetOptionsRAM();
+    options->ps1Frameskip = self->selection; // 0 OFF, 1 ON (phase 13b)
+    PS1SetFrameskip(self->selection);
 
     Options->changed = true; // saved when the Options grid comes back (OptionsMenu_MenuSetupCB)
 }
@@ -323,6 +348,7 @@ void OptionsMenu_SetupActions(void)
                 case 15: button->choiceChangeCB = OptionsMenu_VSyncButton_ActionCB; break;
 #if defined RETRO_PS1_BUILD
                 case PS1_TEXT_UNCAPPEDFPS: button->choiceChangeCB = OptionsMenu_PS1UncappedButton_ActionCB; break;
+                case PS1_TEXT_FRAMESKIP: button->choiceChangeCB = OptionsMenu_PS1FrameskipButton_ActionCB; break;
 #endif
                 case 16: button->choiceChangeCB = OptionsMenu_TripleBufferButton_ActionCB; break;
             }
@@ -397,9 +423,18 @@ void OptionsMenu_HandleMenuReturn(void)
 void OptionsMenu_InitVideoOptionsMenu(void)
 {
 #if defined RETRO_PS1_BUILD
-    EntityUIButton *row = OptionsMenu->videoControl_Windows->buttons[0]; // the one row (OptionsMenu_PS1SetupVideoMenu)
-    if (row && row->selection != Options_GetOptionsRAM()->ps1Uncapped)
-        UIButton_SetChoiceSelection(row, Options_GetOptionsRAM()->ps1Uncapped);
+    EntityUIControl *control = OptionsMenu->videoControl_Windows; // the PS1's rows (OptionsMenu_PS1SetupVideoMenu)
+    OptionsRAM *optionsRAM   = Options_GetOptionsRAM();
+    for (int32 i = 0; i < control->buttonCount; ++i) {
+        EntityUIButton *row = control->buttons[i];
+        int32 sel           = -1;
+        if (row && row->frameID == PS1_TEXT_UNCAPPEDFPS)
+            sel = optionsRAM->ps1Uncapped;
+        else if (row && row->frameID == PS1_TEXT_FRAMESKIP)
+            sel = optionsRAM->ps1Frameskip;
+        if (sel >= 0 && row->selection != sel)
+            UIButton_SetChoiceSelection(row, sel);
+    }
     return;
 #endif
     if (sku_platform == PLATFORM_PC || sku_platform == PLATFORM_DEV) {
