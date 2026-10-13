@@ -1,6 +1,6 @@
 #include "RSDK/Core/RetroEngine.hpp"
 #if RETRO_PLATFORM == RETRO_PS1
-extern "C" volatile int32 g_ps1LogicSteps; // ps1/rsdk5_main.cpp (docs/32 9f: the UFO stages' two logic steps a frame)
+extern "C" volatile int32 g_ps1FrameSteps; // ps1/rsdk5_main.cpp (docs/32 9f / 13b: this drawn frame's logic steps)
 extern "C" volatile int g_ps1FlickShift, g_ps1LastStep; // ps1/rsdk5_main.cpp (9r: PS1_FLICK, PS1_LAST_STEP)
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
@@ -362,8 +362,8 @@ void RSDK::ProcessEngine()
 #if RETRO_PLATFORM == RETRO_PS1
     // 9r (choice 185): the bit of a per-step counter that changes once a drawn frame, and whether this logic step
     // is the drawn frame's last (ps1/ps1_limits.h PS1_FLICK / PS1_LAST_STEP); the extra steps below set it per step
-    g_ps1FlickShift = g_ps1LogicSteps > 1;
-    g_ps1LastStep   = g_ps1LogicSteps <= 1;
+    g_ps1FlickShift = g_ps1FrameSteps > 1;
+    g_ps1LastStep   = g_ps1FrameSteps <= 1;
 #endif
     switch (sceneInfo.state) {
         default: break;
@@ -448,9 +448,9 @@ void RSDK::ProcessEngine()
 #if RETRO_PLATFORM == RETRO_PS1
             // docs/32 9f (user 2026-10-08, the UFO stages only: g_ps1LogicSteps from UFO_Setup's StageLoad): 30 fps with
             // the game at full speed, a second logic step before the frame's one draw; with its input, as a 60 fps frame
-            // reads it (the pad is the same: a press counts once)
-            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_REGULAR; ++i) {
-                g_ps1LastStep = i == g_ps1LogicSteps - 1;
+            // reads it (the pad is the same: a press counts once). 13b: g_ps1FrameSteps, more with Frameskip on
+            for (int32 i = 1; i < g_ps1FrameSteps && sceneInfo.state == ENGINESTATE_REGULAR; ++i) {
+                g_ps1LastStep = i == g_ps1FrameSteps - 1;
 #if PS1_PROFILE
                 uint16 t0 = *(volatile uint16 *)0xBF801110;
                 ProcessInput();
@@ -502,8 +502,8 @@ void RSDK::ProcessEngine()
                 ProcessPausedObjects();
             }
 #if RETRO_PLATFORM == RETRO_PS1
-            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_PAUSED; ++i) { // (9f: see REGULAR)
-                g_ps1LastStep = i == g_ps1LogicSteps - 1;
+            for (int32 i = 1; i < g_ps1FrameSteps && sceneInfo.state == ENGINESTATE_PAUSED; ++i) { // (9f: see REGULAR)
+                g_ps1LastStep = i == g_ps1FrameSteps - 1;
                 ProcessInput();
                 ProcessPausedObjects();
             }
@@ -526,8 +526,8 @@ void RSDK::ProcessEngine()
                 ProcessFrozenObjects();
             }
 #if RETRO_PLATFORM == RETRO_PS1
-            for (int32 i = 1; i < g_ps1LogicSteps && sceneInfo.state == ENGINESTATE_FROZEN; ++i) { // (9f: see REGULAR)
-                g_ps1LastStep = i == g_ps1LogicSteps - 1;
+            for (int32 i = 1; i < g_ps1FrameSteps && sceneInfo.state == ENGINESTATE_FROZEN; ++i) { // (9f: see REGULAR)
+                g_ps1LastStep = i == g_ps1FrameSteps - 1;
                 ProcessInput();
                 ProcessFrozenObjects();
             }

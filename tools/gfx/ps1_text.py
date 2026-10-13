@@ -1,13 +1,14 @@
 #!/usr/bin/python3
-"""docs/32 choice 182: the PS1's Video page (Options > Video > UNCAPPED FPS  NO / YES) needs three labels the game's text
-art doesn't have. They are built here, at build time, from the game's own letters: UI/TextEN.bin's list 17 ("PC Menu",
-the PC's video page: SCREEN FILTER, FULL SCREEN, VSYNC, OFF, ON, ...) draws an 11-pixel font with a one-pixel shadow.
+"""docs/32 choice 182: the PS1's Video page (Options > Video > UNCAPPED FPS  NO / YES; phase 13b: FRAMESKIP with the
+stock OFF / ON) needs labels the game's text art doesn't have. They are built here, at build time, from the game's own
+letters: UI/TextEN.bin's list 17 ("PC Menu", the PC's video page: SCREEN FILTER, FULL SCREEN, VSYNC, OFF, ON, ...)
+draws an 11-pixel font with a one-pixel shadow.
 
 - The glyphs: each label of the list cut at the columns without a face pixel (a letter's columns, then its shadow's);
   every copy of a letter must be the same pixels, and every source label re-composed from the cut glyphs must equal the
   original frame pixel for pixel (the spacing rules hold).
 - The new labels: composed the same way into rows added below UI/TextEN.gif (512 x 512; rows 512 and down), appended to
-  list 17 as frames 21, 22, 23 (SonicMania/Objects/Menu/OptionsMenu.h PS1_TEXT_*): left-aligned like the PC's row
+  list 17 as frames 21-24 (SonicMania/Objects/Menu/OptionsMenu.h PS1_TEXT_*): left-aligned like the PC's row
   labels (pivot x 0), the choices centred like OFF / ON (pivot x -w / 2).
 - tools/data_disc.py writes the extended UI/TextEN.bin to the disc tree; tools/gfx/build_atlas.py reads the extended
   sheet (Sheets.get) and so places the new frames in the Menu's atlas with the rest of the list (stages place only
@@ -29,13 +30,15 @@ SHEET = 'UI/TextEN.gif'
 LIST = 17
 FACE, SHADOW = 185, 178  # the font's two colours in TextEN.gif's palette
 # the labels ((list, frame): text) the glyphs are cut from: list 17's, and list 8's ("Character Names", the same 11-px
-# font: MIGHTY's I / G / T / Y are the PC menu's pixel for pixel) for the M list 17 lacks
+# font: MIGHTY's I / G / T / Y and KNUCKLES' N / U / C / L / E / S are the PC menu's pixel for pixel) for the M and the K
+# (docs/32 phase 13b: FRAMESKIP) list 17 lacks
 SOURCES = {(LIST, 0): 'EXIT', (LIST, 1): 'DEFAULT', (LIST, 2): 'SCREEN FILTER', (LIST, 3): 'NONE', (LIST, 4): 'CLEAN',
            (LIST, 7): 'WINDOW SIZE', (LIST, 12): 'BIG PICTURE', (LIST, 13): 'WINDOW BORDER', (LIST, 14): 'FULL SCREEN',
            (LIST, 15): 'VSYNC', (LIST, 16): 'TRIPLE BUFFERING', (LIST, 17): 'OFF', (LIST, 18): 'ON',
-           (8, 3): 'MIGHTY'}  # (list 8's TAILS kerns its T against the A: the other names are left out)
-# the new frames, in order (21, 22, 23): text ('\n': a second line below, left-aligned), centred
-LABELS = [('UNCAPPED FPS\nMORE PRONE TO SLOWDOWNS', False), ('NO', True), ('YES', True)]
+           (8, 3): 'MIGHTY', (8, 2): 'KNUCKLES'}  # (list 8's TAILS kerns its T against the A: left out)
+# the new frames, in order (21, 22, 23, 24): text ('\n': a second line below, left-aligned), centred
+LABELS = [('UNCAPPED FPS\nMORE PRONE TO SLOWDOWNS', False), ('NO', True), ('YES', True),
+          ('FRAMESKIP\nFULL SPEED WITH FEWER FRAMES', False)]  # docs/32 phase 13b
 FIRST_NEW = 21
 LINE_PITCH = 16  # a label's lines: 11 px + 5, the second line clear of the row's bar and the choice's lower edge
 

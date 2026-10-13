@@ -55,15 +55,20 @@ void OptionsMenu_SetupActions(void);
 void OptionsMenu_HandleMenuReturn(void);
 void OptionsMenu_InitVideoOptionsMenu(void);
 #if defined RETRO_PS1_BUILD
-// docs/32 choice 182: the Video page's one row (UNCAPPED FPS NO / YES); the frames tools/gfx/ps1_text.py appends to
+// docs/32 choice 182 / phase 13b: the Video page's rows (UNCAPPED FPS NO / YES, FRAMESKIP OFF / ON); the frames tools/gfx/ps1_text.py appends to
 // UI/TextEN.bin's list 17 ("PC Menu", 21 stock frames)
 #define PS1_TEXT_UNCAPPEDFPS (21)
 #define PS1_TEXT_NO          (22)
 #define PS1_TEXT_YES         (23)
-#define PS1_VIDEO_ROW_Y      (20) // the row's y from the page's centre (its option panel's middle)
+#define PS1_TEXT_FRAMESKIP   (24) // phase 13b
+#define PS1_TEXT_OFF         (17) // the stock OFF / ON
+#define PS1_TEXT_ON          (18)
+#define PS1_VIDEO_ROW_Y      (4)  // the first row's y from the page's centre (13b: two rows around the option panel's middle)
+#define PS1_VIDEO_ROW_DY     (40) // between rows (each label has a second line below its bar)
 void OptionsMenu_PS1SetupVideoMenu(void);
 void OptionsMenu_PS1MoveOut(EntityUIButton *button);
 void OptionsMenu_PS1UncappedButton_ActionCB(void);
+void OptionsMenu_PS1FrameskipButton_ActionCB(void);
 bool32 OptionsMenu_PS1VideoControl_BackPressCB(void);
 #endif
 void OptionsMenu_VideoControl_Win_MenuUpdateCB(void);
