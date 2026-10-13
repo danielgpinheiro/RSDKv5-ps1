@@ -73,7 +73,12 @@ void UIButton_Draw(void)
     if (self->textVisible) {
         drawPos.x = self->buttonBounceOffset + self->position.x;
         drawPos.y = self->buttonBounceOffset + self->position.y;
-        drawPos.y += self->textBounceOffset;
+#if defined RETRO_PS1_BUILD
+        // docs/32 phase 13b: the PS1's Video rows (list 17, frames 21+: tools/gfx/ps1_text.py) carry a second line below
+        // their bar; the text bounce (~8 px up) would lift a newly selected row's label into the row above's second line
+        if (!(self->listID == 17 && self->frameID >= 21))
+#endif
+            drawPos.y += self->textBounceOffset;
 
         switch (self->align) {
             case UIBUTTON_ALIGN_LEFT: drawPos.x += -0x60000 - (self->size.x >> 1); break;
