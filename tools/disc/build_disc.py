@@ -81,7 +81,7 @@ def disc_files(iso_root):
 
 
 def layout(iso_root):
-    """Data files in load order, then the remaining data files, then the streams."""
+    """Data files in load order, then the remaining data files, then the streams, then the modded consoles' files."""
     files = [f for f in disc_files(iso_root) if not excluded(f)]
     by_lower = {f.lower(): f for f in files}
     ordered = []
@@ -94,8 +94,13 @@ def layout(iso_root):
             if line and not line.startswith('#') and f and f not in ordered:
                 ordered.append(f)
     rest = [f for f in files if f not in ordered]
+    # docs/32 phase 13d: the files only a modded console reads (the full-resolution atlases, the Mods overlay) go last,
+    # after the streams: a stock console then finds every file it reads where the stock disc has it (the music and videos
+    # not pushed 73 MB outward, towards a CD-R's edge)
+    mods = [f for f in rest if f.lower().endswith('.atx') or f.lower() == 'data/ps1ovl/mods.bin']
+    rest = [f for f in rest if f not in mods]
     data = [f for f in ordered + rest if file_type(os.path.join(iso_root, f)) == 'data']
-    return data + [f for f in ordered + rest if f not in data], len(ordered)
+    return data + [f for f in ordered + rest if f not in data] + mods, len(ordered)
 
 
 IDX_NAME = 'PS1FILES.IDX'
