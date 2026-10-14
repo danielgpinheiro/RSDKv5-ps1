@@ -10,6 +10,11 @@
 // - VRAM (psx-spx GPU, GP1(09h) "Set VRAM size (v2)"): bit 0 opens rows 512-1023 on the 2 MB VRAM mod (Tunertom's
 //   PU-18 mod; the arcade boards' layout). A word written at Y >= 512 must read back and must not show at its 9-bit
 //   mirror; without the mod GP1(09h) goes back to 0. (GTA3-ps1 ps1/re3/vram2mb_ps1.cpp, the same probe.)
+// - Phase 13d (a stock PSOne went black right after the PlayStation logo with the mods disc; neither emulator
+//   reproduces it): on a retail console GP1(09h).0 sends Y >= 512 to the GPU's second chip select, which nothing answers
+//   (open bus), a state no emulator models. So the VRAM probe runs only where its result is used (8 MB+: the extras
+//   need the RAM), after the GPU is idle, and ends its VRAM read with a command-buffer reset; the interrupt state is
+//   restored exactly as found; Select held at boot skips every probe (the console runs as a stock one).
 #include <stdint.h>
 
 #include <stdio.h>
@@ -74,8 +79,14 @@ volatile uint32_t &ramSize() { return *(volatile uint32_t *)0xBF801060u; }
 volatile uint32_t &gpuData() { return *(volatile uint32_t *)0xBF801810u; }
 volatile uint32_t &gpuStat() { return *(volatile uint32_t *)0xBF801814u; }
 
-void critEnter() { __asm__ volatile("mtc0 %0, $12 ; nop ; nop" : : "r"(0x40000000)); }
-void critLeave() { __asm__ volatile("mtc0 %0, $12" : : "r"(0x40000401)); }
+uint32_t s_sr = 0; // the status register as found (critEnter / critLeave)
+void critEnter() {
+    uint32_t sr;
+    __asm__ volatile("mfc0 %0, $12 ; nop" : "=r"(sr));
+    s_sr = sr;
+    __asm__ volatile("mtc0 %0, $12 ; nop ; nop" : : "r"(sr & ~1u)); // IEc off: no interrupt during the probes
+}
+void critLeave() { __asm__ volatile("mtc0 %0, $12 ; nop ; nop" : : "r"(s_sr)); }
 
 // 2 or 8: the probe word and its mirrors 2, 4, 6 MB up (KSEG1: uncached, through the write buffer in order)
 uint32_t probeRam8() {
@@ -119,7 +130,7 @@ uint32_t probeRam16(uint32_t bios) {
 }
 
 void waitCmd() {
-    while (!(gpuStat() & 0x04000000u)) {
+    for (int i = 0; i < 1000000 && !(gpuStat() & 0x04000000u); i++) {
     }
 }
 void vramWrite(uint16_t x, uint16_t y, uint32_t twoTexels) { // GP0(A0h): two halfwords at (x, y)
@@ -138,11 +149,16 @@ uint32_t vramRead(uint16_t x, uint16_t y) { // GP0(C0h), then GPUREAD once GPUST
     gpuData() = 2u | (1u << 16);
     for (int i = 0; i < 100000 && !(gpuStat() & 0x08000000u); i++) {
     }
-    return gpuData();
+    const uint32_t v = gpuData();
+    gpuStat()        = 0x01000000u; // GP1(01h): the command buffer reset (a GPU that never readied the word is not left mid-transfer)
+    return v;
 }
 uint32_t probeVram() {
-    // a GPU DMA in flight (the loading icon's chain) finishes first: the probe's GP0 words go straight to the port
+    // a GPU DMA in flight (the loading icon's chain) finishes first, then the GPU idles (GPUSTAT 26 command, 28 DMA
+    // block ready): the probe's GP0 words go straight to the port
     for (int i = 0; i < 1000000 && (*(volatile uint32_t *)0xBF8010A8u & 0x01000000u); i++) {
+    }
+    for (int i = 0; i < 1000000 && (gpuStat() & 0x14000000u) != 0x14000000u; i++) {
     }
     gpuStat() = 0x09000001u; // GP1(09h): Y 512-1023
     const uint16_t x = 1020, yHigh = 1020, yLow = yHigh - 512;
@@ -156,7 +172,13 @@ uint32_t probeVram() {
 }
 } // namespace
 
+extern "C" volatile uint16_t g_ps1PadButtons, g_ps1PadTestMask; // RSDK/Input/PS1/PS1InputDevice.cpp
 extern "C" void PS1HwDetect() {
+    if ((g_ps1PadButtons | g_ps1PadTestMask) & 0x800u) { // Select held at boot: no probe, a stock console (phase 13d)
+        g_ps1ExtrasOff  = 1;
+        g_ps1HwDetected = 1;
+        return;
+    }
     critEnter();
     g_ps1RamCtrl = ramSize();
     uint32_t mb  = 2;
@@ -165,7 +187,7 @@ extern "C" void PS1HwDetect() {
     if (mb == 8)
         mb = probeRam16(g_ps1RamCtrl);
     g_ps1RamMB   = mb;
-    g_ps1Vram2MB = probeVram();
+    g_ps1Vram2MB = mb >= 8 ? probeVram() : 0; // 13d: a 2 MB console never gets a GPU probe (its result needs the RAM)
     critLeave();
     // (an 8 MB measuring link, `make MEASURE_RAM=8M`, has its own heap above 2 MB: no extras there)
     extern volatile uint32_t g_ps1LinkTop; // ps1/rsdk5_main.cpp (__stack_start: the overlays can't name it)
