@@ -4,6 +4,8 @@
 # run): the menu presses +-0..40 frames, the AIZ intro's skip 30..400 frames after its load (the save's card write runs
 # in the background then). One line per run: DONE (GHZ1 + 600 frames) or STUCK (where).
 cd "$(dirname "$0")/../../.."
+# The run scripts delete their snapshot when done: make menu_nat first with KEEP_SNAP=1 (any tools/play/menus/run.sh run)
+[ -d build/boss/snaps/menu_nat ] || { echo "no menu_nat snapshot: run tools/play/menus/run.sh once with KEEP_SNAP=1"; exit 1; }
 N=${N:-24}; TAG=${TAG:-jit}
 for i in $(seq 1 $N); do
   st=build/perf9f/ns_${TAG}_$i.steps

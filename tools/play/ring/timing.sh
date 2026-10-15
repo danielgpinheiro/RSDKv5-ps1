@@ -58,3 +58,4 @@ G
   ( cd $S/snaps/ring_t && eval "$e TIMEOUT=${TIMEOUT:-900} tools/play_test.sh $S/ring_t_$mode.gdb $S/ring_t_${emu}_$mode" ) > /dev/null 2>&1
   grep -a "^L RINGT\|No symbol\|rror" $S/ring_t_${emu}_$mode.log | cut -c1-160
 done
+[ "${NOBUILD:-0}" = 1 ] || tools/play/boss/snap.sh -d ring_t   # the snapshot this run made (KEEP_SNAP=1 keeps it)

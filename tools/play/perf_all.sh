@@ -26,4 +26,5 @@ P
   [ $ok = 0 ] || { echo "BUILD FAIL $i"; continue; }
   ( cd build/boss/snaps/p$TAG && NOBUILD=1 TIMEOUT=${TIMEOUT:-2400} tools/play/perf_sweep.sh ${TAG}_$i 1,$i 256 768 $end )
   cp build/boss/snaps/p$TAG/build/perf9f/sweep_${TAG}_${i}_*.txt build/perf9f/ 2>/dev/null
+  tools/play/boss/snap.sh -d p$TAG   # its sweep is copied out (KEEP_SNAP=1 keeps it)
 done

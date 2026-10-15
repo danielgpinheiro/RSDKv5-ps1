@@ -30,4 +30,5 @@ open(out, 'w').write(s)
 PY
 [ -n "$card" ] && export EMU_MC1=$card
 ( cd $S/snaps/$n && TIMEOUT=${TIMEOUT:-2400} tools/play_test.sh $S/mn_$name.in.gdb $S/mn_$name ) > /dev/null 2>&1
+[ "${NOBUILD:-0}" = 1 ] || $R/tools/play/boss/snap.sh -d $n   # the snapshot this run made (KEEP_SNAP=1 keeps it)
 echo "== $name"; grep -a "^L \|rror\|No symbol" $S/mn_$name.log | cut -c1-250

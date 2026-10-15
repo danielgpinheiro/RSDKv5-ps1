@@ -18,4 +18,5 @@ sed "s|@R@|$S/snaps/$n|; s|@UFO@|$ufo|; s|@POSTNTH@|$post|; s|@PID@|$pid|" $H/sp
 e=""; [ $emu = ds ] && e="EMU=ds"
 while [ $emu = ds ] && pgrep -f "DuckStation.app/Contents/MacOS" > /dev/null; do sleep 10; done
 ( cd $S/snaps/$n && eval "$e TIMEOUT=${TIMEOUT:-2400} tools/play_test.sh $S/sp_$name.in.gdb $S/sp_$name" ) > /dev/null 2>&1
+[ "${NOBUILD:-0}" = 1 ] || $R/tools/play/boss/snap.sh -d $n   # the snapshot this run made (KEEP_SNAP=1 keeps it)
 echo "== $name"; grep -a "^L \|rror\|No symbol" $S/sp_$name.log | cut -c1-230

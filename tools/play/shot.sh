@@ -68,7 +68,8 @@ end
 continue
 G
 } > $W/$NAME.in.gdb
-cd $R/build/boss/snaps/shot_$NAME && TIMEOUT=${TIMEOUT:-900} tools/play_test.sh $W/$NAME.in.gdb $W/$NAME > /dev/null 2>&1
+(cd $R/build/boss/snaps/shot_$NAME && TIMEOUT=${TIMEOUT:-900} tools/play_test.sh $W/$NAME.in.gdb $W/$NAME > /dev/null 2>&1)
+$R/tools/play/boss/snap.sh -d shot_$NAME   # done with it (KEEP_SNAP=1 keeps it)
 cd $R; /usr/bin/python3 - $W $NAME <<'P'
 import sys, glob, os
 from PIL import Image

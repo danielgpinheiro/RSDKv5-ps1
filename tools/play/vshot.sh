@@ -1,5 +1,6 @@
 #!/bin/bash
-# vshot.sh NAME SNAP FRAMES [PRE.gdb] (docs/32 phase 13): pictures from a 2 MB-link snapshot (tools/play/boss/snap.sh) in
+# vshot.sh NAME SNAP FRAMES [PRE.gdb] (docs/32 phase 13): pictures from a 2 MB-link snapshot (tools/play/boss/snap.sh; kept
+# until tools/play/boss/snap.sh -d SNAP or 3 days) in
 # the local 16 MB PCSX-Redux (EMU=r16; EMU_RAM / EMU_VRAM as tools/emu.sh), the whole VRAM taken through its web API at
 # each drawn frame of FRAMES (comma list, ascending; g_ps1TestStops) while GDB holds the CPU:
 # build/shots/NAME_<frame>.vram (1024 x 512 or 1024 x 1024 halfwords) and NAME_<frame>_fb0 / _fb1 / _hi.png (the two

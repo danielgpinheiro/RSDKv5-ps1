@@ -18,5 +18,6 @@ for n in "$@"; do
   e=""; [ $emu = ds ] && e="EMU=ds"
   while [ $emu = ds ] && pgrep -f "DuckStation.app/Contents/MacOS" > /dev/null; do sleep 10; done
   ( cd $S/snaps/$n && eval "$e EXTRA=${EXTRA:-$H/x_gen.gdb} $envs R=$S/snaps/$n OVL=$ovl TIMEOUT=${TIMEOUT:-1800} $H/boss.sh bs_$n '*(short *)$cls' $fn $hits $dx $dy $wait $prison" ) > /dev/null 2>&1
+  [ "${NOBUILD:-0}" = 1 ] || $H/snap.sh -d $n   # the snapshot this run made (KEEP_SNAP=1 keeps it)
   echo "== $n"; grep -a "^L \|rror" $S/bs_$n.log | grep -v "^L P \|^L B\|^L PL\|^L H " | cut -c1-230
 done

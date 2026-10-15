@@ -18,5 +18,6 @@ for b in "$@"; do
   e=""; [ $emu = ds ] && e="EMU=ds"
   while [ $emu = ds ] && pgrep -f "DuckStation.app/Contents/MacOS" > /dev/null; do sleep 10; done
   ( cd $S/snaps/$n && eval "$e TIMEOUT=${TIMEOUT:-1500} tools/play_test.sh $H/${GDB:-deaths.gdb} $S/$n" ) > /dev/null 2>&1
+  [ "${NOBUILD:-0}" = 1 ] || $R/tools/play/boss/snap.sh -d $n   # the snapshot this run made (KEEP_SNAP=1 keeps it)
   echo "== $b"; grep -a "^L \|rror\|No symbol" $S/$n.log | cut -c1-230
 done

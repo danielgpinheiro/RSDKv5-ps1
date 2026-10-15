@@ -76,4 +76,5 @@ open(p, 'w').write(s)
 P
 e=""; [ "${EMU:-pcsx}" = ds ] && e="EMU=ds"
 ( cd $S/snaps/$n && eval "$e TIMEOUT=${TIMEOUT:-2400} tools/play_test.sh $S/$n.in.gdb $S/$n" ) > /dev/null 2>&1
+[ "${NOBUILD:-0}" = 1 ] || $H/snap.sh -d $n   # the snapshot this run made (KEEP_SNAP=1 keeps it)
 grep -a "^L \|No symbol\|rror" $S/$n.log | sed 's/ in section .*//' | cut -c1-200
