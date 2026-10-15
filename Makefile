@@ -155,6 +155,10 @@ endif
 ifneq ($(and $(BOOT),$(CAP)),)
 CPPFLAGS += -DPS1_BOOT_CAP=1
 endif
+# docs/32 phase 13: `make PS1_LOGS=1` keeps the game's LogHelpers prints (off in every other build: resident RAM)
+ifneq ($(PS1_LOGS),)
+CPPFLAGS += -DPS1_GAME_LOGS=1
+endif
 # docs/32 phase 13b: `FSKIP=1` starts a BOOT= build with Options > Video > Frameskip on.
 ifneq ($(and $(BOOT),$(FSKIP)),)
 CPPFLAGS += -DPS1_BOOT_FSKIP=1
