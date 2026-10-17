@@ -43,7 +43,7 @@ pgrep -f "DuckStation.app/Contents/MacOS" >/dev/null && { echo "DuckStation is a
 "$DS" -batch -fastboot -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
 EMU=$!
 sleep 6
-timeout ${TIMEOUT:-180} /opt/homebrew/bin/gdb --batch -x "$OUT.gdb" 2>&1 | grep -E "^(ICON|LOAD|RESULT|FILE) " | tee "$OUT.txt"
+timeout ${TIMEOUT:-180} ${GDB:-tools/gdbw} --batch -x "$OUT.gdb" 2>&1 | grep -E "^(ICON|LOAD|RESULT|FILE) " | tee "$OUT.txt"
 python3 - "$OUT.txt" <<'PYEOF'
 import re, sys, zlib
 files = ['Data/Game/GameConfig.bin', 'Data/Game/RSDKConfig.bin', 'Data/Stages/GHZ/StageConfig.bin',

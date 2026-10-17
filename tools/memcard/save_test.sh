@@ -92,7 +92,7 @@ $PCSX -fastboot -interpreter -debugger -gdb -gdb-port 3333 -memcard1 "$W/mc1.mcd
       -iso build/game.cue -exe rsdkv5.ps-exe >/dev/null 2>&1 &
 EMU=$!
 sleep 4
-timeout ${TIMEOUT:-400} /opt/homebrew/bin/gdb --batch -x "$W/save.gdb" > "$W/gdb.log" 2>&1
+timeout ${TIMEOUT:-400} ${GDB:-tools/gdbw} --batch -x "$W/save.gdb" > "$W/gdb.log" 2>&1
 grep -aE "^(BOOT|SAVE|WRITES|LOAD|TMP)" "$W/gdb.log"
 kill $EMU 2>/dev/null; wait $EMU 2>/dev/null
 echo "card 1 after the saves:"; $MCD list "$W/mc1_saved.mcd"

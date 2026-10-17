@@ -78,7 +78,7 @@ snap "stop"
 GDBEOF
 
 emu_start "$OUT"
-timeout -s INT ${TIMEOUT:-150} /opt/homebrew/bin/gdb --batch -x "$OUT.gdb" > "$OUT.log" 2>&1
+timeout -s INT ${TIMEOUT:-150} ${GDB:-tools/gdbw} --batch -x "$OUT.gdb" > "$OUT.log" 2>&1
 grep -E "^(SCENE|SNAP|GUARD|ENTITIES|STUBS|DATASET|STOP|#[0-9])|in section|^ R[0-9]| sr " "$OUT.log" | tee "$OUT.txt"
 emu_stop
 echo "(log: $OUT.log)"
