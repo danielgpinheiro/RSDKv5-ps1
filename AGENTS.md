@@ -13,15 +13,23 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 
 ## First checks (every session)
 - `git status` / `git log --oneline -10` (uncommitted work may be another agent's).
-- Phase + status in `../docs/32` (and the `rsdkv5-ps1-port` skill).
+- Phase + status in `../docs/32` ("Status (2026-10-16)" and "Where we are and how to resume (2026-10-16)") and the
+  `rsdkv5-ps1-port` skill. Speed work: `../docs/42` (Mania's limits), `../docs/43` (the v3 / v4 study).
 - Game data: `../SonicMania_Extracted/` (the user's Mania **Plus** `Data.rsdk`, 208 MB, SHA-256 `77a90438…`,
   extracted `Data/`). Never commit game data.
 - `../nugget` and `dependencies/RSDKv5` stay plain upstream.
-- Emulators: **PCSX-Redux** (user, 2026-09-28: DuckStation belongs to another session). The harness (`tools/emu.sh`)
-  uses PCSX-Redux by default, refuses to start while a PCSX-Redux on the default config runs (other sessions'
-  `-portable` copies on their own GDB ports run alongside: `../docs/32` choice 80), kills only its own PID and
-  restores the settings it changes (`pcsx.json`: `-8mb`); never `pkill`. DuckStation with the user's SCPH-101 BIOS
-  (`EMU=ds`, `*_ds.sh`, `../docs/31` §6) only when the user allows it again.
+- Emulators (`tools/emu.sh`; all shared with other sessions: `pgrep` first, never a second instance, kill only your
+  own PIDs, never `pkill`; runs are muted; the harness restores the settings it changes):
+  - **`EMU=redux`** (the default; user 2026-10-16: "Use stock pcsx-redux instead of fork"): the stock PCSX-Redux app
+    (`/Applications/PCSX-Redux.app`, GDB 3333). `EMU=r16` (the patched `../pcsx-redux-16mb/redux16mb`, GDB 3344)
+    belongs to the parked `ps1-mods` work and the GTA III project; numbers measured on it in stock mode since 13b stay
+    valid as history. The perf scripts take `EMUS=`.
+  - `EMU=ds`: DuckStation with the user's SCPH-101 BIOS (accurate settings, GDB 2345, `../docs/31` §6), allowed for
+    Mania whenever no other session runs it (the same rule for every RSDK port, user 2026-10-16).
+  - The Bash tool is zsh (`$REDUX_ARGS` doesn't word-split): launch emulators from bash scripts, i.e. the harness.
+- GDB: Homebrew gdb 18.1 (2026-10-16) can't attach to PCSX-Redux's stub ("invalid remote ptid: p1.t1",
+  `../pcsx-redux/src/core/gdb-server.cc:503`). Every harness script runs `tools/gdbw` (+ `tools/gdbrelay.py`,
+  `1539b3b2`; `GDB=` overrides), which rewrites only a `-x` script's exact `target remote localhost:N` line.
 
 ## User decisions (2026-09-26)
 - Fresh upstream clone (`9dc6994`, submodule `bd59396`) + private fork; the `ps1/` layer and tools come from
@@ -30,15 +38,33 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   michael-fadely forks) and our own PS1 ports. Not the Xbox v5 port.
 - **Scope: base Mania** (decided after phase 1): Mania mode, Sonic/Tails/Knuckles; no Encore, Mighty, Ray,
   Competition, replays, Puyo (reversible build/data switches).
+  *Updated 2026-10-16*: Sonic, Tails, Knuckles alone (Sonic & Tails only on the parked `ps1-mods`); Mighty and Ray on
+  this repo's discs (`PLUS ?= 1`, user 2026-10-09; the builder keeps `--plus-characters` off by default: the engine's
+  license); Puyo in (9f, `1017bebe`); Pinball cut (9k); no Encore, Competition, replays.
 - **Graphics (phase 3.1, 2026-09-26)**: single characters (no Sonic & Tails: VRAM); character art 15 colours per frame;
   bosses / big effects / UI art at half resolution where a scene needs it (least visible first, HUD last).
 - Icons: `../Memcard icons/sonic-mania-loading.gif` (loading, quantised to 15 colours), `mania-mc-icon.png`
-  (save); credit to be given by the user before the public README.
+  (save); credit to be given by the user before the public README. *Updated 2026-10-16*: the builder README credits
+  them "author unknown" (the other builders' wording); confirm with the user before publishing.
 - Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
   before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
+  *Updated 2026-10-16*: frame rate: no automatic frame skip, with three user-chosen exceptions: UFO stages at 30 fps
+  with two logic steps (9f `000a9102`); Options > Video > Uncapped FPS (default No: zones capped at 30 fps with two
+  logic steps, 9q `6c818598`); opt-in Frameskip (default Off, 13b `649b3d49`). Mode: **fully autonomous** since
+  2026-10-09 ("Go fully autonomous until finish every phase"): plan → implement → verify with evidence → commit + push
+  `fork ps1`; design choices logged in `../docs/32`'s choices table; publishing the builder needs the user's OK.
 
-**Resumed 2026-09-28** (Sonic 2 is done): `../docs/32` "Resumed 2026-09-28" (the review, Sonic 2's lessons per phase),
-then "Where we stopped" for the next steps.
+**Resume from `../docs/32` "Where we are and how to resume (2026-10-16)"** (current state, branch policy, what's next).
+History: "Resumed 2026-09-28" (the review after Sonic 2) and the superseded "History: where we stopped on 2026-09-26".
+
+## Branches and builder
+- `ps1`: the stock port (2 MB RAM, 1 MB VRAM) and the **only focus** (user 2026-10-15). Push to `fork ps1`.
+- `ps1-mods` (phase 13: 8/16 MB, 2 MB VRAM mod, Sonic & Tails, CD cache, full-res sprites; head `eaf7cadf`): **parked**.
+  No ps1-mods builds, discs, merges or builder `mods` exports unless the user asks; `build/dist_mods/` was deleted
+  2026-10-15.
+- Builder: private github.com/danielgpinheiro/Sonic-Mania-PS1-ISO-Builder (`../Sonic-Mania-PS1-ISO-Builder`), main
+  `bb19aab` pushed 2026-10-15 (image SHA-256 `555f941a…`, `CHANGELOG.md`); its branch `mods` (`2533da0`) is local, never
+  pushed. Refresh with `tools/export_builder.sh` (natural EXE only); publishing needs the user's OK.
 
 ## Build / run / debug
 ```bash
@@ -51,16 +77,28 @@ make -j8 [MEASURE_RAM=8M] [BOOT=1,0]  # engine + game at 2 MB; 8M = measuring li
 make -j8 PLATFORM_TEST=1        # phase 0 smoke-test app (ps1/platform_test.cpp) on the PS1 layer; rsdkv5.ps-exe
 python3 tools/extract_rsdk.py ../SonicMania_Extracted/Data.rsdk ../SonicMania_Extracted   # RSDKv5 pack -> Data/
 tools/data_disc.sh              # phase 2 data disc: Data/ without source media, raw scene/tile blocks, tileset .pal
-TIMEOUT=120 tools/boot_test.sh [OUT] [END_FRAME]  # headless boot (PCSX-Redux; EMU=ds DuckStation): scene loads, datasets, guards
+TIMEOUT=120 tools/boot_test.sh [OUT] [END_FRAME]  # headless boot (EMU=redux default / ds): scene loads, datasets, guards
 TIMEOUT=900 tools/play_test.sh tools/play/ghz1_run.gdb OUT   # GHZ1 scripted run (BOOT=1,0): compare OUT.txt with
                                 # tools/play/ghz1_run.ref.txt (the F lines without hbl=)
 tools/smoke_disc.sh             # phase 0 test disc (GHZ subset + Jump.vag) + make disc
 tools/smoke_test_ds.sh [OUT]    # phase 0 smoke test in DuckStation (file CRCs, SPU, loading icon, fps)
 tools/smoke_test.sh [OUT]       # the same in PCSX-Redux (+ VRAM icon pixels, pad), when it is free
 python3 tools/loading/build_icon.py "../Memcard icons/sonic-mania-loading.gif" ps1/loading_icon.h --quantize 15
+make sfx | music | video | meshes # build-time SFX banks, CD-XA music, STR video, PMD6 meshes (build/sfx, music, video, meshes)
+make disc [PLUS=0]              # build/game.bin/.cue from build/iso + overlays + build outputs; PLUS=1 (default): Mighty, Ray
+make dist                       # licensed disc (../LICENSE.DAT) from the natural 2 MB build only -> build/dist/ (refuses
+                                # BOOT= / MEASURE_RAM / PROFILE / SAMPLE / PERF_HUD builds); runs make disc first
+make BOOT=1,0 CAP=1 | FSKIP=1   # a BOOT= build starts uncapped: CAP=1 capped at 30 fps, FSKIP=1 Frameskip on
+make PS1_LOGS=1 | PERF_HUD=1 | PROFILE=1 | SAMPLE=1   # game logs kept / timing HUD / per-class CPU / PC sampler (EMU_RAM=8mb)
+make UFO_NO_DECOR=0 UFO_NO_SHADOWS=0   # the UFO stages' stock look (both 1 by default)
+python3 tools/build_assets.py --rsdk Data.rsdk --exe ... --ovl ... --work W --out O   # the builder's whole pipeline
+tools/export_builder.sh ../Sonic-Mania-PS1-ISO-Builder   # refresh the builder (natural EXE only)
+tools/play/perf_scene.sh NAME BOOT   # a scene's frame timing (EMUS="redux ds" default); perf_sweep.sh /
+                                # perf_all.sh: act sweeps; perf_gpu.sh + gpu_cost.py: a chain's GPU cost (no screen clip yet)
 ```
-Emulator runs in the background with a timeout. GDB for evidence (`../docs/21`; PCSX-Redux's stub on port 3333,
-DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, `set architecture mips:3000`).
+Emulator runs in the background with a timeout (~60 s for quick runs, `TIMEOUT=` for long ones). GDB for evidence
+(`../docs/21`) through `tools/gdbw`; stubs: PCSX-Redux 3333, DuckStation 2345 (`../docs/31` §6: `file` the ELF
+before `target remote`, `set architecture mips:3000`).
 
 ## Layout
 | Path | Role |
@@ -71,9 +109,15 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
 | `ps1/rsdk5_main.cpp`, `ps1/ps1_limits.h` | the psyqo app (RunRetroEngine's init + loop); limits shared by engine and game (entity slots) |
 | `tools/gfx/` (`vram_plan.py`, `build_tiles.py`, `build_atlas.py`, `scene_usage.py`, `manifests/`), `RSDK/Scene/PS1/PS1Tiles.*`, `RSDK/Graphics/PS1/PS1Atlas.*`, `ps1/vram.*` | phase 3 graphics: the VRAM plan; scene tile images (`.ptl`) and sprite atlases (`.atl`: per-scene frame selection, player / event groups, 15-colour characters, half-res big sprites as needed), all self-checked; their loaders, frame bindings, group swaps; VRAM upload + GDB readback (`g_ps1VramDumpReq`, 8 MB link) |
 | `tools/gen_overlays.py`, `ps1/overlay.cpp`, `tools/trig/` | code overlays: resident set, per-folder overlays (`build/ovl/<folder>.bin` on the disc as `Data/PS1Ovl/`), object pointers + jump stubs in the resident; the loader; build-time trig tables |
-| `ps1/` | PS1 platform layer (see `ps1/README.md`), from Sonic CD: CD stream + file index, XA music, SPU, MDEC/STR (CPU-driven), IRQ guard, loading icon, memory card, chained GPU renderer (joins in phase 3) |
+| `ps1/` | PS1 platform layer (see `ps1/README.md`), from Sonic CD: CD stream + file index, XA music, SPU, MDEC/STR (CPU-driven), IRQ guard, loading icon, memory card, chained GPU renderer, GTE 3D |
 | `tools/extract_rsdk.py`, `tools/rsdkv5_filelist.txt` | RSDKv5 datapack extractor (md5 names + the Dreamcast port's file list) |
-| `tools/disc/`, `tools/loading/`, `tools/memcard/`, `tools/audio/` | disc builder + verifier, icon builders, memory card images, SFX/XA converters (from Sonic CD; adapted per phase) |
+| `tools/disc/`, `tools/loading/`, `tools/memcard/` | disc builder + verifier + stage-local copies, icon builders, memory card images and tests |
+| `tools/audio/` | `sfx_sets.py` + `build_sfx.py` (per-scene SPU banks, `make sfx`), `build_music.py` (CD-XA, `make music`), `xa_adpcm.py` |
+| `tools/fmv/build_str.py` | the video sequences with their music -> STR (`make video`) |
+| `tools/mesh/build_meshes.py` | the Dreamcast optimiser pass (no stripify) then PMD6 with distance LODs (`make meshes`; `../docs/18`, `../docs/32` 7.2 / 7.4) |
+| `tools/build_assets.py`, `tools/export_builder.sh` | the builder's whole pipeline; the builder export |
+| `tools/emu.sh`, `tools/gdbw`, `tools/gdbrelay.py`, `tools/boot_test.sh`, `tools/play_test.sh`, `tools/load_profile.sh` | harness core: emulator start / stop (`EMU=`), the gdb 18 wrapper + relay, headless boot, GDB-scripted runs, load profile |
+| `tools/play/` | test scripts: GHZ1 run + reference, `perf_*.sh` timing, `shot.sh` / `vshot.sh` pictures, `menus/` (scripted pad), `boss/` (recipes, `snap.sh`; README), `deaths/`, `special/`, `wholegame/`, `ring/`, many `*.gdb` probes |
 | `tools/smoke_*.sh`, `vramshot.py`, `pad.lua` | phase 0 harness |
 
 ## Invariants (from the Nexus, Sonic CD and Sonic 2 ports)
@@ -129,3 +173,13 @@ DuckStation's on 2345, `../docs/31` §6: `file` the ELF before `target remote`, 
 Builds cleanly · fits 2 MB · verified in PCSX-Redux with evidence · `../docs/32` status
 updated · commit (prefixes `feature:` `fix:` `chore:` `housekeeping:`) and push to `fork ps1` when the user
 asks (or per verified step while the user is away).
+
+*Updated 2026-10-16* (fully autonomous: commit + push `fork ps1` per verified step):
+- Verified in the stock PCSX-Redux (`EMU=redux`; DuckStation too when free) with evidence; GHZ1 scripted run identical to
+  `tools/play/ghz1_run.ref.txt`; guards 0.
+- After resident code / BSS growth: boot FBZ2 at 2 MB (`BOOT=1,7`, or `tools/play/boss/runrec.sh pcsx fbz2`) and
+  record STG used / limit (room 9,172 B since `72ca5593`); `mipsel-none-elf-size rsdkv5.elf` before / after.
+- Snapshot cleanup (`f0a83464`): run scripts delete the build snapshot they made (`tools/play/boss/snap.sh -d NAME`);
+  `KEEP_SNAP=1` keeps it for `NOBUILD=1` reuse; making a snapshot prunes any older than `SNAP_DAYS` (3) days. Every new
+  run script must do the same (228 GB had piled up).
+- No Claude / AI attribution in commits or PRs (no `Co-Authored-By` trailer).
