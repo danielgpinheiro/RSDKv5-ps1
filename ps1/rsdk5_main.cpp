@@ -19,6 +19,7 @@
 
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
+#include "../ps1/stack.hh" // MA-188: the stack reserve's overflow check
 #include "../ps1/video.hh" // PS1Hblanks
 #include "../ps1/vram.hh"  // PS1VramServiceDump (GDB VRAM dumps)
 void PS1McPrepare(); // ps1/memcard.hh (phase 8: the user files on the card; its psyqo headers stay out of here)
@@ -154,6 +155,8 @@ __attribute__((noinline)) void perfTick(psyqo::GPU &gpu) {
     g_ps1HeapTotal    = ss - hs;
     // 2.4a: the part of the init reserve no allocation has reached (STG and the stack guard fill the rest of the heap)
     g_ps1HeapHeadroom = g_ps1ReserveEnd > g_ps1ReserveHigh ? g_ps1ReserveEnd - g_ps1ReserveHigh : 0;
+    if (PS1StackGuardBroken()) // the main stack overflowed its 16 KB reserve (ps1/stack.hh)
+        g_ps1StackOverflow = g_ps1StackOverflow + 1;
     for (int k = 0; k < 8; k++)
         if (g_ps1TestStops[k] == g_ps1PerfFrames) {
             ps1TestStop();
@@ -357,4 +360,8 @@ ManiaPS1App s_app;
 
 } // namespace
 
-int main() { return s_app.run(); }
+// The stack reserve painted first (ps1/stack.hh, MA-188): its guard words and low-water mark.
+int main() {
+    PS1StackPaint();
+    return s_app.run();
+}

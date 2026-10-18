@@ -29,7 +29,7 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 #if RETRO_PLATFORM == RETRO_PS1
 extern "C" char __heap_start, __stack_start;
 #include "psyqo/alloc.h" // psyqo_heap_end, psyqo_malloc / psyqo_free (docs/32 9d: inline wrappers in upstream nugget)
-#define PS1_STACK_RESERVE (16 * 1024)
+#define PS1_STACK_RESERVE (16 * 1024) // = ps1/stack.hh (its overflow check paints this area, MA-188)
 // 2.3p: user database (0xE0 rows); in play the chain arena takes 50 KB of it (3.2). 4.2a: the database 62 -> 35 KB (6 columns
 // of 4 bytes), 128 -> 104 KB: the menu at 2 MB (its save-file list, TA table) leaves ~3.5 KB of it never reached
 #define PS1_INIT_RESERVE  (116 * 1024) // 7.1: + 12 KB: the chain arena 50 -> 60 KB, and 2 KB for the load-time heap

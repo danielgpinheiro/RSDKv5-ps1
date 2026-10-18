@@ -10,6 +10,7 @@
 #include <psyqo/alloc.h>
 
 #include "gpu_chain.hh"
+#include "stack.hh"
 #include "loading_icon.h"
 
 extern psyqo::GPU *g_ps1GPU;
@@ -171,6 +172,7 @@ void PS1LoadingEnd() {
     if (top < (uintptr_t)&__heap_start)
         top = (uintptr_t)&__heap_start;
     g_ps1LoadingHeadroom = (uint32_t)((uintptr_t)&__stack_start - top);
+    PS1StackScan(); // the stack's low-water mark (ps1/stack.hh, MA-188)
     PS1LoadingDoneHook(g_ps1LoadingLastUs);
     if (s_shown) {
         g_ps1GPU->waitChainIdle();
