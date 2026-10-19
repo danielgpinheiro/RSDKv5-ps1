@@ -20,7 +20,7 @@ OPTSRC=${DC_MESH_OPT_SRC:-../../Dreamcast/mania-mesh-optimizer}
 B=$DEST/builder
 rm -rf "$B" "$DEST/bin"
 mkdir -p "$B/tools" "$DEST/bin/ovl"
-for f in build_assets.py extract_rsdk.py rsdkv5_filelist.txt rsdk5_formats.py data_disc.py; do cp tools/$f "$B/tools/"; done
+for f in build_assets.py extract_rsdk.py rsdkv5_filelist.txt rsdk5_formats.py data_disc.py gen_version.py; do cp tools/$f "$B/tools/"; done
 sed -n 's/^STAGES ?= //p' Makefile | tr ',' '\n' > "$B/tools/stages.txt"
 mkdir -p "$B/tools/gfx" "$B/tools/audio" "$B/tools/fmv" "$B/tools/mesh" "$B/tools/disc"
 cp tools/gfx/build_atlas.py tools/gfx/build_tiles.py tools/gfx/vram_plan.py tools/gfx/scene_usage.py tools/gfx/ps1_text.py "$B/tools/gfx/"
@@ -39,6 +39,8 @@ cp rsdkv5.ps-exe "$DEST/bin/SonicMania-PS1.exe"
 for u in $(cut -d' ' -f1 build/gen/ovl/units.txt); do cp build/ovl/$u.bin "$DEST/bin/ovl/"; done
 cp build/gen/ovl/units.txt "$DEST/bin/ovl/units.txt"
 ( cd "$DEST/bin" && shasum -a 256 SonicMania-PS1.exe ovl/*.bin ovl/units.txt > SHA256SUMS )
-printf '# bin/\n\n`SonicMania-PS1.exe` and `ovl/`: the PS1 executable and its code overlays (one per stage folder or act,\n`units.txt` lists them), built from the RSDKv5-ps1 port at commit `%s` (`make`, `RSDK_AUTOBUILD=1`: the Plus\ncharacters stay off unless the disc carries `Data/PS1Config.txt`, see the README). SHA-256 in `SHA256SUMS`.\n' \
-  "$(git rev-parse --short HEAD)" > "$DEST/bin/README.md"
-echo "exported $(git rev-parse --short HEAD) -> $DEST ($(find "$B" -type f | wc -l | tr -d ' ') builder files, $(ls "$DEST/bin/ovl" | wc -l | tr -d ' ') overlay files)"
+# bin/VERSION.TXT: this port's commit, put on the builder's discs (build_disc.py) and shown on the title screen
+VERSION=$(/usr/bin/python3 tools/gen_version.py "$DEST/bin/VERSION.TXT" .)
+printf '# bin/\n\n`SonicMania-PS1.exe` and `ovl/`: the PS1 executable and its code overlays (one per stage folder or act,\n`units.txt` lists them), built from the RSDKv5-ps1 port at commit `%s` (`make`, `RSDK_AUTOBUILD=1`: the Plus\ncharacters stay off unless the disc carries `Data/PS1Config.txt`, see the README). SHA-256 in `SHA256SUMS`.\n\n`VERSION.TXT` (`%s`) goes on the disc; the title screen shows it bottom-left.\n' \
+  "$(git rev-parse --short HEAD)" "$VERSION" > "$DEST/bin/README.md"
+echo "exported $(git rev-parse --short HEAD) (version $VERSION) -> $DEST ($(find "$B" -type f | wc -l | tr -d ' ') builder files, $(ls "$DEST/bin/ovl" | wc -l | tr -d ' ') overlay files)"

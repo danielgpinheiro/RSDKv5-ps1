@@ -120,10 +120,18 @@ void RSDK::PS1FrameStart(bool clear)
 #if PS1_PERF_HUD
 void PS1PerfHudDraw(); // ps1/perf_hud.cpp (docs/32 9f)
 #endif
+extern "C" {
+extern void (*g_ps1VersionDraw)(uint32_t colour, int32_t aR, int32_t aG, int32_t aB); // ps1/version_text.cpp
+extern uint32_t g_ps1VersionFade[4];
+}
 void RSDK::PS1RenderEndFrame()
 {
     if (!s_ps1FrameOpen)
         PS1FrameStart(false);
+    // the title overlay's build stamp, on top, with the frame's FillScreen fade; not over the attract video
+    if (g_ps1VersionDraw && sceneInfo.state != ENGINESTATE_VIDEOPLAYBACK)
+        g_ps1VersionDraw(g_ps1VersionFade[0], (int32_t)g_ps1VersionFade[1], (int32_t)g_ps1VersionFade[2], (int32_t)g_ps1VersionFade[3]);
+    g_ps1VersionFade[1] = g_ps1VersionFade[2] = g_ps1VersionFade[3] = 0;
 #if PS1_PERF_HUD
     PS1PerfHudDraw();
 #endif

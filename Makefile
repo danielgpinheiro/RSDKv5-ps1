@@ -68,6 +68,8 @@ ps1/s3d_blend.s \
 ps1/floor_quads.s \
 ps1/fmv.cpp \
 ps1/loading.cpp \
+ps1/version_text.cpp \
+ps1/version_stamp.cpp \
 ps1/memcard.cpp \
 ps1/user_card.cpp \
 ps1/overlay.cpp \

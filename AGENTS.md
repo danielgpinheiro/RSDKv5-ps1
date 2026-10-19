@@ -93,6 +93,9 @@ make PS1_LOGS=1 | PERF_HUD=1 | PROFILE=1 | SAMPLE=1   # game logs kept / timing 
 make UFO_NO_DECOR=0 UFO_NO_SHADOWS=0   # the UFO stages' stock look (both 1 by default)
 python3 tools/build_assets.py --rsdk Data.rsdk --exe ... --ovl ... --work W --out O   # the builder's whole pipeline
 tools/export_builder.sh ../Sonic-Mania-PS1-ISO-Builder   # refresh the builder (natural EXE only)
+# Build stamp: every disc gets VERSION.TXT (tools/gen_version.py: commit, -dirty; the builder: bin/VERSION.TXT from the
+# export); the Title overlay draws it bottom-left (ps1/version_text.cpp resident, ps1/version_stamp.cpp gen_overlays EXTRAS
+# 'stamp'; VRAM row 511 x 0-255 + CLUT (288, 511)). PS1_VERSION_FILE=path / none
 tools/play/perf_scene.sh NAME BOOT   # a scene's frame timing (EMUS="redux ds" default); perf_sweep.sh /
                                 # perf_all.sh: act sweeps; perf_gpu.sh + gpu_cost.py: a chain's GPU cost (no screen clip yet)
 ```

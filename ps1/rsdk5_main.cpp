@@ -58,6 +58,7 @@ extern "C" char __heap_start, __stack_start;
 #include "psyqo/alloc.h" // psyqo_heap_end (docs/32 9d)
 extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
 bool PS1FsFind(const char *path, uint32_t *lba, uint32_t *size);             // ps1/cdrom_fs.cpp
+void PS1VersionLoad();                                                       // ps1/version_text.cpp (build stamp)
 extern "C" volatile int g_ps1PlusChars;                                      // docs/32 9g: PS1ReadConfig below
 volatile int g_ps1PlusChars = 0;
 
@@ -226,6 +227,9 @@ class ManiaPS1App final : public psyqo::Application {
         if (ok)
             RenderDevice::InitFPSCap();
         PS1LoadingEnd();
+        // VERSION.TXT (the title's build stamp, ps1/version_text.cpp), after the boot load: the file index it needs is
+        // loaded by then (read before InitStorage, the index went under STG and FBZ2 lost its room: STG exhausted)
+        PS1VersionLoad();
         g_ps1InitDone = ok ? 1 : 2;
     }
 

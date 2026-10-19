@@ -1070,8 +1070,11 @@ void RSDK::PS1FadeRestoreSlot(uint32 slot)
 
 // FillScreen's arithmetic per 5-bit channel (the PC: blendLookupTable[0x20 * a + c] = a * c >> 8; the fill colour's
 // channels c8 >> 3; green is the 565 value's top 5 bits, as the PS1 colours are): c' = (c * (255 - a) >> 8) + (f * a >> 8)
+extern "C" uint32_t g_ps1VersionFade[4]; // ps1/version_text.cpp: the title's build stamp fades with the frame
 void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 {
+    g_ps1VersionFade[0] = color, g_ps1VersionFade[1] = (uint32)alphaR, g_ps1VersionFade[2] = (uint32)alphaG,
+    g_ps1VersionFade[3] = (uint32)alphaB;
     int32 fr = (int32)((color >> 16) & 0xFF) >> 3, fg = (int32)((color >> 8) & 0xFF) >> 3, fb = (int32)(color & 0xFF) >> 3;
     int32 cr = fr * alphaR >> 8, cg = fg * alphaG >> 8, cb = fb * alphaB >> 8;
     int32 kr = 0xFF - alphaR, kg = 0xFF - alphaG, kb = 0xFF - alphaB;
