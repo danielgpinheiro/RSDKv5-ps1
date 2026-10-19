@@ -14,12 +14,12 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <psyqo/advancedpad.hh>
+#include "pad.hh"
 #include <psyqo/alloc.h>
 #include <psyqo/gpu.hh>
 
 extern psyqo::GPU *g_ps1GPU;
-extern psyqo::AdvancedPad *g_ps1Pad;
+extern PS1Pad *g_ps1Pad; // ps1/pad.hh (docs/32 9t)
 
 void PS1RenderFmvFrame(int mode);           // render device, phase 6 (Sonic CD: ps1/render.cpp): 0 = black, 1 = new picture (bars only), 2 = repeat
 void PS1RenderFmvFade(int step);            // render device, phase 6 (Sonic CD: ps1/render.cpp): darken the whole frame by step / 255

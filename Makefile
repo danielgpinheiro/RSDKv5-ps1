@@ -75,6 +75,7 @@ ps1/user_card.cpp \
 ps1/overlay.cpp \
 ps1/vram.cpp \
 ps1/stack.cpp \
+ps1/pad.cpp \
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 

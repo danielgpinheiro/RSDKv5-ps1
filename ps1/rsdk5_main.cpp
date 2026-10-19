@@ -19,6 +19,7 @@
 
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
+#include "../ps1/pad.hh" // docs/32 9t: port 2 probed while empty, not polled every frame
 #include "../ps1/stack.hh" // MA-188: the stack reserve's overflow check
 #include "../ps1/video.hh" // PS1Hblanks
 #include "../ps1/vram.hh"  // PS1VramServiceDump (GDB VRAM dumps)
@@ -51,7 +52,7 @@ volatile uint32_t g_ps1HeapTotal    = 0, g_ps1HeapHeadroom = 0;
 static uint32_t s_lastCount         = 0;
 
 psyqo::GPU *g_ps1GPU           = nullptr;
-psyqo::AdvancedPad *g_ps1Pad   = nullptr;
+PS1Pad *g_ps1Pad               = nullptr;
 psyqo::CDRomDevice *g_ps1CDRom = nullptr;
 
 extern "C" char __heap_start, __stack_start;
@@ -192,7 +193,7 @@ class ManiaPS1App final : public psyqo::Application {
 #if PS1_SAMPLE
         PS1SamplerInstall(); // PC sampler (ps1/pc_sampler.cpp)
 #endif
-        m_pad.initialize(psyqo::AdvancedPad::PollingMode::Fast);
+        m_pad.initialize(); // psyqo AdvancedPad's driver: port 1 every frame, port 2 while live (ps1/pad.hh, docs/32 9t)
         { // 9f: the port's vblank count (the UFO stages' pace)
             uint32_t ev = psyqo::Kernel::openEvent(0xf2000003, 2, EVENT_MODE_CALLBACK, []() { g_ps1VblankCount = g_ps1VblankCount + 1; });
             syscall_enableEvent(ev);
@@ -359,7 +360,7 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     psyqo::CDRomDevice m_cdrom;
-    psyqo::AdvancedPad m_pad;
+    PS1Pad m_pad;
 };
 
 ManiaPS1App s_app;
