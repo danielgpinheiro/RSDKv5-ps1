@@ -58,6 +58,7 @@ ps1/irq_guard.cpp \
 ps1/pc_sampler.cpp \
 ps1/perf_hud.cpp \
 ps1/gpu_chain.cpp \
+ps1/gpu_detect.cpp \
 ps1/spu.cpp \
 ps1/xa_music.cpp \
 ps1/mdec.cpp \
@@ -167,6 +168,14 @@ endif
 ifneq ($(and $(BOOT),$(FSKIP)),)
 CPPFLAGS += -DPS1_BOOT_FSKIP=1
 endif
+# `make BOOT=c,i FLIPAB=1 [FLIPAB_OFF=1]`: the flip-rectangle A/B harness (ps1/gpu_detect.hh, ../tests/tools/mania_flip_ab.py):
+# a scripted pad, framebuffer CRCs over the TTY port; FLIPAB_OFF=1 starts with the flip path off. Never in `make dist`.
+ifneq ($(and $(BOOT),$(FLIPAB)),)
+CPPFLAGS += -DPS1_FLIP_AB=1
+ifneq ($(FLIPAB_OFF),)
+CPPFLAGS += -DPS1_FLIP_AB_OFF=1
+endif
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -178,7 +187,7 @@ LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
 # The switches above are defines: a stamp per switch (rewritten only when its value changes) rebuilds just the
 # objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind. A change also
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
-PS1_BOOT_OBJS    := ps1/rsdk5_main.o
+PS1_BOOT_OBJS    := ps1/rsdk5_main.o ps1/gpu_detect.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/PS1/PS1RenderDevice.o ps1/perf_hud.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
@@ -189,7 +198,7 @@ PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/C
 define ps1_stamp
 $(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || { echo "$(2)" > build/gen/$(1).txt; rm -f $(3); })
 endef
-$(call ps1_stamp,boot,$(BOOT)$(if $(and $(BOOT),$(CAP)), cap)$(if $(and $(BOOT),$(FSKIP)), fskip),$(PS1_BOOT_OBJS))
+$(call ps1_stamp,boot,$(BOOT)$(if $(and $(BOOT),$(CAP)), cap)$(if $(and $(BOOT),$(FSKIP)), fskip)$(if $(and $(BOOT),$(FLIPAB)), flipab$(if $(FLIPAB_OFF),off)),$(PS1_BOOT_OBJS))
 $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))

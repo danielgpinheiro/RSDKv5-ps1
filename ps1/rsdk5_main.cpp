@@ -17,6 +17,7 @@
 #include "common/kernel/events.h"
 #include "common/syscalls/syscalls.h"
 
+#include "../ps1/gpu_detect.hh" // GPU type + flip-bit rectangles (docs/43 G3)
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
 #include "../ps1/pad.hh" // docs/32 9t: port 2 probed while empty, not polled every frame
@@ -200,6 +201,7 @@ class ManiaPS1App final : public psyqo::Application {
         }
         g_ps1Pad = &m_pad;
 
+        PS1DetectGpu(); // flip-bit rectangles for flipped tiles and sprites if the GPU draws them (ps1/gpu_detect.hh)
         // RunRetroEngine's initialisation in its order (RSDKv5/RSDK/Core/RetroEngine.cpp, no mod loader), without the
         // PC parts (arguments, console). The game is linked in: main.cpp's linkGameLogic assignment.
         PS1LoadingBegin();
@@ -300,6 +302,9 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void frame() override {
+#if PS1_FLIP_AB
+        PS1FlipAbFrameStart(); // harness: the last frame's pictures at the checkpoints (ps1/gpu_detect.hh)
+#endif
         PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/32 3.1c)
         SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
@@ -329,6 +334,9 @@ class ManiaPS1App final : public psyqo::Application {
 
         if (g_ps1InitDone == 1 && RenderDevice::isRunning) {
             readPad();
+#if PS1_FLIP_AB
+            g_ps1PadButtons = PS1FlipAbPad(); // harness: the scripted pad
+#endif
             PS1RenderBeginFrame(); // this frame's chain (docs/32 3.2)
             engineFrame();
             PS1RenderEndFrame();

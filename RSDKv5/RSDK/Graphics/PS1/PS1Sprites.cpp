@@ -15,6 +15,7 @@
 // add / sub = modes 1 / 2 with the texture modulated by alpha / 2 (0x80 = 1.0). Tint, masked and unmasked are counted,
 // as are DrawSpriteFlipped / DrawSpriteRotozoom calls with sheet coordinates only (no frame, no tile).
 #include "../../../../ps1/gpu_chain_raw.hh"
+#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/43 G3)
 
 // Counters and the draw log at global scope, declared in no header: GDB then finds them by their plain names (an
 // extern "C" variable declared inside namespace RSDK gets the debug name RSDK::x, which GDB can't match to the ELF).
@@ -294,6 +295,20 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
     if (ink.mode >= 0)
         tpage |= (uint32)ink.mode << 5, semi = 0x02000000;
     bool fx = direction & FLIP_X, fy = direction & FLIP_Y;
+    // 1:1 and flipped, on a GPU that draws flip rectangles (docs/43 G3): the 1:1 sprite below under the texpage with
+    // GP0(E1h) bit 12 (X) / 13 (Y), from the frame's last texel (PS1FlipRectTex: where it allows it; else the exact quad
+    // further down, the same pixels). Every sprite sends its own texpage, so the flip bits never reach another one.
+    if ((fx || fy) && !shift && PS1FlipRectsLive()) {
+        int32 tu, tv;
+        if (PS1FlipRectTex(u, v, w, h, fx, fy, &tu, &tv)) {
+            tpage |= (uint32)(fx | fy << 1) << 12;
+            u = tu, v = tv, fx = fy = false;
+            g_ps1SpriteFlipRects = g_ps1SpriteFlipRects + 1;
+            g_ps1FlipFrameUsed   = true;
+        }
+        else
+            g_ps1SpriteFlipQuads = g_ps1SpriteFlipQuads + 1;
+    }
 
     if (!fx && !fy && !shift) {
         for (int32 p = 0; p < ink.passes; ++p) {

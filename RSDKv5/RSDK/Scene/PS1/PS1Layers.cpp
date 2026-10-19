@@ -15,6 +15,7 @@
 // palette bank that covers at least the tile band starting on its first line is one flat rectangle (GP0 60h: not dithered, psx-spx), drawn with the mask bit forced (GP0 E6h) so its
 // pixels read 0x8000 | colour like the tiles' CLUT entries.
 #include "../../../../ps1/gpu_chain_raw.hh"
+#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/43 G3)
 #include "../../../../ps1/video.hh" // PS1Hblanks
 
 namespace RSDK
@@ -415,6 +416,13 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
     uint32_t *w = e.w, *lim = e.hdr + 10, *end = e.end;
     uint32 page = e.page;
+    // docs/43 G3: on a GPU that draws flip rectangles (PS1FlipRectsLive) a flipped tile is the band's own sprite under its
+    // texpage with GP0(E1h) bit 12 (X) / 13 (Y) (tile bits 0x400 / 0x800 << 2), from its last texel column u + 15 (odd, as
+    // X flip wants: u is a multiple of 16) / row v + 15 - v0 (vFlip1 added to v + v0); page then carries the flip bits,
+    // so the next unflipped piece differs from it and sends its own texpage
+    const bool flipLive = PS1FlipRectsLive();
+    const uint32 vFlip1 = (uint32)(15 - 2 * v0) * 256u;
+    int32 frects        = 0;
     for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
@@ -449,19 +457,30 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
         tex |= clut << 16;
         ++pieces;
         if (t & 0xC00) {
-            if ((t & 0x400) || h > 4) {
-                PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, (uint32)(t & 0xC00) >> 6, tpage);
+            if (flipLive) { // docs/43 G3: the band's own sprite as a flip rectangle (see vFlip1 above)
+                tex += ((t & 0x400) ? 15u : 0u) + ((t & 0x800) ? vFlip1 : 0u);
+                tpage |= (uint32)(t & 0xC00) << 2;
+                ++frects;
             }
             else {
-                PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
+                if ((t & 0x400) || h > 4) {
+                    PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, (uint32)(t & 0xC00) >> 6, tpage);
+                }
+                else {
+                    PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
+                }
+                continue;
             }
-            continue;
         }
         PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, tpage);
     }
     e.w = w, e.hdr = lim - 10, e.end = end, e.page = page;
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
+    if (frects) {
+        g_ps1TileFlipRects = g_ps1TileFlipRects + frects;
+        g_ps1FlipFrameUsed = true;
+    }
     PS1_LT_ADD(1, PS1T() - tg);
     g_ps1LayerBands  = g_ps1LayerBands + 1;
     g_ps1LayerPieces = g_ps1LayerPieces + pieces;

@@ -188,3 +188,14 @@ asks (or per verified step while the user is away).
   `KEEP_SNAP=1` keeps it for `NOBUILD=1` reuse; making a snapshot prunes any older than `SNAP_DAYS` (3) days. Every new
   run script must do the same (228 GB had piled up).
 - No Claude / AI attribution in commits or PRs (no `Co-Authored-By` trailer).
+
+## GPU type and flip rectangles (2026-10-19, ledger MA-190)
+`ps1/gpu_detect.*`: `PS1DetectGpu` in `start()` before `PS1LoadingBegin` (psx-spx "GPU Detection": GP1(10h) index 4,
+then 7; else GP0(E1h) bit 12 -> GPUSTAT bit 12 after E6h = 0): type 0 (the old GPU; PCSX-Redux and the stock
+DuckStation) never uses GP0(E1h) flip bits; types 1 / 2 run a 2x1 readback, and flip rectangles are used only when it
+comes back mirrored (`g_ps1GpuType`, `g_ps1FlipTest`, GDB `g_ps1FlipRectsOn` / `g_ps1FlipRectsForce`). Then band tiles
+(`DrawBandInto`) and 1:1 flipped `PS1TexRect` sprites are flip rectangles (`PS1FlipRectTex`); lake rows keep their `.ptl`
+H-flipped copies and V-flip line sprites. Resident cost +1,186 B inside the EXE's 2 KB step (watch the gap between the
+last `.data` symbol and `__data_end`: a step costs FBZ2 2 KB of STG room). Check on the DuckStation preview:
+`../tests/tools/mania_flip_ab.py --boot 1,0` (harness builds `make BOOT=c,i FLIPAB=1 [FLIPAB_OFF=1]`, never in
+`make dist`); `mania-release-gpu-detect` (PCSX-Redux, type 0).

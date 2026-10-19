@@ -1,6 +1,7 @@
 // PS1 port: the RenderDevice (see PS1RenderDevice.hpp). Included by Drawing.cpp like the other backends.
 #include "../../../../ps1/video.hh"         // PS1Hblanks (root counter 1)
 #include "../../../../ps1/gpu_chain_raw.hh" // the chained renderer (docs/32 3.2)
+#include "../../../../ps1/gpu_detect.hh"     // g_ps1FlipFrameUsed (docs/43 G3)
 
 // 3.2: each frame is one DMA chain (ps1/gpu_chain, from Sonic CD): PS1RenderBeginFrame picks this parity's arena
 // (nothing chained yet, so a load in this frame can still lend the arenas to the CD windows), the first draw opens the
@@ -135,6 +136,11 @@ void RSDK::PS1RenderEndFrame()
 #if PS1_PERF_HUD
     PS1PerfHudDraw();
 #endif
+    if (g_ps1FlipFrameUsed) { // docs/43 G3: whatever draws after the frame (loading icon, video) starts without flip bits
+        g_ps1FlipFrameUsed = false;
+        PS1ChainInvalidateTPage();
+        PS1ChainTPageRaw(0);
+    }
     PS1ChainEnd();
 }
 
