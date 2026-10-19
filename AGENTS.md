@@ -48,9 +48,11 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   them "author unknown" (the other builders' wording); confirm with the user before publishing.
 - Carried over: 320 px, 2 MB, golden rule, **no frame skip**, byte-exact evidence per step, plans approved
   before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
-  *Updated 2026-10-16*: frame rate: no automatic frame skip, with three user-chosen exceptions: UFO stages at 30 fps
-  with two logic steps (9f `000a9102`); Options > Video > Uncapped FPS (default No: zones capped at 30 fps with two
-  logic steps, 9q `6c818598`); opt-in Frameskip (default Off, 13b `649b3d49`). Mode: **fully autonomous** since
+  *Updated 2026-10-19 (phase 9t)*: frame rate: **the target is 60 fps at one logic step in every act and the UFO
+  stages, no frameskip, on a stock PS1**; every speed number is judged against 262 hblanks a frame at one step.
+  Options > Video > Uncapped FPS defaults to Yes; No puts the zones and the UFO stages at 30 fps with two logic steps
+  (9f `000a9102`, 9q `6c818598`); opt-in Frameskip (default Off, 13b `649b3d49`). Those modes are test aids / user
+  options, never the target. Mode: **fully autonomous** since
   2026-10-09 ("Go fully autonomous until finish every phase"): plan → implement → verify with evidence → commit + push
   `fork ps1`; design choices logged in `../docs/32`'s choices table; publishing the builder needs the user's OK.
 

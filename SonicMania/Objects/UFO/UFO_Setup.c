@@ -57,7 +57,7 @@ void UFO_Setup_Create(void *data)
 
 #if defined RETRO_PS1_BUILD
 extern volatile int32 g_ps1ScanSleepWant; // RSDKv5/RSDK/Scene/Object.cpp
-extern volatile int32 g_ps1LogicSteps;    // ps1/rsdk5_main.cpp
+extern volatile int32 g_ps1LogicSteps, g_ps1Uncapped; // ps1/rsdk5_main.cpp
 #endif
 void UFO_Setup_StageLoad(void)
 {
@@ -65,8 +65,9 @@ void UFO_Setup_StageLoad(void)
     // docs/32 9f (UFO item 2): the update scan's sleeping groups for these stages (reviewed: no object writes an
     // out-of-range ring / sphere / item box / decoration's position, range or active; StaticUpdates empty)
     g_ps1ScanSleepWant = 1;
-    // docs/32 9f (user 2026-10-08): "30 fps, 2 logic steps" in these stages only (ps1/rsdk5_main.cpp, RetroEngine.cpp)
-    g_ps1LogicSteps = 2;
+    // docs/32 9f (user 2026-10-08): "30 fps, 2 logic steps" (ps1/rsdk5_main.cpp, RetroEngine.cpp); 9t (user 2026-10-19):
+    // only when Options > Video > Uncapped FPS is No, as the zones: the target is 60 fps at one step
+    g_ps1LogicSteps = g_ps1Uncapped ? 1 : 2;
 #endif
     RSDK.ResetEntitySlot(SLOT_UFO_SETUP, UFO_Setup->classID, NULL);
 

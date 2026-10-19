@@ -236,7 +236,12 @@ void Options_LoadOptionsCallback(int32 status)
         RSDK.SetVideoSetting(VIDEOSETTING_STREAM_VOL, options->volMusic);
         RSDK.SetVideoSetting(VIDEOSETTING_SFX_VOL, options->volSfx);
 #if defined RETRO_PS1_BUILD
-        PS1SetUncapped(options->ps1Uncapped); // from the next scene load (a new file: 0, the zones at 30 fps)
+        if (options->ps1Version < 1) { // docs/32 9t (user 2026-10-19): the default is 60 fps at one logic step, also on
+            options->ps1Uncapped = 1;  // an older card (whose 0 was the old default, No); a later No from the menu stays
+            options->ps1Version  = 1;
+            Options->changed     = true; // written with the next options save
+        }
+        PS1SetUncapped(options->ps1Uncapped); // from the next scene load
         PS1SetFrameskip(options->ps1Frameskip); // phase 13b: from the next frame (a new or older file: 0, off)
 #endif
     }
