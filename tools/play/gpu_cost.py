@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-"""GPU time of one frame's DMA chain (docs/32 9f), priced with DuckStation's model (duckstation/src/core/gpu.cpp:
-AddDrawTriangleTicks, AddDrawRectangleTicks, UpdateCLUTIfNeeded, the fill and VRAM copy costs; GPU ticks, 2 per CPU
-cycle; one NTSC hblank = 2152 cycles). The chain is walked from its head in a RAM dump (tools/play/gpu_cost.gdb: the
-frame's chain as psyqo will send it at the next flip).
+"""GPU time of one frame's DMA chain (docs/32 9f; 9t: the RSDKv3 / v4 walk back from docs/43), priced with
+DuckStation's model (duckstation/src/core/gpu.cpp: AddDrawTriangleTicks, AddDrawRectangleTicks, UpdateCLUTIfNeeded,
+the fill and VRAM copy costs; GPU ticks, 2 per CPU cycle; one NTSC hblank = 2152 cycles). psx-spx gives no GPU
+drawing times (dmachannels.md "DMA Transfer Rates"), so this is a model, not a measurement. The chain is walked from
+its head in a 2 MB RAM dump taken where the frame's chain is complete, as psyqo sends it at the next flip
+(tools/play/perf_gpu.sh: at ps1TestStop, after PS1RenderEndFrame).
 
-Usage: gpu_cost.py RAM.bin HEAD [--base 0x80000000] [--top N]
-Prints the frame's total (ticks, hblanks) and the split per primitive kind (and per CLUT reload), plus the N most
-expensive primitives."""
+Usage: gpu_cost.py RAM.bin HEAD [TAIL TAILCOUNT HEADOVERSIZED] [--base 0x80000000] [--top N] [--dump-words FILE]
+--dump-words FILE: also write the walked payload words (link words left out) as little-endian u32 to FILE, for exact
+chain comparisons between builds whose node addresses differ (RSDKv4-ps1's tools/chain_cmp.py).
+The chain is walked as psyqo's sendChain() will send it (nugget/psyqo/src/gpu.cpp): the end marker is only written
+into the tail node at send time, so the walk stops at psyqo's m_chainTail (TAIL, its size word TAILCOUNT =
+m_chainTailCount); link words carry flags (bit 23: a big node, bit 0: the next node is oversized, its size >> 4),
+and the head's oversized flag is m_chainHeadOversized. Mania reuses one arena every frame (ps1/gpu_chain.cpp), so a walk
+that ignored the tail ran on through the last frame's leftover words.
+Prints the frame's total (ticks, hblanks), the split per primitive kind (and per CLUT reload), the N most expensive
+primitives, and a SUM line: GPU hblanks, pixels drawn (fills apart), overdraw (those pixels / 320 x 240),
+primitives, chain words."""
 import struct, sys
 from collections import defaultdict
 
@@ -25,25 +35,46 @@ def word(addr):
     return struct.unpack_from('<I', ram, off)[0] if off + 4 <= len(ram) else 0
 
 
-# walk the linked list: header = count << 24 | next (0xFFFFFF = end)
+tail = int(args[2], 0) & 0x7FFFFC if len(args) > 2 else None
+tail_count = (int(args[3], 0) >> 24) if len(args) > 3 else None
+oversized = len(args) > 4 and int(args[4], 0) != 0
+
+# walk the linked list: header = count << 24 | flags | next (0xFFFFFF = end)
 words = []
-node, nodes, seen = head & 0xFFFFFF, 0, set()
-while node != 0xFFFFFF and nodes < 200000:
+node, nodes, seen = head & 0x7FFFFC, 0, set()
+while nodes < 200000:
     if node in seen:
         print('chain loops at %06x' % node)
         break
     seen.add(node)
     h = word(0x80000000 | node)
-    cnt, nxt = h >> 24, h & 0xFFFFFF
+    cnt = h >> 24
+    last = tail is not None and node == tail
+    if last:
+        cnt = tail_count
+    if oversized:
+        cnt <<= 4
     for i in range(cnt):
         words.append(word(0x80000000 | node + 4 + 4 * i))
-    node, nodes = nxt, nodes + 1
+    nodes += 1
+    nxt = h & 0xFFFFFF
+    if last or nxt == 0xFFFFFF:
+        break
+    oversized = bool(nxt & 0x800000) and bool(nxt & 1)
+    node = nxt & 0x7FFFFC
+if tail is not None and node != tail:
+    print('warning: the walk ended at %06x, not at the tail %06x' % (node, tail))
+if '--dump-words' in opts:
+    open(opts[opts.index('--dump-words') + 1], 'wb').write(struct.pack('<%dI' % len(words), *words))
 
 # GP0 state
+e1 = 0                # the last GP0(E1h) word (texpage, flip bits)
 tex_mode = 0          # E1 bits 7-8: 0 = 4-bit, 1 = 8-bit, 2 = 15-bit
 semi_mode = 0
 check_mask = False
-area = (0, 0, 1023, 511)
+# psyqo sets the drawing area and offset outside the chain, at every flip (nugget/psyqo/src/gpu.cpp getScissor):
+# (0, 0)-(width, height) relative to the frame's buffer; the chain's coordinates are relative to that offset.
+area = (0, 0, 320, 240)
 offset = (0, 0)
 clut_reg, clut_8 = None, False
 
@@ -178,11 +209,12 @@ while i < n:
                 clut_reload(clutw, tex_mode == 1)
         if semi or check_mask:
             per += (dw + 1) // 2
-        t = 16 + per * dh
+        t = 16 + per * dh if dw and dh else 0  # 9t (MA-178): a rectangle wholly outside the screen is not drawn
         kind = 'rect%s%s%s' % (' textured %s' % ['4-bit', '8-bit', '15-bit', '15-bit'][tex_mode] if textured else ' flat',
                                ' semi' if semi else '', ' wide' if textured and dw > 128 else '')
         cost[kind] += t; count[kind] += 1; pixels[kind] += dw * dh
-        items.append((t, kind, '%dx%d at %d,%d' % (rw, rh, x, y)))
+        items.append((t, kind, '%dx%d at %d,%d' % (rw, rh, x, y) +
+                      (' tpage=%04x uv|clut=%08x' % (e1 & 0x3FFF, words[i + 2]) if textured else '')))
         i = k
         continue
     if op == 0x80:  # VRAM copy
@@ -202,6 +234,7 @@ while i < n:
         continue
     if op == 0xE1:
         tex_mode, semi_mode = (w0 >> 7) & 3, (w0 >> 5) & 3
+        e1 = w0
     elif op == 0xE3:
         area = (w0 & 0x3FF, (w0 >> 10) & 0x1FF, area[2], area[3])
     elif op == 0xE4:
@@ -217,6 +250,10 @@ print('chain: %d nodes, %d words; GPU %d ticks = %d cycles = %.1f hblanks (DuckS
     nodes, len(words), total, total // 2, total / 2 / HBL_CYCLES))
 for k, v in sorted(cost.items(), key=lambda kv: -kv[1]):
     print('  %-34s %6.1f hbl  %5d prims  %7d px' % (k, v / 2 / HBL_CYCLES, count[k], pixels[k]))
+drawn = sum(v for k, v in pixels.items() if k != 'fill')
+prims = sum(v for k, v in count.items() if not k.startswith('clut'))
+print('SUM gpu_hbl=%.1f px=%d overdraw=%.2f fill_px=%d prims=%d words=%d' % (
+    total / 2 / HBL_CYCLES, drawn, drawn / 76800.0, pixels.get('fill', 0), prims, len(words)))
 print('most expensive:')
 for t, k, d in sorted(items, reverse=True)[:top]:
     print('  %6.2f hbl  %-28s %s' % (t / 2 / HBL_CYCLES, k, d))
