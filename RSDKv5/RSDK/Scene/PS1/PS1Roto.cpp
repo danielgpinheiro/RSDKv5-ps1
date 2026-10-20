@@ -29,6 +29,20 @@ struct PS1RotoPt {
 };
 
 inline int16 PS1RotoClamp(int32 v) { return (int16)(v < -1000 ? -1000 : v > 1000 ? 1000 : v); }
+// 9u: (int32)(((int64)n << 16) / d) for d > 0, without libgcc's 64-bit divide (MA-185: __divdi3 was the resident's only
+// user of it): |n| / d in hardware, then the 16 low quotient bits by restoring division (r < d <= 2^31 - 1: 2r fits);
+// truncated toward zero and wrapped to 32 bits as the int64 version (tools/host/roto_div_check.cpp)
+inline int32 PS1DivShl16(int32 n, int32 d)
+{
+    uint32 an = n < 0 ? 0u - (uint32)n : (uint32)n, ud = (uint32)d;
+    uint32 q = an / ud, r = an % ud;
+    for (int32 i = 0; i < 16; ++i) {
+        r <<= 1, q <<= 1;
+        if (r >= ud)
+            r -= ud, q |= 1;
+    }
+    return (int32)(n < 0 ? 0u - q : q);
+}
 
 // A row of corners: layer points (qx0 + 16 i texels, qy), i < count (16.16 texels), to screen points. Along the row the
 // depth and along values step by constants (a tile is 16 << 16, >> 12 = 256 units) and the line pair walks one way
@@ -235,7 +249,7 @@ __attribute__((noinline, optimize("O2"))) void RSDK::PS1RotoTileDraw(TileLayer *
         bool sw = p[1] > q[1];
         E[k].px = sw ? q[0] : p[0], E[k].py = sw ? q[1] : p[1], E[k].qx = sw ? p[0] : q[0], E[k].qy = sw ? p[1] : q[1];
         int32 dy = E[k].qy - E[k].py;
-        E[k].slope = dy > 0 ? (int32)(((int64)(E[k].qx - E[k].px) << 16) / dy) : 0; // four divides a layer
+        E[k].slope = dy > 0 ? PS1DivShl16(E[k].qx - E[k].px, dy) : 0; // four divides a layer
     }
     int32 minY = V[0][1], maxY = V[0][1];
     for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
