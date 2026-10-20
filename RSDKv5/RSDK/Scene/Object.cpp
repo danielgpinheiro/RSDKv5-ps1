@@ -422,12 +422,19 @@ namespace
 {
 bool s_camUnionOk = false;
 int32 s_camMinX, s_camMinY;
+// 9u.7: the union is relative to camera 0's position (HCZ2, 28,000 px wide, three cameras, and SPZ1's second half had
+// cameras past the absolute bounds): with d = x - origin and e = camera - origin in the bounds above (|e| < 2^30,
+// d in [-2^30, 2^30)), stock's x - camera == d - e without wrapping, so the proof holds for d and e. The origin folds
+// into the constants: minX is stored as origin + min(e - ox) (mod 2^32), the validity test adds 2^30 - origin.
+// s_camAbs: camera 0 inside +-2^30 (the sleeping groups' margins assume it; with one camera)
+uint32 s_camVX = 0x40000000u, s_camVY = 0x40000000u;
+bool s_camAbs = true;
 // 7.4: one camera: ACTIVE_RBOUNDS slots (the UFO stages' rings and spheres: ~400) decided in the scan with stock's test
 bool s_camOne = false;
 int32 s_camX, s_camY, s_camOX, s_camOY;
-// 9q: cameras the union can't take (a position or offset past the union's +-16,384 px: SPZ1, 24,000 px wide, two
-// cameras, from x 16,384 on): the scan settles ACTIVE_BOUNDS slots with stock's own test per camera, in its int32
-// arithmetic (up to PS1_EXACT_CAMS cameras)
+// 9q: cameras the union can't take (since 9u.7: a camera 16,384 px or more from camera 0, or an offset past 4,096 px):
+// the scan settles ACTIVE_BOUNDS slots with stock's own test per camera, in its int32 arithmetic (up to PS1_EXACT_CAMS
+// cameras)
 #define PS1_EXACT_CAMS 4
 bool s_camExact = false;
 int32 s_exN;
@@ -446,10 +453,13 @@ void PS1CameraUnion(bool passStart = false)
     s_camGen = ps1CameraGen;
     s_camUnionOk = cameraCount > 0;
     s_camExact   = false;
+    const uint32 orgX = (uint32)cameras[0].position.x, orgY = (uint32)cameras[0].position.y;
+    s_camAbs = PS1Small((int32)orgX, 0x3FFFFFFF) && PS1Small((int32)orgY, 0x3FFFFFFF);
     int32 minX = 0, maxX = 0, minY = 0, maxY = 0;
     for (int32 s = 0; s < cameraCount; ++s) {
         CameraInfo *c = &cameras[s];
-        if (!PS1Small(c->position.x, 0x3FFFFFFF) || !PS1Small(c->position.y, 0x3FFFFFFF) || !PS1Small(c->offset.x, 0x10000000)
+        const int32 ex = (int32)((uint32)c->position.x - orgX), ey = (int32)((uint32)c->position.y - orgY);
+        if (!PS1Small(ex, 0x3FFFFFFF) || !PS1Small(ey, 0x3FFFFFFF) || !PS1Small(c->offset.x, 0x10000000)
             || !PS1Small(c->offset.y, 0x10000000)) {
             s_camUnionOk = false;
             if (cameraCount <= PS1_EXACT_CAMS) { // 9q
@@ -462,8 +472,8 @@ void PS1CameraUnion(bool passStart = false)
             }
             return;
         }
-        int32 x0 = c->position.x - c->offset.x, x1 = c->position.x + c->offset.x;
-        int32 y0 = c->position.y - c->offset.y, y1 = c->position.y + c->offset.y;
+        int32 x0 = ex - c->offset.x, x1 = ex + c->offset.x;
+        int32 y0 = ey - c->offset.y, y1 = ey + c->offset.y;
         if (!s || x0 < minX)
             minX = x0;
         if (!s || x1 > maxX)
@@ -473,7 +483,8 @@ void PS1CameraUnion(bool passStart = false)
         if (!s || y1 > maxY)
             maxY = y1;
     }
-    s_camMinX = minX, s_camMinY = minY;
+    s_camMinX = (int32)(orgX + (uint32)minX), s_camMinY = (int32)(orgY + (uint32)minY);
+    s_camVX = 0x40000000u - orgX, s_camVY = 0x40000000u - orgY;
     s_camW = (uint32)maxX - (uint32)minX, s_camH = (uint32)maxY - (uint32)minY;
     s_camOne = cameraCount == 1;
     if (s_camOne)
@@ -719,13 +730,10 @@ void PS1SleepCheck(uint32 g)
 PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
 {
     uint32 s = (uint32)(p - objectEntityPtr);
-    if (!s_camUnionOk || !s_camOne) // (stock decides: every sleeping group wakes, entities may move meanwhile)
+    if (!s_camUnionOk || !s_camOne || !s_camAbs) // (stock decides: every sleeping group wakes, entities may move meanwhile)
         for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
     if (!s_camUnionOk && s_camExact) { // 9q: cameras past the union's range: stock's ACTIVE_BOUNDS test here
         const int32 n = s_exN;
-        const int32 c1 = n > 1 ? 1 : 0; // one camera: tested twice (the same answer)
-        const uint32 x0 = s_exX[0], y0 = s_exY[0], ox0 = s_exOX[0], oy0 = s_exOY[0];
-        const uint32 x1 = s_exX[c1], y1 = s_exY[c1], ox1 = s_exOX[c1], oy1 = s_exOY[c1];
         for (; p < pend; ++p, ++s) {
             PS1_LIVE_SKIP();
             EntityBase *ent = *p;
@@ -734,28 +742,8 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
             if (cls) {
                 if (active == ACTIVE_BOUNDS) {
                     // per camera: abs(position - camera) <= updateRange + offset on both axes, each in int32 as stock
-                    // (wrapping; abs of INT_MIN stays negative, as libc's); one or two cameras (a zone: the player's
-                    // and the Camera object's) from registers
+                    // (wrapping; abs of INT_MIN stays negative, as libc's)
                     const uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
-                    if (n <= 2) {
-                        int32 dx = (int32)(x - x0);
-                        dx       = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
-                        if (dx <= (int32)(rx + ox0)) {
-                            int32 dy = (int32)((uint32)ent->position.y - y0);
-                            dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
-                            if (dy <= (int32)((uint32)ent->updateRange.y + oy0))
-                                return p;
-                        }
-                        dx = (int32)(x - x1);
-                        dx = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
-                        if (dx <= (int32)(rx + ox1)) {
-                            int32 dy = (int32)((uint32)ent->position.y - y1);
-                            dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
-                            if (dy <= (int32)((uint32)ent->updateRange.y + oy1))
-                                return p;
-                        }
-                    }
-                    else
                     for (int32 c = 0; c < n; ++c) {
                         int32 dx = (int32)(x - s_exX[c]);
                         dx       = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
@@ -797,8 +785,8 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
         }
         return p;
     }
-    const uint32 minX = (uint32)s_camMinX, minY = (uint32)s_camMinY, w = s_camW, h = s_camH;
-    const bool sleepOn = s_sleep && s_camOne;
+    const uint32 minX = (uint32)s_camMinX, minY = (uint32)s_camMinY, w = s_camW, h = s_camH, vx = s_camVX, vy = s_camVY;
+    const bool sleepOn = s_sleep && s_camOne && s_camAbs;
     if (sleepOn && (s_camOX != s_sleepOX || s_camOY != s_sleepOY)) {
         for (uint32 i = 0; i < sizeof(ps1SleepBits) / 4; ++i) ps1SleepBits[i] = 0;
         s_sleepOX = s_camOX, s_sleepOY = s_camOY;
@@ -835,11 +823,11 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                 // not empty; an empty one (negative offsets or ranges) answers "inside", which leaves it to the stock loop.
                 // 3.0g: outside on x (x and rx valid) is out of range for every camera whatever y is (stock needs both
                 // axes inside for one camera), so y and its range are loaded only for the slots inside on x
-                if ((int32)(x + 0x40000000u) < 0 || (rx + 0x10000000u) >= 0x20000000u)
+                if ((int32)(x + vx) < 0 || (rx + 0x10000000u) >= 0x20000000u)
                     PS1_SCAN_RET();
                 if (x - minX + rx <= w + 2 * rx) {
                     uint32 y = (uint32)ent->position.y, ry = (uint32)ent->updateRange.y;
-                    if ((int32)(y + 0x40000000u) < 0 || (ry + 0x10000000u) >= 0x20000000u || y - minY + ry <= h + 2 * ry)
+                    if ((int32)(y + vy) < 0 || (ry + 0x10000000u) >= 0x20000000u || y - minY + ry <= h + 2 * ry)
                         PS1_SCAN_RET();
                 }
             }
@@ -847,7 +835,7 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                 // 9u: stock tests x only (|x - cx| <= rx + ox for some camera): outside the union on x (the same test as
                 // ACTIVE_BOUNDS' first axis, same validity bounds) is out of range for every camera; inside, stock decides
                 // (PSZ1's 215 crates each went back to the pass for stock's switch)
-                if ((int32)(x + 0x40000000u) < 0 || (rx + 0x10000000u) >= 0x20000000u || x - minX + rx <= w + 2 * rx)
+                if ((int32)(x + vx) < 0 || (rx + 0x10000000u) >= 0x20000000u || x - minX + rx <= w + 2 * rx)
                     PS1_SCAN_RET();
             }
             else if (active == ACTIVE_RBOUNDS && s_camOne) {
