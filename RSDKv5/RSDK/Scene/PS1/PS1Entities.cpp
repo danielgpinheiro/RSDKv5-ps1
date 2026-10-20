@@ -1274,6 +1274,7 @@ void RSDK::PS1DormantUpdate()
     // the cameras' boxes: stock's range test |p - c| <= range + offset, grown by the margins (16.16, saturated)
     s_dCams      = cameraCount < PS1_DORMANT_CAMERAS ? cameraCount : PS1_DORMANT_CAMERAS;
     int32 bandX0 = 0x7FFFFFFF, bandX1 = -0x7FFFFFFF - 1;
+    int32 bandY0 = 0x7FFFFFFF, bandY1 = -0x7FFFFFFF - 1; // 9u: the same on y (a record outside it fails every box)
     for (int32 c = 0; c < s_dCams; ++c) {
         int32 cx = cameras[c].position.x, cy = cameras[c].position.y;
         for (int32 b = 0; b < 2; ++b) {
@@ -1288,6 +1289,10 @@ void RSDK::PS1DormantUpdate()
             bandX0 = SatAdd(s_dBoxC[c][0], -s_dRange);
         if (SatAdd(s_dBoxC[c][1], s_dRange) > bandX1)
             bandX1 = SatAdd(s_dBoxC[c][1], s_dRange);
+        if (SatAdd(s_dBoxC[c][2], -s_dRange) < bandY0)
+            bandY0 = SatAdd(s_dBoxC[c][2], -s_dRange);
+        if (SatAdd(s_dBoxC[c][3], s_dRange) > bandY1)
+            bandY1 = SatAdd(s_dBoxC[c][3], s_dRange);
     }
 
     DormReturn(s_dBoxR);
@@ -1301,7 +1306,10 @@ void RSDK::PS1DormantUpdate()
     while (s_dHi > s_dLo && s_dRec[s_dHi - 1].x > bandX1) --s_dHi;
     for (int32 i = s_dLo; i < s_dHi; ++i) {
         DormRec *r = &s_dRec[i];
-        if ((r->slot & PS1_DORMANT_GONE) || !InBoxes(s_dBoxC, s_dCams, r->x, r->y, s_dUnique[r->unique]->range)
+        // 9u: y outside the band grown by the largest range (s_dRange) fails InBoxes for every camera (InBoxes' y tests with
+        // r <= s_dRange): passed over before the unique's range is loaded (tall acts: most of the x band is far on y)
+        if ((r->slot & PS1_DORMANT_GONE) || r->y < bandY0 || r->y > bandY1
+            || !InBoxes(s_dBoxC, s_dCams, r->x, r->y, s_dUnique[r->unique]->range)
             || !PS1EntityIsGhost(objectEntityPtr[r->slot]))
             continue;
         int32 band = s_dBandK[s_dUnique[r->unique]->spec];

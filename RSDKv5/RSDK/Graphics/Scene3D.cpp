@@ -350,6 +350,39 @@ void RSDK::MatrixRotateXYZ(Matrix *matrix, int16 rotationX, int16 rotationY, int
     matrix->values[3][2] = 0;
     matrix->values[3][3] = 0x100;
 }
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9u: stock's cofactor formulas from a table (6.3 KB of unrolled soft-double code -> ~0.5 KB; no Mania game code
+// calls it, the function table keeps it linked). Each cofactor is its six signed triple products evaluated in stock's
+// order: ((m[a] * m[b]) * m[c]), the first negated when stock writes it with a leading minus (exact in IEEE: (-a) * b =
+// -(a * b)), then added / subtracted left to right: the same double operations, so the same results
+// (tools/host/minv_check.cpp: identical to the stock code on 4,000,000 matrices)
+static const uint16 ps1InvTerms[96] = { 0x0FA5, 0x1EB5, 0x1F69, 0x0E79, 0x0B6D, 0x1A7D, 0x1FA1, 0x0EB1, 0x0F29, 0x1E39, 0x1B2D, 0x0A3D, 0x0F61, 0x1E71, 0x1F25, 0x0E35, 0x072D, 0x163D, 0x1B61, 0x0A71, 0x0B25, 0x1A35, 0x1729, 0x0639, 0x1FA4, 0x0EB4, 0x0F68, 0x1E78, 0x1B6C, 0x0A7C, 0x0FA0, 0x1EB0, 0x1F28, 0x0E38, 0x0B2C, 0x1A3C, 0x1F60, 0x0E70, 0x0F24, 0x1E34, 0x172C, 0x063C, 0x0B60, 0x1A70, 0x1B24, 0x0A34, 0x0728, 0x1638, 0x0F94, 0x1DB4, 0x1F58, 0x0D78, 0x0B5C, 0x197C, 0x1F90, 0x0DB0, 0x0F18, 0x1D38, 0x1B1C, 0x093C, 0x0F50, 0x1D70, 0x1F14, 0x0D34, 0x071C, 0x153C, 0x1B50, 0x0970, 0x0B14, 0x1934, 0x1718, 0x0538, 0x1E94, 0x0DA4, 0x0E58, 0x1D68, 0x1A5C, 0x096C, 0x0E90, 0x1DA0, 0x1E18, 0x0D28, 0x0A1C, 0x192C, 0x1E50, 0x0D60, 0x0E14, 0x1D24, 0x161C, 0x052C, 0x0A50, 0x1960, 0x1A14, 0x0924, 0x0618, 0x1528 };
+void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
+{
+    double inv[16], det;
+    double m[16];
+    for (int32 y = 0; y < 4; ++y)
+        for (int32 x = 0; x < 4; ++x) m[(y << 2) + x] = matrix->values[y][x] / 256.0;
+    const uint16 *t = ps1InvTerms;
+    for (int32 k = 0; k < 16; ++k) {
+        double acc = 0;
+        for (int32 j = 0; j < 6; ++j, ++t) {
+            double p = m[*t & 15] * m[(*t >> 4) & 15] * m[(*t >> 8) & 15];
+            if (!j)
+                acc = (*t & 0x1000) ? -p : p;
+            else
+                acc = (*t & 0x1000) ? acc - p : acc + p;
+        }
+        inv[k] = acc;
+    }
+    det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (det == 0)
+        return;
+    det = 1.0 / det;
+    for (int32 i = 0; i < 0x10; ++i) inv[i] = (int32)((inv[i] * det) * 256);
+    for (int32 i = 0; i < 0x10; ++i) dest->values[i / 4][i % 4] = (int32)inv[i];
+}
+#else
 void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
 {
     double inv[16], det;
@@ -402,6 +435,7 @@ void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
     for (int32 i = 0; i < 0x10; ++i) inv[i] = (int32)((inv[i] * det) * 256);
     for (int32 i = 0; i < 0x10; ++i) dest->values[i / 4][i % 4] = (int32)inv[i];
 }
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS1
 // docs/32 7.3: Scene3D on the GTE (the Dreamcast port's approach: meshes with baked lighting, transformed in hardware).

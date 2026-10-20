@@ -746,12 +746,14 @@ void PS1ClutUploadAll()
 // after VRAM changed outside the chains (g_ps1VramGen: loads, immediate uploads), after a new CLUT set, and after a frame
 // that faded them. A FillScreen needs every CLUT at the frame's head, before the draws that used them (3.5a): a slot
 // chained at the frame start takes the full set then, built from the same copy and faded with the rest.
-#define PS1_CLUT_MASKS 128 // CLUTs whose palette buckets are known (more: always uploaded)
-uint16 s_palRaw[256];      // bank 0 as the CLUTs in VRAM show it (RGB565)
+#define PS1_CLUT_MASKS 256 // CLUTs whose palette buckets are known (more: always checked entry by entry). 9t: 128 -> 256
+                           // (every scene: SPZ1 has 237); the CLUTs past 128 cost ~28 hblanks a frame in SPZ1's recheck
+uint16 s_palRaw[256] __attribute__((aligned(4))); // bank 0 as the CLUTs in VRAM show it (RGB565)
 bool s_palRow0Swapped = false; // 9f: row 240 holds a per-draw copy (PS1BankClut, bank 0) until restored
 bool s_clutRow0Full    = false; // 9f: the next frame start uploads row 240 whole
 uint16 s_pal16[256];       // the same as PS1 colours; [0] = 0 (transparent)
-uint32 s_clutBuckets[PS1_CLUT_MASKS][2]; // per CLUT (tiles, then atlas): bit b of word w = an index in [128w + 4b, + 4) (3.3j)
+uint32 s_clutBuckets[PS1_CLUT_MASKS]; // per CLUT (tiles, then atlas): bit b = an index in [8b, 8b + 8) (3.3j; 9t: one word
+                                     // a CLUT, every CLUT: the same 1 KB as 128 x two words of 4-entry buckets)
 const void *s_clutSetTiles = NULL, *s_clutSetAtlas = NULL;
 int32 s_clutSetCounts   = -1;
 uint32 s_clutGen        = 0;
@@ -778,12 +780,13 @@ volatile uint32 g_ps1ClutTestSplice  = 0; // GDB test: 1 = a fade doesn't make t
                                           // every fading frame takes the splice (exact only while every frame fades)
 }
 
-inline void PS1ClutBucketsOf(const uint8 *map, uint32 *m)
+inline uint32 PS1ClutBucketsOf(const uint8 *map)
 {
-    m[0] = m[1] = 0;
+    uint32 m = 0;
     for (int32 i = 1; i < 16; ++i)
         if (map[i])
-            m[map[i] >> 7] |= 1u << ((map[i] >> 2) & 31);
+            m |= 1u << (map[i] >> 3);
+    return m;
 }
 
 // A 4-bit CLUT's 16 entries from the copy
@@ -807,7 +810,7 @@ void PS1ClutUploadChanged()
     uint16 row[16];
     if ((s_clutFullNext && !g_ps1ClutTestSplice) || g_ps1VramGen != s_clutGen || maskColor != s_clutMask || cl != s_clutSetTiles || ac != s_clutSetAtlas || (nt | na << 16) != s_clutSetCounts) {
         for (int32 i = 0; i < 256; ++i) s_palRaw[i] = fullPalette[0][i], s_pal16[i] = i ? PS1Colour(s_palRaw[i]) : 0;
-        for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map, s_clutBuckets[c]);
+        for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) s_clutBuckets[c] = PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map);
         s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen, s_clutMask = maskColor;
         s_clutFullNext = false;
         for (int32 c = 0; c < nt; ++c) PS1ClutRowFrom(row, cl[c].map), PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
@@ -827,37 +830,58 @@ void PS1ClutUploadChanged()
         if (s_regreyBank)
             PS1ClutRow(s_pal16, 256, 0, 240);
     }
-    uint32 changed[2] = { 0, 0 };
-    uint32 exact[8]   = { 0, 0, 0, 0, 0, 0, 0, 0 }; // 9.4c: the entries themselves (a bucket holds 4)
+    uint32 changed = 0;
+    // 9.4c / 9t: the entries themselves (a bucket holds 4), as one byte each in the scratchpad (1-cycle loads; free here:
+    // the layer drawer and the other users only hold it inside their own calls) for the recheck below
+    volatile uint8 *const chg = (volatile uint8 *)0x1F800000;
     int32 lo = 256, hi = -1;
-    for (int32 i = 1; i < 256; ++i) {
+    auto note = [&](int32 i) {
         uint16 c = fullPalette[0][i];
         if (c != s_palRaw[i]) {
+            if (hi < 0)
+                for (int32 k = 0; k < 64; ++k) ((volatile uint32 *)chg)[k] = 0;
             s_palRaw[i] = c, s_pal16[i] = PS1Colour(c);
-            changed[i >> 7] |= 1u << ((i >> 2) & 31);
-            exact[i >> 5] |= 1u << (i & 31);
+            changed |= 1u << (i >> 3);
+            chg[i] = 1;
             if (i < lo)
                 lo = i;
             hi = i;
         }
+    };
+    const uint32 *fp = (const uint32 *)fullPalette[0], *pr = (const uint32 *)s_palRaw;
+    if (!((uintptr_t)fp & 3)) { // 9t: two entries a compare (index 0, never compared, only costs word 0 a second look)
+        for (int32 w = 0; w < 128; ++w)
+            if (fp[w] != pr[w]) {
+                if (w)
+                    note(2 * w);
+                note(2 * w + 1);
+            }
     }
-    if (!(changed[0] | changed[1])) {
+    else
+        for (int32 i = 1; i < 256; ++i) note(i);
+    if (!changed) {
         if (s_clutRow0Full)
             PS1ClutRow(s_pal16, 256, 0, 240), s_clutRow0Full = false;
         return;
     }
     int32 rows = 1;
-    for (int32 c = 0; c < nt + na; ++c) {
-        if (c < PS1_CLUT_MASKS && !((s_clutBuckets[c][0] & changed[0]) | (s_clutBuckets[c][1] & changed[1])))
+    const uint32 *bk = s_clutBuckets;
+    for (int32 c = 0, n = nt + na; c < n; ++c, ++bk) {
+        if (c < PS1_CLUT_MASKS && !(*bk & changed))
             continue;
         const PS1TileClut *t = c < nt ? &cl[c] : NULL;
         const PS1AtlasClut *a = c < nt ? NULL : &ac[c - nt];
         // 9.4c: only a CLUT one of whose own entries changed (SPZ1: ~129 rows a frame from the buckets' neighbours); an
         // unchanged one already holds these colours in VRAM
         const uint8 *map = t ? t->map : a->map;
-        bool hit = false;
-        for (int32 i = 1; i < 16 && !hit; ++i)
-            hit = map[i] && ((exact[map[i] >> 5] >> (map[i] & 31)) & 1);
+        // the map as 8 halfwords (a tile CLUT table may be only 2-byte aligned), every entry looked up (entry 0 is never
+        // marked: no test for it)
+        const uint16 *m = (const uint16 *)map;
+        uint32 hit      = chg[m[0] >> 8];
+        for (int32 k = 1; k < 8; ++k) {
+            uint32 hw = m[k];
+            hit |= chg[hw & 255] | chg[hw >> 8];
+        }
         if (!hit) {
             g_ps1ClutRowsSkipped = g_ps1ClutRowsSkipped + 1;
             continue;
@@ -1383,25 +1407,26 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
     ScanlineInfo *sl    = &scanlines[y1];
-    for (int32 y = y1; y < y2; ++y) // 7b.7: the frame's extra bank's CLUTs, before any span opens
-        if (gfxLineBuffer[y]) {
-            PS1BankTiles(gfxLineBuffer[y]);
-            break;
-        }
     // 3.3i: every line of [y1, y2) on one palette bank (GHZ: no water): the bands skip the per-line bank checks. 3.3k:
-    // the answer is kept until gfxLineBuffer is written again (SetActivePalette, the scene load: ps1LineBankGen)
+    // the answer is kept until gfxLineBuffer is written again (SetActivePalette, the scene load: ps1LineBankGen); 9u: so is
+    // the first line on a bank other than 0 (it was scanned for every layer, every frame: ~6 hblanks in SPZ1)
     static uint32 s_oneBankGen = 0xFFFFFFFF;
-    static int32 s_oneBankY1 = -1, s_oneBankY2 = -1;
+    static int32 s_oneBankY1 = -1, s_oneBankY2 = -1, s_bankLine = -1;
     static bool s_oneBank = false;
     if (ps1LineBankGen != s_oneBankGen || y1 != s_oneBankY1 || y2 != s_oneBankY2) {
-        s_oneBank = true;
-        for (int32 y = y1 + 1; y < y2; ++y)
-            if (gfxLineBuffer[y] != gfxLineBuffer[y1]) {
+        s_oneBank = true, s_bankLine = -1;
+        for (int32 y = y1; y < y2; ++y) {
+            if (gfxLineBuffer[y] != gfxLineBuffer[y1])
                 s_oneBank = false;
+            if (gfxLineBuffer[y] && s_bankLine < 0)
+                s_bankLine = y;
+            if (!s_oneBank && s_bankLine >= 0)
                 break;
-            }
+        }
         s_oneBankGen = ps1LineBankGen, s_oneBankY1 = y1, s_oneBankY2 = y2;
     }
+    if (s_bankLine >= 0) // 7b.7: the frame's extra bank's CLUTs, before any span opens
+        PS1BankTiles(gfxLineBuffer[s_bankLine]);
     bool oneBank = s_oneBank;
     if (layer->ps1Uniform) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the

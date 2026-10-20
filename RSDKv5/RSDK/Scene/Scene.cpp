@@ -1581,6 +1581,34 @@ void RSDK::ProcessParallaxAutoScroll()
 #define PS1_LS_BASE(layer) ((layer)->lineScroll)
 #define PS1_LS_STEP(layer) (1)
 #endif
+#if RETRO_PLATFORM == RETRO_PS1
+// docs/32 9u: an H-scroll layer's per-line fill (below) with everything in registers: stock's loop reloads
+// layer->scrollInfo and currentScreen on every line (the scanline stores may alias them) at -Os (SPZ1: ~20 hblanks a
+// frame for its deforming layers). The same scanline values: x = the line's scroll info's tilePos (+ the deformation when
+// that info deforms), y = the layer row, rows wrapping at the layer's height. scrollPos stays below pixelHeight (<= 32767).
+__attribute__((optimize("O2"))) static ScanlineInfo *PS1FillHScrollLines(ScanlineInfo *scanline, int32 n, const ScrollInfo *si,
+                                                                       const uint8 *&lineScrollPtr, const uint8 *lsBase,
+                                                                       int32 lsStep, const int32 *deform, int32 &scrollPos,
+                                                                       int32 pixelHeight)
+{
+    int32 sp         = scrollPos;
+    const uint8 *ls  = lineScrollPtr;
+    for (int32 i = 0; i < n; ++i, ++scanline) {
+        const ScrollInfo *info = &si[*ls];
+        int32 x                = info->tilePos;
+        if (info->deform)
+            x += TO_FIXED(deform[i]);
+        scanline->position.x = x;
+        scanline->position.y = TO_FIXED(sp);
+        if (++sp == pixelHeight)
+            ls = lsBase, sp = 0;
+        else
+            ls += lsStep;
+    }
+    scrollPos = sp, lineScrollPtr = ls;
+    return scanline;
+}
+#endif
 void RSDK::ProcessParallax(TileLayer *layer)
 {
     if (!layer->xsize || !layer->ysize)
@@ -1645,6 +1673,21 @@ void RSDK::ProcessParallax(TileLayer *layer)
             const int32 lsStep = PS1_LS_STEP(layer);
             uint8 *lineScrollPtr = lsBase + scrollPos * lsStep;
 
+#if RETRO_PLATFORM == RETRO_PS1
+            if (pixelHeight <= 0x7FFF) { // 9u (PS1FillHScrollLines): the two loops below, as stock computes them
+                int32 sp            = scrollPos;
+                const uint8 *ls     = lineScrollPtr;
+                int32 above         = currentScreen->waterDrawPos, total = currentScreen->size.y;
+                const int32 *deform = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
+                // (stock's counts: the first loop i < waterDrawPos, the second waterDrawPos <= i < size.y)
+                scanline = PS1FillHScrollLines(scanline, above > 0 ? above : 0, layer->scrollInfo, ls, lsBase, lsStep, deform, sp,
+                                               pixelHeight);
+                deform   = &layer->deformationDataW[(sp + (uint16)layer->deformationOffsetW) & 0x1FF];
+                PS1FillHScrollLines(scanline, total > above ? total - above : 0, layer->scrollInfo, ls, lsBase, lsStep, deform, sp,
+                                    pixelHeight);
+                break;
+            }
+#endif
             // Above water
             int32 *deformationData = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
             for (int32 i = 0; i < currentScreen->waterDrawPos; ++i) {
@@ -1765,8 +1808,15 @@ void RSDK::ProcessParallax(TileLayer *layer)
             const int32 lsStep = PS1_LS_STEP(layer);
             uint8 *lineScrollPtr = lsBase + scrollPos * lsStep;
 
+#if RETRO_PLATFORM == RETRO_PS1 && !PS1_DEBUG_BIGRAM
+            // 9u: PS1DrawLayerBasic reads only line clipBound_Y1 (a scanline-callback layer never comes here): the lines
+            // after it are not filled (SPZ1: ~7 hblanks a frame)
+            const int32 ps1FillEnd = currentScreen->clipBound_Y1 + 1;
+#else
+            const int32 ps1FillEnd = 0x7FFFFFFF;
+#endif
             // Above water
-            for (int32 i = 0; i < currentScreen->waterDrawPos; ++i) {
+            for (int32 i = 0; i < currentScreen->waterDrawPos && i < ps1FillEnd; ++i) {
                 scanline->position.x = layer->scrollInfo[*lineScrollPtr].tilePos;
                 scanline->position.y = TO_FIXED(scrollPos++);
 
@@ -1781,7 +1831,7 @@ void RSDK::ProcessParallax(TileLayer *layer)
             }
 
             // Under water
-            for (int32 i = currentScreen->waterDrawPos; i < currentScreen->size.y; ++i) {
+            for (int32 i = currentScreen->waterDrawPos; i < currentScreen->size.y && i < ps1FillEnd; ++i) {
                 scanline->position.x = layer->scrollInfo[*lineScrollPtr].tilePos;
                 scanline->position.y = TO_FIXED(scrollPos++);
 
