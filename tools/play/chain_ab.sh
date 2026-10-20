@@ -19,6 +19,7 @@ sha=$(git rev-parse --verify "$REF^{commit}") || exit 1
 if [ ! -d "$WT" ]; then
   git worktree add -q --detach "$WT" "$sha" || exit 1
   cp -c -R build "$WT/build" || exit 1
+  rmdir "$WT/build/boss/tree.lock" 2>/dev/null # (a lock held while cloning would be copied and never released)
 else
   git -C "$WT" checkout -q --detach "$sha" || exit 1
 fi

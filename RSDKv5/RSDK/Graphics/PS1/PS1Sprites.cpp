@@ -1607,12 +1607,33 @@ extern "C" void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int
         for (int32 i = 0; i < n; ++i, xy += 4) DrawLine(xy[0], xy[1], xy[2], xy[3], colors[i], 0x7F, INK_NONE, false);
         return;
     }
+    // 9u: PS1LineBulk + PS1Face3DSlot inline (the same range check, words and order; the two totals added once): two calls
+    // and two volatile counters a 4-pixel line were most of PSZ1's ~200 hblanks of paper lines
     const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+    uint32 drawn = 0;
     for (int32 i = 0; i < n; ++i, xy += 4) {
+        const int32 x1 = FROM_FIXED(xy[0]) - sx, y1 = FROM_FIXED(xy[1]) - sy, x2 = FROM_FIXED(xy[2]) - sx, y2 = FROM_FIXED(xy[3]) - sy;
+        if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023)
+            continue;
+        if (!s_ps1F3DBase || s_ps1F3DWpp != 3 || s_ps1F3DN == 32) {
+            PS1Face3DFlush();
+            s_ps1F3DBase = (uint32 *)PS1ChainBulkBegin(32, 3);
+            if (!s_ps1F3DBase)
+                continue; // (as PS1LineBulk: every later line asks again)
+            s_ps1F3DWpp = 3;
+        }
         const uint32 c = colors[i];
-        PS1LineBulk(FROM_FIXED(xy[0]) - sx, FROM_FIXED(xy[1]) - sy, FROM_FIXED(xy[2]) - sx, FROM_FIXED(xy[3]) - sy,
-                    (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF));
+        uint32 *w = s_ps1F3DBase + s_ps1F3DN++ * 4;
+        w[0] = 0x40000000 | (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF);
+        w[1] = (uint32)(uint16)y1 << 16 | (uint16)x1;
+        w[2] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+        ++drawn;
+#if PS1_DEBUG_BIGRAM
+        PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
+#endif
     }
+    g_ps1Face3DDrawn = g_ps1Face3DDrawn + drawn;
+    g_ps1PrimApprox  = g_ps1PrimApprox + drawn;
     PS1Face3DFlush();
 }
 // 9o: a face's edges (corner v to v + 1, the last to the first) as PS1LineBulk would write them, with the bulk's slot
