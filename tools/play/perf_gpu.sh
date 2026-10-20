@@ -2,7 +2,7 @@
 # docs/32 9f: the GPU cost of one frame's chain (DuckStation's model, tools/play/gpu_cost.py). Usage:
 # tools/play/perf_gpu.sh NAME BOOT FRAME [RIGHT_FROM]   (PCSX-Redux by default: the chain is the same in both; EMU=ds
 # works too). NOBUILD=1 reuses the current build. Output: build/perf9f/gpu_NAME.txt (its SUM line: GPU hblanks, pixels,
-# overdraw). 9t: gpu_cost.py walks to psyqo's chain tail (m_chainTail / m_chainTailCount, m_chainHeadOversized) and clips
+# overdraw). WARPX= / WARPY= (9u.8): player 1 warped there at frame 300 (FRAME after 330). 9t: gpu_cost.py walks to psyqo's chain tail (m_chainTail / m_chainTailCount, m_chainHeadOversized) and clips
 # to the 320 x 240 screen, as the RSDKv3 / v4 copies (docs/43).
 set -u
 cd "$(dirname "$0")/../.."
@@ -15,7 +15,15 @@ fi
   if [ -n "$RIGHT" ]; then
     printf 'set var g_ps1PadScript[0] = 0xFFFF\nset var g_ps1PadScript[1] = %s\nset var g_ps1PadScript[2] = 0x8\nset var g_ps1PadScript[3] = 60000\nset var g_ps1PadScriptSteps = 1\nset var g_ps1PadScriptStep = 0\n' "$RIGHT"
   fi
-  printf 'continue\nend\nbreak ps1TestStop\ncommands\nsilent\n'
+  printf 'continue\nend\n'
+  if [ -n "${WARPX:-}" ]; then # 9u.8: player 1 (invulnerable) warped to WARPX, WARPY at frame 300 (sample_at.gdb's warp)
+    printf 'break perfTick if g_ps1PerfFrames == 300 || g_ps1PerfFrames == 330\ncommands\nsilent\n'
+    printf 'set $p = (struct EntityPlayer *)RSDK::objectEntityPtr[0]\nset var $p->blinkTimer = 240\n'
+    printf 'if g_ps1PerfFrames == 300\nset var g_ps1TestBossDX = %d\nset var g_ps1TestBossDY = %d\n' "$WARPX" "${WARPY:-64}"
+    printf 'set var g_ps1TestBossWarp = 2\nset var g_ps1TestBossClass = 0xFFF0\nend\n'
+    printf 'if g_ps1PerfFrames == 330\nset var g_ps1TestBossClass = 0\nend\ncontinue\nend\n'
+  fi
+  printf 'break ps1TestStop\ncommands\nsilent\n'
   printf 'printf "HEAD %%08x %%08x %%08x %%d frame %%u\\n", (unsigned)g_ps1GPU->m_chainHead, (unsigned)g_ps1GPU->m_chainTail, (unsigned)g_ps1GPU->m_chainTailCount, (int)g_ps1GPU->m_chainHeadOversized, g_ps1PerfFrames\n'
   printf 'dump binary memory %s/gpu_%s.ram 0x80000000 0x80200000\nquit\nend\ncontinue\n' "$OUT" "$NAME"
 } > $OUT/gpu_$NAME.gdb
