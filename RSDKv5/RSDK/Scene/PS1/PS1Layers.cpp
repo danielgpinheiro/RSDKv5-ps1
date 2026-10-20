@@ -392,10 +392,15 @@ inline uint32 PS1BankTileClut(uint32 attr)
     return c < 96 ? s_copyAttr[c] : attr;
 }
 
-__attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+// 9u: Fast = a whole 16-line tile row on bank 0 (most bands): the piece's command, size and row are constants and the bank
+// lookups go, so the loop keeps its state in registers (the general version reloaded 7 values from the stack a piece)
+template <bool Fast>
+__attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
-    bool banked = bank && PS1BankReady(bank);
-    if (bank && !banked)
+    if constexpr (Fast)
+        h = TILE_SIZE, ly &= ~15, bank = 0;
+    bool banked = !Fast && bank && PS1BankReady(bank);
+    if (!Fast && bank && !banked)
         g_ps1BankTodo = g_ps1BankTodo + 1;
     uint16 tg              = PS1T();
     const uint16 *tileImage = TileTable();
@@ -484,6 +489,13 @@ __attribute__((optimize("O2"))) void DrawBandInto(PS1Emit &e, TileLayer *layer, 
     PS1_LT_ADD(1, PS1T() - tg);
     g_ps1LayerBands  = g_ps1LayerBands + 1;
     g_ps1LayerPieces = g_ps1LayerPieces + pieces;
+}
+__attribute__((always_inline)) inline void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+{
+    if (h == TILE_SIZE && !bank)
+        DrawBandIntoT<true>(e, layer, sy, h, x, ly, bank);
+    else
+        DrawBandIntoT<false>(e, layer, sy, h, x, ly, bank);
 }
 // One band in its own span (a lone band of a tile row, DrawRowBands' fallback)
 void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)

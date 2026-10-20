@@ -354,6 +354,9 @@ void RSDK::InitObjects()
 #endif
     cameraCount          = 0;
 #if RETRO_PLATFORM == RETRO_PS1
+    ++ps1CameraGen;
+#endif
+#if RETRO_PLATFORM == RETRO_PS1
     PS1ScanSleepBegin();
     // docs/32 9i: the second planned STG compaction, before the StageLoads: LoadSceneAssets leaves holes, and a StageLoad's
     // allocation that found no room at the tail forced a compaction that moved the frame tables earlier StageLoads' class
@@ -431,13 +434,16 @@ int32 s_exN;
 uint32 s_exX[PS1_EXACT_CAMS], s_exY[PS1_EXACT_CAMS], s_exOX[PS1_EXACT_CAMS], s_exOY[PS1_EXACT_CAMS];
 uint32 s_camW, s_camH; // max - min of the union, modulo 2^32
 inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
-void PS1CameraUnion()
+uint32 s_camGen = 0;
+void PS1CameraUnion(bool passStart = false)
 {
-    // 9e.2: recomputed after every update callback (one may move the camera); one camera that did not change keeps the
-    // union (D.A. Garden: ~90 callbacks a frame, ~12 hblanks)
-    if (s_camOne && s_camUnionOk && cameraCount == 1 && cameras[0].position.x == s_camX && cameras[0].position.y == s_camY
-        && cameras[0].offset.x == s_camOX && cameras[0].offset.y == s_camOY)
+    // 9e.2: asked after every update callback (one may add or clear cameras). 9u: the camera table changes during a pass
+    // only through AddCamera / ClearCameras (ps1CameraGen; the game has no other access to it, GameLink.h), the positions
+    // are copied from their targets before the passes: a pass start recomputes, a callback only after a change (OOZ2's
+    // ~200 parallax sprites with two cameras: 27 hblanks a frame)
+    if (!passStart && s_camGen == ps1CameraGen)
         return;
+    s_camGen = ps1CameraGen;
     s_camUnionOk = cameraCount > 0;
     s_camExact   = false;
     int32 minX = 0, maxX = 0, minY = 0, maxY = 0;
@@ -562,9 +568,8 @@ volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: clas
             p += adv_ - 1, s += adv_ - 1;                                                                              \
             continue;                                                                                                  \
         }                                                                                                              \
-        if (!(lw_ & 1)) {                                                                                              \
-            uint32 z_ = 1;                                                                                             \
-            while (!((lw_ >> z_) & 1)) ++z_;                                                                           \
+        if (!(lw_ & 1)) { /* 9u: the next live slot by the De Bruijn table (was a bit-by-bit walk) */                         \
+            uint32 z_ = s_ps1DeBruijn[((lw_ & (0u - lw_)) * 0x077CB531u) >> 27];                                         \
             if ((uint32)(pend - p) <= z_)                                                                              \
                 return pend;                                                                                           \
             p += z_, s += z_;                                                                                          \
@@ -947,7 +952,7 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
 PS1_HOT void PS1UpdatePass()
 {
     PS1DormantUpdate(); // 7b: dormant entities the cameras reach become entities first (PS1Entities.cpp)
-    PS1CameraUnion();
+    PS1CameraUnion(true);
 #if PS1_CHECK_LIVEBITS
     g_ps1LiveChecks = g_ps1LiveChecks + 1;
     for (int32 r = 0; r < 2; ++r)
@@ -1237,7 +1242,7 @@ PS1_HOT void PS1PausedLatePass()
 PS1_HOT void PS1FrozenUpdatePass()
 {
     PS1DormantUpdate(); // 7b
-    PS1CameraUnion();
+    PS1CameraUnion(true);
     EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
     int32 phase     = 0;
     EntityBase *ent = NULL;

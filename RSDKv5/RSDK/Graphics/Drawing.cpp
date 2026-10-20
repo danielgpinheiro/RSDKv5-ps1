@@ -167,6 +167,9 @@ GFXSurface RSDK::gfxSurface[SURFACE_COUNT];
 
 float RSDK::dpi         = 1;
 int32 RSDK::cameraCount = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+uint32 RSDK::ps1CameraGen = 0; // 9u (Drawing.hpp)
+#endif
 ScreenInfo RSDK::screens[SCREEN_COUNT];
 CameraInfo RSDK::cameras[CAMERA_COUNT];
 ScreenInfo *RSDK::currentScreen = NULL;

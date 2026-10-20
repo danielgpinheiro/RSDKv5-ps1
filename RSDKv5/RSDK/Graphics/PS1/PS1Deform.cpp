@@ -83,7 +83,9 @@ __attribute__((optimize("O2"))) void PS1DeformDraw(uint16 sheetID, int32 inkEffe
         int32 lx = s->position.x + x1 * dx;
         for (int32 x = x1; x < x2;) {
             const uint32 us = (uint32)(lx >> 16) & 127;
-            int32 px = (int32)(((int64)((255 - us) << 16)) / dx); // pixels until u reaches 255
+            // pixels until u reaches 255 (9u: a 32-bit divide: (255 - us) << 16 < 2^24 and dx > 0, the same quotient as the
+            // int64 one, which called libgcc's __divdi3 for every strip)
+            int32 px = (int32)((255 - us) << 16) / dx;
             if (px < 1)
                 px = 1;
             const int32 xe = x + px < x2 ? x + px : x2;

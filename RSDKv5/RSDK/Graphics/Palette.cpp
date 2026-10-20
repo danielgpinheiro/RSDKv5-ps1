@@ -96,6 +96,32 @@ void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int1
 
     uint32 blendA        = 0xFF - blendAmount;
     uint16 *paletteColor = &fullPalette[destBankID][startIndex];
+#if RETRO_PLATFORM == RETRO_PS1
+    // 9u (OOZ's smog fades all 256 entries every frame): the six channel products from tables in the scratchpad (free
+    // here: its users only hold it inside their own calls), built once a call: blend * (a channel's 8-bit value as
+    // GetPaletteEntry expands it) <= 255 * 252 fits 16 bits; the same sums, so the same colours. As stock: endIndex
+    // inclusive, GetPaletteEntry's uint8 index (entry 256 reads index 0)
+    {
+        uint16 *t = (uint16 *)0x1F800000; // R: A 0-31, B 32-63; G: A 64-127, B 128-191; B: A 192-223, B 224-255
+        for (int32 k = 0; k < 32; ++k)
+            t[k] = (uint16)(blendA * (uint32)(k << 3)), t[32 + k] = (uint16)(blendAmount * (k << 3)),
+            t[192 + k] = (uint16)(blendA * (uint32)(k << 3)), t[224 + k] = (uint16)(blendAmount * (k << 3));
+        for (int32 k = 0; k < 64; ++k)
+            t[64 + k] = (uint16)(blendA * (uint32)(k << 2)), t[128 + k] = (uint16)(blendAmount * (k << 2));
+        const uint16 *pa = fullPalette[srcBankA], *pb = fullPalette[srcBankB];
+        for (int32 i = startIndex; i <= endIndex; ++i, ++paletteColor) {
+            uint32 a = pa[(uint8)i], c = pb[(uint8)i];
+            int32 r = t[32 + (c >> 11)] + t[a >> 11];
+            int32 g = t[128 + ((c >> 5) & 63)] + t[64 + ((a >> 5) & 63)];
+            int32 b = t[224 + (c & 31)] + t[192 + (a & 31)];
+            uint16 v = PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8));
+            if (!destBankID && i < 0x100)
+                PS1PaletteWrite((uint8)i, v); // 9m
+            *paletteColor = v;
+        }
+        return;
+    }
+#endif
     for (int32 i = startIndex; i <= endIndex; ++i) {
         uint32 clrA = GetPaletteEntry(srcBankA, i);
         uint32 clrB = GetPaletteEntry(srcBankB, i);

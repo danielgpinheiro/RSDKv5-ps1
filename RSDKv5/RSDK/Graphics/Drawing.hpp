@@ -296,6 +296,9 @@ extern GFXSurface gfxSurface[SURFACE_COUNT];
 
 extern float dpi;
 extern int32 cameraCount;
+#if RETRO_PLATFORM == RETRO_PS1
+extern uint32 ps1CameraGen; // 9u: counts the camera table's changes (AddCamera, ClearCameras, the scene load: Object.cpp)
+#endif
 extern ScreenInfo screens[SCREEN_COUNT];
 extern CameraInfo cameras[CAMERA_COUNT];
 extern ScreenInfo *currentScreen;
@@ -345,10 +348,19 @@ inline void AddCamera(Vector2 *targetPos, int32 offsetX, int32 offsetY, bool32 w
         cameras[cameraCount].worldRelative = worldRelative;
 
         ++cameraCount;
+#if RETRO_PLATFORM == RETRO_PS1
+        ++ps1CameraGen;
+#endif
     }
 }
 
-inline void ClearCameras() { cameraCount = 0; }
+inline void ClearCameras()
+{
+    cameraCount = 0;
+#if RETRO_PLATFORM == RETRO_PS1
+    ++ps1CameraGen;
+#endif
+}
 
 #if RETRO_PLATFORM == RETRO_PS1
 void PS1ClipBoundsChanged(const ScreenInfo *screen); // PS1/PS1Sprites.cpp (docs/32 phase 13c: the GPU's drawing area)
