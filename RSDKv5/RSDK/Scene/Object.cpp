@@ -843,6 +843,13 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                         PS1_SCAN_RET();
                 }
             }
+            else if (active == ACTIVE_XBOUNDS) {
+                // 9u: stock tests x only (|x - cx| <= rx + ox for some camera): outside the union on x (the same test as
+                // ACTIVE_BOUNDS' first axis, same validity bounds) is out of range for every camera; inside, stock decides
+                // (PSZ1's 215 crates each went back to the pass for stock's switch)
+                if ((int32)(x + 0x40000000u) < 0 || (rx + 0x10000000u) >= 0x20000000u || x - minX + rx <= w + 2 * rx)
+                    PS1_SCAN_RET();
+            }
             else if (active == ACTIVE_RBOUNDS && s_camOne) {
                 // stock's test for one camera, in its int32 arithmetic (wrapping as the PC's): out of range settles here
                 int32 dx = x - s_camX, dy = ent->position.y - s_camY;
@@ -854,6 +861,14 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                 PS1_SCAN_RET();
         }
 #if PS1_CHECK_UPDATESCAN // evidence build: stock's test on every slot settled here (GDB reads the counters)
+        if (cls && active == ACTIVE_XBOUNDS) {
+            g_ps1ScanSettled = g_ps1ScanSettled + 1;
+            for (int32 s = 0; s < cameraCount; ++s)
+                if (abs(ent->position.x - cameras[s].position.x) <= ent->updateRange.x + cameras[s].offset.x) {
+                    g_ps1ScanWrong = g_ps1ScanWrong + 1;
+                    break;
+                }
+        }
         if (cls && active == ACTIVE_BOUNDS) {
             g_ps1ScanSettled = g_ps1ScanSettled + 1;
             for (int32 s = 0; s < cameraCount; ++s)
