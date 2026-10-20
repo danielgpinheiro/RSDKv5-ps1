@@ -313,6 +313,30 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             col, row = columns[cur[0]]
             place[i] = (col, row, want, cur[2] * 16 // want, cur[1] * TILE)
             cur[2] += hw
+    if folder not in EDGE_FREE_FLIPS:
+        # 9u (docs/32): inside each page the 4-bit images keep exactly the slots the packing gave them (same pages, same
+        # lines: the atlas and the VRAM plan see the same blocks), but the slots off the page's edge texels (u, v not 0 /
+        # 240) go to the images drawn flipped most often: a flipped tile on an edge passes the page (u - 1 or u + 16) and is
+        # split out of line (PS1Layers.cpp EmitFlipped: ~49 hblanks a frame in SPZ1; 18-53 % of the flipped cells sat on
+        # edges, ~0 after this). Weight = the image's flipped cells in the band-drawn (non-paged) layers
+        fw = [0] * len(images)
+        for li, L in enumerate(layers):
+            if li in paged:
+                continue
+            for v in L['tiles']:
+                if v != 0xFFFF and v & 0xC00 and (v & 0x3FF) < ntiles and tile_image[v & 0x3FF] != 0xFFFF:
+                    fw[tile_image[v & 0x3FF]] += 1
+        by_page = {}
+        for i, pl in enumerate(place):
+            if pl is not None and pl[2] == 4:
+                by_page.setdefault((pl[0], pl[1]), []).append(i)
+        for ims in by_page.values():
+            slots = [place[i] for i in ims]
+            inner = [sl for sl in slots if 0 < sl[3] < V.PAGE - TILE and 0 < sl[4] < V.PAGE - TILE]
+            edge = [sl for sl in slots if not (0 < sl[3] < V.PAGE - TILE and 0 < sl[4] < V.PAGE - TILE)]
+            order = sorted(ims, key=lambda i: (-fw[i], i))  # the heaviest flipped images first, then the image order
+            for i, sl in zip(order, inner + edge):
+                place[i] = sl
     used_cols = columns[:cur[0] + 1] if images else []
     free = [c for c in columns if c not in used_cols]
 
