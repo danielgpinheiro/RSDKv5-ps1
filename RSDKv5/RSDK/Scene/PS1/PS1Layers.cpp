@@ -363,8 +363,13 @@ bool PS1BankTiles(int32 bank)
                 s_attrSlot[(cl[c].y - 240) * 20 + (cl[c].x >> 4)] = (uint8)c;
         s_attrSet = cl;
     }
+    // 9u.8: the bank's 256 entries first (PS1Colour once each), then each copy's 15 from them (were 15 PS1Colour calls a
+    // CLUT: HCZ2's ~80 CLUTs, 13.7 hblanks a frame); the uploads in the same order as before
     static uint16 s_row[256];
     s_row[0] = 0;
+    for (int32 i = 1; i < 256; ++i) s_row[i] = PS1Colour(fullPalette[bank][i]);
+    uint16 row16[16];
+    row16[0] = 0;
     for (int32 c = 0, r = 242; c < n; ++c) {
         if (!(c & 15) && c) {
             if (++r == 240 + bank)
@@ -372,12 +377,11 @@ bool PS1BankTiles(int32 bank)
         }
         else if (!c && r == 240 + bank)
             ++r;
-        for (int32 i = 1; i < 16; ++i) s_row[i] = cl[c].map[i] ? PS1Colour(fullPalette[bank][cl[c].map[i]]) : 0;
+        for (int32 i = 1; i < 16; ++i) row16[i] = cl[c].map[i] ? s_row[cl[c].map[i]] : 0;
         int16 x       = (int16)((c & 15) << 4);
         s_copyAttr[c] = (uint16)((uint32)(x >> 4) | (uint32)r << 6);
-        PS1ClutRow(s_row, 16, x, (int16)r);
+        PS1ClutRow(row16, 16, x, (int16)r);
     }
-    for (int32 i = 1; i < 256; ++i) s_row[i] = PS1Colour(fullPalette[bank][i]);
     PS1ClutRow(s_row, 256, 0, (int16)(240 + bank));
     PS1ChainFlushCache();
     s_extraOk = true;

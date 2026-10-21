@@ -436,9 +436,7 @@ int32 s_camX, s_camY, s_camOX, s_camOY;
 // the scan settles ACTIVE_BOUNDS slots with stock's own test per camera, in its int32 arithmetic (up to PS1_EXACT_CAMS
 // cameras)
 #define PS1_EXACT_CAMS 4
-bool s_camExact = false;
-int32 s_exN;
-uint32 s_exX[PS1_EXACT_CAMS], s_exY[PS1_EXACT_CAMS], s_exOX[PS1_EXACT_CAMS], s_exOY[PS1_EXACT_CAMS];
+bool s_camExact = false; // (the scan reads the camera table itself, as stock: it changes only in callbacks)
 uint32 s_camW, s_camH; // max - min of the union, modulo 2^32
 inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
 uint32 s_camGen = 0;
@@ -462,14 +460,7 @@ void PS1CameraUnion(bool passStart = false)
         if (!PS1Small(ex, 0x3FFFFFFF) || !PS1Small(ey, 0x3FFFFFFF) || !PS1Small(c->offset.x, 0x10000000)
             || !PS1Small(c->offset.y, 0x10000000)) {
             s_camUnionOk = false;
-            if (cameraCount <= PS1_EXACT_CAMS) { // 9q
-                s_camExact = true;
-                s_exN      = cameraCount;
-                for (int32 k = 0; k < cameraCount; ++k) {
-                    s_exX[k] = (uint32)cameras[k].position.x, s_exY[k] = (uint32)cameras[k].position.y;
-                    s_exOX[k] = (uint32)cameras[k].offset.x, s_exOY[k] = (uint32)cameras[k].offset.y;
-                }
-            }
+            s_camExact = cameraCount <= PS1_EXACT_CAMS; // 9q
             return;
         }
         int32 x0 = ex - c->offset.x, x1 = ex + c->offset.x;
@@ -733,7 +724,7 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
     if (!s_camUnionOk || !s_camOne || !s_camAbs) // (stock decides: every sleeping group wakes, entities may move meanwhile)
         for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
     if (!s_camUnionOk && s_camExact) { // 9q: cameras past the union's range: stock's ACTIVE_BOUNDS test here
-        const int32 n = s_exN;
+        const int32 n = cameraCount;
         for (; p < pend; ++p, ++s) {
             PS1_LIVE_SKIP();
             EntityBase *ent = *p;
@@ -745,12 +736,13 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
                     // (wrapping; abs of INT_MIN stays negative, as libc's)
                     const uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
                     for (int32 c = 0; c < n; ++c) {
-                        int32 dx = (int32)(x - s_exX[c]);
-                        dx       = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
-                        if (dx <= (int32)(rx + s_exOX[c])) {
-                            int32 dy = (int32)((uint32)ent->position.y - s_exY[c]);
+                        const CameraInfo *cam = &cameras[c];
+                        int32 dx              = (int32)(x - (uint32)cam->position.x);
+                        dx                    = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
+                        if (dx <= (int32)(rx + (uint32)cam->offset.x)) {
+                            int32 dy = (int32)((uint32)ent->position.y - (uint32)cam->position.y);
                             dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
-                            if (dy <= (int32)((uint32)ent->updateRange.y + s_exOY[c]))
+                            if (dy <= (int32)((uint32)ent->updateRange.y + (uint32)cam->offset.y))
                                 return p;
                         }
                     }
