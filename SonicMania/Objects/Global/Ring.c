@@ -942,6 +942,10 @@ static int Ring_PS1Eligible(const void *e)
     int32 t = ((const EntityRing *)e)->moveType;
     return t == RING_MOVE_FIXED || t == RING_MOVE_LINEAR || t == RING_MOVE_CIRCLE;
 }
+// 9u.10: LaundroMobile (HCZ2's boss) walks every slot and moves the rings whose state is not Ring_State_Normal; a fixed
+// ring is created in that state (and one that leaves it is never returned to its record), so in its scene fixed rings may
+// still go dormant (a dormant slot is a class-0 ghost the walk passes over). HCZ2 kept its ~330 rings live all act.
+static int Ring_PS1EligibleFixed(const void *e) { return ((const EntityRing *)e)->moveType == RING_MOVE_FIXED; }
 static int Ring_PS1Range(const void *e)
 {
     const EntityRing *r = (const EntityRing *)e; // (the scene's amplitude: Create shifts it by 10)
@@ -1056,6 +1060,12 @@ static int Current_PS1Range(const void *e)
 // `unless`: the stages' classes that walk or keep these entities (foreach_all, stored pointers: their whole object
 // files reviewed for each class; a ring another object creates is a temp entity, never a record)
 const PS1DormantSpec ps1DormantSpecs[] = {
+    // (the fixed-ring entry first: where both apply, the general one below, later in the table, takes the class)
+    { "Ring", Ring_PS1EligibleFixed, 0, Ring_PS1Range,
+      { offsetof(EntityRing, drawPos), offsetof(EntityRing, animator.frameID) + sizeof(int32) - offsetof(EntityRing, drawPos),
+        offsetof(EntityRing, direction), sizeof(uint8) },
+      false,
+      PS1_UNLESS("ERZOutro", "RingField") },
     { "Ring", Ring_PS1Eligible, 0, Ring_PS1Range,
       { offsetof(EntityRing, drawPos), offsetof(EntityRing, animator.frameID) + sizeof(int32) - offsetof(EntityRing, drawPos),
         offsetof(EntityRing, direction), sizeof(uint8) },
