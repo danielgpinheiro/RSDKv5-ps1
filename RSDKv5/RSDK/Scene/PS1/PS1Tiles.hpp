@@ -41,7 +41,15 @@ void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer); a
 // page's origin in the layer's map (texels; the page repeats with the map). False: none (or SetTile turned it off)
 bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy);
 // The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
-uint16 PS1TileHFlipImage(uint16 tile); // key: the tile (H), tile | 0x800 (V), tile | 0xC00 (both); PS1_TILE_NONE: no copy
+// key: the tile (H), tile | 0x800 (V), tile | 0xC00 (both); PS1_TILE_NONE: no copy. 9u.14: the cache test inline (a call per
+// flipped tile cost the UFO stages' backgrounds 8-11 hblanks a frame), 64 entries (tile << 16 | image, direct-mapped)
+extern uint32 ps1HFlipCache[64];
+uint16 PS1TileHFlipImageMiss(uint16 tile);
+inline uint16 PS1TileHFlipImage(uint16 tile)
+{
+    uint32 c = ps1HFlipCache[(tile ^ tile >> 6) & 63];
+    return (c >> 16) == tile ? (uint16)c : PS1TileHFlipImageMiss(tile);
+}
 bool PS1TileFlipCopiesAll(); // 9f: every flipped tile of the scene's layers has its copy (FLIP_COPIES folders)
 
 extern "C" {

@@ -71,18 +71,16 @@ const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1Tile
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
 
 // The pairs' answers cached per tile (3.3g: the column tables ask for every H-flipped column; per-line rows show a few
-// tiles): tile << 16 | image, direct-mapped on the tile's low 5 bits; cleared when the pairs load or change
-uint32 s_hflipCache[32];
+// tiles): tile << 16 | image, direct-mapped (PS1Tiles.hpp: the test inline); cleared when the pairs load or change
+uint32 RSDK::ps1HFlipCache[64];
 void PS1HFlipCacheClear()
 {
-    for (int32 i = 0; i < 32; ++i) s_hflipCache[i] = 0xFFFFFFFF;
+    for (int32 i = 0; i < 64; ++i) ps1HFlipCache[i] = 0xFFFFFFFF;
 }
 
-uint16 RSDK::PS1TileHFlipImage(uint16 tile)
+uint16 RSDK::PS1TileHFlipImageMiss(uint16 tile)
 {
-    uint32 &c = s_hflipCache[(tile ^ tile >> 6) & 31]; // (9f: keys carry the V flips in bits 10-11)
-    if ((c >> 16) == tile)
-        return (uint16)c;
+    uint32 &c = ps1HFlipCache[(tile ^ tile >> 6) & 63]; // (9f: keys carry the V flips in bits 10-11)
     // 4.2e: the pairs are sorted by tile: a binary search (the linear one cost ~60 hblanks a frame in the ruby's
     // per-line deformation, which misses the cache)
     uint16 img         = PS1_TILE_NONE;
