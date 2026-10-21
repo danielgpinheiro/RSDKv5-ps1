@@ -432,11 +432,8 @@ bool s_camAbs = true;
 // 7.4: one camera: ACTIVE_RBOUNDS slots (the UFO stages' rings and spheres: ~400) decided in the scan with stock's test
 bool s_camOne = false;
 int32 s_camX, s_camY, s_camOX, s_camOY;
-// 9q: cameras the union can't take (since 9u.7: a camera 16,384 px or more from camera 0, or an offset past 4,096 px):
-// the scan settles ACTIVE_BOUNDS slots with stock's own test per camera, in its int32 arithmetic (up to PS1_EXACT_CAMS
-// cameras)
-#define PS1_EXACT_CAMS 4
-bool s_camExact = false; // (the scan reads the camera table itself, as stock: it changes only in callbacks)
+// 9q's exact per-camera scan path (cameras the union can't take) went in 9u.12: since 9u.7 that is a camera 16,384 px or
+// more from camera 0, which no act has; the stock loop decides then
 uint32 s_camW, s_camH; // max - min of the union, modulo 2^32
 inline bool PS1Small(int32 v, int32 lim) { return (uint32)(v + lim) <= (uint32)(2 * lim); }
 uint32 s_camGen = 0;
@@ -450,7 +447,6 @@ void PS1CameraUnion(bool passStart = false)
         return;
     s_camGen = ps1CameraGen;
     s_camUnionOk = cameraCount > 0;
-    s_camExact   = false;
     const uint32 orgX = (uint32)cameras[0].position.x, orgY = (uint32)cameras[0].position.y;
     s_camAbs = PS1Small((int32)orgX, 0x3FFFFFFF) && PS1Small((int32)orgY, 0x3FFFFFFF);
     int32 minX = 0, maxX = 0, minY = 0, maxY = 0;
@@ -460,7 +456,6 @@ void PS1CameraUnion(bool passStart = false)
         if (!PS1Small(ex, 0x3FFFFFFF) || !PS1Small(ey, 0x3FFFFFFF) || !PS1Small(c->offset.x, 0x10000000)
             || !PS1Small(c->offset.y, 0x10000000)) {
             s_camUnionOk = false;
-            s_camExact = cameraCount <= PS1_EXACT_CAMS; // 9q
             return;
         }
         int32 x0 = ex - c->offset.x, x1 = ex + c->offset.x;
@@ -723,48 +718,6 @@ PS1_HOT EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
     uint32 s = (uint32)(p - objectEntityPtr);
     if (!s_camUnionOk || !s_camOne || !s_camAbs) // (stock decides: every sleeping group wakes, entities may move meanwhile)
         for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
-    if (!s_camUnionOk && s_camExact) { // 9q: cameras past the union's range: stock's ACTIVE_BOUNDS test here
-        const int32 n = cameraCount;
-        for (; p < pend; ++p, ++s) {
-            PS1_LIVE_SKIP();
-            EntityBase *ent = *p;
-            uint32 cls      = ent->classID;
-            uint32 active   = ent->active;
-            if (cls) {
-                if (active == ACTIVE_BOUNDS) {
-                    // per camera: abs(position - camera) <= updateRange + offset on both axes, each in int32 as stock
-                    // (wrapping; abs of INT_MIN stays negative, as libc's)
-                    const uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
-                    for (int32 c = 0; c < n; ++c) {
-                        const CameraInfo *cam = &cameras[c];
-                        int32 dx              = (int32)(x - (uint32)cam->position.x);
-                        dx                    = dx < 0 ? (int32)(0u - (uint32)dx) : dx;
-                        if (dx <= (int32)(rx + (uint32)cam->offset.x)) {
-                            int32 dy = (int32)((uint32)ent->position.y - (uint32)cam->position.y);
-                            dy       = dy < 0 ? (int32)(0u - (uint32)dy) : dy;
-                            if (dy <= (int32)((uint32)ent->updateRange.y + (uint32)cam->offset.y))
-                                return p;
-                        }
-                    }
-#if PS1_CHECK_UPDATESCAN
-                    g_ps1ScanSettled = g_ps1ScanSettled + 1;
-                    for (int32 c = 0; c < cameraCount; ++c)
-                        if (abs(ent->position.x - cameras[c].position.x) <= ent->updateRange.x + cameras[c].offset.x
-                            && abs(ent->position.y - cameras[c].position.y) <= ent->updateRange.y + cameras[c].offset.y) {
-                            g_ps1ScanWrong = g_ps1ScanWrong + 1;
-                            break;
-                        }
-#endif
-                }
-                else if (active != ACTIVE_NEVER && active != ACTIVE_PAUSED)
-                    return p;
-            }
-            ent->inRange = false;
-            if (!cls)
-                ps1LiveBits[s >> 5] &= ~(1u << (s & 31));
-        }
-        return p;
-    }
     if (!s_camUnionOk) { // the stock loop decides every live slot
         for (; p < pend; ++p, ++s) {
             PS1_LIVE_SKIP();

@@ -24,6 +24,14 @@ void ChaosEmerald_Draw(void)
 {
     RSDK_THIS(ChaosEmerald);
 
+#if defined RETRO_PS1_BUILD
+    // docs/32 9u.12: the same palette writes in one engine call each way (RSDKv5/RSDK/Scene/PS1/PS1Layers.cpp)
+    // (colorStorage holds the saved entries as they are: the restore writes the values stock's SetPaletteEntry would)
+    extern void PS1PaletteSwapIn(uint8 start, const uint32 *colors, uint32 *save, int32 n);
+    PS1PaletteSwapIn(128, (const uint32 *)ChaosEmerald->emeraldColors, (uint32 *)ChaosEmerald->colorStorage, 36);
+    RSDK.DrawSprite(&self->animator, NULL, false);
+    PS1PaletteSwapIn(128, (const uint32 *)ChaosEmerald->colorStorage, NULL, 36);
+#else
     for (int32 c = 0; c < 36; ++c) {
         ChaosEmerald->colorStorage[c] = RSDK.GetPaletteEntry(0, c + 128);
         RSDK.SetPaletteEntry(0, c + 128, ChaosEmerald->emeraldColors[c]);
@@ -34,6 +42,7 @@ void ChaosEmerald_Draw(void)
     for (int32 c = 0; c < 36; ++c) {
         RSDK.SetPaletteEntry(0, c + 0x80, ChaosEmerald->colorStorage[c]);
     }
+#endif
 }
 
 void ChaosEmerald_Create(void *data)
