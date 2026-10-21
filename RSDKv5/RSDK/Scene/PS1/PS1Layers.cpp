@@ -396,6 +396,27 @@ inline uint32 PS1BankTileClut(uint32 attr)
     return c < 96 ? s_copyAttr[c] : attr;
 }
 
+// 9u.15: the fast band loop in assembly (ps1/band_fast.s; byte offsets checked below)
+struct PS1BandAsmCtx {
+    uint32_t *w, *lim, *end;
+    uint32 page;
+    const uint16 *chunk;
+    int32 sub, tx, xsize;
+    const uint16 *chunkRow, *rowSel;
+    int32 sx;
+    uint32 yWord;
+    const uint16 *tileImage;
+    const uint8 *images;
+    uint32 flipLive;
+    int32 pieces, frects;
+    const uint16 *segPool, *rowPool;
+    uint32 t;
+};
+static_assert(offsetof(PS1BandAsmCtx, chunk) == 16 && offsetof(PS1BandAsmCtx, sx) == 40 && offsetof(PS1BandAsmCtx, flipLive) == 56
+                  && offsetof(PS1BandAsmCtx, segPool) == 68 && offsetof(PS1BandAsmCtx, t) == 76,
+              "ps1/band_fast.s reads PS1BandAsmCtx at these offsets");
+extern "C" int32 PS1BandFastAsm(PS1BandAsmCtx *c);
+
 // 9u: Fast = a whole 16-line tile row on bank 0 (most bands): the piece's command, size and row are constants and the bank
 // lookups go, so the loop keeps its state in registers (the general version reloaded 7 values from the stack a piece)
 template <bool Fast>
@@ -432,18 +453,10 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     const bool flipLive = PS1FlipRectsLive();
     const uint32 vFlip1 = (uint32)(15 - 2 * v0) * 256u;
     int32 frects        = 0;
-    for (; sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
-        uint16 t = chunk[sub];
-        if (++tx >= xsize) { // wrap: the layer repeats
-            tx = 0, sub = 0;
-            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, 0));
-        }
-        else if (++sub == 4) {
-            sub   = 0;
-            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
-        }
+    // the column's tile after the walk took it: its piece(s) (9u.15: also the tiles PS1BandFastAsm leaves to C)
+    auto tileBody = [&](uint16 t) __attribute__((always_inline)) {
         if (t == 0xFFFF)
-            continue;
+            return;
         uint16 img = tileImage[t & 0x3FF];
         if ((t & 0xC00) && flipAll && img != PS1_TILE_NONE) { // 9f: the flipped copy: a sprite, not a 9-word quad
             img = PS1TileHFlipImage((t & 0x800) ? (t & 0xFFF) : (t & 0x3FF));
@@ -451,7 +464,7 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
         }
         if (img == PS1_TILE_NONE) {
             ++misses;
-            continue;
+            return;
         }
         uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
         __asm__("" : "+r"(img2), "+r"(img4)); // 6-byte records: 2i + 4i (GCC folds shifts into a ~12-cycle mult)
@@ -503,10 +516,44 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
                 else {
                     PS1_EMIT_VFLIP_LINES(sx, sy, tex, v0, h, tpage);
                 }
-                continue;
+                return;
             }
         }
         PS1_EMIT_PIECE(cmd, yWord | (uint16)sx, tex + vRow, wh, n, tpage);
+    };
+    bool walked = false;
+#if !PS1_BAND_C_ONLY
+    if constexpr (Fast) {
+        if (!flipAll) { // 9u.15: the assembly loop (ps1/band_fast.s), the C body for the tiles it hands back
+            PS1BandAsmCtx c;
+            c.xsize = xsize, c.chunkRow = chunkRow, c.rowSel = rowSel, c.yWord = yWord, c.tileImage = tileImage;
+            c.images = images, c.flipLive = flipLive, c.segPool = ps1SegPool, c.rowPool = ps1RowPool;
+            for (;;) {
+                c.w = w, c.lim = lim, c.end = end, c.page = page, c.chunk = chunk, c.sub = sub, c.tx = tx, c.sx = sx;
+                c.pieces = pieces, c.frects = frects;
+                int32 r = PS1BandFastAsm(&c);
+                w = c.w, lim = c.lim, page = c.page, chunk = c.chunk, sub = c.sub, tx = c.tx, sx = c.sx;
+                pieces = c.pieces, frects = c.frects;
+                if (!r)
+                    break;
+                tileBody((uint16)c.t);
+                sx += TILE_SIZE;
+            }
+            walked = true;
+        }
+    }
+#endif
+    for (; !walked && sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
+        uint16 t = chunk[sub];
+        if (++tx >= xsize) { // wrap: the layer repeats
+            tx = 0, sub = 0;
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, 0));
+        }
+        else if (++sub == 4) {
+            sub   = 0;
+            chunk = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
+        }
+        tileBody(t);
     }
     e.w = w, e.hdr = lim - 10, e.end = end, e.page = page;
     if (misses)
