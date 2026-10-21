@@ -472,7 +472,32 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
                 ++frects;
             }
             else {
-                if ((t & 0x400) || h > 4) {
+                if constexpr (Fast) {
+                    // 9u.9: a whole tile row (v0 0, h 16): the quad's four texel words are the tile's u | v << 8 plus
+                    // offsets of the flips (uL / uR = u + 15 / u - 1 or u / u + 16, vT / vB = v + 15 / v - 1 or v / v + 16;
+                    // no carry between the bytes once the edge test passed: PS1_EMIT_FLIPPED's words, ~half the work)
+                    const uint32 fx = t & 0x400, fy = t & 0x800, u = tex & 0xFF, v = (tex >> 8) & 0xFF;
+                    const uint32 uR = fx ? u - 1 : u + TILE_SIZE, vB = fy ? v - 1 : v + TILE_SIZE;
+                    if (uR > 255 || vB > 255) {
+                        PS1Emit q_ = { w, lim - 10, end, page };
+                        EmitFlipped(q_, sx, sy, tex, 0, TILE_SIZE, (t & 0xC00) >> 6, tpage);
+                        w = q_.w, lim = q_.hdr + 10, end = q_.end, page = q_.page;
+                    }
+                    else {
+                        if (__builtin_expect(w > lim - 4, 0))
+                            EmitFrag(w, lim, end, page);
+                        const uint32 ax = fx ? 15u : 0u, bx = fx ? 0xFFFFFFFFu : (uint32)TILE_SIZE;
+                        const uint32 ay = fy ? 0xF00u : 0u, by = fy ? 0xFFFFFF00u : (uint32)TILE_SIZE << 8;
+                        const uint32 uv = tex & 0xFFFF, xl = (uint16)sx, xr = (uint16)(sx + TILE_SIZE);
+                        const uint32 yb = yWord + ((uint32)TILE_SIZE << 16);
+                        w[0] = 0x2C808080, w[1] = yWord | xl, w[2] = tex + ax + ay;
+                        w[3] = yWord | xr, w[4] = tpage << 16 | (uv + bx + ay);
+                        w[5] = yb | xl, w[6] = uv + ax + by;
+                        w[7] = yb | xr, w[8] = uv + bx + by;
+                        w += 9, page = tpage;
+                    }
+                }
+                else if ((t & 0x400) || h > 4) {
                     PS1_EMIT_FLIPPED(sx, sy, tex, v0, h, (uint32)(t & 0xC00) >> 6, tpage);
                 }
                 else {
