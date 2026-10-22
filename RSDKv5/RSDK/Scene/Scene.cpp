@@ -1586,6 +1586,11 @@ void RSDK::ProcessParallaxAutoScroll()
 // layer->scrollInfo and currentScreen on every line (the scanline stores may alias them) at -Os (SPZ1: ~20 hblanks a
 // frame for its deforming layers). The same scanline values: x = the line's scroll info's tilePos (+ the deformation when
 // that info deforms), y = the layer row, rows wrapping at the layer's height. scrollPos stays below pixelHeight (<= 32767).
+// 9v (user 2026-10-21: 60 fps everywhere; background detail may be simplified): per-line deformation in blocks of
+// g_ps1LineStep layer rows (each block takes its first row's offset; 1: stock), so the drawer's per-line rows become bands
+// of up to that many lines (water ripples, heat waves, the lakes' rows: a quarter of the pieces at 4)
+extern "C" volatile int32 g_ps1LineStep;
+volatile int32 g_ps1LineStep = 4;
 __attribute__((optimize("O2"))) static ScanlineInfo *PS1FillHScrollLines(ScanlineInfo *scanline, int32 n, const ScrollInfo *si,
                                                                        const uint8 *&lineScrollPtr, const uint8 *lsBase,
                                                                        int32 lsStep, const int32 *deform, int32 &scrollPos,
@@ -1593,11 +1598,14 @@ __attribute__((optimize("O2"))) static ScanlineInfo *PS1FillHScrollLines(Scanlin
 {
     int32 sp         = scrollPos;
     const uint8 *ls  = lineScrollPtr;
+    const int32 q    = g_ps1LineStep > 1 ? g_ps1LineStep - 1 : 0; // (a power of two minus one)
     for (int32 i = 0; i < n; ++i, ++scanline) {
         const ScrollInfo *info = &si[*ls];
         int32 x                = info->tilePos;
-        if (info->deform)
-            x += TO_FIXED(deform[i]);
+        if (info->deform) {
+            int32 k = i - (sp & q); // the block's first row (its first line on screen: clamped)
+            x += TO_FIXED(deform[k < 0 ? 0 : k]);
+        }
         scanline->position.x = x;
         scanline->position.y = TO_FIXED(sp);
         if (++sp == pixelHeight)
