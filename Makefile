@@ -127,8 +127,9 @@ ifneq ($(PERF_HUD),)
 CPPFLAGS += -DPS1_PERF_HUD=1
 endif
 # docs/32 9f (UFO 60 fps plan, step C): the UFO stages' detail cuts, each its own switch (off: the stock look)
-#   UFO_FLOOR_NEAR=1  the floor's real tiles to 12 rows (24), the rest from the minimap
-#   UFO_LOWPOLY=1     the 3D models drawn with their distance LOD at any size (the characters ~1/2, the UFO 0.4)
+#   UFO_FLOOR_NEAR=1  the floor's real tiles to 12 rows (24), the rest from the minimap; ON by default
+#   UFO_LOWPOLY=1     the 3D models drawn with their distance LOD at any size (the characters ~1/2, the UFO 0.4); ON by
+#                     default (user 2026-10-21, docs/32 9u.17: "go ahead" with the visible cuts for 60 fps; 0: the stock look)
 # and the last resort (user 2026-10-08, after every other optimisation: "go to decorations and shadow off path"):
 #   UFO_DECOR_FAR=N   the decorations' draw distance, N quarters of their update range (3: the Dreamcast port's)
 #   UFO_NO_DECOR=1    no decorations (trees, flowers, pillars, birds: each removes itself in its Create); ON by default
@@ -137,7 +138,9 @@ endif
 # only); decorations off is the big step (UFO1 472 -> 379 CPU hblanks a frame), shadows off a further 2-5.
 UFO_NO_DECOR   ?= 1
 UFO_NO_SHADOWS ?= 1
-UFO_CUTS := $(if $(UFO_FLOOR_NEAR),floornear )$(if $(UFO_LOWPOLY),lowpoly )$(if $(UFO_DECOR_FAR),decorfar$(UFO_DECOR_FAR) )$(if $(filter 1,$(UFO_NO_DECOR)),nodecor )$(if $(filter 1,$(UFO_NO_SHADOWS)),noshadows )
+UFO_FLOOR_NEAR ?= 1
+UFO_LOWPOLY    ?= 1
+UFO_CUTS := $(if $(filter 1,$(UFO_FLOOR_NEAR)),floornear )$(if $(filter 1,$(UFO_LOWPOLY)),lowpoly )$(if $(UFO_DECOR_FAR),decorfar$(UFO_DECOR_FAR) )$(if $(filter 1,$(UFO_NO_DECOR)),nodecor )$(if $(filter 1,$(UFO_NO_SHADOWS)),noshadows )
 ifneq ($(UFO_DECOR_FAR),)
 CPPFLAGS += -DUFO_DECOR_FAR=$(UFO_DECOR_FAR)
 endif
@@ -147,10 +150,10 @@ endif
 ifeq ($(UFO_NO_SHADOWS),1)
 CPPFLAGS += -DUFO_NO_SHADOWS=1
 endif
-ifneq ($(UFO_FLOOR_NEAR),)
+ifeq ($(UFO_FLOOR_NEAR),1)
 CPPFLAGS += -DUFO_FLOOR_NEAR=1
 endif
-ifneq ($(UFO_LOWPOLY),)
+ifeq ($(UFO_LOWPOLY),1)
 CPPFLAGS += -DUFO_LOWPOLY=1
 endif
 ifneq ($(BOOT),)
