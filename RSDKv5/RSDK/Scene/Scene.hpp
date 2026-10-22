@@ -247,6 +247,9 @@ void PS1DrawLayerBasic(TileLayer *layer); // 4.1c: DrawLayerBasic (one scroll po
 // layer cut in this scene (PS1Layers.cpp's table): ps1LayerCut[layer] = 0 drawn, else not drawn (its scanline callback
 // still runs) and PS1DrawLayerCut fills the clip rectangle with bank-0 colour ps1LayerCut - 1 (1: nothing)
 extern uint8 ps1LayerCut[LAYER_COUNT];
+// 9v.7 (user 2026-10-22: coarser parallax allowed): a layer's per-line scroll step in this scene (rows a block, a power of
+// two; 0: g_ps1LineStep), from the same table; a non-zero step also applies to a layer a scanline callback scrolls
+extern uint8 ps1LayerStep[LAYER_COUNT];
 void PS1DrawLayerCut(uint8 cut);
 void PS1LayerCutsLoad(const char *folder, const char *sceneID);
 void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)

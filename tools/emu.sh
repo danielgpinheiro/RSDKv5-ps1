@@ -66,8 +66,20 @@ OutputMuted = true/' "$EMU_CFG"; fi
     # (started paused: the BIOS boot is over before the GDB stub is up; GDB's first continue starts it)
     local fb=-fastboot
     [ "${EMU_DS_FASTBOOT:-1}" = 0 ] && fb= && sed -i '' 's/^StartPaused = false/StartPaused = true/' "$EMU_CFG"
-    "$EMU_DS" -batch $fb -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
-    EMU_PID=$!
+    # (user 2026-10-22: runs must not take the focus from the user's own full-screen apps) DuckStation has no headless
+    # mode: open -g starts it in the background (not activated); its PID is the DuckStation whose command line has our
+    # disc. EMU_UI=1: started as before (in front)
+    if [ "${EMU_UI:-0}" = 1 ]; then
+      "$EMU_DS" -batch $fb -nofullscreen -- "$PWD/build/game.cue" >/dev/null 2>&1 &
+      EMU_PID=$!
+    else
+      open -g -n -a "${EMU_DS%/Contents/MacOS/*}" --args -batch $fb -nofullscreen -- "$PWD/build/game.cue"
+      EMU_PID=
+      for _ in $(seq 1 20); do
+        for p in $(pgrep -x DuckStation); do ps -o command= -p $p | grep -qF -- "$PWD/build/game.cue" && EMU_PID=$p; done
+        [ -n "$EMU_PID" ] && break; sleep 0.5
+      done
+    fi
     # its GDB stub listens once the app is up: slower while another emulator runs (a fixed 6 s missed it, 9b.2)
     sleep 4
     for _ in $(seq 1 26); do nc -z localhost 2345 2>/dev/null && break; sleep 1; done
@@ -104,6 +116,10 @@ import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d.setdefault('SPU', {})['Mute'] = True
+# 2026-10-22: the pads read the keyboard only (PadType 2), never a host gamepad: with Auto (0) the user's own controller,
+# in use in another app, drove pad 1 (a run paused by its Start); with -no-ui no key reaches the pad either
+for pad in d.get('pads', []):
+    pad['PadType'] = 2
 json.dump(d, open(p, 'w'), indent=4)
 PYEOF
     local ram=-2mb
@@ -119,8 +135,12 @@ PYEOF
     local boot="-fastboot -exe rsdkv5.ps-exe"
     [ "${EMU_RETAIL:-0}" = 1 ] && boot="-bios ${EMU_BIOS:-$HOME/Files/Projetos_Infaliveis/PS1/SCPH101.BIN}"
     # -NSAppSleepDisabled YES: macOS App Nap throttled a background run to ~20 % CPU once the display slept (2026-10-21)
-    "$EMU_PCSX" -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
-      -iso build/game.cue >/dev/null 2>&1 &
+    # -no-ui (user 2026-10-22: runs must not take the focus from the user's own full-screen apps): no window at all; the
+    # emulation, GDB stub and VRAM are the same (timings are emulated). EMU_UI=1: with its window, as before
+    local ui=-no-ui
+    [ "${EMU_UI:-0}" = 1 ] && ui=
+    "$EMU_PCSX" $ui -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
+      -iso build/game.cue >/dev/null 2>&1 < /dev/null &
     EMU_PID=$!
     sleep 4
   fi

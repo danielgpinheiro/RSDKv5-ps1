@@ -1595,11 +1595,10 @@ volatile int32 g_ps1LineStep = 4;
 __attribute__((optimize("O2"))) static ScanlineInfo *PS1FillHScrollLines(ScanlineInfo *scanline, int32 n, const ScrollInfo *si,
                                                                        const uint8 *&lineScrollPtr, const uint8 *lsBase,
                                                                        int32 lsStep, const int32 *deform, int32 &scrollPos,
-                                                                       int32 pixelHeight)
+                                                                       int32 pixelHeight, int32 q)
 {
     int32 sp         = scrollPos;
     const uint8 *ls  = lineScrollPtr;
-    const int32 q    = g_ps1LineStep > 1 ? g_ps1LineStep - 1 : 0; // (a power of two minus one)
     for (int32 i = 0; i < n; ++i, ++scanline) {
         const ScrollInfo *info = &si[*ls];
         int32 x                = info->tilePos;
@@ -1688,12 +1687,14 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 const uint8 *ls     = lineScrollPtr;
                 int32 above         = currentScreen->waterDrawPos, total = currentScreen->size.y;
                 const int32 *deform = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
+                const int32 st      = ps1LayerStep[layer - tileLayers]; // 9v.7 (0: g_ps1LineStep)
+                const int32 q       = (st ? st : (g_ps1LineStep > 1 ? g_ps1LineStep : 1)) - 1; // (a power of two minus one)
                 // (stock's counts: the first loop i < waterDrawPos, the second waterDrawPos <= i < size.y)
                 scanline = PS1FillHScrollLines(scanline, above > 0 ? above : 0, layer->scrollInfo, ls, lsBase, lsStep, deform, sp,
-                                               pixelHeight);
+                                               pixelHeight, q);
                 deform   = &layer->deformationDataW[(sp + (uint16)layer->deformationOffsetW) & 0x1FF];
                 PS1FillHScrollLines(scanline, total > above ? total - above : 0, layer->scrollInfo, ls, lsBase, lsStep, deform, sp,
-                                    pixelHeight);
+                                    pixelHeight, q);
                 break;
             }
 #endif

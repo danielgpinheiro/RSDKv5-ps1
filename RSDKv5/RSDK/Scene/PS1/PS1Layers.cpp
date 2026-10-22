@@ -1107,27 +1107,33 @@ void RSDK::PS1LayersFrameEnd()
 }
 
 // 9v.4: background layers cut for 60 fps, per scene: folder, scene id, layer index, the bank-0 colour drawn instead (0:
-// nothing). Chosen from pictures of each act (docs/32 9v.4): a far backdrop hidden behind the next layer, or replaced by its
-// most common colour
+// nothing). Only cuts the A/B pictures show to be practically invisible (user 2026-10-22: no cut that loses a stage's
+// style or leaves it looking empty; HCZ1 / HCZ2 / SPZ2 Background 1 and the UFO skies were put back)
 struct PS1LayerCutRec {
     char folder[5]; // (inline: no pointer and string a record)
     char scene;     // a one-character scene id
     uint8 layer, colour;
+    uint8 step; // 9v.7: 0 a cut (colour as above); else the layer drawn, its per-line scroll in blocks of `step` rows
 };
 const PS1LayerCutRec s_ps1LayerCuts[] = {
-    { "HCZ", '1', 0, 192 }, { "HCZ", '2', 0, 192 }, { "SPZ2", '1', 0, 224 }, { "OOZ2", '2', 0, 192 },
-    { "PSZ1", '1', 0, 231 }, { "GHZ", '2', 3, 0 },
-    // the UFO stages' skies (Background 1: 28-41 hblanks a frame; UFO4's and UFO7's cost 6-7 and stay)
-    { "UFO1", '1', 0, 224 }, { "UFO2", '1', 0, 192 }, { "UFO3", '1', 0, 199 }, { "UFO5", '1', 0, 229 }, { "UFO6", '1', 0, 172 },
+    { "OOZ2", '2', 0, 192, 0 }, // the distant refinery silhouettes, behind Background 2
+    { "PSZ1", '1', 0, 231, 0 }, // hidden by Background 2
+    { "GHZ", '2', 3, 0, 0 },    // BG Cave 2: the far stalactites
 };
 uint8 RSDK::ps1LayerCut[LAYER_COUNT] __attribute__((aligned(4))); // colour + 1 (0: drawn); GDB zeroes it for A/B pictures
+uint8 RSDK::ps1LayerStep[LAYER_COUNT] __attribute__((aligned(4))); // 9v.7 (0: g_ps1LineStep)
 void RSDK::PS1LayerCutsLoad(const char *folder, const char *sceneID)
 {
     static_assert(LAYER_COUNT == 8, "two words");
     ((uint32 *)ps1LayerCut)[0] = ((uint32 *)ps1LayerCut)[1] = 0;
+    ((uint32 *)ps1LayerStep)[0] = ((uint32 *)ps1LayerStep)[1] = 0;
     for (const PS1LayerCutRec &r : s_ps1LayerCuts)
-        if (sceneID[0] == r.scene && !strcmp(r.folder, folder)) // these folders have one-character scene ids only
-            ps1LayerCut[r.layer] = r.colour + 1;
+        if (sceneID[0] == r.scene && !strcmp(r.folder, folder)) { // these folders have one-character scene ids only
+            if (r.step)
+                ps1LayerStep[r.layer] = r.step;
+            else
+                ps1LayerCut[r.layer] = r.colour + 1;
+        }
 }
 void RSDK::PS1DrawLayerCut(uint8 cut)
 {
@@ -1386,7 +1392,9 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
 {
     PS1Band group[TILE_SIZE]; // the bands of the current tile row (one palette bank)
     int32 groupCount = 0;
-    const int32 lq   = ~(g_ps1LineStep > 1 ? g_ps1LineStep - 1 : 0); // 9v
+    const int32 st   = ps1LayerStep[layer - tileLayers]; // 9v.7: this layer's step (0: the global one; callback layers: 1)
+    const int32 lq   = ~((st ? st : g_ps1LineStep) - 1);  // 9v
+    const int32 nq   = st ? st - 1 : 0;
 #define PS1_FLUSH_GROUP()                                                                                              \
     do {                                                                                                               \
         if (groupCount == 1)                                                                                           \
@@ -1431,7 +1439,9 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
                     nx -= widthPx;
                 else if (nx < 0)
                     nx += widthPx;
-                if (nx != x || FROM_FIXED(sl[h].position.y) != ly + h || (!oneBank && gfxLineBuffer[cy + h] != bank))
+                // 9v.7: inside a block of nq + 1 layer rows the block's first X holds (a stepped layer's simpler parallax)
+                if ((nx != x && ((ly + h) & nq) == 0) || FROM_FIXED(sl[h].position.y) != ly + h
+                    || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
             ++h;
