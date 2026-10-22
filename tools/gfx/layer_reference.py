@@ -39,12 +39,12 @@ def tile_images(ptl):
     """Each image of a .ptl as 16x16 palette indices, decoded from its VRAM blocks through its CLUT map."""
     d = open(ptl, 'rb').read()
     magic, ni, nc, ns, ncell, nb, solid, doff, _, nhf = struct.unpack_from('<4sHHHHHHIIH', d, 0)
-    assert magic in (b'PTL2', b'PTL3'), magic
+    assert magic in (b'PTL2', b'PTL3', b'PTL4'), magic
     vram = np.zeros((512, 1024), np.uint16)
     # the one-colour tables and the H-flip pairs sit before the blocks (PTL3: then the rotozoom pages, 9e)
     boff = 32 + 2048 + ni * 6 + nc * 20 + ns * 38 + ncell * 2 + solid + 4 * nhf
-    if magic == b'PTL3':
-        boff += 4 + 8 * struct.unpack_from('<H', d, boff)[0]
+    if magic in (b'PTL3', b'PTL4'):
+        boff += 4 + 8 * struct.unpack_from('<H', d, boff)[0] + (128 if magic == b'PTL4' else 0)  # (9v.3: the opaque bits)
     for i in range(nb):
         x, y, w, h, o = struct.unpack_from('<HHHHI', d, boff + 12 * i)
         vram[y:y + h, x:x + w] = np.frombuffer(d, '<u2', w * h, doff + o).reshape(h, w)

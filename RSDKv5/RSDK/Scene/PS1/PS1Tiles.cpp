@@ -54,6 +54,10 @@ struct PS1RotoPageRec {
 };
 #define PS1_TILE_ROTO_PAGES (4)
 PS1RotoPageRec s_rotoPage[PS1_TILE_ROTO_PAGES];
+} // namespace
+uint8 RSDK::ps1TileOpaque[128]; // 9v.3 (PTL4): bit t: tile t's pixels are all opaque
+namespace
+{
 uint32 s_rotoPageCount = 0;
 
 inline uint16 *TileTable() { return (uint16 *)s_ps1TileBlob; }
@@ -167,7 +171,8 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
                     + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2 + h.solidBytes + h.hflipCount * 4;
     uint32 blocksBytes = h.blockCount * sizeof(PS1TileBlock);
     DataStorage *tmp   = &dataStorage[DATASET_TMP];
-    bool v3            = !memcmp(h.magic, "PTL3", 4); // PTL2 + the rotozoom pages after the H-flip pairs (9e)
+    const bool v4      = !memcmp(h.magic, "PTL4", 4); // 9v.3: PTL3 (the table always there) + the tiles' opaque bits
+    bool v3            = v4 || !memcmp(h.magic, "PTL3", 4); // PTL2 + the rotozoom pages after the H-flip pairs (9e)
     if ((!v3 && memcmp(h.magic, "PTL2", 4)) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
         || blocksBytes + 128 * 2 > tmp->storageLimit || sizeof(h) + tables + blocksBytes > h.dataOffset) {
         g_ps1TileErrors = g_ps1TileErrors + 1;
@@ -192,6 +197,10 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
             }
         }
     }
+    if (v4)
+        ReadBytes(&info, ps1TileOpaque, sizeof(ps1TileOpaque));
+    else
+        memset(ps1TileOpaque, 0, sizeof(ps1TileOpaque));
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
     s_imgOff     = 1024 * 2;
     s_clutOff    = s_imgOff + s_imageCount * sizeof(PS1TileImage);
@@ -274,6 +283,7 @@ void RSDK::PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16
         for (int32 fx = 0; fx < width; fx += TILE_SIZE, ++t) {
             int32 cx = (srcX + fx) >> 4;
             if (t < TILE_COUNT) {
+                ps1TileOpaque[t >> 3] &= ~(1 << (t & 7)); // 9v.3: an animated tile is never taken as covering
                 TileTable()[t] = (cx < sheet->cellsW && cy < sheet->cellsH) ? Cells()[sheet->firstCell + cy * sheet->cellsW + cx] : PS1_TILE_NONE;
                 if (s_solidMaskOff && (s_ps1TileBlob[s_solidMaskOff + (t >> 3)] >> (t & 7) & 1))
                     PS1TileSolidDrop(-1); // a tile on a one-colour line changed its picture

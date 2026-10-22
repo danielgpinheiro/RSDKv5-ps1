@@ -51,6 +51,7 @@ inline uint16 PS1TileHFlipImage(uint16 tile)
     return (c >> 16) == tile ? (uint16)c : PS1TileHFlipImageMiss(tile);
 }
 bool PS1TileFlipCopiesAll(); // 9f: every flipped tile of the scene's layers has its copy (FLIP_COPIES folders)
+extern uint8 ps1TileOpaque[128]; // 9v.3 (PTL4): bit t: tile t's 16x16 pixels all opaque (cleared when DrawAniTile animates t)
 
 extern "C" {
 extern volatile uint32 g_ps1TileLoads;     // .ptl files loaded

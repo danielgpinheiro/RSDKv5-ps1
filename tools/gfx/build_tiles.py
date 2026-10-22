@@ -46,6 +46,9 @@ u16 ox, u16 oy): the ROTO_PAGES layers, each pre-rendered as one 256x256 page (i
 CLUT or 8-bit on the bank's) holding the map's texels [ox, ox + 256) x [oy, oy + 256) (the rest of the map empty, or
 the map is the page); their tiles get no images (unless another layer shows them), no one-colour table. Blocks after the
 pattern page's. A scene without such layers stays PTL2 (byte-identical).
+PTL4 (docs/32 9v.3) = PTL3 (the rotozoom table always there, count 0 when none) + u8 opaque[128]: bit t set when tile t's
+16x16 pixels are all non-transparent (palette index != 0): the runtime skips background pieces such tiles of a later
+foreground layer cover on screen (occlusion: the same picture). Every scene is PTL4.
 
 Usage: build_tiles.py DATA_DIR OUT_DIR FOLDER SCENE_ID... [--report]
 """
@@ -568,6 +571,13 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         roto_tab += struct.pack('<BBHHH', li, 0, roto_first + k, ox, oy)
     if roto:
         roto_tab = struct.pack('<HH', len(roto), 0) + roto_tab
+    if not roto:
+        roto_tab = struct.pack('<HH', 0, 0)
+    opaque = bytearray(128)
+    for t in range(min(ntiles, 1024)):
+        if np.all(gif[t * TILE:(t + 1) * TILE] != 0):
+            opaque[t >> 3] |= 1 << (t & 7)
+    roto_tab += bytes(opaque)
     clut_tab = b''.join(struct.pack('<HH', *V.TILE_CLUT_SLOTS[g]) + bytes(m) for g, m in enumerate(clut_maps))
     sheet_tab = b''.join(struct.pack('<32sHHH', n.encode()[:31], w, h, f) for n, w, h, f in sheets)
     cell_tab = struct.pack('<%dH' % len(cells), *cells)
@@ -578,7 +588,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     head = (32 + 2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)
             + len(roto_tab) + len(blk_tab))
     data_off = (head + 2047) // 2048 * 2048
-    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL3' if roto else b'PTL2', roto_first + len(roto), len(clut_maps),
+    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL4', roto_first + len(roto), len(clut_maps),
                        len(sheets), len(cells), len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
                        lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0, pattern_image)
     out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + roto_tab + blk_tab
