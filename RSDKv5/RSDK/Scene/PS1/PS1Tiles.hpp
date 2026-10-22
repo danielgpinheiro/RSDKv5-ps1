@@ -39,7 +39,7 @@ const uint8 *PS1TileSolidLines(int32 layer, int32 heightPx);
 void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer); also turns the layer's roto page off
 // 9e: a rotozoom layer drawn from one 256x256 page (tools/gfx/build_tiles.py ROTO_PAGES): its image (u = v = 0) and the
 // page's origin in the layer's map (texels; the page repeats with the map). False: none (or SetTile turned it off)
-bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy);
+bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy); // ox bit 16: the map repeats the page (9u.18)
 // The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
 // key: the tile (H), tile | 0x800 (V), tile | 0xC00 (both); PS1_TILE_NONE: no copy. 9u.14: the cache test inline (a call per
 // flipped tile cost the UFO stages' backgrounds 8-11 hblanks a frame), 64 entries (tile << 16 | image, direct-mapped)
@@ -51,7 +51,6 @@ inline uint16 PS1TileHFlipImage(uint16 tile)
     return (c >> 16) == tile ? (uint16)c : PS1TileHFlipImageMiss(tile);
 }
 bool PS1TileFlipCopiesAll(); // 9f: every flipped tile of the scene's layers has its copy (FLIP_COPIES folders)
-extern uint8 ps1TileOpaque[128]; // 9v.3 (PTL4): bit t: tile t's 16x16 pixels all opaque (cleared when DrawAniTile animates t)
 
 extern "C" {
 extern volatile uint32 g_ps1TileLoads;     // .ptl files loaded

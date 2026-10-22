@@ -47,7 +47,7 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
                                                              'ps1/gte3d.o', 'ps1/s3d_faces.o', 'ps1/s3d_blend.o', 'ps1/floor_quads.o'],
                   'PS1Scene3DLink'),
           'deform': ({'UFO_Plasma', 'Smog'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Deform.o'], 'PS1DeformLink'),  # 7.5
-          'rotopage': ({'TitleBG'}, ['RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o'], 'PS1RotoPageLink'),  # 9e: the title's paged layers
+          'rotopage': ({'TitleBG', 'ERZSetup'}, ['RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o'], 'PS1RotoPageLink'),  # 9e: the title's paged layers; 9u.18 ERZ's sky
           'stamp': ({'TitleSetup'}, ['ps1/version_stamp.o'], 'PS1VersionLink')}  # the title's build stamp (VERSION.TXT)
 
 

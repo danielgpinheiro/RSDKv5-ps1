@@ -243,6 +243,12 @@ void PS1FadeRestoreSlot(uint32 slot);       // 9b.3: one sprite CLUT back after 
 void PS1UploadClut(const uint16 *row, int32 n, int16 x, int16 y);
 void PS1DrawLayerHScroll(TileLayer *layer);
 void PS1DrawLayerBasic(TileLayer *layer); // 4.1c: DrawLayerBasic (one scroll position for every line, palette bank 0)
+// 9v.4 (user 2026-10-21: 60 fps everywhere; background layers may be removed, characters and bosses never touched): a
+// layer cut in this scene (PS1Layers.cpp's table): ps1LayerCut[layer] = 0 drawn, else not drawn (its scanline callback
+// still runs) and PS1DrawLayerCut fills the clip rectangle with bank-0 colour ps1LayerCut - 1 (1: nothing)
+extern uint8 ps1LayerCut[LAYER_COUNT];
+void PS1DrawLayerCut(uint8 cut);
+void PS1LayerCutsLoad(const char *folder, const char *sceneID);
 void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)
 void PS1RotoTileDraw(TileLayer *layer, uint8 bank, uint32 t0); // (its tile path; 9e: paged layers are drawn from their page)
 // 9e: a paged layer's draw (PS1RotoPage.cpp, in the overlays of the folders with paged layers; NULL elsewhere)

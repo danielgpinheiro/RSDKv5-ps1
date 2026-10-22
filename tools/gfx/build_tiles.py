@@ -73,7 +73,9 @@ SOLID_MIN = 16  # one-colour lines a layer needs for its table
 # 9e (docs/32): rotozoom layers drawn from one pre-rendered 256x256 texture page instead of tile quads (PS1Roto.cpp's
 # page path), per folder: the layers' names. A layer qualifies when its map is 256x256 texels (the page repeats over the
 # plane) or its non-empty tiles fit one 256x256 block of a larger map (the page is that block, repeated with the map).
-ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island')}
+ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island'), 'ERZ': ('Background 2',)}
+# 9u.18 (user 2026-10-21: the sprite resolution it may cost accepted): a paged layer whose map repeats itself every 16 tiles
+# or less on both axes (ERZ's sky: 8) is one period on its page, drawn repeating at the page's own size (record flag 1)
 # 9e.2: folders whose tile images drawn flipped are packed away from a page's edge texels (u or v 0 / 240): a flipped
 # tile there would pass the page's edge (u - 1 or u + 16) and is split out of line (PS1Layers.cpp EmitFlipped). Holes
 # in the column instead; opt-in (other scenes' .ptl unchanged): D.A. Garden's Horizon has 57 flipped tiles
@@ -211,6 +213,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     layers = scene_layers(data, folder, scene_id)
     # 9e: the rotozoom layers drawn from a page (their tiles need no images unless another layer shows them)
     paged = {}                      # layer index -> (ox, oy) texels of the page's origin in the map
+    periodic = set()                # 9u.18: paged layers whose map repeats every page (flag 1)
     for li, L in enumerate(layers):
         if L['name'] not in ROTO_PAGES.get(folder, ()) or L['type'] != 2:
             continue
@@ -224,6 +227,11 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             bx0, bx1 = 0, 15
         if ys * TILE == V.PAGE:
             by0, by1 = 0, 15
+        if (bx1 - bx0 >= 16 or by1 - by0 >= 16) and xs % 16 == 0 and ys % 16 == 0 and all(
+                L['tiles'][y * xs + x] == L['tiles'][(y % 16) * xs + x % 16] for y in range(ys) for x in range(xs)):
+            paged[li] = (0, 0)
+            periodic.add(li)
+            continue
         if bx1 - bx0 >= 16 or by1 - by0 >= 16:
             raise TileError('%s%s: %s: its tiles span %dx%d (more than one page)' % (folder, scene_id, L['name'], bx1 - bx0 + 1, by1 - by0 + 1))
         paged[li] = (bx0 * TILE, by0 * TILE)
@@ -535,7 +543,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         mw, mh = L['xsize'] * TILE, L['ysize'] * TILE
         for (mx, my) in ((ox + 7, oy + 250), (ox + 255, oy), (ox, oy + 255), ((ox + 300) % mw, (oy + 300) % mh)):
             v = L['tiles'][(my // TILE) * L['xsize'] + mx // TILE]
-            inside = ox <= mx < ox + V.PAGE and oy <= my < oy + V.PAGE or (mw == V.PAGE and mh == V.PAGE)
+            inside = ox <= mx < ox + V.PAGE and oy <= my < oy + V.PAGE or (mw == V.PAGE and mh == V.PAGE) or li in periodic
             want = 0 if v == 0xFFFF else int(gif[(v & 0x3FF) * TILE + ((15 - my % TILE) if v & 0x800 else my % TILE),
                                                  (15 - mx % TILE) if v & 0x400 else mx % TILE])
             got = int(back[(my - oy) % V.PAGE, (mx - ox) % V.PAGE]) if inside else 0
@@ -568,7 +576,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     roto_tab = b''
     for k, (li, img, ox, oy, _, _) in enumerate(roto):
         img_tab += img
-        roto_tab += struct.pack('<BBHHH', li, 0, roto_first + k, ox, oy)
+        roto_tab += struct.pack('<BBHHH', li, 1 if li in periodic else 0, roto_first + k, ox, oy)
     if roto:
         roto_tab = struct.pack('<HH', len(roto), 0) + roto_tab
     if not roto:

@@ -1824,12 +1824,23 @@ void RSDK::ProcessObjectDrawLists()
                         PS1_PART_BEGIN(5);
 #if RETRO_PLATFORM == RETRO_PS1
                         layer->ps1Uniform = layer->ps1Direct = 0; // ProcessParallax may set them (3.3c / h); a callback's lines are its own
+                        const uint8 cut = ps1LayerCut[list->layerDrawList[i]]; // 9v.4: a background layer cut
 #endif
                         if (layer->scanlineCallback)
-                            layer->scanlineCallback(scanlines);
+                            layer->scanlineCallback(scanlines); // a cut layer's callback still runs (clip bounds, palettes)
+#if RETRO_PLATFORM == RETRO_PS1
+                        else if (!cut)
+#else
                         else
+#endif
                             ProcessParallax(layer);
                         PS1_PART_END(5);
+#if RETRO_PLATFORM == RETRO_PS1
+                        if (cut) {
+                            PS1DrawLayerCut(cut);
+                            continue;
+                        }
+#endif
 
                         switch (layer->type) {
                             case LAYER_HSCROLL: DrawLayerHScroll(layer); break;

@@ -1106,6 +1106,35 @@ void RSDK::PS1LayersFrameEnd()
     s_greyThisFrame = false;
 }
 
+// 9v.4: background layers cut for 60 fps, per scene: folder, scene id, layer index, the bank-0 colour drawn instead (0:
+// nothing). Chosen from pictures of each act (docs/32 9v.4): a far backdrop hidden behind the next layer, or replaced by its
+// most common colour
+struct PS1LayerCutRec {
+    char folder[5]; // (inline: no pointer and string a record)
+    char scene;     // a one-character scene id
+    uint8 layer, colour;
+};
+const PS1LayerCutRec s_ps1LayerCuts[] = {
+    { "HCZ", '1', 0, 192 }, { "HCZ", '2', 0, 192 }, { "SPZ2", '1', 0, 224 }, { "OOZ2", '2', 0, 192 },
+    { "PSZ1", '1', 0, 231 }, { "GHZ", '2', 3, 0 },
+    // the UFO stages' skies (Background 1: 28-41 hblanks a frame; UFO4's and UFO7's cost 6-7 and stay)
+    { "UFO1", '1', 0, 224 }, { "UFO2", '1', 0, 192 }, { "UFO3", '1', 0, 199 }, { "UFO5", '1', 0, 229 }, { "UFO6", '1', 0, 172 },
+};
+uint8 RSDK::ps1LayerCut[LAYER_COUNT] __attribute__((aligned(4))); // colour + 1 (0: drawn); GDB zeroes it for A/B pictures
+void RSDK::PS1LayerCutsLoad(const char *folder, const char *sceneID)
+{
+    static_assert(LAYER_COUNT == 8, "two words");
+    ((uint32 *)ps1LayerCut)[0] = ((uint32 *)ps1LayerCut)[1] = 0;
+    for (const PS1LayerCutRec &r : s_ps1LayerCuts)
+        if (sceneID[0] == r.scene && !strcmp(r.folder, folder)) // these folders have one-character scene ids only
+            ps1LayerCut[r.layer] = r.colour + 1;
+}
+void RSDK::PS1DrawLayerCut(uint8 cut)
+{
+    if (cut > 1)
+        DrawSolid(currentScreen->clipBound_Y1, currentScreen->clipBound_Y2 - currentScreen->clipBound_Y1, cut - 1, 0);
+}
+
 // The frame start of the draw lists: this frame's clear, the CLUTs whose palette entries changed (3.3e)
 void RSDK::PS1LayersFrameBegin()
 {

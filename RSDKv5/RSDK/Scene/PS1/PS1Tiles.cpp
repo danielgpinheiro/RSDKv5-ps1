@@ -49,13 +49,12 @@ uint16 s_patternImage = 0;               // 7.5: the 3D floor / roof texture's i
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
 // 9e (PTL3): rotozoom layers drawn from a 256x256 page: layer index, the page's image, its origin in the map (texels)
 struct PS1RotoPageRec {
-    uint8 layer, on;
+    uint8 layer, on; // on: bit 0 the file's flag (9u.18: the map repeats the page), bit 7 drawn from the page
     uint16 image, ox, oy;
 };
 #define PS1_TILE_ROTO_PAGES (4)
 PS1RotoPageRec s_rotoPage[PS1_TILE_ROTO_PAGES];
 } // namespace
-uint8 RSDK::ps1TileOpaque[128]; // 9v.3 (PTL4): bit t: tile t's pixels are all opaque
 namespace
 {
 uint32 s_rotoPageCount = 0;
@@ -114,8 +113,8 @@ bool RSDK::PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *o
 {
     for (uint32 i = 0; s_ps1TileBlob && i < s_rotoPageCount; ++i) {
         const PS1RotoPageRec &p = s_rotoPage[i];
-        if (p.layer == layer && p.on) {
-            *image = PS1TileImages()[p.image], *ox = p.ox, *oy = p.oy;
+        if (p.layer == layer && (p.on & 0x80)) {
+            *image = PS1TileImages()[p.image], *ox = p.ox | (p.on & 1) << 16, *oy = p.oy; // (bit 16: periodic)
             return true;
         }
     }
@@ -127,7 +126,7 @@ void RSDK::PS1TileSolidDrop(int32 layer)
     // 9e: a page shows the file's layout too: SetTile on its layer turns it off (DrawAniTile's -1 never touches a page:
     // the paged folders have no animated-tile sheets, build_tiles' ANI_SHEETS)
     for (uint32 i = 0; i < s_rotoPageCount; ++i) {
-        if (s_rotoPage[i].layer == layer && s_rotoPage[i].on) {
+        if (s_rotoPage[i].layer == layer && (s_rotoPage[i].on & 0x80)) {
             s_rotoPage[i].on   = 0;
             g_ps1RotoPageDrops = g_ps1RotoPageDrops + 1;
         }
@@ -189,7 +188,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
             PS1RotoPageRec p;
             ReadBytes(&info, &p, sizeof(p));
             if (s_rotoPageCount < PS1_TILE_ROTO_PAGES && p.image < h.imageCount && p.layer < LAYER_COUNT) {
-                p.on                          = 1;
+                p.on                          = (p.on & 1) | 0x80;
                 s_rotoPage[s_rotoPageCount++] = p;
             }
             else {
@@ -198,9 +197,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
         }
     }
     if (v4)
-        ReadBytes(&info, ps1TileOpaque, sizeof(ps1TileOpaque));
-    else
-        memset(ps1TileOpaque, 0, sizeof(ps1TileOpaque));
+        Seek_Cur(&info, 128); // 9v.3's opaque bits (u8[128], bit t: tile t's pixels all opaque): no runtime user yet
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
     s_imgOff     = 1024 * 2;
     s_clutOff    = s_imgOff + s_imageCount * sizeof(PS1TileImage);
@@ -283,7 +280,6 @@ void RSDK::PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16
         for (int32 fx = 0; fx < width; fx += TILE_SIZE, ++t) {
             int32 cx = (srcX + fx) >> 4;
             if (t < TILE_COUNT) {
-                ps1TileOpaque[t >> 3] &= ~(1 << (t & 7)); // 9v.3: an animated tile is never taken as covering
                 TileTable()[t] = (cx < sheet->cellsW && cy < sheet->cellsH) ? Cells()[sheet->firstCell + cy * sheet->cellsW + cx] : PS1_TILE_NONE;
                 if (s_solidMaskOff && (s_ps1TileBlob[s_solidMaskOff + (t >> 3)] >> (t & 7) & 1))
                     PS1TileSolidDrop(-1); // a tile on a one-colour line changed its picture

@@ -178,6 +178,8 @@ bool PS1RotoPageDraw(TileLayer *layer, const PS1TileImage *img, int32 ox, int32 
     int32 x2 = currentScreen->clipBound_X2, y2 = currentScreen->clipBound_Y2;
     int32 n = y2 - y1, xw = x2 - x1;
     int32 wShift = layer->widthShift + 20, hShift = layer->heightShift + 20; // the map's size in 16.16 texels
+    if (ox & 0x10000) // 9u.18: the map repeats the page (ERZ's sky): it repeats at its own size
+        ox = 0, wShift = hShift = 24;
     if (wShift > 30 || hShift > 30)
         return false;
     PS1RotoPageCtx c; // 3 KB of stack (the tile path's 6 KB frame is not on it: PS1RotoTileDraw)
