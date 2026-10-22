@@ -118,7 +118,8 @@ PYEOF
     # screens stay in VRAM unless the game clears it), not the EXE straight into OpenBIOS
     local boot="-fastboot -exe rsdkv5.ps-exe"
     [ "${EMU_RETAIL:-0}" = 1 ] && boot="-bios ${EMU_BIOS:-$HOME/Files/Projetos_Infaliveis/PS1/SCPH101.BIN}"
-    "$EMU_PCSX" $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
+    # -NSAppSleepDisabled YES: macOS App Nap throttled a background run to ~20 % CPU once the display slept (2026-10-21)
+    "$EMU_PCSX" -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
       -iso build/game.cue >/dev/null 2>&1 &
     EMU_PID=$!
     sleep 4
