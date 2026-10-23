@@ -1,6 +1,9 @@
 # Sourced by the GDB harness (tools/play_test.sh, tools/boot_test.sh): starts an emulator on build/game.cue for
 # rsdkv5.elf and stops it again.
 #   EMU=redux (default)  PCSX-Redux, GDB port 3333, the EXE given with -exe (the disc's overlays and data)
+#                        EMU_SLOT=N (1-4): our own portable instance instead (../pcsx-redux-maniaN, a copy of the default
+#                        settings made once; GDB port 3400+N, the suite's workers use 3350-3397), so parallel sessions in
+#                        their own worktrees each run one; a slot whose port is taken waits up to 10 minutes
 #   EMU=ds               DuckStation with the retail BIOS, GDB port 2345 (docs/31 §6), booted from the disc
 #   EMU=r16              docs/32 phase 13: the local 16 MB PCSX-Redux copy (../pcsx-redux-16mb/redux16mb, docs/34 §11 / §20)
 #                        on its own portable settings (../pcsx-redux-maniamods) and GDB port 3344, OpenBIOS, the EXE with
@@ -21,27 +24,46 @@ EMU_R16=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-16mb/redux16mb
 EMU_R16_DIR=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-maniamods
 EMU_R16_PORT=3344
 EMU_R16_WEB=8104 # its web API (tools/play/vshot.sh: /api/v1/gpu/vram/raw, 2 MB with -2mbvram)
+EMU_SLOT=${EMU_SLOT:-}
+EMU_SLOT_DIR=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-mania$EMU_SLOT
+EMU_SLOT_PORT=$((3400 + ${EMU_SLOT:-0}))
 EMU_SP=$(python3 -c "import struct;print(hex(struct.unpack_from('<I',open('rsdkv5.ps-exe','rb').read(0x34),0x30)[0]))")
 EMU_PID=
 EMU_CFG=
 EMU_BAK=
+# The user's settings.ini while a harness run holds DuckStation (every harness that edits it, 2026-10-23: a run killed
+# before its restore left a throwaway memory card and StartPaused in the user's settings for days). A run that finds it
+# at start puts it back first (no DuckStation runs then: its holder was killed); the restore removes it.
+EMU_DS_HELD="$EMU_DS_SET.harness"
 
 # The GDB script's first lines (symbols, then the emulator's stub)
 emu_gdb_header() {
   echo "set pagination off"; echo "set confirm off"; echo "file rsdkv5.elf"; echo "set architecture mips:3000"
   if [ "$EMU" = ds ]; then echo "target remote localhost:2345"
   elif [ "$EMU" = r16 ]; then echo "target remote localhost:$EMU_R16_PORT"
+  elif [ -n "$EMU_SLOT" ]; then echo "target remote localhost:$EMU_SLOT_PORT"
   else echo "target remote localhost:3333"; fi
 }
 
-emu_restore() { [ -n "$EMU_BAK" ] && [ -f "$EMU_BAK" ] && cp "$EMU_BAK" "$EMU_CFG"; }
+emu_restore() {
+  [ -n "$EMU_BAK" ] || return 0
+  if [ "$EMU" = ds ] && [ -f "$EMU_DS_HELD" ]; then cp "$EMU_DS_HELD" "$EMU_CFG" && rm -f "$EMU_DS_HELD"
+  elif [ -f "$EMU_BAK" ]; then cp "$EMU_BAK" "$EMU_CFG"; fi
+  EMU_BAK=
+}
 
 # emu_start BACKUP_PREFIX: exits 2 when the emulator already runs (another session)
 emu_start() {
   if [ "$EMU" = ds ]; then
     # the executable by name (-x): -f matched other sessions' shells polling with that path in their own command line
     pgrep -x DuckStation >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
-    EMU_CFG=$EMU_DS_SET; EMU_BAK="$1.settings.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
+    if [ -f "$EMU_DS_HELD" ]; then
+      echo "DuckStation settings: the user's put back from $EMU_DS_HELD (a killed run left them)" >&2
+      cp "$EMU_DS_HELD" "$EMU_DS_SET"
+    fi
+    cp "$EMU_DS_SET" "$EMU_DS_HELD"
+    # the exit trap stops our emulator before restoring: DuckStation writes its settings (the run's) when it quits
+    EMU_CFG=$EMU_DS_SET; EMU_BAK="$1.settings.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_stop EXIT
     # docs/32 9f: never the user's own card (memcards/<title>_1.mcd): slot 1 is a non-persistent card (formatted fresh
     # at every boot), or EMU_DS_CARD=FILE (absolute path; a missing file is created formatted), for this run only
     /usr/bin/python3 - "$EMU_CFG" "${EMU_DS_CARD:-}" <<'PYEOF'
@@ -108,8 +130,20 @@ OutputMuted = true/' "$EMU_CFG"; fi
     # 4.2e: other sessions run isolated copies (-portable config, their own GDB port): only an instance on the default
     # config (this harness's pcsx.json and GDB port 3333) blocks this run
     # (the processes named PCSX-Redux only: a grep over every command line matched shells waiting on that path)
-    for p in $(pgrep -x PCSX-Redux); do ps -o command= -p $p; done | grep -qv -- "-portable" && { echo "PCSX-Redux is already running on the default config (another session?): not starting it" >&2; exit 2; }
-    EMU_CFG=$EMU_PCSX_CFG; EMU_BAK="$1.pcsx.json.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_restore EXIT
+    local portable= gport=3333
+    if [ -n "$EMU_SLOT" ]; then
+      case "$EMU_SLOT" in [1-4]) ;; *) echo "EMU_SLOT: 1-4" >&2; exit 1;; esac
+      local w
+      for w in $(seq 1 120); do nc -z localhost $EMU_SLOT_PORT 2>/dev/null || break; sleep 5; done
+      nc -z localhost $EMU_SLOT_PORT 2>/dev/null && { echo "slot $EMU_SLOT: port $EMU_SLOT_PORT still busy" >&2; exit 2; }
+      mkdir -p "$EMU_SLOT_DIR"
+      [ -f "$EMU_SLOT_DIR/pcsx.json" ] || cp "$EMU_PCSX_CFG" "$EMU_SLOT_DIR/pcsx.json"
+      EMU_CFG=$EMU_SLOT_DIR/pcsx.json; trap emu_stop EXIT
+      portable="-portable $EMU_SLOT_DIR"; gport=$EMU_SLOT_PORT
+    else
+      for p in $(pgrep -x PCSX-Redux); do ps -o command= -p $p; done | grep -qv -- "-portable" && { echo "PCSX-Redux is already running on the default config (another session?): not starting it" >&2; exit 2; }
+      EMU_CFG=$EMU_PCSX_CFG; EMU_BAK="$1.pcsx.json.bak"; cp "$EMU_CFG" "$EMU_BAK"; trap emu_stop EXIT
+    fi
     # (user 2026-10-09 / 10-11: test runs are silent: SPU.Mute for this run; the settings come back after it)
     /usr/bin/python3 - "$EMU_CFG" <<'PYEOF'
 import json, sys
@@ -139,7 +173,7 @@ PYEOF
     # emulation, GDB stub and VRAM are the same (timings are emulated). EMU_UI=1: with its window, as before
     local ui=-no-ui
     [ "${EMU_UI:-0}" = 1 ] && ui=
-    "$EMU_PCSX" $ui -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port 3333 $ram -memcard1 "$mc1" -memcard2 "$mc2" \
+    "$EMU_PCSX" $ui -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port $gport $portable $ram -memcard1 "$mc1" -memcard2 "$mc2" \
       -iso build/game.cue >/dev/null 2>&1 < /dev/null &
     EMU_PID=$!
     sleep 4
@@ -153,6 +187,7 @@ emu_stop() {
     for i in $(seq 1 15); do kill $EMU_PID 2>/dev/null || break; sleep 1; done
     kill -9 $EMU_PID 2>/dev/null
     wait $EMU_PID 2>/dev/null
+    EMU_PID=
   fi
   emu_restore
 }

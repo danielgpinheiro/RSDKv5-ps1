@@ -14,7 +14,7 @@ cd "$(dirname "$0")/../.."
 REPO=$(pwd)
 NAME=$1; BOOT=$2; FRAMES=$3; RIGHT=${4:-240}; REF=${5:-HEAD}
 OUT=$REPO/build/perf9f; mkdir -p "$OUT"
-WT=$(cd .. && pwd)/.wt-cab
+WT=${CAB_WT:-$(cd .. && pwd)/.wt-cab} # CAB_WT=DIR: a session's own reference worktree (parallel sessions)
 sha=$(git rev-parse --verify "$REF^{commit}") || exit 1
 if [ ! -d "$WT" ]; then
   git worktree add -q --detach "$WT" "$sha" || exit 1
