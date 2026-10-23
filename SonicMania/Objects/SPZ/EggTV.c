@@ -60,6 +60,22 @@ void EggTV_DrawScanlines(void)
     RSDK_THIS(EggTV);
 
     int32 y = (((Zone->timer >> 1) & 1) << 16) - (self->size.y >> 1) + self->position.y;
+#if defined RETRO_PS1_BUILD
+    // docs/32 9v.9: the same lines in batches of one ink (PS1DrawLinesInk: one texpage word, no span a line)
+    if (self->size.y >= 0 && (self->size.y & 0xFFFF0000)) {
+        int32 xy[4 * 32], k = 0;
+        for (int32 i = 0; i < (self->size.y >> 16); i += 2) {
+            xy[4 * k] = self->position.x - (self->size.x >> 1), xy[4 * k + 1] = y;
+            xy[4 * k + 2] = self->position.x + (self->size.x >> 1), xy[4 * k + 3] = y;
+            if (++k == 32)
+                PS1DrawLinesInk(xy, k, 0x404060, self->scanlineAlpha, INK_BLEND), k = 0;
+            y += 0x20000;
+        }
+        if (k)
+            PS1DrawLinesInk(xy, k, 0x404060, self->scanlineAlpha, INK_BLEND);
+    }
+    return;
+#endif
     if (self->size.y >= 0 && (self->size.y & 0xFFFF0000)) {
         for (int32 i = 0; i < (self->size.y >> 16); i += 2) {
             RSDK.DrawLine(self->position.x - (self->size.x >> 1), y, self->position.x + (self->size.x >> 1), y, 0x404060, self->scanlineAlpha,

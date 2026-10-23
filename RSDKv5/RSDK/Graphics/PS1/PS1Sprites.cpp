@@ -1672,6 +1672,52 @@ void RSDK::PS1Face3DEnd()
     if (s_ps1F3DInk.mode >= 0)
         PS1ChainInvalidateTPage();
 }
+// 9v.9: DrawLine(xy[4i] .. xy[4i + 3], color, alpha, inkEffect, false) for n lines of one colour and ink (world 16.16),
+// in one Face3D bulk: the ink's texpage word once instead of a chain span and texpage a line (SPZ2's EggTV scanlines:
+// ~50 hblanks a frame of spans). The same pixels; inks of several passes, the mask test or the tint: each through DrawLine
+extern "C" void PS1DrawLinesInk(const int *xy, int n, unsigned int color, int alpha, int inkEffect)
+{
+    switch (inkEffect) { // DrawLine's checks
+        default: break;
+        case INK_ALPHA:
+            if (alpha > 0xFF)
+                inkEffect = INK_NONE;
+            else if (alpha <= 0)
+                return;
+            break;
+        case INK_ADD:
+        case INK_SUB:
+            if (alpha > 0xFF)
+                alpha = 0xFF;
+            else if (alpha <= 0)
+                return;
+            break;
+    }
+    PS1Ink ink;
+    uint32 bgr, semi;
+    if (!PS1FlatInk(color, inkEffect, alpha, bgr, ink))
+        return;
+    if (ink.passes != 1 || ink.maskTest || ink.tintInvert) {
+        for (int32 i = 0; i < n; ++i, xy += 4) DrawLine(xy[0], xy[1], xy[2], xy[3], color, alpha, inkEffect, false);
+        return;
+    }
+    if (!PS1Face3DBegin(inkEffect, alpha, color, &bgr, &semi))
+        return;
+    const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+    for (int32 i = 0; i < n; ++i, xy += 4) {
+        const int32 x1 = FROM_FIXED(xy[0]) - sx, y1 = FROM_FIXED(xy[1]) - sy, x2 = FROM_FIXED(xy[2]) - sx, y2 = FROM_FIXED(xy[3]) - sy;
+        if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023)
+            continue;
+        uint32 *w = PS1Face3DSlot(3);
+        if (!w)
+            break;
+        w[0] = 0x40000000 | bgr | semi;
+        w[1] = (uint32)(uint16)y1 << 16 | (uint16)x1;
+        w[2] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+        g_ps1PrimApprox = g_ps1PrimApprox + 1;
+    }
+    PS1Face3DEnd();
+}
 
 void RSDK::PS1DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, int32 alpha, int32 inkEffect)
 {

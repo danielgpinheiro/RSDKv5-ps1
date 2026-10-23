@@ -30,6 +30,12 @@ void SPZ1Setup_StaticUpdate(void)
         RSDK.RotatePalette(1, 128, 135, false);
         RSDK.RotatePalette(2, 128, 135, false);
     }
+#if defined RETRO_PS1_BUILD
+    // docs/32 9v.12 (user 2026-10-22: slower background animation allowed): the lights' two colour pulses written at 30 Hz,
+    // one on even frames, the other on odd ones (their timers still run every frame): each write re-uploads every tile
+    // CLUT holding those entries (~30 hblanks a frame for both)
+    if (!(Zone->timer & 1))
+#endif
     RSDK.SetLimitedFade(0, 1, 2, SPZ1Setup->fgLightsPalTimer, 128, 135);
 
     ++SPZ1Setup->bgLightsPalTimer;
@@ -40,6 +46,9 @@ void SPZ1Setup_StaticUpdate(void)
 
     SPZ1Setup->pulsePercent += 3;
     SPZ1Setup->pulsePercent &= 0x1FF;
+#if defined RETRO_PS1_BUILD
+    if (Zone->timer & 1) // 9v.12 (above)
+#endif
     RSDK.SetLimitedFade(0, 1, 3, abs(RSDK.Sin512(SPZ1Setup->pulsePercent) >> 1), 152, 159);
 
     ++SPZ1Setup->streetLightTimer;

@@ -4,12 +4,12 @@
 # the C loop: the chunk walk (PS1ChunkIdx / PS1ChunkTiles, wrapping at the layer's width), sprite pieces (a texpage word
 # where the page changes), flipped tiles as flip rectangles (GPUs that draw them) or as 9-word quads (PS1_EMIT_FLIPPED's
 # words, computed from the packed u | v as 9u.9's C), the fragment closing of EmitFrag. Left to the C body (return 1 with
-# the tile in `t`, the walk already past it, sx at its column): a tile with no image, an 8-bit tile (the bank's CLUT), a
+# the tile in `t`, the walk already past it, sx at its column): a tile with no image (9v.8: 8-bit tiles stay here), a
 # quad whose edge texel leaves the page (EmitFlipped), a piece that needs a new span. Return 0: the band is done.
 # PS1BandAsmCtx (PS1Layers.cpp), byte offsets:
 #   0 w, 4 lim, 8 end, 12 page, 16 chunk (u16 *), 20 sub, 24 tx, 28 xsize, 32 chunkRow, 36 rowSel, 40 sx, 44 yWord,
 #   48 tileImage (u16 *), 52 images (6-byte records), 56 flipLive, 60 pieces, 64 frects, 68 ps1SegPool, 72 ps1RowPool,
-#   76 t (out)
+#   76 t (out), 80 flipCopies (9v.10: the scene has a copy of every flipped tile: a flipped tile goes to the C body)
         .set noreorder
         .set noat
         .text
@@ -100,8 +100,10 @@ PS1BandFastAsm:
         lhu     $t3, 4($t2)             # clut
         lhu     $t0, 0($t2)             # u | v << 8
         lhu     $v0, 2($t2)             # tpage
-        beq     $t3, $t5, .Lbail        # an 8-bit tile (the bank's CLUT): the C body
-        sll     $t3, $t3, 16            # (delay)
+        bne     $t3, $t5, 3f
+        nop
+        li      $t3, 0x3C00             # 9v.8: an 8-bit tile: the bank's 256-entry CLUT, bank 0 here (C's bankClut, y 240)
+3:      sll     $t3, $t3, 16
         or      $t0, $t0, $t3           # tex = u | v << 8 | clut << 16
         andi    $t3, $t1, 0xC00
         bnez    $t3, .Lflip
@@ -146,6 +148,10 @@ PS1BandFastAsm:
         addiu   $s0, $s0, 4             # (delay) ++w
 
 .Lflip:                                 # t3 = t & 0xC00
+        lw      $at, 80($a0)            # 9v.10: flip copies: the C body draws the tile's copy (before the flip rectangle)
+        nop
+        bnez    $at, .Lbailpiece
+        nop
         bnez    $t4, .Llive
         andi    $t2, $t0, 0xFF          # (delay) u
         andi    $t3, $t1, 0x400

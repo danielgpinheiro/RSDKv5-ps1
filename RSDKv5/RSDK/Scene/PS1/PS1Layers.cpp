@@ -412,8 +412,9 @@ struct PS1BandAsmCtx {
     int32 pieces, frects;
     const uint16 *segPool, *rowPool;
     uint32 t;
+    uint32 flipCopies; // 9v.10
 };
-static_assert(offsetof(PS1BandAsmCtx, chunk) == 16 && offsetof(PS1BandAsmCtx, sx) == 40 && offsetof(PS1BandAsmCtx, flipLive) == 56
+static_assert(offsetof(PS1BandAsmCtx, flipCopies) == 80 && offsetof(PS1BandAsmCtx, chunk) == 16 && offsetof(PS1BandAsmCtx, sx) == 40 && offsetof(PS1BandAsmCtx, flipLive) == 56
                   && offsetof(PS1BandAsmCtx, segPool) == 68 && offsetof(PS1BandAsmCtx, t) == 76,
               "ps1/band_fast.s reads PS1BandAsmCtx at these offsets");
 extern "C" int32 PS1BandFastAsm(PS1BandAsmCtx *c);
@@ -525,10 +526,11 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     bool walked = false;
 #if !PS1_BAND_C_ONLY
     if constexpr (Fast) {
-        if (!flipAll) { // 9u.15: the assembly loop (ps1/band_fast.s), the C body for the tiles it hands back
+        { // 9u.15: the assembly loop (ps1/band_fast.s), the C body for the tiles it hands back (9v.10: also in scenes with
+          // flip copies, their flipped tiles handed back: the UFO stages' backgrounds ran the C loop for every tile)
             PS1BandAsmCtx c;
             c.xsize = xsize, c.chunkRow = chunkRow, c.rowSel = rowSel, c.yWord = yWord, c.tileImage = tileImage;
-            c.images = images, c.flipLive = flipLive, c.segPool = ps1SegPool, c.rowPool = ps1RowPool;
+            c.images = images, c.flipLive = flipLive, c.segPool = ps1SegPool, c.rowPool = ps1RowPool, c.flipCopies = flipAll;
             for (;;) {
                 c.w = w, c.lim = lim, c.end = end, c.page = page, c.chunk = chunk, c.sub = sub, c.tx = tx, c.sx = sx;
                 c.pieces = pieces, c.frects = frects;
@@ -1119,6 +1121,9 @@ const PS1LayerCutRec s_ps1LayerCuts[] = {
     { "OOZ2", '2', 0, 192, 0 }, // the distant refinery silhouettes, behind Background 2
     { "PSZ1", '1', 0, 231, 0 }, // hidden by Background 2
     { "GHZ", '2', 3, 0, 0 },    // BG Cave 2: the far stalactites
+    // 9v.11 (coarser parallax): per-line scroll in blocks of 8 layer rows
+    { "GHZ", '2', 2, 0, 8 },  // BG Cave 1 (-20 hblanks at x 11008)
+    { "HCZ", '2', 1, 0, 8 },  // Background 2, the water line (its scanline callback; -58 at x 28310)
 };
 uint8 RSDK::ps1LayerCut[LAYER_COUNT] __attribute__((aligned(4))); // colour + 1 (0: drawn); GDB zeroes it for A/B pictures
 uint8 RSDK::ps1LayerStep[LAYER_COUNT] __attribute__((aligned(4))); // 9v.7 (0: g_ps1LineStep)
