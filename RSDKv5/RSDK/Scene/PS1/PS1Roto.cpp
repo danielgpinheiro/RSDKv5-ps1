@@ -322,7 +322,9 @@ __attribute__((noinline, optimize("O2"))) void RSDK::PS1RotoTileDraw(TileLayer *
             uint16 img = tileImage[t & 0x3FF];
             if (img == PS1_TILE_NONE)
                 continue;
-            const uint8 *ti = images + img * 6;
+            uint32 img2 = (uint32)img << 1, img4 = (uint32)img << 2;
+            __asm__("" : "+r"(img2), "+r"(img4)); // 9v.13: 6-byte records as 2i + 4i (GCC folds the shifts into a mult)
+            const uint8 *ti = images + img2 + img4;
             int32 u = ti[0], v = ti[1];
             uint32 tpage = *(const uint16 *)(ti + 2), clut = *(const uint16 *)(ti + 4);
             if (clut == 0xFFFF)
