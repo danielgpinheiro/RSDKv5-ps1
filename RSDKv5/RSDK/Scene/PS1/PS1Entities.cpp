@@ -226,10 +226,21 @@ uint16 s_tgPool[PS1_TYPEGROUP_ENTITIES * 3];
 int32 s_tgCount = 0;
 } // namespace
 
+// 9w.2 (docs/ports/mania/32): the class groups below s_tgHi (one past the highest class the last build filled) and the
+// extra groups are the only ones with a count (a scene load clears every count): Begin clears those, Build lays out the
+// ones it fills (was: three walks over the 260 groups a frame). A group past the build's reach keeps the pointer the last
+// build that reached it set (into the pool: the first build lays out every group); with a count of 0 nothing reads it.
+namespace
+{
+int32 s_tgHi    = TYPE_COUNT;
+bool s_tgLaidAll = false;
+} // namespace
+
 void RSDK::PS1TypeGroupsBegin()
 {
     s_tgCount = 0;
-    for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
+    for (int32 i = 0; i < s_tgHi; ++i) typeGroups[i].entryCount = 0;
+    for (int32 i = TYPE_COUNT; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
 }
 
 volatile uint32 g_ps1TypeGroupOverflow = 0;
@@ -273,12 +284,16 @@ __attribute__((optimize("O2"))) void RSDK::PS1TypeGroupsCollect(EntityBase **p, 
 // order: the same lists, each one contiguous in the pool.
 volatile uint32 g_ps1TypeGroupPeak = 0; // most entities captured in one frame (GDB)
 
+#if PS1_CHECK_TYPEGROUPS
+extern "C" volatile uint32 g_ps1TgChecked, g_ps1TgWrong;
+#endif
 void RSDK::PS1TypeGroupsBuild()
 {
-    if ((uint32)s_tgCount > g_ps1TypeGroupPeak)
-        g_ps1TypeGroupPeak = s_tgCount;
-    for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
-    for (int32 n = 0; n < s_tgCount; ++n) {
+    const int32 count = s_tgCount;
+    if ((uint32)count > g_ps1TypeGroupPeak)
+        g_ps1TypeGroupPeak = count;
+    int32 hi = GROUP_ALL + 1; // (Begin cleared the groups below s_tgHi and the extra ones)
+    for (int32 n = 0; n < count; ++n) {
         if (s_tgGroup[n] >= TYPEGROUP_COUNT || s_tgClass[n] >= TYPE_COUNT) {
             if (!g_ps1BadGroups)
                 g_ps1BadGroupWho = s_tgSlot[n] | (uint32)s_tgClass[n] << 16, g_ps1BadGroupValue = s_tgGroup[n];
@@ -287,28 +302,59 @@ void RSDK::PS1TypeGroupsBuild()
             if (s_tgClass[n] >= TYPE_COUNT)
                 s_tgClass[n] = 0;
         }
+        const int32 c = s_tgClass[n];
         typeGroups[GROUP_ALL].entryCount++;
-        typeGroups[s_tgClass[n]].entryCount++;
+        typeGroups[c].entryCount++;
+        if (c >= hi)
+            hi = c + 1;
         if (s_tgGroup[n] >= TYPE_COUNT)
             typeGroups[s_tgGroup[n]].entryCount++;
     }
+    s_tgHi = hi;
+    if (!s_tgLaidAll)
+        hi = TYPE_COUNT, s_tgLaidAll = true;
     int32 pos = 0;
-    for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) {
-        typeGroups[i].entries = &s_tgPool[pos];
-        pos += typeGroups[i].entryCount;
-        typeGroups[i].entryCount = 0;
+    for (int32 i = 0; i < TYPEGROUP_COUNT;) {
+        TypeGroupList *g = &typeGroups[i];
+        g->entries       = &s_tgPool[pos];
+        pos += g->entryCount;
+        g->entryCount = 0;
+        if (++i == hi)
+            i = TYPE_COUNT;
     }
-    for (int32 n = 0; n < s_tgCount; ++n) {
-        TypeGroupList *g = &typeGroups[GROUP_ALL];
-        g->entries[g->entryCount++] = s_tgSlot[n];
+    for (int32 n = 0; n < count; ++n) {
+        const uint16 slot = s_tgSlot[n];
+        TypeGroupList *g  = &typeGroups[GROUP_ALL];
+        g->entries[g->entryCount++] = slot;
         g                           = &typeGroups[s_tgClass[n]];
-        g->entries[g->entryCount++] = s_tgSlot[n];
+        g->entries[g->entryCount++] = slot;
         if (s_tgGroup[n] >= TYPE_COUNT) {
             g                           = &typeGroups[s_tgGroup[n]];
-            g->entries[g->entryCount++] = s_tgSlot[n];
+            g->entries[g->entryCount++] = slot;
         }
     }
+#if PS1_CHECK_TYPEGROUPS
+    // evidence build: every group holds what the stock loop appends, in its order, and no more (g_ps1TgWrong = 0)
+    static uint16 cur[TYPEGROUP_COUNT];
+    for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) cur[i] = 0;
+    for (int32 n = 0; n < count; ++n) {
+        const uint32 gs[3] = { GROUP_ALL, s_tgClass[n], s_tgGroup[n] };
+        for (int32 k = 0; k < (s_tgGroup[n] >= TYPE_COUNT ? 3 : 2); ++k) {
+            TypeGroupList *g = &typeGroups[gs[k]];
+            if (cur[gs[k]] >= g->entryCount || g->entries[cur[gs[k]]] != s_tgSlot[n])
+                g_ps1TgWrong = g_ps1TgWrong + 1;
+            ++cur[gs[k]];
+        }
+    }
+    for (int32 i = 0; i < TYPEGROUP_COUNT; ++i) g_ps1TgWrong = g_ps1TgWrong + (cur[i] != typeGroups[i].entryCount);
+    g_ps1TgChecked = g_ps1TgChecked + 1;
+#endif
 }
+#if PS1_CHECK_TYPEGROUPS
+extern "C" {
+volatile uint32 g_ps1TgChecked = 0, g_ps1TgWrong = 0;
+}
+#endif
 
 // ---- the scene file's entities ----
 // One block per object of the scene file: its variable layout (RecLayout: the active variables in file order), then its
