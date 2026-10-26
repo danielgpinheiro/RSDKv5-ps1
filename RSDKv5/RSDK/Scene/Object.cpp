@@ -14,7 +14,7 @@ int32 RSDK::globalObjectIDs[OBJECT_COUNT];
 int32 RSDK::stageObjectIDs[OBJECT_COUNT];
 
 #if RETRO_PLATFORM == RETRO_PS1
-#include "PS1/PS1Entities.cpp" // per-slot entity storage (docs/32 2.3)
+#include "PS1/PS1Entities.cpp" // per-slot entity storage (docs/ports/mania/32 2.3)
 #else
 EntityBase RSDK::objectEntityList[ENTITY_COUNT];
 #endif
@@ -311,7 +311,7 @@ void RSDK::LoadStaticVariables(uint8 *classPtr, uint32 *hash, int32 readOffset)
 }
 
 #if PS1_PROFILE
-// `make PROFILE=1` (docs/32 phase 4 preview): CPU time per class, in root counter 2 ticks (system clock / 8 = 8 cycles),
+// `make PROFILE=1` (docs/ports/mania/32 phase 4 preview): CPU time per class, in root counter 2 ticks (system clock / 8 = 8 cycles),
 // summed over the frames since boot; GDB reads them per objectClassList index. [0] staticUpdate + update + lateUpdate,
 // [1] draw. Engine phases: g_ps1ProfPhase (RetroEngine.cpp).
 volatile uint32 g_ps1ProfClass[OBJECT_COUNT][2];
@@ -358,7 +358,7 @@ void RSDK::InitObjects()
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
     PS1ScanSleepBegin();
-    // docs/32 9i: the second planned STG compaction, before the StageLoads: LoadSceneAssets leaves holes, and a StageLoad's
+    // docs/ports/mania/32 9i: the second planned STG compaction, before the StageLoads: LoadSceneAssets leaves holes, and a StageLoad's
     // allocation that found no room at the tail forced a compaction that moved the frame tables earlier StageLoads' class
     // animators point into (FBZ2: UIWidgets_StageLoad after Spikes_StageLoad; at frame 147 Spikes' vertical animator read
     // a duration of 0 there and ProcessAnimation never returned). After this one the StageLoads and Creates allocate at a
@@ -405,14 +405,14 @@ void RSDK::InitObjects()
     sceneInfo.state = ENGINESTATE_REGULAR;
 #if RETRO_PLATFORM == RETRO_PS1
     PS1DormantLoadDone(); // 7b
-    PS1AtlasBindEnd(); // every StageLoad / Create has bound its frames (docs/32 3.1c)
+    PS1AtlasBindEnd(); // every StageLoad / Create has bound its frames (docs/ports/mania/32 3.1c)
 #endif
 
     if (!cameraCount)
         AddCamera(&screens[0].position, TO_FIXED(screens[0].center.x), TO_FIXED(screens[0].center.y), false);
 }
 #if RETRO_PLATFORM == RETRO_PS1
-// 3.0 (docs/32): the update pass tests each ACTIVE_BOUNDS entity against every camera (three in GHZ1): ~200 hblanks a
+// 3.0 (docs/ports/mania/32): the update pass tests each ACTIVE_BOUNDS entity against every camera (three in GHZ1): ~200 hblanks a
 // frame. An entity outside the union of the cameras' boxes, grown by its own range, is out of range for every camera
 // (in range for camera s means |x - cx| <= rx + ox, so x lies in [min(cx - ox) - rx, max(cx + ox) + rx], and the same
 // for y): it skips the per-camera loop. The prefilter only applies where no sum can overflow (|camera position| < 2^30,
@@ -580,7 +580,7 @@ volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: clas
         p += 31, s += 31;                                                                                              \
         continue;                                                                                                      \
     }
-// docs/32 9f (UFO item 2): sleeping groups. In the UFO stages ~540 of ~690 live slots (rings, spheres, item boxes:
+// docs/ports/mania/32 9f (UFO item 2): sleeping groups. In the UFO stages ~540 of ~690 live slots (rings, spheres, item boxes:
 // ACTIVE_RBOUNDS; decorations: ACTIVE_BOUNDS) are tested and found out of range every frame. A group of 8 slots whose
 // live slots are all of those two kinds and were all settled out of range in one stretch of the scan goes to sleep with
 // a margin: how far (whole pixels, on each axis) the one camera may move with every slot still out of range in stock's
@@ -1733,7 +1733,7 @@ void RSDK::ProcessObjectDrawLists()
 {
     if (sceneInfo.state != ENGINESTATE_LOAD && sceneInfo.state != (ENGINESTATE_LOAD | ENGINESTATE_STEPOVER)) {
 #if RETRO_PLATFORM == RETRO_PS1
-        PS1LayersFrameBegin(); // the frame's clear and CLUTs, before the first layer or sprite (docs/32 3.3)
+        PS1LayersFrameBegin(); // the frame's clear and CLUTs, before the first layer or sprite (docs/ports/mania/32 3.3)
 #endif
         for (int32 s = 0; s < videoSettings.screenCount; ++s) {
             currentScreen             = &screens[s];
@@ -2062,7 +2062,7 @@ void RSDK::ProcessObjectDrawLists()
             sceneInfo.currentScreenID++;
         }
 #if RETRO_PLATFORM == RETRO_PS1
-        PS1LayersFrameEnd(); // 9b.3: the grey tint's CLUT state (docs/32)
+        PS1LayersFrameEnd(); // 9b.3: the grey tint's CLUT state (docs/ports/mania/32)
 #endif
     }
 }
@@ -2292,7 +2292,7 @@ Entity *RSDK::CreateEntity(uint16 classID, void *data, int32 x, int32 y)
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 9i: a type group's slots as foreach_active walks them (its entries, in order; foreach_active also skips an entry
+// docs/ports/mania/32 9i: a type group's slots as foreach_active walks them (its entries, in order; foreach_active also skips an entry
 // whose class is no longer the group's), for game loops that walk one many times a frame (FBZTrash's pairs)
 extern "C" const uint16 *PS1TypeGroupSlots(uint16 group, int32 *count, void ***entities)
 {

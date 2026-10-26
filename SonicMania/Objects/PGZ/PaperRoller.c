@@ -109,7 +109,7 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
 
     int32 count = (self->length / 4) + ((self->length % 4) > 0);
 #if defined RETRO_PS1_BUILD && PS1_LINE_BATCH
-    // docs/32 9q: the lines this call draws, sent at the end in one bulk (PS1DrawLinesWorld: DrawLine's INK_NONE words)
+    // docs/ports/mania/32 9q: the lines this call draws, sent at the end in one bulk (PS1DrawLinesWorld: DrawLine's INK_NONE words)
     int32 ps1Lines[4 * 64];
     uint32 ps1Colors[64];
     int32 ps1N = 0;
@@ -214,7 +214,7 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
 }
 
 #if defined RETRO_PS1_BUILD && PS1_LINE_BATCH
-// docs/32 9u: PaperRoller_DrawPaperLines' three DrawDeformedLine calls a side compute the same points (only the final
+// docs/ports/mania/32 9u: PaperRoller_DrawPaperLines' three DrawDeformedLine calls a side compute the same points (only the final
 // offset and the colour differ): the points once (the sines / cosines of the two angles read once, every expression as
 // DrawDeformedLine's), then the three calls' line batches in their order, the offset added to each end as there. PSZ1's
 // rollers: ~190 hblanks a frame of this math at the busiest spot. A side of more than 64 segments (DrawDeformedLine draws

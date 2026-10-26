@@ -1,5 +1,5 @@
 #!/bin/bash
-# Capture the sprite manifests of the scenes the current EXE loads within END_FRAME frames (docs/32 3.1):
+# Capture the sprite manifests of the scenes the current EXE loads within END_FRAME frames (docs/ports/mania/32 3.1):
 # tools/gfx/manifests/<Folder><Id>.txt, one "SPR path" / "SHT path" line per load (first occurrence), in load order.
 # Usage: tools/gfx/capture_manifests.sh END_FRAME [LABEL]   (a BOOT= build starts at that scene; the natural one at Logos)
 # MANIFEST_INPUT=FILE.gdb adds pad input on a hook other than perfTick (tools/play/menu_walk_input.gdb: the Menu's screens)

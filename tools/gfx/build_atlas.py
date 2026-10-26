@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Scene sprite atlas for the Mania PS1 port (docs/32 3.1b; golden rule: build time only).
+"""Scene sprite atlas for the Mania PS1 port (docs/ports/mania/32 3.1b; golden rule: build time only).
 
 Input: the scene's manifest (tools/gfx/manifests/<Folder><N>.txt: the sprite files `SPR` and sheets `SHT` the scene
 loads, captured from the running game with tools/gfx/capture_manifest.gdb), the sprite files as the disc has them
@@ -8,7 +8,7 @@ loads, captured from the running game with tools/gfx/capture_manifest.gdb), the 
 - Every frame of every animation of the loaded files is placed, as its full rect (Mania's frames are tight: 96% of
   GHZ1's rect area is inside the opaque bounds); identical rects once; a frame inside another frame's rect is drawn
   from it; frames that only overlap are stored apart.
-- Player files (Players/*.bin; user decision 2026-09-26, docs/32 3.1 fit): each character's frames reduced to <= 15
+- Player files (Players/*.bin; user decision 2026-09-26, docs/ports/mania/32 3.1 fit): each character's frames reduced to <= 15
   colours per frame with one merge map for all of that character's sheets (a colour folded into its nearest colour in
   RGB, least pixels x distance first, until every frame has <= 15): shades can't flicker between frames and palette
   effects (Super) stay coherent. Every other sprite is exact.
@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.join(HERE, '..'))
 import vram_plan as V          # noqa: E402
 import build_tiles as T        # noqa: E402
 import rsdk5_formats as F      # noqa: E402
-import ps1_text                # noqa: E402  (docs/32 choice 182: the Video page's labels)
+import ps1_text                # noqa: E402  (docs/ports/mania/32 choice 182: the Video page's labels)
 
 PAGE = V.PAGE
 BANK_CLUT = 0x1FF
@@ -164,7 +164,7 @@ class Sheets:
         if name not in self.px:
             im = Image.open(os.path.join(self.data, 'Sprites', name))
             self.px[name] = np.array(im)
-            if name == ps1_text.SHEET:  # docs/32 choice 182: the PS1 Video page's labels in rows below (tools/data_disc.py)
+            if name == ps1_text.SHEET:  # docs/ports/mania/32 choice 182: the PS1 Video page's labels in rows below (tools/data_disc.py)
                 self.px[name] = ps1_text.extend_sheet(self.data, self.px[name])
             self.pal[name] = im.getpalette()
         return self.px[name]
@@ -251,7 +251,7 @@ class Bin:
         return best
 
 
-# --- selection (docs/32 3.1: user decisions: single characters, players 4-bit; groups swapped where the music changes)
+# --- selection (docs/ports/mania/32 3.1: user decisions: single characters, players 4-bit; groups swapped where the music changes)
 PLAYER_FILES = {'sonic': {'Players/Sonic.bin': 'normal', 'Players/SuperSonic.bin': 'super'},
                 'tails': {'Players/Tails.bin': 'normal', 'Players/TailSprite.bin': 'normal'},
                 'knux': {'Players/Knux.bin': 'normal'},
@@ -436,7 +436,7 @@ def other_character(name, character):
 # Character art: 15 colours per frame, full resolution (user decision: players lossy; the title screen's big Sonic is
 # character art too: 687 KB at 8-bit, more than all the texture VRAM)
 PLAYER_LIKE = {'Title/Sonic.bin', 'SpecialBS/Sonic.bin', 'SpecialBS/Tails.bin', 'SpecialBS/Knuckles.bin'}
-# docs/32 7.1: Blue Spheres' own character files (BSS_Player loads every one): single characters, one per atlas
+# docs/ports/mania/32 7.1: Blue Spheres' own character files (BSS_Player loads every one): single characters, one per atlas
 BSS_PLAYER_FILES = {'sonic': 'SpecialBS/Sonic.bin', 'tails': 'SpecialBS/Tails.bin', 'knux': 'SpecialBS/Knuckles.bin',
                     'mighty': 'SpecialBS/Mighty.bin', 'ray': 'SpecialBS/Ray.bin'}
 # What may be stored at half resolution (user decision 2026-09-26: bosses, big effects, UI art); everything else (badniks,

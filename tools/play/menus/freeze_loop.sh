@@ -1,5 +1,5 @@
 #!/bin/bash
-# Task 3 (docs/32 9f; tools/play/menus/freeze_loop.sh): N new-game starts on a fresh card (DuckStation: a non-persistent card; tools/emu.sh) from the
+# Task 3 (docs/ports/mania/32 9f; tools/play/menus/freeze_loop.sh): N new-game starts on a fresh card (DuckStation: a non-persistent card; tools/emu.sh) from the
 # menu_nat snapshot, each with its own button timings (DuckStation is deterministic: the same script replays the same
 # run): the menu presses +-0..40 frames, the AIZ intro's skip 30..400 frames after its load (the save's card write runs
 # in the background then). One line per run: DONE (GHZ1 + 600 frames) or STUCK (where).

@@ -1,5 +1,5 @@
 /*
- * docs/32 6.2: the video player (ps1/fmv, ps1/video, ps1/mdec: ~19 KB) is linked into the overlays of the stage folders
+ * docs/ports/mania/32 6.2: the video player (ps1/fmv, ps1/video, ps1/mdec: ~19 KB) is linked into the overlays of the stage folders
  * that play videos (tools/gen_overlays.py VIDEO_OBJECTS: the Title, the endings), not the resident EXE: zones never
  * need it and GHZ1's STG margin can't hold it. The overlay's register function fills this table (PS1VideoLink, in
  * ps1/fmv.cpp); the overlay loader clears it (ps1/overlay.cpp). Resident code reaches the player only through it.

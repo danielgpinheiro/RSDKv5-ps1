@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""What a scene can show (docs/32 3.1): the static analysis the sprite atlas selects frames with.
+"""What a scene can show (docs/ports/mania/32 3.1): the static analysis the sprite atlas selects frames with.
 
 - Objects of the scene: GameConfig's global objects + the folder's StageConfig objects.
 - Active objects: those with Mania-mode entities in the scene file (filter & 3: FILTER_BOTH | FILTER_MANIA), then every

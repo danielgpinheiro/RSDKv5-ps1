@@ -3,8 +3,8 @@
 using namespace RSDK;
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 port (docs/32 6.2): no Ogg/Theora. A video plays as an STR sequence (tools/fmv/build_str.py: the pictures with the
-// music stream the game starts alongside, as CD-XA inside) through ps1/fmv (Sonic CD's MDEC player, docs/31's fixes).
+// PS1 port (docs/ports/mania/32 6.2): no Ogg/Theora. A video plays as an STR sequence (tools/fmv/build_str.py: the pictures with the
+// music stream the game starts alongside, as CD-XA inside) through ps1/fmv (Sonic CD's MDEC player, docs/ports/rsdk-common/31's fixes).
 // LoadVideo records the video; the PlayStream of the same frame (before or after it) names the sound; the first
 // ProcessVideo looks the pair (and the scene's id) up in Data/Video/PS1Video.bin and starts the sequence. A video
 // inside an earlier sequence (an ending's second part) returns false, as on the PC when a video is missing.

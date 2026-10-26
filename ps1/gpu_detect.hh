@@ -1,5 +1,5 @@
 #pragma once
-// GPU type detection and flip-bit rectangles (docs/43 G3; nocash psx-spx "GPU Versions" / "GPU Render Rectangle
+// GPU type detection and flip-bit rectangles (docs/perf/43 G3; nocash psx-spx "GPU Versions" / "GPU Render Rectangle
 // Commands"): GP0(E1h) bits 12 / 13 mirror textured rectangles on the new 208-pin GPU (LATE-PU-8 and up, every PSone)
 // and not on the old 160-pin one, so flipped tiles and sprites were textured quads. PS1DetectGpu (main.cpp start(),
 // before anything is drawn) runs psx-spx's GPU detection (v0 old: never flip bits) and, on v1 / v2, a readback test (an

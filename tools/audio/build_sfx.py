@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-time SFX for the Mania PS1 port (docs/32 phase 5.1): one SPU-ADPCM bank per scene.
+"""Build-time SFX for the Mania PS1 port (docs/ports/mania/32 phase 5.1): one SPU-ADPCM bank per scene.
 
 The engine registers GameConfig's global SFX and each StageConfig's list by name (LoadSfx); a scene can only play what
 the objects it runs ask for (tools/audio/sfx_sets.py). Each scene gets Data/Stages/<Folder>/PS1Sfx<id>.bin with those
@@ -7,14 +7,14 @@ samples, uploaded to SPU RAM in one read when the scene loads.
 
 Rates: one per sample per bank (Sonic 2's solver): every sample starts at min(source rate, 44.1 kHz); while the bank is
 over its budget the largest sample steps down one rate (RATES), none below FLOOR while another is above it. Budget =
-min(SPU sample area, BANK_CAP): the whole SPU sample area by default (docs/32 choice 84: every sound keeps >= 11,025 Hz;
+min(SPU sample area, BANK_CAP): the whole SPU sample area by default (docs/ports/mania/32 choice 84: every sound keeps >= 11,025 Hz;
 Sonic 2 capped its stage banks at 400 KB for shorter loads, PS1_SFX_BANK_CAP=409600 does the same here). The rates per
 scene are logged to build/sfx_rates.txt (the listening check).
 
 Sources: Data/SoundFX/**/*.wav (8 / 16-bit PCM or float, mono or stereo), read here to mono 16-bit PCM; psxavenc encodes
 `-t vag` (48-byte header, data padded to 64 bytes with a trailing loop-trap block).
 
-Bank (little endian): 'PSF6', u16 count, u16 pad, u32 CRC-32 of the table and the data (docs/32 9.3: a bank equal to the
+Bank (little endian): 'PSF6', u16 count, u16 pad, u32 CRC-32 of the table and the data (docs/ports/mania/32 9.3: a bank equal to the
 one in SPU RAM is not uploaded again); count x (char name[40] (NUL-padded SFX path as LoadSfx gets it),
 u32 offset, u32 size, u32 rate, u32 frames at 44.1 kHz) (56 B each); then the sample data (each a multiple of 64 bytes:
 SPU DMA). Each bank is read back and compared.

@@ -20,7 +20,7 @@ struct ObjectPauseMenu {
     bool32 activeChannels[0x10];
 #if MANIA_USE_PLUS
 #if defined RETRO_PS1_BUILD
-    uint16 tintLookupTable[1]; // PS1 (docs/32 2.3f): the pause tint is a GPU effect (phase 3), no software table
+    uint16 tintLookupTable[1]; // PS1 (docs/ports/mania/32 2.3f): the pause tint is a GPU effect (phase 3), no software table
 #else
     uint16 tintLookupTable[0x10000];
 #endif

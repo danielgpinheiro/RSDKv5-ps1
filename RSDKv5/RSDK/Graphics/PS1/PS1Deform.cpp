@@ -1,4 +1,4 @@
-// PS1 port (docs/32 7.5): DrawDeformedSprite (UFO7's plasma, OOZ's smog). Stock walks the sheet per screen line: pixel x
+// PS1 port (docs/ports/mania/32 7.5): DrawDeformedSprite (UFO7's plasma, OOZ's smog). Stock walks the sheet per screen line: pixel x
 // of line y shows texel (P + x D) of scanlines[y] (16.16, wrapping on the sheet's power-of-two size). The two users set
 // deform.y 0 (a line reads one sheet row, scaled across); their sheets are 128x128 and the atlas places them whole, 4-bit,
 // 128-aligned (tools/gfx/build_atlas.py DEFORM_SHEETS; the binding in the surface: LoadSpriteSheet), so the GPU's texture

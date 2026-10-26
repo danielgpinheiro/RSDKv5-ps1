@@ -1,7 +1,7 @@
 // PS1 port: the RenderDevice (see PS1RenderDevice.hpp). Included by Drawing.cpp like the other backends.
 #include "../../../../ps1/video.hh"         // PS1Hblanks (root counter 1)
-#include "../../../../ps1/gpu_chain_raw.hh" // the chained renderer (docs/32 3.2)
-#include "../../../../ps1/gpu_detect.hh"     // g_ps1FlipFrameUsed (docs/43 G3)
+#include "../../../../ps1/gpu_chain_raw.hh" // the chained renderer (docs/ports/mania/32 3.2)
+#include "../../../../ps1/gpu_detect.hh"     // g_ps1FlipFrameUsed (docs/perf/43 G3)
 
 // 3.2: each frame is one DMA chain (ps1/gpu_chain, from Sonic CD): PS1RenderBeginFrame picks this parity's arena
 // (nothing chained yet, so a load in this frame can still lend the arenas to the CD windows), the first draw opens the
@@ -29,7 +29,7 @@ void RSDK::PS1RenderBeginFrame()
     s_ps1FrameOpen = false;
 }
 
-// docs/32 6.2: video frames (ps1/fmv.cpp, from Sonic CD's render.cpp): 0 = black, 1 = a new picture was just written
+// docs/ports/mania/32 6.2: video frames (ps1/fmv.cpp, from Sonic CD's render.cpp): 0 = black, 1 = a new picture was just written
 // into the other buffer (the one shown after this frame's flip): this frame copies it too, so both hold it (the bars
 // filled black); 2 = no new picture: the displayed frame is copied over (the skip fade darkens it a step each frame).
 // Rows the video frame leaves alone: the diagnostics strip (ps1/fmv.cpp), uploaded into both buffers, in two bands.
@@ -119,7 +119,7 @@ void RSDK::PS1FrameStart(bool clear)
     }
 }
 #if PS1_PERF_HUD
-void PS1PerfHudDraw(); // ps1/perf_hud.cpp (docs/32 9f)
+void PS1PerfHudDraw(); // ps1/perf_hud.cpp (docs/ports/mania/32 9f)
 #endif
 extern "C" {
 extern void (*g_ps1VersionDraw)(uint32_t colour, int32_t aR, int32_t aG, int32_t aB); // ps1/version_text.cpp
@@ -136,7 +136,7 @@ void RSDK::PS1RenderEndFrame()
 #if PS1_PERF_HUD
     PS1PerfHudDraw();
 #endif
-    if (g_ps1FlipFrameUsed) { // docs/43 G3: whatever draws after the frame (loading icon, video) starts without flip bits
+    if (g_ps1FlipFrameUsed) { // docs/perf/43 G3: whatever draws after the frame (loading icon, video) starts without flip bits
         g_ps1FlipFrameUsed = false;
         PS1ChainInvalidateTPage();
         PS1ChainTPageRaw(0);
@@ -180,7 +180,7 @@ bool RenderDevice::SetupRendering()
         screens[s].frameBuffer = NULL;
     // The per-line scroll positions the layers' parallax (Scene.cpp ProcessParallax) and the game's scanline
     // callbacks write every frame: every upstream device allocates them here (DX9RenderDevice.cpp), and with it
-    // missing they wrote through NULL into the BIOS kernel's RAM (docs/32 2.2: stale saved registers, then crashes).
+    // missing they wrote through NULL into the BIOS kernel's RAM (docs/ports/mania/32 2.2: stale saved registers, then crashes).
     // 3.2: static (5 KB): allocated here it landed between the CD read-ahead windows' heap blocks and split the heap
     // the chain arenas take in play (ps1/gpu_chain) into 32 + 14 KB.
     static ScanlineInfo s_ps1Scanlines[PS1_SCREEN_W > SCREEN_YSIZE ? PS1_SCREEN_W : SCREEN_YSIZE];

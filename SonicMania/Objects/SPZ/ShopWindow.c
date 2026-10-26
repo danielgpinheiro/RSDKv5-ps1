@@ -87,7 +87,7 @@ void ShopWindow_Create(void *data)
             RSDK.SetSpriteAnimation(ShopWindow->aniFrames, 0, &self->animator, false, 0);
         }
 
-#if !defined RETRO_PS1_BUILD // PS1 port (docs/32 7b): baked into the bumpers (CircleBumper.ps1Low, tools/data_disc.py)
+#if !defined RETRO_PS1_BUILD // PS1 port (docs/ports/mania/32 7b): baked into the bumpers (CircleBumper.ps1Low, tools/data_disc.py)
         foreach_all(CircleBumper, bumper)
         {
             if (RSDK.CheckObjectCollisionTouchBox(bumper, &CircleBumper->hitboxBumper, self, &self->hitboxItem))

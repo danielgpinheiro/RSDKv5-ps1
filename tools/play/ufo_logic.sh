@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9f: tools/play/ufo_logic.gdb over stage N's chase (tools/play/ufo_min.sh's pad script) in PCSX-Redux:
+# docs/ports/mania/32 9f: tools/play/ufo_logic.gdb over stage N's chase (tools/play/ufo_min.sh's pad script) in PCSX-Redux:
 # build/perf9f/ufoN_logic_TAG.txt (the L lines). Usage: tools/play/ufo_logic.sh N TAG (NOBUILD=1: the current build).
 set -u
 cd "$(dirname "$0")/../.."

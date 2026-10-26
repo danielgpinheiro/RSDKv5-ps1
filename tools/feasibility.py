@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase 1.3 feasibility reports for the Mania PS1 port (docs/32 appendix 1): per scene, what the PS1 would
+"""Phase 1.3 feasibility reports for the Mania PS1 port (docs/ports/mania/32 appendix 1): per scene, what the PS1 would
 have to hold, from the data (tools/rsdk5_formats.py) and the MIPS code sizes (build/codesize/sizes.txt,
 build/codesize/measure.sh: every SonicMania/Objects/**/*.c at -Os).
 

@@ -62,7 +62,7 @@ void CPZBoss_StageLoad(void)
 {
     CPZBoss->aniFrames = RSDK.LoadSpriteAnimation("Eggman/EggmanCPZ.bin", SCOPE_STAGE);
 #if defined RETRO_PS1_BUILD
-    // PS1 (docs/32 9b.2b): the character's machine file with the scene, so the atlas binds it at the load (SetupArena loads
+    // PS1 (docs/ports/mania/32 9b.2b): the character's machine file with the scene, so the atlas binds it at the load (SetupArena loads
     // it again: the same animation); loaded first there, it had no frames until the boss music brought its group
     switch (GET_CHARACTER_ID(1)) {
         default:

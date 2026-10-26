@@ -64,7 +64,7 @@ typedef uint32 color;
 
 // 0x800 scene objects, 0x40 reserved ones, and 0x100 spare slots for creation
 #if defined RETRO_PS1_BUILD
-#include "../ps1/ps1_limits.h" // PS1 port (docs/32): the same slot counts as the engine
+#include "../ps1/ps1_limits.h" // PS1 port (docs/ports/mania/32): the same slot counts as the engine
 #else
 #define RESERVE_ENTITY_COUNT (0x40)
 #define TEMPENTITY_COUNT     (0x100)
@@ -405,7 +405,7 @@ typedef struct {
 } RSDKTouchInfo;
 
 typedef struct {
-#if defined RETRO_PS1_BUILD // PS1 port (docs/32): no per-screen software framebuffer (4 x 600 KB); the GPU draws
+#if defined RETRO_PS1_BUILD // PS1 port (docs/ports/mania/32): no per-screen software framebuffer (4 x 600 KB); the GPU draws
     uint16 *frameBuffer; // NULL on the PS1 (same layout in the engine and the game)
 #else
     // uint16 *frameBuffer;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 9q: tools/play/sweep_profile.gdb's log: per sweep point the classes' CPU (hblanks per drawn frame, the 60-frame
+"""docs/ports/mania/32 9q: tools/play/sweep_profile.gdb's log: per sweep point the classes' CPU (hblanks per drawn frame, the 60-frame
 window) and the engine parts; with --top N the N costliest classes per point. Usage: sweep_profile.py LOG [--top N]"""
 import glob, os, struct, sys, collections
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))

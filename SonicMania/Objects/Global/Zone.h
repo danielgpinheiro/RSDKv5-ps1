@@ -94,7 +94,7 @@ struct ObjectZone {
     uint16 sfxFail;
 #if MANIA_USE_PLUS
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 7b): base Mania uses entries 0 (the player) and 8 (its camera: TitleCard / Zone keep them over a
+    // PS1 port (docs/ports/mania/32 7b): base Mania uses entries 0 (the player) and 8 (its camera: TitleCard / Zone keep them over a
     // restart), 1 (Player.c: the player at its death); the rest are Encore's player swap, out of scope: 9 entries;
     // 7b.3c: each the size of the largest class stored there (a player; a slot-less CopyEntity copies its class size)
     struct { int32 words[144]; } entityStorage[9];

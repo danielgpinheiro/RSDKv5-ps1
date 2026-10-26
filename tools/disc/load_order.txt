@@ -1,4 +1,4 @@
-# Disc files in the order the game loads them (tools/disc/stage_local.py, docs/32 phase 9.2): scenes in
+# Disc files in the order the game loads them (tools/disc/stage_local.py, docs/ports/mania/32 phase 9.2): scenes in
 # GameConfig order, each one's files as its load opens them, its folder's PS1Local copies of the shared
 # files between them. Paths only (no game data). tools/disc/build_disc.py lays these out first.
 Data/Game/GameConfig.bin

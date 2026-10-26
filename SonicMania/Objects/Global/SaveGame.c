@@ -124,7 +124,7 @@ void SaveGame_LoadSaveData(void)
 
                     case SAVERECALL_DISABLED: {
 #if defined RETRO_PS1_BUILD
-                        // PS1 port (docs/32 7b): an empty slot (a ghost) takes no write; a dormant entity's record
+                        // PS1 port (docs/ports/mania/32 7b): an empty slot (a ghost) takes no write; a dormant entity's record
                         // there is gone for good (RSDK/Scene/PS1/PS1Entities.cpp)
                         if (PS1EntitySlotIsGhost(e)) {
                             PS1DormantRecallDisabled(e);
@@ -309,7 +309,7 @@ void SaveGame_SaveGameState(void)
             globals->atlEntityData[(0x200 * 1) + i] = SAVERECALL_BROKENITEMBOX;
     }
 #if defined RETRO_PS1_BUILD
-    PS1DormantStoreDisabled(&globals->atlEntityData[0x200 * 1], SAVERECALL_DISABLED); // docs/32 7b: dormant ones gone
+    PS1DormantStoreDisabled(&globals->atlEntityData[0x200 * 1], SAVERECALL_DISABLED); // docs/ports/mania/32 7b: dormant ones gone
 #endif
 }
 void SaveGame_SaveProgress(void)

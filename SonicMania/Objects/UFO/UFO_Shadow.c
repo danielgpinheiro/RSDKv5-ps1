@@ -12,7 +12,7 @@ ObjectUFO_Shadow *UFO_Shadow;
 void UFO_Shadow_Update(void) {}
 
 #if defined RETRO_PS1_BUILD
-// docs/32 7.4: the rings' and spheres' shadows (~380 entities of ~150 bytes on the PC: STG has no room for them) are drawn
+// docs/ports/mania/32 7.4: the rings' and spheres' shadows (~380 entities of ~150 bytes on the PC: STG has no room for them) are drawn
 // by one shadow entity with no parent, in the shadows' draw group, each from its parent as the LateUpdate and Draw
 // below would (their logic unchanged); the player's and the UFO's shadows stay entities
 static void UFO_Shadow_DrawFor(EntityUFO_Shadow *self, Entity *parent, int32 shadowScale)
@@ -85,10 +85,10 @@ void UFO_Shadow_Draw(void)
 {
     RSDK_THIS(UFO_Shadow);
 #if defined RETRO_PS1_BUILD
-    extern volatile int32 g_ps1UfoLite; // Zone.c (docs/32 9f)
+    extern volatile int32 g_ps1UfoLite; // Zone.c (docs/ports/mania/32 9f)
     if (g_ps1UfoLite & 2)
         return;
-#if UFO_NO_SHADOWS // docs/32 9f, the UFO stages' last-resort cut (Makefile UFO_NO_SHADOWS; user 2026-10-08)
+#if UFO_NO_SHADOWS // docs/ports/mania/32 9f, the UFO stages' last-resort cut (Makefile UFO_NO_SHADOWS; user 2026-10-08)
     return;
 #endif
     if (!self->parent) { // the spheres' shadows had the lowest slots (drawn first), then the rings'
@@ -99,7 +99,7 @@ void UFO_Shadow_Draw(void)
 #endif
 
 #if defined RETRO_PS1_BUILD
-    if (self->zdepth >= 0x4000 && self->zdepth < 0x20000) { // docs/32 7.3: the Dreamcast port's (close up only)
+    if (self->zdepth >= 0x4000 && self->zdepth < 0x20000) { // docs/ports/mania/32 7.3: the Dreamcast port's (close up only)
 #else
     if (self->zdepth >= 0x4000) {
 #endif
@@ -139,7 +139,7 @@ void UFO_Shadow_StageLoad(void)
         EntityUFO_Shadow *shadow = RSDK_GET_ENTITY(slot--, UFO_Shadow);
         RSDK.ResetEntity(shadow, UFO_Shadow->classID, NULL);
 #if defined RETRO_PS1_BUILD
-        shadow = RSDK_GET_ENTITY(slot + 1, UFO_Shadow); // docs/32 7.4: a reset may give the slot a new block
+        shadow = RSDK_GET_ENTITY(slot + 1, UFO_Shadow); // docs/ports/mania/32 7.4: a reset may give the slot a new block
 #endif
         shadow->position.x  = player->position.x;
         shadow->position.y  = player->position.y;

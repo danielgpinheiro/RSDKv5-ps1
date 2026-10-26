@@ -11,7 +11,7 @@
 ObjectWaterfallSound *WaterfallSound;
 
 #if defined RETRO_PS1_BUILD
-// PS1 (docs/32 3.0b): the check and the update below walked every entity slot twice a frame with foreach_all (~18 of
+// PS1 (docs/ports/mania/32 3.0b): the check and the update below walked every entity slot twice a frame with foreach_all (~18 of
 // Soundboard's ~56 hblanks in GHZ1). No code creates a WaterfallSound: the scene's are collected once per stage load, in
 // slot order, and each use re-checks the class (one blanked since is skipped, as foreach_all would skip it). Slots, not
 // pointers: a PS1 entity block may move. More than PS1_WATERFALL_MAX falls back to foreach_all.

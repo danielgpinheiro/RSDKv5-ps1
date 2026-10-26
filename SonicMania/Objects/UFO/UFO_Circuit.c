@@ -46,7 +46,7 @@ void UFO_Circuit_Draw(void)
     RSDK_THIS(UFO_Circuit);
 
 #if defined RETRO_PS1_BUILD
-    if (self->zdepth >= 0x4000 && self->zdepth <= 0x140000) { // docs/32 7.3: the Dreamcast port's draw window
+    if (self->zdepth >= 0x4000 && self->zdepth <= 0x140000) { // docs/ports/mania/32 7.3: the Dreamcast port's draw window
 #else
     if (self->zdepth >= 0x4000) {
 #endif

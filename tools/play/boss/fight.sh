@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9i (boss check): a boss fight's frame timing, phase by phase. fight.sh NAME BOOT OVL STATE_EXPR X Y FRAMES
+# docs/ports/mania/32 9i (boss check): a boss fight's frame timing, phase by phase. fight.sh NAME BOOT OVL STATE_EXPR X Y FRAMES
 #   BOOT: GameConfig category,scene (a BOOT= build at 2 MB, built + snapshot under the tree lock unless NOBUILD=1)
 #   OVL: the scene's overlay (build/gen/ovl/OVL/OVL.elf: the boss's functions and types)
 #   STATE_EXPR: GDB expression of the boss's state, e.g. '((struct EntityMetalSonic *)RSDK::objectEntityPtr[93])->state'

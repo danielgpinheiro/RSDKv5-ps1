@@ -10,9 +10,9 @@
 // so I gave it dummy data and will be using this struct to interact with optionsRAM
 typedef struct {
 #if defined RETRO_PS1_BUILD
-    uint8 ps1Uncapped; // docs/32 choice 182: Options > Video > Uncapped FPS (0 = zones and UFO at 30 fps), in the stock padding
-    uint8 ps1Frameskip; // docs/32 phase 13b: Options > Video > Frameskip (0 = off, also an older file's)
-    uint8 ps1Version;   // docs/32 9t: 0 = a file from before 9t (or a new one): migrated once to Uncapped FPS Yes
+    uint8 ps1Uncapped; // docs/ports/mania/32 choice 182: Options > Video > Uncapped FPS (0 = zones and UFO at 30 fps), in the stock padding
+    uint8 ps1Frameskip; // docs/ports/mania/32 phase 13b: Options > Video > Frameskip (0 = off, also an older file's)
+    uint8 ps1Version;   // docs/ports/mania/32 9t: 0 = a file from before 9t (or a new one): migrated once to Uncapped FPS Yes
     uint8 padding[0x55];
 #else
     uint8 padding[0x58];

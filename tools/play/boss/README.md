@@ -1,4 +1,4 @@
-# Boss-ending recipes (phase 9b.2b, docs/32)
+# Boss-ending recipes (phase 9b.2b, docs/ports/mania/32)
 
 Drives a boss to its real defeat through the test-only hook in `SonicMania/Objects/Global/Zone.c`
 (`g_ps1TestBoss*`, set from GDB), then lets the game's own code run the capsule / sign post, outro and next load.

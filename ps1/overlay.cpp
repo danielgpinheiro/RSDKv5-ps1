@@ -1,4 +1,4 @@
-// PS1 port (docs/32 2.4): the stage folder's code overlay (tools/gen_overlays.py).
+// PS1 port (docs/ports/mania/32 2.4): the stage folder's code overlay (tools/gen_overlays.py).
 //
 // Each overlay (Data/PS1Ovl/<folder>.bin) holds the code of that folder's stage objects that are not resident, linked
 // at STG's fixed top less its size (RSDK/Storage/Storage.cpp 2.4a). LoadSceneFolder calls PS1LoadOverlay after the
@@ -86,7 +86,7 @@ void RSDK::PS1LoadOverlay(const char *sceneFolder, const char *scene)
     // the previous overlay's classes and functions go (its static variables were released by ClearStageObjects)
     objectClassCount = s_residentClasses;
     for (uint32 k = 0; k < ps1OvlCount; ++k) ps1OvlTable[k] = ps1OvlMiss[k];
-    g_ps1VideoOps = PS1VideoOps{}; // docs/32 6.2: the video player goes with the overlay that had it
+    g_ps1VideoOps = PS1VideoOps{}; // docs/ports/mania/32 6.2: the video player goes with the overlay that had it
     g_ps1S3DOps   = PS1Scene3DOps{}; // 7.3: and the 3D draw
     g_ps1DeformDraw = NULL;           // 7.5: and the deformed-sprite draw
     g_ps1RotoPageDraw = NULL;         // 9e: and the rotozoom pages' draw

@@ -9,7 +9,7 @@ struct ObjectFXRuby {
     int32 deformation[0x200];
 #if MANIA_USE_PLUS
 #if defined RETRO_PS1_BUILD
-    // docs/32 4.2d: the ruby's negative is a GPU effect on the PS1 (PS1Sprites.cpp: INK_TINT); the entry for black (white)
+    // docs/ports/mania/32 4.2d: the ruby's negative is a GPU effect on the PS1 (PS1Sprites.cpp: INK_TINT); the entry for black (white)
     // tells the engine which tint this is. The stock table is 128 KB of STG in every scene with FXRuby (the menu too)
     uint16 tintLookupTable[1];
 #else

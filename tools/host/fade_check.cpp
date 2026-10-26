@@ -1,4 +1,4 @@
-// docs/32 9u: RSDK::SetPaletteFade's PS1 table version (RSDKv5/RSDK/Graphics/Palette.cpp) against stock's loop, every
+// docs/ports/mania/32 9u: RSDK::SetPaletteFade's PS1 table version (RSDKv5/RSDK/Graphics/Palette.cpp) against stock's loop, every
 // blend amount and range end on random palettes (the 257th entry included). c++ -O2 tools/host/fade_check.cpp
 #include <cstdint>
 #include <cstdio>

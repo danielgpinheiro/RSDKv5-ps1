@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage-local copies and the disc load order for Mania (docs/32 phase 9.2; Sonic 2's tool, docs/30 9.2).
+"""Stage-local copies and the disc load order for Mania (docs/ports/mania/32 phase 9.2; Sonic 2's tool, docs/ports/sonic-2/30 9.2).
 
 A scene's load (tools/load_profile.sh) opens, in this order: its code overlay (Data/PS1Ovl/<unit>.bin), the folder's
 TileConfig.bin and StageConfig.bin, the static-variable files of its classes (Data/Objects/Static/<hash>.bin: the
@@ -150,7 +150,7 @@ def main():
             dup = [r for r in loc if list(loc.values()).count(loc[r]) > 1]
             raise SystemExit('stage_local: name collision in %s: %s' % (folder, dup))
     with open(out, 'w') as f:
-        f.write('# Disc files in the order the game loads them (tools/disc/stage_local.py, docs/32 phase 9.2): scenes in\n'
+        f.write('# Disc files in the order the game loads them (tools/disc/stage_local.py, docs/ports/mania/32 phase 9.2): scenes in\n'
                 '# GameConfig order, each one\'s files as its load opens them, its folder\'s PS1Local copies of the shared\n'
                 '# files between them. Paths only (no game data). tools/disc/build_disc.py lays these out first.\n')
         for rel in order:

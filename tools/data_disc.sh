@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 2 data disc (docs/32 2.2): tools/data_disc.py (../SonicMania_Extracted/Data -> build/iso/Data, raw scene/tile
+# Phase 2 data disc (docs/ports/mania/32 2.2): tools/data_disc.py (../SonicMania_Extracted/Data -> build/iso/Data, raw scene/tile
 # blocks, tileset .pal, no source media), then `make disc` (build/game.bin/.cue with the current rsdkv5.ps-exe,
 # mkpsxiso + verify_disc, no license).
 set -eu

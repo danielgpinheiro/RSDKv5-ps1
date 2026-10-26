@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Proof for docs/32 2.3b: the PS1 derives the flipped collision masks on access instead of storing them.
+"""Proof for docs/ports/mania/32 2.3b: the PS1 derives the flipped collision masks on access instead of storing them.
 For every tile of every TileConfig (both planes) this computes the base masks and the X/Y/XY flips exactly as
 RSDKv5/RSDK/Scene/Scene.cpp LoadTileConfig does, then compares each flipped value with the accessor formulas of
 RSDKv5/RSDK/Scene/PS1/PS1Collision.hpp. Usage: check_flips.py [SRC_DATA]

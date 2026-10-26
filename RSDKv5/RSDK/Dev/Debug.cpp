@@ -107,7 +107,7 @@ void RSDK::PrintLog(int32 mode, const char *message, ...)
 #endif
         }
 
-// PS1 port (docs/32 5.3): no log.txt: the disc is read-only, and each fopen stopped the CD-XA music (one CD action)
+// PS1 port (docs/ports/mania/32 5.3): no log.txt: the disc is read-only, and each fopen stopped the CD-XA music (one CD action)
 #if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_ANDROID && RETRO_PLATFORM != RETRO_PS1
         char logPath[0x100];
         sprintf_s(logPath, sizeof(logPath), "%slog.txt", SKU::userFileDir);
@@ -125,7 +125,7 @@ void RSDK::PrintLog(int32 mode, const char *message, ...)
 void RSDK::AddViewableVariable(const char *name, void *value, int32 type, int32 min, int32 max)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    return; // docs/32 9n: only the PC's dev menu reads them
+    return; // docs/ports/mania/32 9n: only the PC's dev menu reads them
 #endif
     if (viewableVarCount < VIEWVAR_COUNT) {
         ViewableVariable *viewVar = &viewableVarList[viewableVarCount++];
@@ -276,7 +276,7 @@ void DevMenu_HandleTouchControls(int8 cornerButton)
 void RSDK::OpenDevMenu()
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 port (docs/32 6.2): the dev menu is the PC's debugging tool (keyboard hot keys, a corner tap); the PS1 has no
+    // PS1 port (docs/ports/mania/32 6.2): the dev menu is the PC's debugging tool (keyboard hot keys, a corner tap); the PS1 has no
     // way to drive it, and its 14.7 KB of resident code would come out of STG (GHZ1's margin): never opened
     return;
 #endif

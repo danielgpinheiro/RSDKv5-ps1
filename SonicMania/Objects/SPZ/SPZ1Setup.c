@@ -31,7 +31,7 @@ void SPZ1Setup_StaticUpdate(void)
         RSDK.RotatePalette(2, 128, 135, false);
     }
 #if defined RETRO_PS1_BUILD
-    // docs/32 9v.12 (user 2026-10-22: slower background animation allowed): the lights' two colour pulses written at 30 Hz,
+    // docs/ports/mania/32 9v.12 (user 2026-10-22: slower background animation allowed): the lights' two colour pulses written at 30 Hz,
     // one on even frames, the other on odd ones (their timers still run every frame): each write re-uploads every tile
     // CLUT holding those entries (~30 hblanks a frame for both)
     if (!(Zone->timer & 1))

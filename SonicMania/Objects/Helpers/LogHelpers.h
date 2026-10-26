@@ -40,7 +40,7 @@ void LogHelpers_Print(const char *message, ...);
 void LogHelpers_PrintVector2(const char *message, Vector2 value);
 #endif
 
-// docs/32 phase 13: the PS1's release builds print no game logs (they went to the BIOS TTY, which only an emulator shows):
+// docs/ports/mania/32 phase 13: the PS1's release builds print no game logs (they went to the BIOS TTY, which only an emulator shows):
 // the calls and their strings cost resident RAM the stock 2 MB doesn't have. `make PS1_LOGS=1` keeps them.
 #if defined RETRO_PS1_BUILD && !defined PS1_GAME_LOGS && !defined LOGHELPERS_IMPL
 #define LogHelpers_PrintText(...)    ((void)0)

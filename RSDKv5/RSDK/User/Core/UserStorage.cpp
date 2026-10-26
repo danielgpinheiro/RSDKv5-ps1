@@ -332,7 +332,7 @@ void RSDK::SKU::UserDB::Init(va_list list)
     active = true;
     valid  = true;
 }
-// docs/32 9b.5: a table's rows are packed (1-byte value sizes, 16-byte names, tm structs), so a row's uuid sits at any
+// docs/ports/mania/32 9b.5: a table's rows are packed (1-byte value sizes, 16-byte names, tm structs), so a row's uuid sits at any
 // address: the R3000 raises an address error on an unaligned word access (the first Time Attack record crashed the save).
 #if RETRO_PLATFORM == RETRO_PS1
 template <typename T> static inline T PS1DbGet(const uint8 *p)
@@ -735,7 +735,7 @@ RSDK::SKU::UserDBStorage::UserDBStorage()
     unknown = 0;
 
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 2.3i): the stock sets 8 of each whatever RETRO_USERDB_MAX is; with fewer databases that wrote past the
+    // PS1 (docs/ports/mania/32 2.3i): the stock sets 8 of each whatever RETRO_USERDB_MAX is; with fewer databases that wrote past the
     // object (with 2: over its own dbLoadCB..unused; with 1: into the heap's block headers)
     void (*const loadCBs[8])(int32) = { UserDBStorage_LoadCB1, UserDBStorage_LoadCB2, UserDBStorage_LoadCB3, UserDBStorage_LoadCB4,
                                         UserDBStorage_LoadCB5, UserDBStorage_LoadCB6, UserDBStorage_LoadCB7, UserDBStorage_LoadCB8 };
@@ -817,7 +817,7 @@ uint16 RSDK::SKU::UserDBStorage::LoadUserDB(const char *filename, void (*callbac
     }
 
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 4.2a: a buffer for the file, not the table: a saved table is at most GetSize() bytes, and the PS1's one
+    // docs/ports/mania/32 4.2a: a buffer for the file, not the table: a saved table is at most GetSize() bytes, and the PS1's one
     // table (TimeAttackDB: 6 columns holding 12 value bytes) is 10 + (6 x 0x10 + 6 + 1) + 0xE0 rows x (2 x tm + uuid +
     // 6 sizes + 12) = 21,169 bytes; sizeof(UserDB) (62 KB) did not fit TMP (32 KB at 2 MB)
     const uint32 readSize = 10 + (0x10 * 6 + 6 + 1) + RETRO_USERDB_ROW_MAX * (2 * sizeof(tm) + sizeof(uint32) + 6 + 12);
@@ -1086,7 +1086,7 @@ void (*RSDK::SKU::postLoadSaveFileCB)();
 char RSDK::SKU::userFileDir[0x100];
 
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 phase 8: Mania's user files live in one memory card file (ps1/user_card.cpp: "BAHBRW-00006MANIA", slot 1) as
+// docs/ports/mania/32 phase 8: Mania's user files live in one memory card file (ps1/user_card.cpp: "BAHBRW-00006MANIA", slot 1) as
 // packed sections: 'MSV1', u16 sections, u16 0, then per section its name (16 chars), raw bytes, packed bytes and the
 // packed words (u32 tokens: bit 31 set = that many zero words, else that many literal words follow: the save RAM is
 // mostly zeros). A load reads the file and unpacks one section; a save reads the file, replaces its section, writes it
@@ -1428,7 +1428,7 @@ bool32 PS1CardSaveUserFile(const char *filename, void *buffer, uint32 bufSize)
 }
 } // namespace
 
-// docs/32 9f (user 2026-10-07): the storage check the menu runs before it loads the saves (TryInitStorage, resolved in
+// docs/ports/mania/32 9f (user 2026-10-07): the storage check the menu runs before it loads the saves (TryInitStorage, resolved in
 // DummyUserStorage::FrameInit): a card without Mania's file and with fewer free blocks than its first write needs (one:
 // the payload packs to a few hundred bytes; PS1_CARD_ROOM's three at most) answers STATUS_NOSPACE, and the game's own
 // dialog takes it from there (ManiaModeMenu_InitAPI -> DialogRunner_PromptSavePreference: "NO SAVE SPACE AVAILABLE.

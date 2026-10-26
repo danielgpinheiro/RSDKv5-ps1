@@ -1,4 +1,4 @@
-// Build stamp, resident part (docs/32 "Build stamp"): the git commit of the build (VERSION.TXT at the disc root, written
+// Build stamp, resident part (docs/ports/mania/32 "Build stamp"): the git commit of the build (VERSION.TXT at the disc root, written
 // by tools/disc/build_disc.py with tools/gen_version.py), read once at boot; the title's overlay draws it bottom-left
 // (ps1/version_stamp.cpp, gen_overlays EXTRAS 'stamp': its PS1VersionLink sets g_ps1VersionDraw, which ps1/overlay.cpp
 // resets at every overlay load). "v a1b2c3d4", "v a1b2c3d4-dirty", "v unknown" without the file.

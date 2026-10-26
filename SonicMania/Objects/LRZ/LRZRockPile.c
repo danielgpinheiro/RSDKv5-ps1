@@ -10,7 +10,7 @@
 ObjectLRZRockPile *LRZRockPile;
 
 #if defined RETRO_PS1_BUILD
-// PS1 (docs/32 7b.10): the debris table LRZRockPile_SetupDebris fills from constants (by type: at most 22 pieces x 6) and
+// PS1 (docs/ports/mania/32 7b.10): the debris table LRZRockPile_SetupDebris fills from constants (by type: at most 22 pieces x 6) and
 // LRZRockPile_SpawnRockDebris reads right after, in the same call: one table for every pile, not 768 B in each of them
 static int32 s_ps1RockDebris[22 * 6];
 #define LRZROCKPILE_DEBRIS s_ps1RockDebris

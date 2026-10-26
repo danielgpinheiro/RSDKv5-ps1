@@ -1,4 +1,4 @@
-// PS1 port (docs/32 3.1a): scene tile images (see PS1Tiles.hpp and tools/gfx/build_tiles.py for the file format).
+// PS1 port (docs/ports/mania/32 3.1a): scene tile images (see PS1Tiles.hpp and tools/gfx/build_tiles.py for the file format).
 // Included by Scene.cpp.
 #include "../../../../ps1/vram.hh"
 

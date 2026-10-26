@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9f: the PC sampler over UFO stage N's chase (tools/play/ufo_min.sh's pad script, frames FROM-TO: the same frames
+# docs/ports/mania/32 9f: the PC sampler over UFO stage N's chase (tools/play/ufo_min.sh's pad script, frames FROM-TO: the same frames
 # ufo_min.sh times), so the profile matches the measurement. Builds SAMPLE=1 BOOT=3,N-1 (2 MB) under the tree lock,
 # EMU_RAM=8mb (the histogram at 0x80400000). Output: build/perf9f/ufoN_chase_hist.bin, then the report (top 30).
 # Usage: tools/play/ufo_sample_chase.sh N [FROM TO] (read the report before rebuilding: it maps through the current ELFs)

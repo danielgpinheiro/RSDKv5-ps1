@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 phase 11: refresh the public Sonic-Mania-PS1-ISO-Builder from this port: the prebuilt executable and code
+# docs/ports/mania/32 phase 11: refresh the public Sonic-Mania-PS1-ISO-Builder from this port: the prebuilt executable and code
 # overlays (bin/), the build-time converters tools/build_assets.py runs (builder/tools/), the in-repo sprite manifests,
 # the decompilation's object sources the atlas tools read (builder/SonicMania/Objects, with their license) and the
 # Dreamcast port's mesh optimiser (MIT, built on the user's machine). No game data. The builder's own files

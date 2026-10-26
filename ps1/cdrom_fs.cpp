@@ -46,13 +46,13 @@ static uint8_t *s_sec;
  * as needed, freed after each load (PS1FsReleaseWindows from PS1LoadingEnd) or at fclose outside a
  * load. 16 sectors: with the stream a window no longer costs a request (R11A 6.93 s vs 6.69 s with
  * 32), and the load peak keeps 82 KB more heap. */
-#define WINDOW_SECTORS 8 // Mania (docs/32 9.2): the load lends only the chain arenas' 60 KB: 16-sector windows left one, and
+#define WINDOW_SECTORS 8 // Mania (docs/ports/mania/32 9.2): the load lends only the chain arenas' 60 KB: 16-sector windows left one, and
 #define WINDOWS        3 // the stream paused (and restarted: +0.2 s) at every window; three of 8 sectors let it run ahead
 struct Window {
     uint8_t *buf;
     volatile uint32_t lba, count, age; // lba/count also written by the load stream's IRQ
     volatile bool ahead;               // filled by the load stream, not yet read
-    bool lent;                         // a slice of the suspended chain arena (docs/32 9.2): never freed here
+    bool lent;                         // a slice of the suspended chain arena (docs/ports/mania/32 9.2): never freed here
 };
 static Window s_win[WINDOWS];
 static bool readViaWindows(uint32_t lba, uint32_t bytes, uint8_t *dst);
@@ -70,7 +70,7 @@ static Window s_fallback = {s_fallbackBuf, 0, 0, 0, false};
 /* findEntry reads the volume descriptor and every directory on the path; the disc is read-only, so
  * those sectors are cached (LRU). With the file index (below) only paths outside it walk directories:
  * three entries (volume descriptor, root, one more). */
-// (docs/32 9n: 3 -> 1: with the file index (PS1FILES.IDX) directory sectors are read only to find the index at boot;
+// (docs/ports/mania/32 9n: 3 -> 1: with the file index (PS1FILES.IDX) directory sectors are read only to find the index at boot;
 // 4 KB back for STG: FBZ2's load fits again)
 #define DIR_CACHE 1
 static uint8_t s_dirCache[DIR_CACHE][ISO_SECTOR];
@@ -457,7 +457,7 @@ static void loadIndex() {
     uint32_t lba, size;
     if (!findEntry("PS1FILES.IDX", &lba, &size, false) || size < 16)
         return;
-    // docs/32 9.2: exactly `size` bytes (it stays for good in the init reserve, beside the chain arena): the whole sectors
+    // docs/ports/mania/32 9.2: exactly `size` bytes (it stays for good in the init reserve, beside the chain arena): the whole sectors
     // straight in, the last one's part through the directory cache
     uint32_t whole = size / ISO_SECTOR, rest = size % ISO_SECTOR;
     uint8_t *buf   = (uint8_t *)malloc(size);
@@ -564,7 +564,7 @@ int PS1FsPreloadDir(const char *dir, uint32_t maxSize) {
     return loaded;
 }
 
-/* Stage-local copies (docs/32 phase 9.2, tools/disc/stage_local.py; Sonic 2's scheme): while a folder loads, a shared
+/* Stage-local copies (docs/ports/mania/32 phase 9.2, tools/disc/stage_local.py; Sonic 2's scheme): while a folder loads, a shared
  * file it opens (the Global / Players / UI sprites, the static-variable files, the strings, the meshes) is read from its
  * copy in Data/Stages/<folder>/PS1Local/, laid out between the folder's own files in load order, instead of from its own
  * place (a seek each). The copies are not in PS1FILES.IDX (it lives in RAM from boot: 1,544 more entries took the chain
@@ -649,7 +649,7 @@ FILE *fopen(const char *path, const char *mode) {
     uint32_t lba, size;
     if (!g_ps1CDRom || !g_ps1GPU)
         return nullptr;
-    if (g_ps1VideoOps.closeForRead && g_ps1VideoOps.closeForRead()) { // docs/32 6.2: the player is an overlay's
+    if (g_ps1VideoOps.closeForRead && g_ps1VideoOps.closeForRead()) { // docs/ports/mania/32 6.2: the player is an overlay's
         // One CD action at a time: a file read while the FMV streams would break both.
         // Callers stop the video first (PS1StopVideo); this is the safety net.
         ramsyscall_printf("[cdrom_fs] fopen('%s') while a video streams: closing the video\n", path);
@@ -735,7 +735,7 @@ static bool readViaWindows(uint32_t lba, uint32_t bytes, uint8_t *dst) {
 // One more window buffer for the load stream (its IRQ may move into it once it is visible).
 uint8_t *PS1ChainLent(uint32_t *bytes); // gpu_chain.cpp
 
-// docs/32 9.2: a window's buffer: during a load a slice of the chain arena it lends (one block, nothing freed: separate
+// docs/ports/mania/32 9.2: a window's buffer: during a load a slice of the chain arena it lends (one block, nothing freed: separate
 // allocations fragmented its hole and the arena could not come back), else the heap. False: none
 static bool windowAlloc(int i) {
     Window &w = s_win[i];
@@ -849,7 +849,7 @@ static Window *windowFor(uint32_t sector) {
             victim = &w;
     }
     // (the fallback's sector first: a small read loop asked malloc for a window once per call, 7,190 failed tries for
-    // the Menu's 7 KB strings reload at 2 MB, docs/32 9.2)
+    // the Menu's 7 KB strings reload at 2 MB, docs/ports/mania/32 9.2)
     if (!victim->buf && s_fallback.count && sector == s_fallback.lba)
         return &s_fallback;
     if (!victim->buf && !windowAlloc((int)(victim - s_win))) {

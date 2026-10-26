@@ -76,7 +76,7 @@ void Zone_LateUpdate(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// PS1 test hook (docs/32 9b.2): GDB sets g_ps1TestActEnd to end the act as its sign post or capsule would (the act-clear
+// PS1 test hook (docs/ports/mania/32 9b.2): GDB sets g_ps1TestActEnd to end the act as its sign post or capsule would (the act-clear
 // music and ActClear in its slot), player 1 first put at (g_ps1TestActEndX, Y) when GDB gives a point (the zones whose
 // StageFinish stores the entities around a fixed point, GHZ1 / PSZ1 / FBZ1 / MSZ; the others store around the camera).
 // 0 in normal play.
@@ -94,12 +94,12 @@ static void Zone_PS1TestActEnd(void)
     RSDK.ResetEntitySlot(SLOT_ACTCLEAR, ActClear->classID, NULL);
 }
 
-// PS1 test hook (docs/32 9b.2b): GDB sets the boss class (its object's classID), its Hit function (the overlay's symbol)
+// PS1 test hook (docs/ports/mania/32 9b.2b): GDB sets the boss class (its object's classID), its Hit function (the overlay's symbol)
 // and how many hits: once a frame the entity of that class (the first, or the g_ps1TestBossNth-th after it) takes one, as if the player had hit it, so the
 // fight ends through the boss's own defeat code (its capsule / outro / stage finish). g_ps1TestBossWarp first puts
 // player 1 at the boss's position + (g_ps1TestBossDX, DY) pixels (2: at that point); g_ps1TestBossSlot tells GDB where the entity is (-1:
 // none; g_ps1TestBossPin: that slot instead of the n-th). All 0 in normal play.
-// docs/32 9f: UFO stages' detail switch (bit 0: no decorations, bit 1: no shadows); 0 = as stock
+// docs/ports/mania/32 9f: UFO stages' detail switch (bit 0: no decorations, bit 1: no shadows); 0 = as stock
 volatile int32 g_ps1UfoLite = 0;
 volatile int32 g_ps1TestBossSlot = -1, g_ps1TestBossPin = -1, g_ps1TestBossNth = 0, g_ps1TestBossHits = 0, g_ps1TestBossClass = 0, g_ps1TestBossWarp = 0, g_ps1TestBossDX = 0, g_ps1TestBossDY = 0;
 void (*volatile g_ps1TestBossHit)(void) = NULL;
@@ -439,7 +439,7 @@ int32 Zone_GetZoneID(void)
 
 #if defined RETRO_PS1_BUILD
 volatile int32 ps1AtlDropped = 0; // entities an act transition could not store (GDB; must stay 0)
-// docs/32 7b.3: the stored entities sit PS1_ATL_STRIDE ints apart (stock 0x200: 2 KB each); 4 of them end where SaveGame's
+// docs/ports/mania/32 7b.3: the stored entities sit PS1_ATL_STRIDE ints apart (stock 0x200: 2 KB each); 4 of them end where SaveGame's
 // recall table starts (0x200 + RESERVE_ENTITY_COUNT), the other 4 share it as stock's entry 1 does (never both in use)
 #define PS1_ATL_STRIDE   0x90
 _Static_assert(sizeof(EntityPlayer) <= sizeof(Zone->entityStorage[0]) && sizeof(EntityCamera) <= sizeof(Zone->entityStorage[0]),
@@ -1046,7 +1046,7 @@ void Zone_State_FadeOut_Destroy(void)
 void Zone_HandlePlayerSwap(void)
 {
 #if defined RETRO_PS1_BUILD
-    return; // docs/32 7b: Encore's player swap (out of scope): entityStorage holds only entries 0-8 (Zone.h)
+    return; // docs/ports/mania/32 7b: Encore's player swap (out of scope): entityStorage holds only entries 0-8 (Zone.h)
 #endif
     int32 playerBoundActiveB[PLAYER_COUNT];
     int32 playerBoundActiveT[PLAYER_COUNT];
@@ -1559,7 +1559,7 @@ void Zone_EditorLoad(void)
 void Zone_Serialize(void) {}
 
 #if defined RETRO_PS1_BUILD
-// PS1 port (docs/32 7b): what the game puts in each reserved slot of a zone (ps1_limits.h PS1ReservedSpec). From the
+// PS1 port (docs/ports/mania/32 7b): what the game puts in each reserved slot of a zone (ps1_limits.h PS1ReservedSpec). From the
 // game's resets / copies into these slots, with one character (Player->playerCount = 1: the scene's one player): the
 // player, its Shield / InvincibleStars / SuperSparkle (playerCount + slot) and ImageTrail (2 * playerCount + slot), a
 // second Player in MSZCutsceneK, TMZ2Outro's extra players at 4-5, Music (SLOT_MUSIC, the music stack), Zone,

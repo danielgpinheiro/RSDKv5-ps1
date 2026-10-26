@@ -1,4 +1,4 @@
-// Build stamp, the title's part (docs/32 "Build stamp"; resident part ps1/version_text.cpp): linked into the overlays of
+// Build stamp, the title's part (docs/ports/mania/32 "Build stamp"; resident part ps1/version_text.cpp): linked into the overlays of
 // the folders whose objects need it (tools/gen_overlays.py EXTRAS 'stamp': TitleSetup), not the resident. PS1VersionLink
 // plugs the draw into PS1RenderEndFrame (g_ps1VersionDraw).
 //

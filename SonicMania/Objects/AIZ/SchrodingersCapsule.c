@@ -220,7 +220,7 @@ void SchrodingersCapsule_State_Explode(void)
         memset(buddy1, 0, sizeof(EntityBase)); // not in the original, clears the entity slot incase of something like a shield is still active
         buddy1->classID = Player->classID;
 #if defined RETRO_PS1_BUILD
-        PS1ClassNoteEntity(buddy1); // docs/32 9.4: foreach_all's class ranges
+        PS1ClassNoteEntity(buddy1); // docs/ports/mania/32 9.4: foreach_all's class ranges
 #endif
         Player_ChangeCharacter(buddy1, ID_MIGHTY);
         buddy1->position.x      = self->position.x + TO_FIXED(14);
@@ -246,7 +246,7 @@ void SchrodingersCapsule_State_Explode(void)
         memset(buddy2, 0, sizeof(EntityBase)); // like above, but for safety :]
         buddy2->classID      = Player->classID;
 #if defined RETRO_PS1_BUILD
-        PS1ClassNoteEntity(buddy2); // docs/32 9.4
+        PS1ClassNoteEntity(buddy2); // docs/ports/mania/32 9.4
 #endif
         Player_ChangeCharacter(buddy2, ID_RAY);
         buddy2->position.x      = self->position.x - TO_FIXED(14);

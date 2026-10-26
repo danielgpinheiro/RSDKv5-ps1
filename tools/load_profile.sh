@@ -1,5 +1,5 @@
 #!/bin/bash
-# Load-time profile (docs/32 phase 9.1; Sonic 2's tool, docs/30 9.1): one emulator session over GDB logs
+# Load-time profile (docs/ports/mania/32 phase 9.1; Sonic 2's tool, docs/ports/sonic-2/30 9.1): one emulator session over GDB logs
 #   REQ   every file-system CD request (PS1FsProfileHook: a blocking read, or one load-stream session = one seek)
 #   OPEN  every fopen, LOAD every outermost load end (PS1LoadingDoneHook), GOTO every scene switch below,
 # all stamped with the vblank count, then tools/load_profile.py prints a table per load: vblanks, requests, stream

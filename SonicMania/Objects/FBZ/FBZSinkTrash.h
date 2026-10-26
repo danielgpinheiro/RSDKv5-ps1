@@ -21,7 +21,7 @@ struct EntityFBZSinkTrash {
     int32 type;
     Vector2 size;
 #if defined RETRO_PS1_BUILD
-    // PS1 (docs/32 7b.3c): the offsets in whole pixels (floor): the entity never moves and the scenes place it on whole
+    // PS1 (docs/ports/mania/32 7b.3c): the offsets in whole pixels (floor): the entity never moves and the scenes place it on whole
     // pixels, and the draw reads whole pixels only, so position + (offset << 16) draws where the 16.16 sum did
     int16 ps1TrashX[64];
     int16 ps1TrashY[64];

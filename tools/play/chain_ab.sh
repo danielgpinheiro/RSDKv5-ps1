@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9u: exact A/B of a renderer / CPU change on the GPU commands (the RSDKv4 chain_cmp idea). One frame's whole chain
+# docs/ports/mania/32 9u: exact A/B of a renderer / CPU change on the GPU commands (the RSDKv4 chain_cmp idea). One frame's whole chain
 # (tools/play/perf_gpu.sh's RAM dump, walked by gpu_cost.py --dump-words: payload words in GPU order, links left out) from
 # a reference build and from the working tree, compared word for word.
 # Usage: tools/play/chain_ab.sh NAME BOOT "FRAMES" [RIGHT_FROM] [REF]   (REF: a commit, default HEAD)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# tvvan_all.sh SNAP EMU TAG (docs/32 9r): every van of SPZ1 through tvvan_route.gdb on snapshot SNAP (tools/play/boss/snap.sh,
+# tvvan_all.sh SNAP EMU TAG (docs/ports/mania/32 9r): every van of SPZ1 through tvvan_route.gdb on snapshot SNAP (tools/play/boss/snap.sh,
 # a BOOT=1,4 build; kept until tools/play/boss/snap.sh -d SNAP or 3 days); logs build/perf9f/van_TAG_EMU_<van>.log, one END
 # line per van on stdout
 cd "$(dirname "$0")/../.."; R=$PWD; mkdir -p build/perf9f; SNAP=$1; E=$2; TAG=$3

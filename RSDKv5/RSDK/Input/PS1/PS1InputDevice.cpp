@@ -40,7 +40,7 @@ static uint16 PS1PadScriptButtons()
 
 using namespace RSDK;
 
-// docs/32 4.2a: created at init just above a CD read window that is freed afterwards, the heap device (56 bytes) split
+// docs/ports/mania/32 4.2a: created at init just above a CD read window that is freed afterwards, the heap device (56 bytes) split
 // the hole the chain arena takes after each load: the menu (2 MB) found 32.8 + 22.8 KB and no 51 KB arena. The pads
 // (9f: two, for Puyo Puyo's 2P), never removed on the PS1: static storage, and delete has nothing to free.
 alignas(8) static uint8 s_ps1PadDeviceMem[2][sizeof(SKU::InputDevicePS1)];
@@ -76,7 +76,7 @@ void SKU::InputDevicePS1::UpdateInput()
             *states[i] = (changed >> i) & 1 ? 3 : 0; // released this frame : up
     }
 
-    // docs/32 4.2a: every stock device feeds the "any" controller here (KBInputDevice::UpdateInput); the menus read it
+    // docs/ports/mania/32 4.2a: every stock device feeds the "any" controller here (KBInputDevice::UpdateInput); the menus read it
     // (UIControl's anyConfirmPress / anyBackPress: the autosave dialog never saw a press)
     this->ProcessInput(CONT_ANY);
 }

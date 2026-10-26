@@ -199,7 +199,7 @@ void AudioDeviceBase::InitAudioChannels()
 }
 
 #if RETRO_AUDIODEVICE_PS1
-// PS1 port (docs/32 5.2): music is CD-XA (ps1/xa_music): the stream channel starts the track at startPos's row and
+// PS1 port (docs/ports/mania/32 5.2): music is CD-XA (ps1/xa_music): the stream channel starts the track at startPos's row and
 // PS1AudioDevice::FrameInit keeps the XA and the channel together (position, pause, stop, volume, end).
 void RSDK::UpdateStreamBuffer(ChannelInfo *channel) {}
 
@@ -336,7 +336,7 @@ int32 RSDK::PlayStream(const char *filename, uint32 slot, uint32 startPos, uint3
 #define WAV_SIG_DATA   (0x61746164) // data
 
 #if RETRO_AUDIODEVICE_PS1
-// PS1 port (docs/32): no WAV in RAM (golden rule; phase 5 puts pre-converted SPU ADPCM in SPU RAM). The slot is
+// PS1 port (docs/ports/mania/32): no WAV in RAM (golden rule; phase 5 puts pre-converted SPU ADPCM in SPU RAM). The slot is
 // registered by name hash like on the PC so the game's GetSfx/PlaySfx work; the length (0 until phase 5's
 // build-time table) only drives the headless channel bookkeeping.
 void RSDK::LoadSfxToSlot(char *filename, uint8 slot, uint8 plays, uint8 scope)

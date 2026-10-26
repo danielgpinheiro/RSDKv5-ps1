@@ -24,7 +24,7 @@ SOFTWARE.
 
 */
 
-// psyqo AdvancedPad::readPad (ps1/pad.hh, docs/32 9t): the same SIO0 sequence, delays, ACK timeout and multitap handling
+// psyqo AdvancedPad::readPad (ps1/pad.hh, docs/ports/mania/32 9t): the same SIO0 sequence, delays, ACK timeout and multitap handling
 // per port, without the event callbacks; port 2 polled only while live or every 32nd frame.
 #include "pad.hh"
 

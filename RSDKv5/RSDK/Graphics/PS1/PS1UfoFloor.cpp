@@ -1,4 +1,4 @@
-// PS1 port (docs/32 7.4): the UFO stages' floor as GTE-projected tile quads, the Dreamcast port's "3D tiles".
+// PS1 port (docs/ports/mania/32 7.4): the UFO stages' floor as GTE-projected tile quads, the Dreamcast port's "3D tiles".
 //
 // Stock UFO_Setup_Scanline_Playfield fills 240 scanlines (a divide each) and gives every line the palette bank of its
 // distance (the fog: banks 1-6 are colours 160-255 faded towards bank 7). On the PS1 (as on the Dreamcast) the callback

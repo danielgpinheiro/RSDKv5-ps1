@@ -1,5 +1,5 @@
 #!/bin/bash
-# shot.sh NAME BOOT FRAMES [PRE.gdb]: 8 MB measuring build of BOOT (docs/32 9c pictures), both framebuffers dumped at each
+# shot.sh NAME BOOT FRAMES [PRE.gdb]: 8 MB measuring build of BOOT (docs/ports/mania/32 9c pictures), both framebuffers dumped at each
 # frame in FRAMES (comma list) -> build/shots/NAME_<frame>_<y>.png (320x240; the displayed one is the complete picture).
 # SHOT_X=x: dump the 320 x 240 area from VRAM column x instead of 0. PRE.gdb: extra GDB lines (breakpoints that set up the scene, e.g. the boss hook). PCSX-Redux, shared tree lock of
 # tools/play/boss (build/boss/tree.lock).

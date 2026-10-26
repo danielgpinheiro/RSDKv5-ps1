@@ -315,7 +315,7 @@ void DialogRunner_PromptSavePreference(int32 id)
 
     API.ClearSaveStatus();
 #if defined RETRO_PS1_BUILD
-    // docs/32 9f: the dialog below shows only while the save status is STATUS_CONTINUE, which a console's storage layer
+    // docs/ports/mania/32 9f: the dialog below shows only while the save status is STATUS_CONTINUE, which a console's storage layer
     // sets while it waits for the player's choice (the PS1's has none): the card too full for the save (STATUS_NOSPACE,
     // RSDK SKU PS1CardStorageStatus) or a corrupt save now ask "CONTINUE WITHOUT SAVING?"
     API.SetSaveStatusContinue();

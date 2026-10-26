@@ -1,5 +1,5 @@
 /*
- * Scene3D's projection on the GTE (docs/32 7.3; Sonic 2's PS1TransformProject3D, RSDKv4-ps1): RTPT, three vertices a
+ * Scene3D's projection on the GTE (docs/ports/mania/32 7.3; Sonic 2's PS1TransformProject3D, RSDKv4-ps1): RTPT, three vertices a
  * command (psx-spx "GTE Coordinate Calculation Commands"). The engine's Scene3D.cpp can't include psyqo's headers (its
  * assert), so this file is the psyqo side and speaks plain integers.
  *

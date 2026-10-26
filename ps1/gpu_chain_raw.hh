@@ -1,5 +1,5 @@
 /*
- * The chained renderer's psyqo-free interface (docs/32 3.2): what the engine side calls (RSDK/Graphics/PS1). The
+ * The chained renderer's psyqo-free interface (docs/ports/mania/32 3.2): what the engine side calls (RSDK/Graphics/PS1). The
  * engine's headers define a one-argument assert that psyqo's headers can't follow, so engine files include this,
  * not gpu_chain.hh (which adds the psyqo-typed helpers). See gpu_chain.hh for the chaining rules.
  */

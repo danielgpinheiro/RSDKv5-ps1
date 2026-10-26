@@ -18,9 +18,9 @@
 
 extern "C" void PS1NoteAlloc(void *p, size_t size); // ps1/libc/stdlib.cpp: the init reserve's high-water mark
 
-// The arena. Sonic CD (docs/28 3.6): one per frame parity, 64 KB each, on the heap, time-shared with the CD
+// The arena. Sonic CD (docs/ports/sonic-cd/28 3.6): one per frame parity, 64 KB each, on the heap, time-shared with the CD
 // read-ahead windows (user decision 2026-09-24): released at the start of a load (PS1ChainSuspend), allocated again
-// at its end. Mania (docs/32 3.2): in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
+// at its end. Mania (docs/ports/mania/32 3.2): in play the heap has ~52 KB free in one block (GHZ1: the init reserve less what
 // stays allocated after the loads): 3.2 split it into 2 x 25 KB; 3.3b makes it ONE arena of 50 KB: psyqo sends frame
 // N's chain at the flip, before frame N+1 starts, and frame N+1 writes its chain only after its logic, by when the GPU
 // has taken frame N's (a few thousand small primitives: ~30 hblanks). The frame's first write waits for that DMA to be
@@ -81,7 +81,7 @@ struct VarFragment {
     size_t getActualFragmentSize() const { return words; }
 };
 
-uint32_t *s_arenaMem = nullptr; // s_arenaMemWords (heap); kept while suspended: lent to the CD windows (docs/32 9.2)
+uint32_t *s_arenaMem = nullptr; // s_arenaMemWords (heap); kept while suspended: lent to the CD windows (docs/ports/mania/32 9.2)
 uint32_t s_arenaMemWords = 0;
 uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // smaller while an FMV plays (PS1ChainSetArenaWords)
 bool s_waitIdle = false; // the frame has not written the arena yet: the last frame's DMA may still read it
@@ -206,7 +206,7 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
     if (!s_arenaMem && !s_suspended) {
         s_arenaMem      = (uint32_t *)psyqo_malloc(s_arenaWords * 4);
         s_arenaMemWords = s_arenaMem ? s_arenaWords : 0;
-        PS1NoteAlloc(s_arenaMem, s_arenaWords * 4); // docs/32 4.2a: the heap headroom counter missed the arena
+        PS1NoteAlloc(s_arenaMem, s_arenaWords * 4); // docs/ports/mania/32 4.2a: the heap headroom counter missed the arena
     }
     if (!s_arenaMem) {
         g_ps1ChainArenaFail = g_ps1ChainArenaFail + 1;
@@ -258,7 +258,7 @@ void PS1ChainSuspend() {
     if (s_cur != s_base || s_inExtra) // this frame already chained something psyqo points at: keep the arenas
         return;
     PS1GpuImmediate(); // the previous frame's chain may still be DMA'd from the arena
-    // docs/32 9.2: the arena is lent to the load's CD read-ahead windows (PS1ChainLent), not freed: freed, small
+    // docs/ports/mania/32 9.2: the arena is lent to the load's CD read-ahead windows (PS1ChainLent), not freed: freed, small
     // allocations of the load (FILEs) landed between the windows in its hole and it could not come back (no chain)
     s_base = s_cur = s_end = nullptr;
     s_suspended = true;

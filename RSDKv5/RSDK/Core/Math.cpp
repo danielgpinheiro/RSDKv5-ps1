@@ -4,7 +4,7 @@
 using namespace RSDK;
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 port (docs/32 2.1): the tables are computed on the host at build time (tools/trig/gen_trig.c, the same
+// PS1 port (docs/ports/mania/32 2.1): the tables are computed on the host at build time (tools/trig/gen_trig.c, the same
 // loops as CalculateTrigAngles below); computing them here takes tens of seconds of soft-float at boot.
 #include "../../../build/gen/trig_tables.inc"
 #else

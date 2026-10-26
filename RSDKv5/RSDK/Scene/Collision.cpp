@@ -2,7 +2,7 @@
 
 using namespace RSDK;
 
-// PS1 port (docs/32 2.3b): mask reads go through PS1/PS1Collision.hpp (flips derived on access); elsewhere the stock
+// PS1 port (docs/ports/mania/32 2.3b): mask reads go through PS1/PS1Collision.hpp (flips derived on access); elsewhere the stock
 // table read, unchanged.
 #define PS1_MASK(fn, plane, tile, i) fn(plane, tile, i)
 #if RETRO_PLATFORM != RETRO_PS1
@@ -120,7 +120,7 @@ int32 RSDK::AddDebugHitbox(uint8 type, uint8 dir, Entity *entity, Hitbox *hitbox
 void RSDK::CopyCollisionMask(uint16 dst, uint16 src, uint8 cPlane, uint8 cMode)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 2.3b): no stored flips; the unflipped mask of the mode and its angle are copied, the flipped ones
+    // PS1 (docs/ports/mania/32 2.3b): no stored flips; the unflipped mask of the mode and its angle are copied, the flipped ones
     // follow from them. Mania never calls this (GameLink.h only).
     CollisionMask *s = PS1BaseMask(cPlane, src & 0x3FF);
     TileInfo *si     = PS1BaseInfo(cPlane, src & 0x3FF);

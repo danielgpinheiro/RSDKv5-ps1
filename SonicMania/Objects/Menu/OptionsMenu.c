@@ -119,7 +119,7 @@ void OptionsMenu_Initialize(void)
     }
 
 #if defined RETRO_PS1_BUILD
-    // docs/32 9b.5 / choice 182: the Options grid on the PS1 is Video | Sound, Controls | Data (2 x 2): Language leaves it
+    // docs/ports/mania/32 9b.5 / choice 182: the Options grid on the PS1 is Video | Sound, Controls | Data (2 x 2): Language leaves it
     // (only English is in the Menu's atlas) and Data takes its place; the grids' columns closer to the middle for the
     // 320-pixel screen (the 424 layout ran Controls, Saved Games and Medallions to its edges)
     EntityUIControl *optionsControl = OptionsMenu->optionsControl;
@@ -165,7 +165,7 @@ void OptionsMenu_Initialize(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// docs/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to the
+// docs/ports/mania/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to the
 // PS1's rows (PS1VideoRows: PC rows and their OFF / ON choices relabelled with frames the build adds to TextEN's
 // "PC Menu" list, tools/gfx/ps1_text.py), on the page's panel; the other rows, their choices and the apply prompt hidden.
 // Phase 13b (user 2026-10-12): a second row, FRAMESKIP OFF / ON (the FULL SCREEN row)

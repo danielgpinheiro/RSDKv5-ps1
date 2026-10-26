@@ -1,9 +1,9 @@
 #!/bin/bash
-# docs/32 9f: the GPU cost of one frame's chain (DuckStation's model, tools/play/gpu_cost.py). Usage:
+# docs/ports/mania/32 9f: the GPU cost of one frame's chain (DuckStation's model, tools/play/gpu_cost.py). Usage:
 # tools/play/perf_gpu.sh NAME BOOT FRAME [RIGHT_FROM]   (PCSX-Redux by default: the chain is the same in both; EMU=ds
 # works too). NOBUILD=1 reuses the current build. Output: build/perf9f/gpu_NAME.txt (its SUM line: GPU hblanks, pixels,
 # overdraw). WARPX= / WARPY= (9u.8): player 1 warped there at frame 300 (FRAME after 330). 9t: gpu_cost.py walks to psyqo's chain tail (m_chainTail / m_chainTailCount, m_chainHeadOversized) and clips
-# to the 320 x 240 screen, as the RSDKv3 / v4 copies (docs/43).
+# to the 320 x 240 screen, as the RSDKv3 / v4 copies (docs/perf/43).
 set -u
 cd "$(dirname "$0")/../.."
 NAME=$1; BOOT=$2; FRAME=$3; RIGHT=${4:-}

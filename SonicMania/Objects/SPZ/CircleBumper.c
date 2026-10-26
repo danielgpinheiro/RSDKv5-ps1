@@ -36,7 +36,7 @@ void CircleBumper_Create(void *data)
     self->visible   = true;
     self->drawGroup = Zone->objectDrawGroup[1];
 #if defined RETRO_PS1_BUILD
-    if (self->ps1Low) // (docs/32 7b: what ShopWindow_Create's loop does on the PC, baked)
+    if (self->ps1Low) // (docs/ports/mania/32 7b: what ShopWindow_Create's loop does on the PC, baked)
         self->drawGroup = Zone->objectDrawGroup[0];
 #endif
     self->drawPos   = self->position;

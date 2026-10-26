@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9o: frame timing next to GHZ1's giant ring on a 2 MB BOOT=1,0 build (snapshot ring_t): MODE hidden (visible 0),
+# docs/ports/mania/32 9o: frame timing next to GHZ1's giant ring on a 2 MB BOOT=1,0 build (snapshot ring_t): MODE hidden (visible 0),
 # solid (enabled 1) or wire (enabled 0); EMU pcsx | ds (DuckStation, retail BIOS). Frames 500-800 after the boss hook's
 # warp (frame 300): avg vblanks a frame x100 and avg CPU hblanks. NOBUILD=1 reuses the snapshot.
 # Usage: tools/play/ring/timing.sh EMU MODE...

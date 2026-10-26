@@ -1,5 +1,5 @@
 #!/bin/bash
-# Save test (docs/32 phase 8.1) on temporary card images, never the player's cards. PCSX-Redux stores -memcard1/-memcard2
+# Save test (docs/ports/mania/32 phase 8.1) on temporary card images, never the player's cards. PCSX-Redux stores -memcard1/-memcard2
 # in ~/.config/pcsx-redux/pcsx.json, so it is backed up and restored on exit. The natural build (Logos first), 2 MB.
 # Steps (GDB, through the engine's test hook g_ps1CardTest: the game's own buffers, the real staging):
 #   boot on a fresh formatted card: the game's loads find nothing, nothing written;

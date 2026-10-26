@@ -1,4 +1,4 @@
-// PS1 port (docs/32 9e): rotozoom layers drawn from one pre-rendered 256x256 texture page (tools/gfx/build_tiles.py
+// PS1 port (docs/ports/mania/32 9e): rotozoom layers drawn from one pre-rendered 256x256 texture page (tools/gfx/build_tiles.py
 // ROTO_PAGES: the title's clouds and island) instead of a quad per tile. Linked into the overlays of the folders whose
 // objects set up such layers (gen_overlays EXTRAS 'rotopage': TitleBG), not the resident: PS1RotoPageLink plugs it into
 // PS1DrawLayerRotozoom (RSDK/Scene/PS1/PS1Roto.cpp, g_ps1RotoPageDraw).
@@ -13,7 +13,7 @@ extern volatile uint32 g_ps1RotoQuads, g_ps1RotoLayers, g_ps1RotoPageLayers, g_p
 
 namespace
 {
-// 9e (docs/32): a layer drawn from one 256x256 page (tools/gfx/build_tiles.py ROTO_PAGES): the page holds the map's
+// 9e (docs/ports/mania/32): a layer drawn from one 256x256 page (tools/gfx/build_tiles.py ROTO_PAGES): the page holds the map's
 // texels [ox, ox + 256) x [oy, oy + 256) (the rest of the map is empty, or the map is the page), repeated with the map.
 // Each line is cut where it enters and leaves the page's copies ("cells"): per cell an exact pixel span [xs, xe] and the
 // texels at its ends. Lines are grouped in bands (up to 16, halved until the middle line is within half a texel of the

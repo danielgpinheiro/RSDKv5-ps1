@@ -1,5 +1,5 @@
 #!/bin/bash
-# Scripted play (docs/32 2.5): a GDB script drives pad 1 through g_ps1PadTestMask at chosen frames (break on perfTick)
+# Scripted play (docs/ports/mania/32 2.5): a GDB script drives pad 1 through g_ps1PadTestMask at chosen frames (break on perfTick)
 # and prints the player, rings, timer, logic hblanks and live temp slots; the guards at the end.
 # PCSX-Redux by default, EMU=ds for DuckStation (tools/emu.sh; both shared with other sessions).
 # Usage: tools/play_test.sh SCRIPT.gdb [OUT_PREFIX]   (TIMEOUT=seconds, default 500). The EXE must be a BOOT= build.

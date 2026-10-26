@@ -55,7 +55,7 @@ void OptionsMenu_SetupActions(void);
 void OptionsMenu_HandleMenuReturn(void);
 void OptionsMenu_InitVideoOptionsMenu(void);
 #if defined RETRO_PS1_BUILD
-// docs/32 choice 182 / phase 13b: the Video page's rows (UNCAPPED FPS NO / YES, FRAMESKIP OFF / ON); the frames tools/gfx/ps1_text.py appends to
+// docs/ports/mania/32 choice 182 / phase 13b: the Video page's rows (UNCAPPED FPS NO / YES, FRAMESKIP OFF / ON); the frames tools/gfx/ps1_text.py appends to
 // UI/TextEN.bin's list 17 ("PC Menu", 21 stock frames)
 #define PS1_TEXT_UNCAPPEDFPS (21)
 #define PS1_TEXT_NO          (22)

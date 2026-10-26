@@ -1,5 +1,5 @@
-// PS1Pad: psyqo's AdvancedPad reduced to what the port reads (docs/32 9t, docs/47 item 5; from RSDKv4-ps1's ps1/pad.hh,
-// docs/43 C11). AdvancedPad's Fast mode polled both ports every frame, and an empty port never sends /ACK: each frame
+// PS1Pad: psyqo's AdvancedPad reduced to what the port reads (docs/ports/mania/32 9t, docs/ports/rsdk-common/47 item 5; from RSDKv4-ps1's ps1/pad.hh,
+// docs/perf/43 C11). AdvancedPad's Fast mode polled both ports every frame, and an empty port never sends /ACK: each frame
 // waited out its whole timeout (~105 us) after one byte (nocash psx-spx "Controller and Memory Card I/O Ports"; "PSX
 // expects No-connection if not returned Acknowledge less than 100 usec", "Controller and Memory Card Signals"). Mania
 // reads pad 2 too (Puyo Puyo's 2P, and every pad feeds the menus' "any" controller: RSDK/Input/PS1/PS1InputDevice.cpp),

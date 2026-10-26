@@ -1,4 +1,4 @@
-// PS1 port (docs/32 3.1c): the scene's sprite atlas (see PS1Atlas.hpp; the file format is tools/gfx/build_atlas.py's).
+// PS1 port (docs/ports/mania/32 3.1c): the scene's sprite atlas (see PS1Atlas.hpp; the file format is tools/gfx/build_atlas.py's).
 // Included by Animation.cpp.
 #include "../../../../ps1/vram.hh"
 #include "../../../../ps1/loading.hh"
@@ -392,7 +392,7 @@ bool RSDK::PS1AtlasLoadGroup(const char *name)
     return true;
 }
 
-// 7b: the swaps docs/32 3.1 planned "where the music changes", keyed by the track a PlayStream starts (its old track
+// 7b: the swaps docs/ports/mania/32 3.1 planned "where the music changes", keyed by the track a PlayStream starts (its old track
 // stopped: the CD is free for the group's read): a boss track (and the Heavies' theme) brings the boss group, the act
 // clear the end group, Super's track Super's frames; a jingle (1-up, power-ups, drowning, game over) changes nothing;
 // any other track (the stage's, again after Super) the normal frames. A group the scene's atlas lacks is no error.

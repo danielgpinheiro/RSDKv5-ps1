@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9f: tools/play/sweep_timing.gdb over an act in both emulators. Usage: tools/play/perf_sweep.sh NAME BOOT X0 STEP
+# docs/ports/mania/32 9f: tools/play/sweep_timing.gdb over an act in both emulators. Usage: tools/play/perf_sweep.sh NAME BOOT X0 STEP
 # END [Y]  (EMUS="redux ds"; NOBUILD=1 reuses the build). Output: build/perf9f/sweep_NAME_<emu>.txt (S lines).
 set -u
 cd "$(dirname "$0")/../.."

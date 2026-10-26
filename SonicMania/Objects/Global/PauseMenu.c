@@ -203,7 +203,7 @@ void PauseMenu_SetupTintTable(void)
 {
 #if defined RETRO_PS1_BUILD
     // PauseMenu.h: no software tint table on the PS1; entry 0 marks the table as this grey one (the engine draws it as a
-    // recolour of the frame so far: PS1TintScreenGrey, docs/32 4.3)
+    // recolour of the frame so far: PS1TintScreenGrey, docs/ports/mania/32 4.3)
     PauseMenu->tintLookupTable[0] = 0x0001;
     return;
 #endif

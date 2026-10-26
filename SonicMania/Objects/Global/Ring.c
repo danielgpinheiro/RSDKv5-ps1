@@ -928,7 +928,7 @@ void Ring_Serialize(void)
 }
 
 #if defined RETRO_PS1_BUILD
-// PS1 port (docs/32 7b, choices 113 / 117): the classes whose entities go dormant out of the cameras' reach
+// PS1 port (docs/ports/mania/32 7b, choices 113 / 117): the classes whose entities go dormant out of the cameras' reach
 // (ps1_limits.h PS1DormantSpec; the engine side: RSDK/Scene/PS1/PS1Entities.cpp). Each one reviewed in its code: its
 // Create has no side effect a second run would change (it runs at the load as stock, and again when its record is
 // re-created), no other object keeps a pointer to it, out of range (ACTIVE_BOUNDS) nothing runs it.
@@ -986,7 +986,7 @@ static int InvisibleBlock_PS1Range(const void *e)
 
 // Spikes: the moving ones stay entities; range: their count (Spikes_Create)
 static int Spikes_PS1Eligible(const void *e) { return !((const EntitySpikes *)e)->moving; }
-// docs/32 9r: TVVan_Create's updateRange per type (exit TVs 256 px, the rest 128); the radio keeps its last node by
+// docs/ports/mania/32 9r: TVVan_Create's updateRange per type (exit TVs 256 px, the rest 128); the radio keeps its last node by
 // pointer on the PC: on the PS1 by slot (TVVan.c), a woken node may take the block another one left
 static int TVVan_PS1Range(const void *e) { return ((const EntityTVVan *)e)->type == TVVAN_EXITTV ? TO_FIXED(256) : TO_FIXED(128); }
 static int Spikes_PS1Range(const void *e)

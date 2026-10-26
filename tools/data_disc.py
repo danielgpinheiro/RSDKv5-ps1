@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The phase 2 data disc tree (docs/32 2.2): ../SonicMania_Extracted/Data -> build/iso/Data, in the forms the PS1
+"""The phase 2 data disc tree (docs/ports/mania/32 2.2): ../SonicMania_Extracted/Data -> build/iso/Data, in the forms the PS1
 engine reads without decoding anything at runtime (golden rule):
 
   Stages/*/Scene*.bin, Stages/*/TileConfig.bin
@@ -27,7 +27,7 @@ REPO = os.path.abspath(os.path.join(HERE, '..'))
 sys.path.insert(0, HERE)
 import rsdk5_formats as F
 sys.path.insert(0, os.path.join(HERE, 'gfx'))
-import ps1_text  # noqa: E402  (docs/32 choice 182)
+import ps1_text  # noqa: E402  (docs/ports/mania/32 choice 182)
 
 SKIP_EXT = ('.gif', '.wav', '.ogg', '.ogv', '.png', '.tga', '.vso', '.fso')
 
@@ -93,7 +93,7 @@ def walk_scene(r):
     assert r.p == len(r.d), 'scene: read %d of %d' % (r.p, len(r.d))
 
 
-# Scene layouts on the PS1 (docs/32 2.3g, choice 29): each layer's layout block becomes a chunk index (u16 per 4x4 tiles,
+# Scene layouts on the PS1 (docs/ports/mania/32 2.3g, choice 29): each layer's layout block becomes a chunk index (u16 per 4x4 tiles,
 # row-major over the layer's own size in chunks: pitch ceil(xsize / 4), ceil(ysize / 4) rows, then one row of chunk 0;
 # 7b: it was the stock power-of-two padded size, 64 KB a layer for CPZ1's 1200x192 where 29 KB hold it: the engine reads
 # columns / rows past the layer as chunk 0, the stock padding), and one pool of the scene's distinct chunks (16 u16 each, chunk 0 = all 0xFFFF, the stock
@@ -427,19 +427,19 @@ def convert_gameconfig(src):
     return bytes(out), len(writes), dropped
 
 
-# Sprites/UI/SmallFont.bin (docs/32 2.3e): 7,375 glyphs, one animation, for every language the PC ships. The PS1 keeps
+# Sprites/UI/SmallFont.bin (docs/ports/mania/32 2.3e): 7,375 glyphs, one animation, for every language the PC ships. The PS1 keeps
 # the glyphs of ASCII and the Latin-script string tables (EN FR GE IT SP): 133 frames. The engine maps characters to
 # frames at run time (SetSpriteString: the first frame with that unicodeChar), so keeping the order keeps the result for
 # every kept character; a dropped one (CJK) maps to -1 as a character the font lacks.
 FONT_TRIM = {'Sprites/UI/SmallFont.bin': ('EN', 'FR', 'GE', 'IT', 'SP')}
 # Animations the PS1 never shows, their frames dropped (the animation entries stay, so every animation ID keeps its
-# meaning): Sprites/Global/SuperButtons.bin (3.1, docs/32): HUD_GetButtonFrame picks the prompt animation from
+# meaning): Sprites/Global/SuperButtons.bin (3.1, docs/ports/mania/32): HUD_GetButtonFrame picks the prompt animation from
 # UIButtonPrompt_GetGamepadType, and the PS1 pad reports DEVICE_TYPE_CONTROLLER / DEVICE_PS4 (PS1InputDevice.cpp), so
 # the five PC keyboard layouts (97 frames each: 485 of the file's 530) are unreachable.
 ANIM_TRIM = {'Sprites/Global/SuperButtons.bin': {1: 'PC EN/JP', 9: 'PC FR', 10: 'PC IT', 11: 'PC GE', 12: 'PC SP'}}
 
 
-# docs/32 7.1: frames wider than any screen position the PS1's 320 columns can show, cropped to what they can show
+# docs/ports/mania/32 7.1: frames wider than any screen position the PS1's 320 columns can show, cropped to what they can show
 # (x + x0, width w, pivot x + x0: the same pixels land in the same screen columns). Sprites/SpecialBS/Globe.bin's turn
 # animation: 512 x 240 frames drawn at the screen centre (pivot -256) by BSS_Setup, whose camera never scrolls sideways
 # (ScreenInfo->position.x = 0x100 - center.x every frame): columns 96..415 only (symmetric: a mirrored draw too)
@@ -606,7 +606,7 @@ def main():
                 n['copied'] += 1
                 print('data_disc: %s: frames of animations %s cropped to the PS1 screen' % (f, sorted(rules)))
             elif os.path.relpath(s, src).replace(os.sep, '/') == 'Sprites/' + ps1_text.SPRITE:
-                # docs/32 choice 182: the PS1 Video page's labels (UNCAPPED FPS, NO, YES), composed from the font's own
+                # docs/ports/mania/32 choice 182: the PS1 Video page's labels (UNCAPPED FPS, NO, YES), composed from the font's own
                 # glyphs into list 17 (tools/gfx/ps1_text.py, glyphs self-checked); the atlas reads the extended sheet
                 open(d, 'wb').write(ps1_text.extend_sprite(src, open(s, 'rb').read()))
                 ps1_text.check_sprite(src, s, d)

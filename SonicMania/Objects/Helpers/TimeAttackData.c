@@ -17,7 +17,7 @@ static const char *modeNames[]   = { "Mania", "Encore" };
 
 // clang-format off
 #if defined RETRO_PS1_BUILD
-// docs/32 9b.7: the PS1 has no leaderboards (the dummy ones only log the PC id): one entry stands for every board (the
+// docs/ports/mania/32 9b.7: the PS1 has no leaderboards (the dummy ones only log the PC id): one entry stands for every board (the
 // 240 entries and their 480 id strings were ~13 KB of the resident, which FBZ2's STG needed)
 static LeaderboardID leaderboardInfo[] = { { .idPS4 = 0, .idUnknown = 0, .idSwitch = 0, .idXbox = "TA", .idPC = "TA" } };
 #else

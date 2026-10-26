@@ -932,7 +932,7 @@ uint16 RSDK::LoadSpriteSheet(const char *filename, uint8 scope)
 
     GFXSurface *surface = &gfxSurface[id];
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 port (docs/32): sprite sheets are converted at build time into VRAM atlases (phase 3); the GIF is not on the
+    // PS1 port (docs/ports/mania/32): sprite sheets are converted at build time into VRAM atlases (phase 3); the GIF is not on the
     // disc. The surface is registered by name so the animation files resolve their sheet IDs as on the PC.
     surface->scope    = scope;
     surface->width    = 0;

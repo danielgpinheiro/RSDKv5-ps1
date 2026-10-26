@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 7b.10: per overlay unit, the stubbed functions its objects CALL (R_MIPS_26) that no object of the unit defines:
+"""docs/ports/mania/32 7b.10: per overlay unit, the stubbed functions its objects CALL (R_MIPS_26) that no object of the unit defines:
 at run time they reach an unfilled stub (g_ps1UnlinkedCalls). Review each: a call guarded by the class pointer or a scene
 check is fine; otherwise link the defining object (gen_overlays LINK_ONLY). Run after a build: tools/ovl_stub_check.py"""
 import os, re, subprocess, collections

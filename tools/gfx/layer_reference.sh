@@ -1,5 +1,5 @@
 #!/bin/bash
-# Layer evidence (docs/32 3.3): capture frame FRAME's layer inputs and framebuffer in PCSX-Redux (EMU=ds: DuckStation;
+# Layer evidence (docs/ports/mania/32 3.3): capture frame FRAME's layer inputs and framebuffer in PCSX-Redux (EMU=ds: DuckStation;
 # tools/gfx/layer_reference.gdb: 8 MB measuring link, a BOOT= build, e.g. make MEASURE_RAM=8M BOOT=1,0 && make disc), then
 # render the layers on the host and compare every pixel (tools/gfx/layer_reference.py).
 # Usage: [RIGHT_FROM=F] [PRE_GDB='gdb lines'] tools/gfx/layer_reference.sh FOLDER SCENE_ID FRAME [OUT_DIR]   (RIGHT_FROM: pad 1 holds right

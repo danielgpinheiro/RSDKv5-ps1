@@ -1,5 +1,5 @@
 #pragma once
-// VRAM access for the engine side (docs/32 phase 3), without psyqo's headers (they clash with the engine's assert).
+// VRAM access for the engine side (docs/ports/mania/32 phase 3), without psyqo's headers (they clash with the engine's assert).
 #include <stdint.h>
 
 // Blocking upload of w x h halfwords at (x, y), after the in-flight chain (if any) has finished.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Build-time 3D meshes for the Mania PS1 port (docs/32 phase 7.2): the Dreamcast port's mesh pipeline (user decision
-2026-09-30; docs/18: `mania-mesh-optimizer`, its settings from Dreamcast/RSDKv5-Decompilation/dreamcast/
+"""Build-time 3D meshes for the Mania PS1 port (docs/ports/mania/32 phase 7.2): the Dreamcast port's mesh pipeline (user decision
+2026-09-30; docs/ports/mania/18: `mania-mesh-optimizer`, its settings from Dreamcast/RSDKv5-Decompilation/dreamcast/
 model_process.sh), then a PS1 format sized for 2 MB.
 
 Step 1, the Dreamcast pass: vertices deduplicated; the character, UFO, item box, springboard and decoration meshes
@@ -23,7 +23,7 @@ Step 2, the PS1 format (the same path under Data/Meshes, replacing the MDL; RSDK
   Flag bit4 (9f): the LOD is a detail cut's (drawn only by UFO_LOWPOLY builds), not a distance LOD.
   Flag bit2 (7.4): a distance LOD follows the positions (4-aligned): u16 index count, u16 0, colours (u32 per corner),
   indices (into the same positions): the engine draws it when the model is small on screen.
-  docs/32 7.4 (PMD5 -> PMD6): the baked colours had split the vertices (Sonic's jog: 698 vertices, 251 positions): the
+  docs/ports/mania/32 7.4 (PMD5 -> PMD6): the baked colours had split the vertices (Sonic's jog: 698 vertices, 251 positions): the
   colours now go with the face corners and vertices sharing every stored position are one, so the GTE transforms each
   position once (the emit reads a corner's colour as it read the vertex's).
   Keyframes are halved where the animation has an even frame count of 10 or more (the loop back to frame 0 keeps its
@@ -39,7 +39,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OPT = os.environ.get('DC_MESH_OPT') or os.path.join(HERE, '../../../../Dreamcast/mania-mesh-optimizer/cmake-build-release/mania-mesh-optimizer')
 
 CHAR = ['--simplify', '--bake-lighting']                     # model_process.sh: --simplify --stripify --bake-lighting
-# docs/32 7.3: the PS1 draws a tenth of the Dreamcast's triangles in a frame: the always-visible big meshes (the special
+# docs/ports/mania/32 7.3: the PS1 draws a tenth of the Dreamcast's triangles in a frame: the always-visible big meshes (the special
 # stage's characters and UFO) simplified further by the same tool (Sonic's jog 769 -> 417 faces, the UFO 774 -> 454)
 CHAR_PS1 = CHAR + ['--simplify-index-threshold', '0.3', '--simplify-target-error', '0.08']
 DECOR_A = ['--simplify', '--bake-lighting', '--simplify-index-threshold', '0.015', '--simplify-target-error', '0.0225']
@@ -61,7 +61,7 @@ MESHES.update({'Special/ItemBox.bin': ['--simplify', '--bake-lighting'], 'Specia
 for d in ('Flower1', 'Flower2', 'Flower3', 'Pillar1', 'Pillar2', 'Tree'):
     MESHES['Decoration/%s.bin' % d] = DECOR_B
 POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase.bin'} | {'Decoration/Bird.bin', 'Decoration/Fish.bin'}
-# docs/32 7.4: distance LODs (PS1 only: the Dreamcast optimiser stops at its colour / normal seams, the UFO at 368 of 774
+# docs/ports/mania/32 7.4: distance LODs (PS1 only: the Dreamcast optimiser stops at its colour / normal seams, the UFO at 368 of 774
 # faces): positions clustered on a grid (frame 0), each cluster kept as its member nearest the cluster's centre (an
 # existing position: the animation stays), faces with two corners in one cluster dropped, duplicates dropped; the grid
 # is sized for about this share of the faces
@@ -72,9 +72,9 @@ LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.
 # LOD"): drawn only by the UFO_LOWPOLY cut (the stock look draws the characters whole at any size)
 CUT_LODS = {'Special/%s%s.bin' % (c, a) for c in ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')}
 LOD_SHARE.update({p: 0.5 for p in CUT_LODS})
-# docs/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
+# docs/ports/mania/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
 NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
-# docs/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
+# docs/ports/mania/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
 # faces); the decorations are open (palm leaves, wings: the PC shows both sides), as SSZ / TMZ until checked
 # 9f: Pillar1 is closed too (every edge shared by two faces, opposite ways: tools/mesh check); the other decorations
 # have open parts (leaves, fins, petals)

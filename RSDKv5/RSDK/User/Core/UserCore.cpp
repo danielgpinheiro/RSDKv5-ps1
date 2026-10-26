@@ -104,7 +104,7 @@ void RSDK::SKU::InitUserCore()
 #endif
 
 #if !RETRO_USE_ORIGINAL_CODE && RETRO_PLATFORM != RETRO_PS1
-    // PS1 (docs/32 4.2a): no store API and no achievement screen; the decomp's list is ~4 KB of name / description
+    // PS1 (docs/ports/mania/32 4.2a): no store API and no achievement screen; the decomp's list is ~4 KB of name / description
     // strings in the init reserve (the reserve the menu's save-file list needs) plus an Achievements.bin load
     // Add achievements
     achievementList.clear();

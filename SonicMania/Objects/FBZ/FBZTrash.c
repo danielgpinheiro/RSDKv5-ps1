@@ -111,7 +111,7 @@ void FBZTrash_State_LooseTrash(void)
 
     if (self->velocity.y >= -0x8000) {
 #if defined RETRO_PS1_BUILD
-        // docs/32 9i (FBZ1's Trash Compactor: ~170 of 575 hblanks a frame): foreach_active's walk (an engine call per piece, for
+        // docs/ports/mania/32 9i (FBZ1's Trash Compactor: ~170 of 575 hblanks a frame): foreach_active's walk (an engine call per piece, for
         // every piece) as one loop over the same slots in the same order; a pair 17+ pixels apart on x is past the radius
         // without the products (17 * 17 = 289 > 0x120) when both distances are under 32768 (each square under 2^30: stock's
         // int32 sum cannot wrap negative; otherwise stock's own test decides)

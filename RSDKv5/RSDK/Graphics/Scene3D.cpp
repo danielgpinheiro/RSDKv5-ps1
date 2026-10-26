@@ -174,7 +174,7 @@ void RSDK::SetIdentityMatrix(Matrix *matrix)
     matrix->values[3][3] = 0x100;
 }
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 9f: the same sums, a product skipped where A's factor is 0 (it adds 0 exactly): the UFO stages' matrices are
+// docs/ports/mania/32 9f: the same sums, a product skipped where A's factor is 0 (it adds 0 exactly): the UFO stages' matrices are
 // rotations and translations, mostly zeros, and the R3000's mult takes 6-13 cycles (UFO1: ~20 calls a frame)
 __attribute__((optimize("O2"))) void RSDK::MatrixMultiply(Matrix *dest, Matrix *matrixA, Matrix *matrixB)
 {
@@ -351,7 +351,7 @@ void RSDK::MatrixRotateXYZ(Matrix *matrix, int16 rotationX, int16 rotationY, int
     matrix->values[3][3] = 0x100;
 }
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 9u: stock's cofactor formulas from a table (6.3 KB of unrolled soft-double code -> ~0.5 KB; no Mania game code
+// docs/ports/mania/32 9u: stock's cofactor formulas from a table (6.3 KB of unrolled soft-double code -> ~0.5 KB; no Mania game code
 // calls it, the function table keeps it linked). Each cofactor is its six signed triple products evaluated in stock's
 // order: ((m[a] * m[b]) * m[c]), the first negated when stock writes it with a leading minus (exact in IEEE: (-a) * b =
 // -(a * b)), then added / subtracted left to right: the same double operations, so the same results
@@ -438,7 +438,7 @@ void RSDK::MatrixInverse(Matrix *dest, Matrix *matrix)
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 7.3: Scene3D on the GTE (the Dreamcast port's approach: meshes with baked lighting, transformed in hardware).
+// docs/ports/mania/32 7.3: Scene3D on the GTE (the Dreamcast port's approach: meshes with baked lighting, transformed in hardware).
 // AddModelTo3DScene / AddMeshFrameTo3DScene record the model, its matrix, colour and (mesh frames) the two keyframes
 // and the blend between them; Draw3DScene then, per recorded model: picks a unit shift k from the model's reach in view
 // space (every view coordinate within 16 bits: exact for near models, coarser only for far ones), loads the GTE with
@@ -553,7 +553,7 @@ uint16 RSDK::LoadMesh(const char *filename, uint8 scope)
     FileInfo info;
     InitFileInfo(&info);
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 7.2 / 7.4: the disc carries the PMD6 mesh (the Dreamcast port's optimised mesh, packed at build time): one read
+    // docs/ports/mania/32 7.2 / 7.4: the disc carries the PMD6 mesh (the Dreamcast port's optimised mesh, packed at build time): one read
     // into one STG block, no decoding
     if (LoadFile(&info, fullFilePath, FMODE_RB)) {
         uint8 head[16];
@@ -702,7 +702,7 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
     if (vertexLimit > SCENE3D_VERT_COUNT || !vertexLimit)
         vertexLimit = SCENE3D_VERT_COUNT;
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 2.3n): no software scene buffers (SpecialRing's: 41.5 KB). Phase 3 transforms the models with the GTE
+    // PS1 (docs/ports/mania/32 2.3n): no software scene buffers (SpecialRing's: 41.5 KB). Phase 3 transforms the models with the GTE
     // straight into GPU packets (the ordering table sorts them); until then AddModelTo3DScene adds nothing (its limit
     // check) and Draw3DScene returns.
     vertexLimit = 0;
@@ -725,7 +725,7 @@ uint16 RSDK::Create3DScene(const char *name, uint16 vertexLimit, uint8 scope)
 void RSDK::AddModelToScene(uint16 modelFrames, uint16 sceneIndex, uint8 drawMode, Matrix *matWorld, Matrix *matNormals, color color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, matNormals, color, 0, 0, 0); // docs/32 7.3
+    PS1Scene3DAdd(modelFrames, sceneIndex, drawMode, matWorld, matNormals, color, 0, 0, 0); // docs/ports/mania/32 7.3
     return;
 #endif
     if (modelFrames < MODEL_COUNT && sceneIndex < SCENE3D_COUNT) {
@@ -874,7 +874,7 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
                                color color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 7.3: the keyframe, the next one (the loop's start after the last) and the blend (the timer over a kept
+    // docs/ports/mania/32 7.3: the keyframe, the next one (the loop's start after the last) and the blend (the timer over a kept
     // keyframe's span, 0x100 x the frame step)
     if (animator && modelFrames < MODEL_COUNT) {
         int32 next = animator->frameID + 1;
@@ -1055,7 +1055,7 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 7.4: the lit modes that don't project (the special ring: S3D_SOLIDCOLOR_SHADED_BLENDED, S3D_WIREFRAME_SHADED),
+// docs/ports/mania/32 7.4: the lit modes that don't project (the special ring: S3D_SOLIDCOLOR_SHADED_BLENDED, S3D_WIREFRAME_SHADED),
 // as stock: positions through matWorld (8.8 world pixels), each corner's colour from its normal's y through matNormals
 // with the scene's diffuse / specular, faces far first (stock's depth and insertion sort), drawn by DrawBlendedFace /
 // DrawLine (their GPU paths). Up to PS1_S3D_ORTHO faces a scene (the ring: 80). False: not one of those modes.
@@ -1290,7 +1290,7 @@ void RSDK::Draw3DScene(uint16 sceneID)
 #if RETRO_PLATFORM == RETRO_PS1
     if (sceneID < SCENE3D_COUNT && PS1Scene3DOrtho(sceneID)) // 7.4: the special ring's modes (no projection)
         return;
-    if (g_ps1S3DOps.draw) // docs/32 7.3: on the GTE (the draw is linked into the overlays of the folders that need it)
+    if (g_ps1S3DOps.draw) // docs/ports/mania/32 7.3: on the GTE (the draw is linked into the overlays of the folders that need it)
         g_ps1S3DOps.draw(sceneID);
     else
         g_ps1S3DTodo = g_ps1S3DTodo + 1;

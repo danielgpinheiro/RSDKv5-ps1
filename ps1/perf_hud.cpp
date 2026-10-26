@@ -1,4 +1,4 @@
-// docs/32 9f: `make PERF_HUD=1` (debug builds only; `make dist` refuses them): a line of numbers in the top-left corner
+// docs/ports/mania/32 9f: `make PERF_HUD=1` (debug builds only; `make dist` refuses them): a line of numbers in the top-left corner
 // for testing in an emulator with its own overlay (DuckStation) or on a console, drawn last in the frame's chain as flat
 // rectangles (a 3x5 digit font, 2x): the last frame's
 //   V  vblanks it took (1 = 60 fps) and, after it, the worst over the last 60 frames

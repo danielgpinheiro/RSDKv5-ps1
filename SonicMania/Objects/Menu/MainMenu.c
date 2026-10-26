@@ -136,7 +136,7 @@ void MainMenu_Initialize(void)
 #endif
 
 #if defined RETRO_PS1_BUILD
-    // docs/32 4.2c: base Mania on the PS1 (user decision 2026-09-26): Mania Mode (frame 0), Time Attack (1), Options (3)
+    // docs/ports/mania/32 4.2c: base Mania on the PS1 (user decision 2026-09-26): Mania Mode (frame 0), Time Attack (1), Options (3)
     // and Extras (4) stay in the list, in their order; Competition (2), Encore (5), the Plus store (6) and Exit (7: no
     // system to return to) leave it. The UIShifter lays the list out every frame (the selected button at its start):
     // 24 px to the left for the 320-pixel screen.
@@ -300,7 +300,7 @@ void MainMenu_HandleUnlocks(void)
     EntityUIControl *control = MainMenu->menuControl;
 
 #if defined RETRO_PS1_BUILD
-    // docs/32 4.2c: the list without Competition (MainMenu_Initialize): Time Attack by its frame
+    // docs/ports/mania/32 4.2c: the list without Competition (MainMenu_Initialize): Time Attack by its frame
     for (int32 i = 0; i < control->buttonCount; ++i) {
         if (control->buttons[i]->frameID == 1)
             control->buttons[i]->disabled = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_TIMEATTACK);

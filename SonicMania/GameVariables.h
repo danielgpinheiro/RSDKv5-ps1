@@ -29,7 +29,7 @@ typedef enum {
     ID_TAILS_ASSIST    = ID_TAILS << 8,
     ID_KNUCKLES_ASSIST = ID_KNUCKLES << 8, // custom-added, can be used to check if "& knux" is active
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 3.1, user decision 2026-09-26): single characters; the VRAM holds one player's sprites
+    // PS1 port (docs/ports/mania/32 3.1, user decision 2026-09-26): single characters; the VRAM holds one player's sprites
     ID_DEFAULT_PLAYER = ID_SONIC,
 #else
     ID_DEFAULT_PLAYER  = ID_SONIC | ID_TAILS_ASSIST,
@@ -211,7 +211,7 @@ typedef struct {
     int32 atlEntityCount;
     int32 atlEntitySlot[0x20];
 #if defined RETRO_PS1_BUILD
-    int32 atlEntityData[0xA40]; // PS1 (docs/32 2.3h, 7b.3): 8 stored entities at PS1_ATL_STRIDE (players, signpost, item
+    int32 atlEntityData[0xA40]; // PS1 (docs/ports/mania/32 2.3h, 7b.3): 8 stored entities at PS1_ATL_STRIDE (players, signpost, item
                                 // boxes; Zone.c counts the rest) and SaveGame's recall table at 0x200 + slot (0x40 + 0x800
                                 // slots); tools/data_disc.py remaps GameConfig
 #else
@@ -219,7 +219,7 @@ typedef struct {
 #endif
     int32 saveLoaded;
 #if defined RETRO_PS1_BUILD
-    int32 saveRAM[0xD00]; // PS1 (docs/32 2.3f): what the game indexes (slots 0-7, time attack 0x800, progress 0x900, encore
+    int32 saveRAM[0xD00]; // PS1 (docs/ports/mania/32 2.3f): what the game indexes (slots 0-7, time attack 0x800, progress 0x900, encore
                           // slots 0xA00-0xCFF); tools/data_disc.py remaps GameConfig
 #else
     int32 saveRAM[0x4000];
@@ -227,7 +227,7 @@ typedef struct {
     int32 saveSlotID;
     int32 noSaveSlot[0x400];
 #if defined RETRO_PS1_BUILD
-    int32 menuParam[0x80]; // PS1 (docs/32 2.3): only EntityMenuParam (432 B) lives here; tools/data_disc.py remaps GameConfig
+    int32 menuParam[0x80]; // PS1 (docs/ports/mania/32 2.3): only EntityMenuParam (432 B) lives here; tools/data_disc.py remaps GameConfig
 #else
     int32 menuParam[0x4000];
 #endif
@@ -274,7 +274,7 @@ typedef struct {
     int32 coolBonus[4];
 #if MANIA_USE_PLUS
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32, scope: no replays): 4 x 1 MB on the PC. One element each keeps every field after them in
+    // PS1 port (docs/ports/mania/32, scope: no replays): 4 x 1 MB on the PC. One element each keeps every field after them in
     // place relative to each other; tools/data_disc.py remaps GameConfig's global-variable offsets to this layout and
     // ReplayRecorder never records (ReplayRecorder.c).
     int32 replayWriteBuffer[1];

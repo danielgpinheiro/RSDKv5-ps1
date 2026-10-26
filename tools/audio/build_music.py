@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build-time CD-XA music for the Mania PS1 port (docs/32 phase 5.2; Sonic 2's tool, RSDKv4-ps1):
+"""Build-time CD-XA music for the Mania PS1 port (docs/ports/mania/32 phase 5.2; Sonic 2's tool, RSDKv4-ps1):
 Data/Music/*.ogg -> Data/Music/Music.xa + Music.bin.
 
 Format (as the earlier ports): XA-ADPCM 37.8 kHz stereo 4-bit, 18.75 sectors/s per channel; at 2x CD speed one channel
@@ -47,7 +47,7 @@ FILLER_CHANNEL = 31
 RATE = 37800
 ROW_SAMPLES = 2016
 GUARD = 4
-# Base Mania's scope (docs/32 user decisions): Encore / competition music is not built
+# Base Mania's scope (docs/ports/mania/32 user decisions): Encore / competition music is not built
 OUT_OF_SCOPE = {'encoremenu.ogg', 'competition.ogg', 'buddybeat.ogg', 'pinball.ogg'}
 
 

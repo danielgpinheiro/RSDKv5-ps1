@@ -36,7 +36,7 @@ void ReplayDB_CreateDB(void)
 void ReplayDB_LoadDB(void (*callback)(bool32 success))
 {
 #if defined RETRO_PS1_BUILD
-    // PS1 (docs/32 4.2a): replays are out of scope and the engine keeps one user database, TimeAttackDB. The menu asks
+    // PS1 (docs/ports/mania/32 4.2a): replays are out of scope and the engine keeps one user database, TimeAttackDB. The menu asks
     // for the replay table first (ManiaModeMenu_InitAPI), which took that slot: TimeAttackDB then failed and the menu's
     // init never finished. No table (-1, which every DB call checks), reported loaded so the menu goes on.
     globals->replayTableID     = -1;

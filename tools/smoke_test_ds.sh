@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase 0 smoke test in DuckStation (the PCSX-Redux one is tools/smoke_test.sh; this port started while
 # another session held PCSX-Redux). DuckStation: GDB stub on port 2345 (settings.ini [Debug]
-# EnableGDBServer), `file` the ELF before `target remote`, `set architecture mips:3000` (docs/31 §6).
+# EnableGDBServer), `file` the ELF before `target remote`, `set architecture mips:3000` (docs/ports/rsdk-common/31 §6).
 # Checks: the 6 files' CRCs vs the host, the SPU read-back, the loading icon ticks, fps. Not checked
 # here: the VRAM pixels of the icon (no VRAM dump API; see the screenshot) and the pad (no input
 # injection in DuckStation; the same layer is verified on the Sonic CD disc).

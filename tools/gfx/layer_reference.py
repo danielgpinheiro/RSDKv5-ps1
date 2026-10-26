@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Reference render of a frame's tile layers (docs/32 3.3 evidence), compared with the PS1's framebuffer.
+"""Reference render of a frame's tile layers (docs/ports/mania/32 3.3 evidence), compared with the PS1's framebuffer.
 
 Inputs (a GDB capture, tools/gfx/layer_reference.gdb): per layer draw call c, the scanlines (sl_<c>_<layer>.bin: 240
 ScanlineInfo {position.x, position.y, deform.x, deform.y} 16.16) and gfxLineBuffer (lb_<c>.bin); the palette

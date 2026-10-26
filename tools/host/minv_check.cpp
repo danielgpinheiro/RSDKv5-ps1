@@ -1,4 +1,4 @@
-// docs/32 9u: RSDK::MatrixInverse, the PS1's table-driven version against stock's unrolled one (RSDKv5/RSDK/Graphics/Scene3D.cpp,
+// docs/ports/mania/32 9u: RSDK::MatrixInverse, the PS1's table-driven version against stock's unrolled one (RSDKv5/RSDK/Graphics/Scene3D.cpp,
 // both pasted here 2026-10-20), bit for bit on random matrices (c++ -O2 -ffp-contract=off: no fused
 // multiply-adds, as the PS1's soft doubles). Exit 0 = identical.
 #include <cstdint>

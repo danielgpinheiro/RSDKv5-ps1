@@ -83,7 +83,7 @@
 #define MANIA_USE_PLUS (GAME_VERSION >= VER_105)
 #define MANIA_USE_EGS  (GAME_VERSION == VER_107)
 
-// docs/32 9g: Mighty and Ray (Mania Plus) on the PS1, a setting off by default (the engine's license: pre-built
+// docs/ports/mania/32 9g: Mighty and Ray (Mania Plus) on the PS1, a setting off by default (the engine's license: pre-built
 // executables have DLC off by default; CheckDLC stays false): Data/PS1Config.txt "plus_characters=1" (the public
 // builder writes it when asked; ps1/rsdk5_main.cpp looks for it at boot) opens the character paths only; Encore, the
 // Plus title, replays and the other Plus changes stay out

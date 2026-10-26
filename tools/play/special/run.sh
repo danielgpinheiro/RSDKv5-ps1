@@ -1,5 +1,5 @@
 #!/bin/bash
-# 9b.4 (docs/32): run.sh EMU NAME BOOT UFO POSTNTH PID: zone BOOT -> giant ring -> UFO (UFO = 0-6) -> back -> star post
+# 9b.4 (docs/ports/mania/32): run.sh EMU NAME BOOT UFO POSTNTH PID: zone BOOT -> giant ring -> UFO (UFO = 0-6) -> back -> star post
 # (POSTNTH-th) -> Blue Spheres -> back, as PID (1 Sonic, 2 Tails, 4 Knuckles). Builds + snapshots BOOT under the tree
 # lock unless NOBUILD=1 (snapshot sp_<boot>); output build/boss/sp_NAME.log.
 H=$(cd "$(dirname "$0")" && pwd)

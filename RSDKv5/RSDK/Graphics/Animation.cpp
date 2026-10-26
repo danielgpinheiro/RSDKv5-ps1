@@ -7,7 +7,7 @@ using namespace RSDK;
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-#include "PS1/PS1Atlas.cpp" // the scene's sprite atlas (docs/32 3.1c)
+#include "PS1/PS1Atlas.cpp" // the scene's sprite atlas (docs/ports/mania/32 3.1c)
 #endif
 
 SpriteAnimation RSDK::spriteAnimationList[SPRFILE_COUNT];
@@ -181,7 +181,7 @@ uint16 RSDK::LoadSpriteAnimation(const char *filePath, uint8 scope)
 #if RETRO_PLATFORM == RETRO_PS1
         if (PS1StorageTrimLast((void **)&spr->frames, frameCount * sizeof(SpriteFrame) + hbSets * hitboxCount * sizeof(Hitbox), DATASET_STG))
             g_ps1HitboxBytesSaved = g_ps1HitboxBytesSaved + (frameCount - hbSets) * hitboxCount * sizeof(Hitbox);
-        PS1AtlasBind(id); // each frame's place in VRAM (docs/32 3.1c)
+        PS1AtlasBind(id); // each frame's place in VRAM (docs/ports/mania/32 3.1c)
 #endif
 
         return id;

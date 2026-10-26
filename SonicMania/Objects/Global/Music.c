@@ -612,7 +612,7 @@ void Music_TransitionTrack(uint8 trackID, float fadeSpeed)
 
     Music->nextTrack = trackID;
 #if defined RETRO_PS1_BUILD
-    // docs/32 9i: a boss comes on screen as its track's transition starts (Shiversaw: ~70 frames of the stage music's
+    // docs/ports/mania/32 9i: a boss comes on screen as its track's transition starts (Shiversaw: ~70 frames of the stage music's
     // fade), while the PS1 atlas loads the boss's sprite group when the track itself starts: the group now loads at
     // the transition's start (the engine services the request between the updates and the draws)
     if (trackID == TRACK_MINIBOSS || trackID == TRACK_HBHBOSS || trackID == TRACK_EGGMAN1 || trackID == TRACK_EGGMAN2

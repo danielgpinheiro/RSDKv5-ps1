@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 9b.7: the game's ps1TempLargeClasses (SonicMania/Objects/Global/Zone.c) from the sources and the build.
+"""docs/ports/mania/32 9b.7: the game's ps1TempLargeClasses (SonicMania/Objects/Global/Zone.c) from the sources and the build.
 
 The classes the game creates as temp entities are the ones CREATE_ENTITY(X, ...) or RSDK.CreateEntity(X->classID, ...)
 name (the DebugSpawns are CREATE_ENTITYs too; the act transitions' stored entities are Players, in reserved slots, and

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 phase 11: the whole asset pipeline in one run, as the Makefile's data / gfx / sfx / music / video / meshes /
+"""docs/ports/mania/32 phase 11: the whole asset pipeline in one run, as the Makefile's data / gfx / sfx / music / video / meshes /
 disc recipes do it, into a work folder: the public builder runs it (and the port can, to prove the builder's image equals
 `make disc`'s). Golden rule: every conversion is build time; the PS1 only copies.
 

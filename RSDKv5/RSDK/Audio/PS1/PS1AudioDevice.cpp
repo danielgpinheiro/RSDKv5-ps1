@@ -2,7 +2,7 @@
 #include "../../../../ps1/spu.hh"
 #include "../../../../ps1/xa_music.hh"
 
-// docs/32 5.1: SFX on the SPU. Each scene's bank (tools/audio/build_sfx.py: Data/Stages/<Folder>/PS1Sfx<id>.bin, the
+// docs/ports/mania/32 5.1: SFX on the SPU. Each scene's bank (tools/audio/build_sfx.py: Data/Stages/<Folder>/PS1Sfx<id>.bin, the
 // samples the objects it runs ask for) is uploaded at the scene load; a registered SFX (LoadSfx: GameConfig's globals,
 // the StageConfig's list) with a sample in the bank keeps its SPU address and rate in sfxList[].buffer and its length in
 // 44.1 kHz frames in .length (the channel bookkeeping below ends and loops it as the PC mixer would). Channel c plays on
@@ -11,7 +11,7 @@
 // channel stops.
 extern "C" {
 volatile uint32 g_ps1SfxBanks      = 0; // banks uploaded (total)
-volatile uint32 g_ps1SfxBanksKept  = 0; // of them: equal to the one in SPU RAM, not uploaded (docs/32 9.3)
+volatile uint32 g_ps1SfxBanksKept  = 0; // of them: equal to the one in SPU RAM, not uploaded (docs/ports/mania/32 9.3)
 volatile uint32 g_ps1SfxBankBytes  = 0; // the last bank's sample bytes
 volatile uint32 g_ps1SfxBankErrors = 0; // a bank missing / bad / over SPU RAM
 volatile uint32 g_ps1SfxPlays      = 0; // voice key-ons (total)
@@ -21,7 +21,7 @@ volatile uint32 g_ps1SfxVerify      = 0; // GDB sets it: each upload read back a
 volatile uint32 g_ps1SfxVerifyBytes = 0;
 volatile uint32 g_ps1SfxVerifyFail  = 0; // chunks that read back different
 extern volatile int32 g_ps1FrameSteps; // ps1/rsdk5_main.cpp (9f / choice 182 / 13b)
-// docs/32 5.2: music
+// docs/ports/mania/32 5.2: music
 volatile uint32 g_ps1MusicReady   = 0; // Music.xa + Music.bin found
 volatile uint32 g_ps1MusicStarts  = 0; // PlayStream -> an XA track
 volatile uint32 g_ps1MusicMissing = 0; // PlayStream of a track not on the disc (the channel keeps its timing only)
@@ -37,14 +37,14 @@ int16 s_voiceSound[CHANNEL_COUNT]; // the SFX the voice plays (-1: none)
 uint32 s_voicePlay[CHANNEL_COUNT]; // its channel's playIndex
 uint32 s_voiceFrom[CHANNEL_COUNT]; // its SPU start address (a loop re-keys from its loop point)
 char s_bankPath[0x40];             // the bank in SPU RAM (a reload of the same scene keeps it: ~1.7 s of reading)
-uint32 s_bankCrc;                  // its contents' CRC-32 (docs/32 9.3: another scene's equal bank keeps the samples)
+uint32 s_bankCrc;                  // its contents' CRC-32 (docs/ports/mania/32 9.3: another scene's equal bank keeps the samples)
 
-// docs/32 5.2: the stream channel the CD-XA music follows (PlayStream -> LoadStream -> PS1StreamStart)
+// docs/ports/mania/32 5.2: the stream channel the CD-XA music follows (PlayStream -> LoadStream -> PS1StreamStart)
 int8 s_xaChannel = -1, s_xaTrack = -1;
 bool s_xaLoop, s_xaPaused;
 uint16 s_xaLoopRow, s_xaPad;
 uint16 s_cdVolume = 0xFFFF;
-// docs/32 6.2: a PlayStream starts its XA at the next FrameInit, unless a video took it (the STR carries its sound)
+// docs/ports/mania/32 6.2: a PlayStream starts its XA at the next FrameInit, unless a video took it (the STR carries its sound)
 int8 s_pendChannel = -1, s_videoChannel = -1;
 char s_streamName[0x20]; // the last PlayStream's file ("IntroHP.ogg"): the video lookup's key
 
@@ -136,7 +136,7 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
         g_ps1SfxBankErrors = g_ps1SfxBankErrors + 1;
         return;
     }
-    // docs/32 9.3: the same samples as the bank in SPU RAM (the Blue Spheres stages, a UFO's two acts, ...): bind only
+    // docs/ports/mania/32 9.3: the same samples as the bank in SPU RAM (the Blue Spheres stages, a UFO's two acts, ...): bind only
     bool same = head[2] && head[2] == s_bankCrc;
     s_bankCrc = 0;
     uint8 *buf      = (uint8 *)tmp->memoryTable + ((tableBytes + 63) & ~63u);

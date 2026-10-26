@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 2.2 headless boot test (docs/32): boots build/game.cue (tools/data_disc.sh) with the current rsdkv5.elf in
+# Phase 2.2 headless boot test (docs/ports/mania/32): boots build/game.cue (tools/data_disc.sh) with the current rsdkv5.elf in
 # PCSX-Redux (EMU=ds: DuckStation; tools/emu.sh) and reports through GDB:
 #   SCENE  every scene load (list position, folder, frame / vsync count when it starts)
 #   SNAP   at frames 60, 300, 600, END: frames vs vsyncs, CPU hblanks, engine state, class counts, the guards

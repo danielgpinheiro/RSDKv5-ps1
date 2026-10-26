@@ -2,7 +2,7 @@
 
 using namespace RSDK;
 #if RETRO_PLATFORM == RETRO_PS1
-void PS1FsSetLoadFolder(const char *folder); // ps1/cdrom_fs.cpp (docs/32 9.2: stage-local copies)
+void PS1FsSetLoadFolder(const char *folder); // ps1/cdrom_fs.cpp (docs/ports/mania/32 9.2: stage-local copies)
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
@@ -13,7 +13,7 @@ void PS1FsSetLoadFolder(const char *folder); // ps1/cdrom_fs.cpp (docs/32 9.2: s
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-#include "PS1/PS1Tiles.cpp"  // the scene's tile images in VRAM (docs/32 3.1a)
+#include "PS1/PS1Tiles.cpp"  // the scene's tile images in VRAM (docs/ports/mania/32 3.1a)
 #include "PS1/PS1Layers.cpp" // tile layers drawn by the GPU (3.3)
 #include "RSDK/Graphics/PS1/PS1Scene3D.hpp" // g_ps1S3DOps.floor: the UFO floor (7.4)
 #include "PS1/PS1Roto.cpp"   // rotozoom layers (4.1d)
@@ -28,7 +28,7 @@ uint8 RSDK::tilesetPixels[TILESET_SIZE * 4];
 ScanlineInfo *RSDK::scanlines = NULL;
 TileLayer RSDK::tileLayers[LAYER_COUNT];
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 (docs/32 2.3o): plane A; plane B where it differs (PS1/PS1Collision.hpp)
+// PS1 (docs/ports/mania/32 2.3o): plane A; plane B where it differs (PS1/PS1Collision.hpp)
 CollisionMask RSDK::collisionMasks[1][TILE_COUNT];
 TileInfo RSDK::tileInfo[1][TILE_COUNT];
 uint16 RSDK::ps1PlaneB[TILE_COUNT];
@@ -69,7 +69,7 @@ volatile uint32 RSDK::g_ps1ScrollInfoDropped   = 0; // scroll infos past the PS1
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 (docs/32 2.3g, choice 29): the scene's layout chunks (Scene.hpp).
+// PS1 (docs/ports/mania/32 2.3g, choice 29): the scene's layout chunks (Scene.hpp).
 uint16 *RSDK::ps1ChunkPool                   = NULL;
 uint16 *RSDK::ps1RowPool                     = NULL;
 uint32 RSDK::ps1RowShared                    = 0;
@@ -196,7 +196,7 @@ void RSDK::LoadSceneFolder()
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 9.2: the folder whose PS1Local copies this load reads (ps1/cdrom_fs.cpp)
+    // docs/ports/mania/32 9.2: the folder whose PS1Local copies this load reads (ps1/cdrom_fs.cpp)
     PS1FsSetLoadFolder(sceneInfo.listData[sceneInfo.listPos].folder);
     ::g_ps1SceneLoadSerial = ::g_ps1SceneLoadSerial + 1; // 9b.5: the scripted pad's steps count frames from a scene's load
 #endif
@@ -217,7 +217,7 @@ void RSDK::LoadSceneFolder()
     }
 
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 2.3): the previous scene's entity arena is released before the STG compaction below (both paths).
+    // PS1 (docs/ports/mania/32 2.3): the previous scene's entity arena is released before the STG compaction below (both paths).
     // Released only in LoadSceneAssets, it stayed a hole that the next compaction closed in the middle of the load, moving
     // the new arena from under objectEntityPtr (Title: TitleSonic_StageLoad's sprite load filled STG). The stock code
     // clears the entity list in LoadSceneAssets; nothing reads it between here and there.
@@ -261,7 +261,7 @@ void RSDK::LoadSceneFolder()
 #endif
         // Reload
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 4.3): a first load places the entity arena while the scene records sit in STG's tail and before
+        // PS1 (docs/ports/mania/32 4.3): a first load places the entity arena while the scene records sit in STG's tail and before
         // any StageLoad loads a sprite file; a reload kept the stage's sprite animations (GHZ1: 92 files, 113 KB) under
         // that peak and ran out of STG (restart, deaths). They are released as a hard reset releases them: StageLoad
         // loads them again after the arena, in the same order (the same IDs; object static variables stay, as stock)
@@ -336,7 +336,7 @@ void RSDK::LoadSceneFolder()
     DefragmentAndGarbageCollectStorage(DATASET_STG);
     DefragmentAndGarbageCollectStorage(DATASET_SFX);
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 2.4): the stage folder's code overlay, at the top of STG (ps1/overlay.cpp)
+    // PS1 (docs/ports/mania/32 2.4): the stage folder's code overlay, at the top of STG (ps1/overlay.cpp)
     PS1LoadOverlay(sceneInfo.listData[sceneInfo.listPos].folder, sceneInfo.listData[sceneInfo.listPos].id);
 #endif
 
@@ -525,7 +525,7 @@ void RSDK::LoadSceneAssets()
 
     dataStorage[DATASET_TMP].usedStorage = 0;
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1TilesLoad(currentSceneFolder, sceneEntry->id); // tilesetPixels' job: the tile images go to VRAM (docs/32 3.1a)
+    PS1TilesLoad(currentSceneFolder, sceneEntry->id); // tilesetPixels' job: the tile images go to VRAM (docs/ports/mania/32 3.1a)
     PS1LayerCutsLoad(currentSceneFolder, sceneEntry->id); // 9v.4
     PS1AtlasLoad(currentSceneFolder, sceneEntry->id); // the sheets' job: the sprite atlas's default state (3.1c)
     PS1SfxLoadBank(currentSceneFolder, sceneEntry->id); // 5.1: the scene's SFX samples into SPU RAM (TMP staging)
@@ -603,7 +603,7 @@ void RSDK::LoadSceneAssets()
         Seek_Cur(&info, strLen + 1);
 
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 7b): the disc's scene files hold the objects before the layers (tools/data_disc.py): the entities
+        // PS1 (docs/ports/mania/32 7b): the disc's scene files hold the objects before the layers (tools/data_disc.py): the entities
         // are placed while STG holds no layout yet (SPZ1: 250 KB of chunk pool + layouts beside the records and the
         // arena did not fit). The layers load after them, here as in the file.
         auto ps1Layers = [&]() {
@@ -660,7 +660,7 @@ void RSDK::LoadSceneAssets()
             if (size <= layer->ysize)
                 size = layer->ysize;
 #if RETRO_PLATFORM == RETRO_PS1
-            // PS1 (docs/32 2.3g): ProcessParallax indexes lineScroll by pixel row for H-scroll layers and by pixel column for
+            // PS1 (docs/ports/mania/32 2.3g): ProcessParallax indexes lineScroll by pixel row for H-scroll layers and by pixel column for
             // V-scroll ones; the stock buffer is sized for the larger side (FG: 16 KB of which 2 KB are read)
             int32 lineScrollSize = TILE_SIZE * (layer->type == LAYER_HSCROLL ? layer->ysize : layer->type == LAYER_VSCROLL ? layer->xsize : size);
             AllocateStorage((void **)&layer->lineScroll, lineScrollSize, DATASET_STG, true);
@@ -748,7 +748,7 @@ void RSDK::LoadSceneAssets()
         AllocateStorage((void **)&editableVarList, sizeof(EditableVarInfo) * EDITABLEVAR_COUNT, DATASET_TMP, false);
 
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 2.3): the entities go to compact records first (file slot, class, position, the active
+        // PS1 (docs/ports/mania/32 2.3): the entities go to compact records first (file slot, class, position, the active
         // variables), then PS1SceneEntitiesPlace compacts them as below and gives each slot a block of its class's size.
         PS1SceneEntitiesBegin();
         // 7b: the "childCount" variables (Platform & co. move or read the next childCount slots: they never go dormant)
@@ -1186,7 +1186,7 @@ void RSDK::LoadTileConfig(char *filepath)
         }
 
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 2.3): the block is stored raw on the disc (tools/data_disc.py), so the 2 x 1024 tile records (38 B
+        // PS1 (docs/ports/mania/32 2.3): the block is stored raw on the disc (tools/data_disc.py), so the 2 x 1024 tile records (38 B
         // each, 77,824 B) are read one at a time instead of into a DATASET_TMP buffer.
         uint32 cSize  = ReadInt32(&info, false) - 4;
         uint32 sizeBE = ReadInt32(&info, false);
@@ -1204,7 +1204,7 @@ void RSDK::LoadTileConfig(char *filepath)
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 2.3o): each tile is computed into ps1Mask / ps1Info, then stored as plane A, or for plane B only
+        // PS1 (docs/ports/mania/32 2.3o): each tile is computed into ps1Mask / ps1Info, then stored as plane A, or for plane B only
         // where it differs from plane A (PS1/PS1Collision.hpp); the flipped variants are derived where they are read.
         CollisionMask ps1Mask;
         TileInfo ps1Info;
@@ -1475,7 +1475,7 @@ void RSDK::LoadTileConfig(char *filepath)
 void RSDK::LoadStageGIF(char *filepath)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 port (docs/32): the tileset's pixels go to VRAM at build time (phase 3) and the GIF is not on the disc. The
+    // PS1 port (docs/ports/mania/32): the tileset's pixels go to VRAM at build time (phase 3) and the GIF is not on the disc. The
     // palette rows are applied from <tileset>.pal (the GIF's colour table, 256 x RGB, written by the data-disc tool)
     // exactly as below.
     char palPath[0x100];
@@ -1583,7 +1583,7 @@ void RSDK::ProcessParallaxAutoScroll()
 #define PS1_LS_STEP(layer) (1)
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
-// docs/32 9u: an H-scroll layer's per-line fill (below) with everything in registers: stock's loop reloads
+// docs/ports/mania/32 9u: an H-scroll layer's per-line fill (below) with everything in registers: stock's loop reloads
 // layer->scrollInfo and currentScreen on every line (the scanline stores may alias them) at -Os (SPZ1: ~20 hblanks a
 // frame for its deforming layers). The same scanline values: x = the line's scroll info's tilePos (+ the deformation when
 // that info deforms), y = the layer row, rows wrapping at the layer's height. scrollPos stays below pixelHeight (<= 32767).
@@ -1944,11 +1944,11 @@ void RSDK::CopyTileLayer(uint16 dstLayerID, int32 dstStartX, int32 dstStartY, ui
 void RSDK::DrawLayerHScroll(TileLayer *layer)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawLayerHScroll(layer); // bands of tile pieces through the GPU chain (docs/32 3.3)
+    PS1DrawLayerHScroll(layer); // bands of tile pieces through the GPU chain (docs/ports/mania/32 3.3)
     return;
 #endif
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    return; // PS1 phase 2: headless (docs/ports/mania/32)
 #endif
     if (!layer->xsize || !layer->ysize)
         return;
@@ -2103,7 +2103,7 @@ void RSDK::DrawLayerHScroll(TileLayer *layer)
 void RSDK::DrawLayerVScroll(TileLayer *layer)
 {
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    return; // PS1 phase 2: headless (docs/ports/mania/32)
 #endif
     if (!layer->xsize || !layer->ysize)
         return;
@@ -2248,11 +2248,11 @@ void RSDK::DrawLayerVScroll(TileLayer *layer)
 void RSDK::DrawLayerRotozoom(TileLayer *layer)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawLayerRotozoom(layer); // tile quads through the GPU chain (docs/32 4.1d)
+    PS1DrawLayerRotozoom(layer); // tile quads through the GPU chain (docs/ports/mania/32 4.1d)
     return;
 #endif
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    return; // PS1 phase 2: headless (docs/ports/mania/32)
 #endif
     if (!layer->xsize || !layer->ysize)
         return;
@@ -2298,11 +2298,11 @@ void RSDK::DrawLayerRotozoom(TileLayer *layer)
 void RSDK::DrawLayerBasic(TileLayer *layer)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawLayerBasic(layer); // bands of tile pieces through the GPU chain (docs/32 4.1c)
+    PS1DrawLayerBasic(layer); // bands of tile pieces through the GPU chain (docs/ports/mania/32 4.1c)
     return;
 #endif
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    return; // PS1 phase 2: headless (docs/ports/mania/32)
 #endif
     if (!layer->xsize || !layer->ysize)
         return;

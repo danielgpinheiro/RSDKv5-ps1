@@ -29,7 +29,7 @@ int32 DummyUserStorage::TryInitStorage()
 bool32 DummyUserStorage::GetUsername(String *name)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // docs/32 4.2c: no platform user on the PS1: no user name (the menus' name badge, UIUsernamePopup, stays hidden)
+    // docs/ports/mania/32 4.2c: no platform user on the PS1: no user name (the menus' name badge, UIUsernamePopup, stays hidden)
     (void)name;
     return false;
 #endif

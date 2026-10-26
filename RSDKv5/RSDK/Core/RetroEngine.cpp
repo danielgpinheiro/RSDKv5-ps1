@@ -1,6 +1,6 @@
 #include "RSDK/Core/RetroEngine.hpp"
 #if RETRO_PLATFORM == RETRO_PS1
-extern "C" volatile int32 g_ps1FrameSteps; // ps1/rsdk5_main.cpp (docs/32 9f / 13b: this drawn frame's logic steps)
+extern "C" volatile int32 g_ps1FrameSteps; // ps1/rsdk5_main.cpp (docs/ports/mania/32 9f / 13b: this drawn frame's logic steps)
 extern "C" volatile int g_ps1FlickShift, g_ps1LastStep; // ps1/rsdk5_main.cpp (9r: PS1_FLICK, PS1_LAST_STEP)
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
@@ -446,7 +446,7 @@ void RSDK::ProcessEngine()
                 ProcessParallaxAutoScroll();
             }
 #if RETRO_PLATFORM == RETRO_PS1
-            // docs/32 9f (user 2026-10-08, the UFO stages only: g_ps1LogicSteps from UFO_Setup's StageLoad): 30 fps with
+            // docs/ports/mania/32 9f (user 2026-10-08, the UFO stages only: g_ps1LogicSteps from UFO_Setup's StageLoad): 30 fps with
             // the game at full speed, a second logic step before the frame's one draw; with its input, as a 60 fps frame
             // reads it (the pad is the same: a press counts once). 13b: g_ps1FrameSteps, more with Frameskip on
             for (int32 i = 1; i < g_ps1FrameSteps && sceneInfo.state == ENGINESTATE_REGULAR; ++i) {
@@ -855,7 +855,7 @@ void RSDK::StartGameObjects()
     sceneInfo.inEditor       = false;
     sceneInfo.debugMode      = engine.devMenu;
 #if RETRO_PLATFORM == RETRO_PS1
-    devMenu.state = NULL; // docs/32 6.2: no dev menu (Debug.cpp OpenDevMenu)
+    devMenu.state = NULL; // docs/ports/mania/32 6.2: no dev menu (Debug.cpp OpenDevMenu)
 #else
     devMenu.state            = DevMenu_MainMenu;
 #endif

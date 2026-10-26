@@ -28,7 +28,7 @@ VAR_SIZES = {0: 1, 1: 2, 2: 4, 3: 1, 4: 2, 5: 4, 6: 4, 7: 4, 9: 8, 10: 4, 11: 4}
 
 
 def data_root():
-    """docs/32 phase 11: the game data's Data/ folder for every tool: $MANIA_DATA, else the workspace's
+    """docs/ports/mania/32 phase 11: the game data's Data/ folder for every tool: $MANIA_DATA, else the workspace's
     ../SonicMania_Extracted/Data (the port's default)."""
     return os.path.abspath(os.environ.get('MANIA_DATA') or
                            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'SonicMania_Extracted', 'Data'))

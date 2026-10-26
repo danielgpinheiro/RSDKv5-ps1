@@ -69,7 +69,7 @@ void UIButtonPrompt_LateUpdate(void)
     if (control && control->heading && self->headingAnchor) {
         EntityUIHeading *heading = (EntityUIHeading *)control->heading;
 #if defined RETRO_PS1_BUILD
-        // docs/32 4.2c: the anchors assume a 424-pixel screen; on a narrower one the prompts move in by the difference's
+        // docs/ports/mania/32 4.2c: the anchors assume a 424-pixel screen; on a narrower one the prompts move in by the difference's
         // half (the same at 424)
         int32 inset = TO_FIXED((424 - ScreenInfo->size.x) >> 1);
 #else

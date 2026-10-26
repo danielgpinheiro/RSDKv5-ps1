@@ -1,4 +1,4 @@
-"""VRAM plan of the Mania PS1 port (docs/32 phase 3): what the build-time graphics tools (tools/gfx) may use.
+"""VRAM plan of the Mania PS1 port (docs/ports/mania/32 phase 3): what the build-time graphics tools (tools/gfx) may use.
 
 VRAM is 1024 x 512 halfwords. psyqo's two 320x240 framebuffers sit at (0, 0) and (0, 256) (nugget/psyqo/src/gpu.cpp).
 Texture pages start at X multiples of 64 halfwords and Y 0 / 256: a 4-bit page spans one 64-halfword column (256

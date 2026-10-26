@@ -28,7 +28,7 @@ DataStorage RSDK::dataStorage[DATASET_MAX];
 
 #if RETRO_PLATFORM == RETRO_PS1
 extern "C" char __heap_start, __stack_start;
-#include "psyqo/alloc.h" // psyqo_heap_end, psyqo_malloc / psyqo_free (docs/32 9d: inline wrappers in upstream nugget)
+#include "psyqo/alloc.h" // psyqo_heap_end, psyqo_malloc / psyqo_free (docs/ports/mania/32 9d: inline wrappers in upstream nugget)
 #define PS1_STACK_RESERVE (16 * 1024) // = ps1/stack.hh (its overflow check paints this area, MA-188)
 // 2.3p: user database (0xE0 rows); in play the chain arena takes 50 KB of it (3.2). 4.2a: the database 62 -> 35 KB (6 columns
 // of 4 bytes), 128 -> 104 KB: the menu at 2 MB (its save-file list, TA table) leaves ~3.5 KB of it never reached
@@ -54,14 +54,14 @@ bool32 RSDK::InitStorage()
 {
     // Storage limits.
 #if RETRO_PLATFORM == RETRO_PS1 && PS1_DEBUG_BIGRAM
-    // PS1 port, 8 MB debug/measuring link only (docs/32 2.2): room to measure what the datasets really need
+    // PS1 port, 8 MB debug/measuring link only (docs/ports/mania/32 2.2): room to measure what the datasets really need
     // (g_ps1StorageLivePeak below); STG takes the rest of the 8 MB (2.4a layout below).
     dataStorage[DATASET_MUS].storageLimit = 64 * 1024;
     dataStorage[DATASET_SFX].storageLimit = 64 * 1024;
     dataStorage[DATASET_STR].storageLimit = 128 * 1024;
     dataStorage[DATASET_TMP].storageLimit = 1024 * 1024;
 #elif RETRO_PLATFORM == RETRO_PS1
-    // PS1 port (docs/32 2.3): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA, converted
+    // PS1 port (docs/ports/mania/32 2.3): 2 MB in all. Sprites, tiles and audio never live in RAM (VRAM / SPU / CD-XA, converted
     // at build time): the datasets hold globals, static variables, the entity arena, layouts and tables.
     // 2.3j: GHZ1 peaks TMP 23.6 KB (the records moved to the STG tail), STR 14.6 KB, MUS / SFX never used (music is
     // CD-XA, sound effects live in SPU RAM). STG takes the rest of the heap (2.4a layout below).
@@ -149,7 +149,7 @@ void RSDK::ReleaseStorage()
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 port (docs/32 2.2): what each dataset really needs. The datasets are bump allocators that garbage-collect when
+// PS1 port (docs/ports/mania/32 2.2): what each dataset really needs. The datasets are bump allocators that garbage-collect when
 // full, so the high-water mark of usedStorage says little; the live bytes (entries whose owner pointer still points
 // at them: what GarbageCollectStorage keeps) after each allocation give the limit a dataset needs. GDB reads these.
 volatile uint32 g_ps1StorageLivePeak[DATASET_MAX];  // bytes incl. the 16-byte headers (measuring link only, 4.2e: kept for the GDB scripts)
@@ -212,7 +212,7 @@ void RSDK::PS1StorageTailRelease(StorageDataSets set)
     s_ps1TailBytes[set] = 0;
 }
 
-// docs/32 4.2d: the chain's second block (ps1/gpu_chain.cpp PS1ChainResume / Suspend): STG's tail after a load when the
+// docs/ports/mania/32 4.2d: the chain's second block (ps1/gpu_chain.cpp PS1ChainResume / Suspend): STG's tail after a load when the
 // scene leaves more than PS1_CHAIN_EXTRA_MARGIN free (what the scene allocates while it runs: sprite loads, objects);
 // given back before the next load, whose records and staging use the tail. Zones near the STG limit lend nothing.
 #define PS1_CHAIN_EXTRA_MARGIN (48 * 1024)
@@ -233,7 +233,7 @@ extern "C" uint32_t *PS1ChainExtraTake(uint32_t *words)
 }
 extern "C" void PS1ChainExtraGive() { PS1StorageTailRelease(DATASET_STG); }
 
-// docs/32 6.2: the video's buffers (ps1/video.cpp, ~110 KB) from STG's tail: nothing allocates while the engine is in
+// docs/ports/mania/32 6.2: the video's buffers (ps1/video.cpp, ~110 KB) from STG's tail: nothing allocates while the engine is in
 // ENGINESTATE_VIDEOPLAYBACK (the scene waits; a load comes after). The chain gave its extra block back as the video
 // opened (PS1ChainSuspend) and takes none while these are out (PS1ChainExtraTake sees the tail in use).
 static uint32 s_ps1VideoTailBlocks = 0;

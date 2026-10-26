@@ -34,7 +34,7 @@ void Kabasira_Draw(void)
 
         // Probably shouldn't be in Draw?
 #if defined RETRO_PS1_BUILD
-        // docs/32 choice 182 / 13b: one draw per g_ps1FrameSteps logic steps (zones capped at 30 fps, Frameskip)
+        // docs/ports/mania/32 choice 182 / 13b: one draw per g_ps1FrameSteps logic steps (zones capped at 30 fps, Frameskip)
         for (int32 s = 0; s < g_ps1FrameSteps; ++s) RSDK.ProcessAnimation(&self->wingsAnimator);
 #else
         RSDK.ProcessAnimation(&self->wingsAnimator);

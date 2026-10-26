@@ -61,7 +61,7 @@ struct EntityPuyoBean {
     int32 fallDelay;
     int32 rotateSpeed;
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 7b): the Mean Bean Machine keeps up to ~150 beans, each a temp entity: without the unused fields
+    // PS1 port (docs/ports/mania/32 7b): the Mean Bean Machine keeps up to ~150 beans, each a temp entity: without the unused fields
     // and with the flags in bytes a bean fits a small temp block (PS1Entities.hpp PS1_TEMP_SMALL_CAP, 256 B)
     int32 rotationDir;
     int32 idleTimer;

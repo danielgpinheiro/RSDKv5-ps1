@@ -825,7 +825,7 @@ void Player_LoadSprites(void)
 
         sidekick->classID    = Player->classID;
 #if defined RETRO_PS1_BUILD
-        PS1ClassNoteEntity(sidekick); // docs/32 9.4: foreach_all's class ranges
+        PS1ClassNoteEntity(sidekick); // docs/ports/mania/32 9.4: foreach_all's class ranges
 #endif
         sidekick->position.x = leader->position.x;
         sidekick->position.y = leader->position.y;
@@ -6442,7 +6442,7 @@ void Player_Input_P1(void)
                     && ControllerInfo[CONT_P1].keyX.press && globals->gameMode != MODE_TIMEATTACK) {
                     self->classID    = DebugMode->classID;
 #if defined RETRO_PS1_BUILD
-                    PS1ClassNoteEntity(self); // docs/32 9.4
+                    PS1ClassNoteEntity(self); // docs/ports/mania/32 9.4
 #endif
                     self->velocity.x = 0;
                     self->velocity.y = 0;
@@ -6765,7 +6765,7 @@ void Player_EditorLoad(void)
 void Player_Serialize(void) { RSDK_EDITABLE_VAR(Player, VAR_ENUM, characterID); }
 
 #if defined RETRO_PS1_BUILD
-// docs/32 9l: the PS1 atlas keeps Super Sonic's frames loaded (the player region's super group) while a Sonic draws from
+// docs/ports/mania/32 9l: the PS1 atlas keeps Super Sonic's frames loaded (the player region's super group) while a Sonic draws from
 // SuperSonic.bin past the transformation; its ANI_TRANSFORM frames are with the normal ones (Super.ogg starts only after it)
 int32 PS1GameWantsSuperGroup(void)
 {

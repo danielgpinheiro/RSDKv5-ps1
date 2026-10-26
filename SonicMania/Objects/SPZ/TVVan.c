@@ -685,7 +685,7 @@ void TVVan_StateRadio_HandleMovement(void)
         foreach_active(TVVan, van)
         {
 #if defined RETRO_PS1_BUILD
-            // docs/32 9r: the last node by its slot (a dormant satellite's block may be reused by the next node it wakes:
+            // docs/ports/mania/32 9r: the last node by its slot (a dormant satellite's block may be reused by the next node it wakes:
             // the pointer then matched the new node and the radio flew past it, out of the stage)
             if (self != van && RSDK.GetEntitySlot(van) != self->ps1NextSlot && van->type && van->type < TVVAN_RADIO) {
 #else

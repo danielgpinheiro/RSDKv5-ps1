@@ -85,7 +85,7 @@ void DebugMode_Update(void)
         RSDK_THIS(Player);
         self->classID        = Player->classID;
 #if defined RETRO_PS1_BUILD
-        PS1ClassNoteEntity(self); // docs/32 9.4: foreach_all's class ranges
+        PS1ClassNoteEntity(self); // docs/ports/mania/32 9.4: foreach_all's class ranges
 #endif
         self->groundVel      = 0;
         self->velocity.x     = 0;

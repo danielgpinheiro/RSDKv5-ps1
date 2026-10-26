@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Code overlays (docs/32 2.4).
+"""Code overlays (docs/ports/mania/32 2.4).
 
 Resident EXE: the engine, the port layer, the GameConfig's global objects, the helpers and the objects whose static
 variables Game.c registers. Every other object's code lives in the overlay of each stage folder that lists it (a
@@ -40,8 +40,8 @@ NM, OBJCOPY = 'mipsel-none-elf-nm', 'mipsel-none-elf-objcopy'
 STACK_RESERVE = 16 * 1024  # RSDK/Storage/Storage.cpp PS1_STACK_RESERVE
 MAGIC = 0x314C564F         # 'OVL1'
 # Optional engine parts linked into the overlays of the folders whose objects need them (not the resident EXE): their
-# objects, and the function the overlay's register calls to plug them in. docs/32 6.2: the video player (Sonic CD's,
-# docs/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects (7.4: with their floor)
+# objects, and the function the overlay's register calls to plug them in. docs/ports/mania/32 6.2: the video player (Sonic CD's,
+# docs/ports/rsdk-common/31) for the objects that call RSDK.LoadVideo; 7.3: the 3D draw for the UFO stages' objects (7.4: with their floor)
 EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1/mdec.o'], 'PS1VideoLink'),
           's3d': ({'UFO_Setup', 'UFO_Player', 'UFO_Circuit'}, ['RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o', 'RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o',
                                                              'ps1/gte3d.o', 'ps1/s3d_faces.o', 'ps1/s3d_blend.o', 'ps1/floor_quads.o'],
@@ -51,7 +51,7 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
           'stamp': ({'TitleSetup'}, ['ps1/version_stamp.o'], 'PS1VersionLink')}  # the title's build stamp (VERSION.TXT)
 
 
-# docs/32 7b: folders whose acts get an overlay each (<folder>_<scene id>.bin): an act's overlay leaves out the folder's
+# docs/ports/mania/32 7b: folders whose acts get an overlay each (<folder>_<scene id>.bin): an act's overlay leaves out the folder's
 # classes that only another act's scene places and that no code of the act's overlay or of the resident names (their
 # pointer variable or a function). The scene load takes the act's overlay when the resident lists it (ps1OvlUnits); a
 # change of overlay between two acts of one folder is a full stage load (ps1/overlay.cpp PS1OverlayUnitChanges).
@@ -241,7 +241,7 @@ def resident_game_objs():
 
 def light_folders(data=None):
     data = data or F.data_root()
-    """docs/32 4.2a: the folders only the GameConfig's Presentation category lists (Logos, Title, Menu, Credits, ...):
+    """docs/ports/mania/32 4.2a: the folders only the GameConfig's Presentation category lists (Logos, Title, Menu, Credits, ...):
     their scenes have STG to spare, zones do not. A resident object's function only light overlays reach is linked into
     them (overlay_reach); what any other folder reaches stays resident, shared by every zone."""
     g = F.read_gameconfig(os.path.join(data, 'Game', 'GameConfig.bin'))
@@ -277,7 +277,7 @@ def parse_obj(o):
 
 
 def overlay_reach(folders, ro_objs):
-    """docs/32 4.2a: the resident objects' functions the overlays reach. A function only CALLED from an overlay (and from
+    """docs/ports/mania/32 4.2a: the resident objects' functions the overlays reach. A function only CALLED from an overlay (and from
     what that call reaches) need not be resident: each overlay link appends the resident objects, and the linker takes a
     function from there only when the resident does not have it (the resident image comes first). A function stays
     resident (-u) when an overlay or a copied function takes its ADDRESS (a state or callback may outlive the overlay,
@@ -382,7 +382,7 @@ def stubs(argv):
         if u in res_def and (u not in ro_funcs or u in must):
             keep.add(u)
     keep |= must & res_def
-    # docs/32 6.2: the resident symbols the video player (linked into video folders' overlays) uses stay resident (one
+    # docs/ports/mania/32 6.2: the resident symbols the video player (linked into video folders' overlays) uses stay resident (one
     # CD stream, one chain: shared state), and the resident's allocator for its buffers (PS1VideoMalloc / Free: STG's
     # tail) must win over the player's weak psyqo defaults
     for name, (_, eobjs, _) in EXTRAS.items():
@@ -440,7 +440,7 @@ def stubs(argv):
                     % (un, len(objs_names), '; left out: ' + ' '.join(dropped) if dropped else ''))
             f.write('#include "Game.h"\n\n')
             f.write('extern void *ps1OvlTable[];\n')
-            # docs/32 7b: the StageConfig classes this act's overlay leaves out (not counted as missing)
+            # docs/ports/mania/32 7b: the StageConfig classes this act's overlay leaves out (not counted as missing)
             f.write('extern const char *const *g_ps1OvlLeftOut;\n')
             f.write('static const char *const s_leftOut[] = { %s0 };\n' % ''.join('"%s", ' % d for d in dropped))
             for s in fills:
@@ -458,20 +458,20 @@ def stubs(argv):
             f.write('    g_ps1OvlLeftOut = s_leftOut;\n')
             for name, (_, _, fn) in EXTRAS.items():
                 if fo in extra_folders(name):
-                    f.write('    { extern void %s(void); %s(); } // docs/32: %s\n' % (fn, fn, name))
+                    f.write('    { extern void %s(void); %s(); } // docs/ports/mania/32: %s\n' % (fn, fn, name))
             f.write('}\n\n')
             f.write('typedef struct { unsigned magic, size; void (*reg)(void); unsigned base; } PS1OverlayHeader;\n')
             f.write('extern char __ps1_ovl_start[], PS1_OVL_SIZE[];\n')
             f.write('__attribute__((section(".ovl_header"), used)) const PS1OverlayHeader ps1OvlHeader = {\n')
             f.write('    0x%08X, (unsigned)PS1_OVL_SIZE, PS1OverlayRegister, (unsigned)__ps1_ovl_start };\n' % MAGIC)
-    with open(out, 'a') as f: # docs/32 7b: the act overlays (ps1/overlay.cpp)
+    with open(out, 'a') as f: # docs/ports/mania/32 7b: the act overlays (ps1/overlay.cpp)
         f.write('const char *const ps1OvlUnits[] = { %s0 };\n' % ''.join('"%s", ' % un for un, _, sid in units() if sid))
     print('gen_overlays: %d pointers, %d stubbed functions -> %s; %d resident symbols kept for the overlays; overlays %s' % (
         len(others), len(stubbed), out, len(keep), ' '.join(un for un, _, _ in units())))
 
 
 def unit_members(fo, sid, names, res_undef):
-    """docs/32 7b: an act overlay's classes. Kept: what the act's scene places, and every class that code reaches from
+    """docs/ports/mania/32 7b: an act overlay's classes. Kept: what the act's scene places, and every class that code reaches from
     those or from the resident (a reference to its pointer variable or one of its functions), and the classes no act
     places that only that unknown use explains. Left out: the classes only other acts' scenes place, and the classes no
     act places that only those reach (their helpers: the Mean Bean Machine's beans). -> (kept names, left-out names)"""
@@ -552,7 +552,7 @@ def resimg_cmd(argv):
 
 def link(argv):
     un, elf, cc = argv[0], argv[1], argv[2:]
-    fo = unit_folder(un)  # docs/32 7b: an act overlay links its folder's objects (those its .syms lists)
+    fo = unit_folder(un)  # docs/ports/mania/32 7b: an act overlay links its folder's objects (those its .syms lists)
     work = os.path.join(OVL, un)
     os.makedirs(work, exist_ok=True)
     img_o = os.path.join(OVL, 'resimg.o')  # `resimg` (make builds it once, before the links)

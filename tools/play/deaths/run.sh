@@ -1,5 +1,5 @@
 #!/bin/bash
-# 9b.3 (docs/32): run.sh EMU BOOT... (EMU pcsx|ds, BOOT = category,scene): per boot, build + snapshot under the boss
+# 9b.3 (docs/ports/mania/32): run.sh EMU BOOT... (EMU pcsx|ds, BOOT = category,scene): per boot, build + snapshot under the boss
 # harness's tree lock (build/boss/tree.lock), run deaths.gdb (death, time over, game over), print the L lines.
 # NOBUILD=1 reuses the snapshot. Output in build/boss (d3_<boot>.log).
 H=$(cd "$(dirname "$0")" && pwd)

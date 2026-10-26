@@ -61,7 +61,7 @@ void EggTV_DrawScanlines(void)
 
     int32 y = (((Zone->timer >> 1) & 1) << 16) - (self->size.y >> 1) + self->position.y;
 #if defined RETRO_PS1_BUILD
-    // docs/32 9v.9: the same lines in batches of one ink (PS1DrawLinesInk: one texpage word, no span a line)
+    // docs/ports/mania/32 9v.9: the same lines in batches of one ink (PS1DrawLinesInk: one texpage word, no span a line)
     if (self->size.y >= 0 && (self->size.y & 0xFFFF0000)) {
         int32 xy[4 * 32], k = 0;
         for (int32 i = 0; i < (self->size.y >> 16); i += 2) {

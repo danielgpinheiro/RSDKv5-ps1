@@ -1,5 +1,5 @@
 #!/bin/bash
-# 9b.5 (docs/32): run.sh NAME STEPS ENDPOS ENDN ENDF [CARD]: the natural build (snapshot menu_nat: NOBUILD=1 skips the
+# 9b.5 (docs/ports/mania/32): run.sh NAME STEPS ENDPOS ENDN ENDF [CARD]: the natural build (snapshot menu_nat: NOBUILD=1 skips the
 # build) with the scripted pad. STEPS = a file of "scene delay buttons hold" lines (scene = listPos, 0xFFFF any, 0xFFFE the next scene loaded; delay =
 # frames after that scene's load; buttons: bit 0 Up, 1 Down, 2 Left, 3 Right, 4 A (Cross), 5 B, 6 C, 7 X (Triangle),
 # 10 Start); ends ENDF frames after the ENDN-th load of scene ENDPOS. CARD = a card image kept across runs (EMU_MC1;

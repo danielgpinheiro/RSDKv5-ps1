@@ -8,7 +8,7 @@
 #include "Game.h"
 
 #if defined RETRO_PS1_BUILD
-// docs/32 4.2c: single characters on the PS1 (user decision 2026-09-26): frame 0 (Sonic & Tails) is never offered;
+// docs/ports/mania/32 4.2c: single characters on the PS1 (user decision 2026-09-26): frame 0 (Sonic & Tails) is never offered;
 // a new save starts on Sonic (1), the choice cycles Sonic, Tails, Knuckles (1..3)
 #define UISAVESLOT_FIRST_CHARACTER (1)
 #else
@@ -156,7 +156,7 @@ void UISaveSlot_Draw(void)
                 int32 width  = frame->sprX - 106;
                 frame->width = 86 - width;
 #if defined RETRO_PS1_BUILD
-                // docs/32 phase 13c: the PS1 draws a frame from its atlas binding (the file's sprX 0: the whole 192-px
+                // docs/ports/mania/32 phase 13c: the PS1 draws a frame from its atlas binding (the file's sprX 0: the whole 192-px
                 // picture is stored); the scroll goes through the frame shift
                 PS1SetFrameShift(frame, frame->sprX);
 #endif

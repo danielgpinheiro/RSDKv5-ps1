@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-scene SFX sets for the Mania PS1 port (docs/32 phase 5.1).
+"""Per-scene SFX sets for the Mania PS1 port (docs/ports/mania/32 phase 5.1).
 
 The engine loads GameConfig's global SFX at boot and each StageConfig's list per stage folder; objects take IDs with
 RSDK.GetSfx("Path.wav") (in StageLoad, sometimes inline) and play them. A scene can only play what an object it links
@@ -53,7 +53,7 @@ def object_sfx(name):
     return lits
 
 
-# Base Mania's scope (docs/32 user decisions: no Encore, Mighty, Ray, Competition): what those alone play
+# Base Mania's scope (docs/ports/mania/32 user decisions: no Encore, Mighty, Ray, Competition): what those alone play
 OUT_OF_SCOPE = {'Global/RaySwoop.wav', 'Global/RayDive.wav', 'Global/MightyDrill.wav', 'Global/MightyLand.wav',
                 'Global/MightyUnspin.wav', 'Global/MightyDeflect.wav', 'Global/SignPost2p.wav', 'VO/SonicWins.wav',
                 'VO/TailsWins.wav', 'VO/KnuxWins.wav', 'VO/MightyWins.wav', 'VO/RayWins.wav', 'VO/ItsADraw.wav',

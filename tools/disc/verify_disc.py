@@ -186,7 +186,7 @@ def main():
         if name.upper() == build_disc.IDX_NAME:
             table = b''.join(user(el + k) for k in range((sz + 2047) // 2048))[:sz]
             real = lambda n: src_files[n.lower()].replace(os.sep, '/') if n.lower() in src_files else n
-            local = lambda n: build_disc.local_entry(n, real(n)) is not None  # docs/32 9.2 / 9b.1: in their folder's PS1Local.idx
+            local = lambda n: build_disc.local_entry(n, real(n)) is not None  # docs/ports/mania/32 9.2 / 9b.1: in their folder's PS1Local.idx
             want = build_disc.index_bytes([(real(n), lba, s_) for n, lba, s_ in files if '/' in n and not local(n)])
             if table != want:
                 err('%s does not match the directory tree' % name)

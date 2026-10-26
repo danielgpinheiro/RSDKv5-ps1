@@ -62,10 +62,10 @@ extern volatile int32 g_ps1LogicSteps, g_ps1Uncapped; // ps1/rsdk5_main.cpp
 void UFO_Setup_StageLoad(void)
 {
 #if defined RETRO_PS1_BUILD
-    // docs/32 9f (UFO item 2): the update scan's sleeping groups for these stages (reviewed: no object writes an
+    // docs/ports/mania/32 9f (UFO item 2): the update scan's sleeping groups for these stages (reviewed: no object writes an
     // out-of-range ring / sphere / item box / decoration's position, range or active; StaticUpdates empty)
     g_ps1ScanSleepWant = 1;
-    // docs/32 9f (user 2026-10-08): "30 fps, 2 logic steps" (ps1/rsdk5_main.cpp, RetroEngine.cpp); 9t (user 2026-10-19):
+    // docs/ports/mania/32 9f (user 2026-10-08): "30 fps, 2 logic steps" (ps1/rsdk5_main.cpp, RetroEngine.cpp); 9t (user 2026-10-19):
     // only when Options > Video > Uncapped FPS is No, as the zones: the target is 60 fps at one step
     g_ps1LogicSteps = g_ps1Uncapped ? 1 : 2;
 #endif
@@ -202,7 +202,7 @@ void UFO_Setup_Scanline_Playfield(ScanlineInfo *scanlines)
     RSDK.SetClipBounds(0, 0, camera->clipY, ScreenInfo->size.x, ScreenInfo->size.y);
 
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 7.4), as the Dreamcast port: the camera for the engine's 3D tile floor (RSDK/Graphics/PS1/
+    // PS1 port (docs/ports/mania/32 7.4), as the Dreamcast port: the camera for the engine's 3D tile floor (RSDK/Graphics/PS1/
     // PS1UfoFloor.cpp) instead of 240 deformed lines, each with the palette bank of its distance
     scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
     scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_UFO;
@@ -255,7 +255,7 @@ void UFO_Setup_Scanline_3DFloor(ScanlineInfo *scanlines)
     RSDK.SetClipBounds(0, 0, camera->clipY + 24, ScreenInfo->size.x, ScreenInfo->size.y);
 
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 7.5), as the Dreamcast port: the camera for the engine's floor texture (PS1UfoFloor.cpp), 256
+    // PS1 port (docs/ports/mania/32 7.5), as the Dreamcast port: the camera for the engine's floor texture (PS1UfoFloor.cpp), 256
     // pixels under the playfield; its fog 8 banks further (scanlines[2].position.y: bank shift 15 | bias 8 << 8)
     scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
     scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_UFO_FLOOR;
@@ -307,7 +307,7 @@ void UFO_Setup_Scanline_3DRoof(ScanlineInfo *scanlines)
     RSDK.SetClipBounds(0, 0, 0, ScreenInfo->size.x, camera->clipY - 48);
 
 #if defined RETRO_PS1_BUILD
-    // PS1 port (docs/32 7.5), as the Dreamcast port: the roof's camera (above: a negative height; it moves at 1/8 of the
+    // PS1 port (docs/ports/mania/32 7.5), as the Dreamcast port: the roof's camera (above: a negative height; it moves at 1/8 of the
     // camera; its fog twice as fast: bank shift 14)
     scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
     scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_ROOF;

@@ -50,7 +50,7 @@ void ReplayRecorder_LateUpdate(void)
     }
 }
 
-// PS1 port (docs/32): no replays in scope; the replay buffers in globals are one element each, so the recorder never
+// PS1 port (docs/ports/mania/32): no replays in scope; the replay buffers in globals are one element each, so the recorder never
 // sets up in Time Attack (the mode itself stays: records without replays).
 #if defined RETRO_PS1_BUILD
 #define REPLAYRECORDER_ENABLED (false)
@@ -679,7 +679,7 @@ void ReplayRecorder_SetupWriteBuffer(void)
 
 void ReplayRecorder_DrawGhostDisplay(void)
 {
-#if !defined RETRO_PS1_BUILD // docs/32 phase 13c: a ghost plays only from a loaded replay (none on the PS1: 988 resident bytes)
+#if !defined RETRO_PS1_BUILD // docs/ports/mania/32 phase 13c: a ghost plays only from a loaded replay (none on the PS1: 988 resident bytes)
     RSDK_THIS(ReplayRecorder);
 
     EntityPlayer *player = self->player;

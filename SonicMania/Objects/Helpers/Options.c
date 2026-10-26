@@ -10,7 +10,7 @@
 ObjectOptions *Options;
 
 #if defined RETRO_PS1_BUILD
-// docs/32 choice 182: the PS1 reports PLATFORM_PC (choice 169) but keeps its options on the memory card as a console does
+// docs/ports/mania/32 choice 182: the PS1 reports PLATFORM_PC (choice 169) but keeps its options on the memory card as a console does
 // (Options.bin, a section of the port's card file: RSDK/User/Core/UserStorage.cpp); the PC path writes Settings.ini
 #define OPTIONS_IN_USER_FILE (true)
 #else
@@ -236,7 +236,7 @@ void Options_LoadOptionsCallback(int32 status)
         RSDK.SetVideoSetting(VIDEOSETTING_STREAM_VOL, options->volMusic);
         RSDK.SetVideoSetting(VIDEOSETTING_SFX_VOL, options->volSfx);
 #if defined RETRO_PS1_BUILD
-        if (options->ps1Version < 1) { // docs/32 9t (user 2026-10-19): the default is 60 fps at one logic step, also on
+        if (options->ps1Version < 1) { // docs/ports/mania/32 9t (user 2026-10-19): the default is 60 fps at one logic step, also on
             options->ps1Uncapped = 1;  // an older card (whose 0 was the old default, No); a later No from the menu stays
             options->ps1Version  = 1;
             Options->changed     = true; // written with the next options save

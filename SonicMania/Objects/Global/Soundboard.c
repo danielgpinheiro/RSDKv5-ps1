@@ -14,7 +14,7 @@ void Soundboard_Update(void) {}
 void Soundboard_LateUpdate(void) {}
 
 #if PS1_PROFILE
-volatile unsigned ps1ProfSoundboard[2]; // counter-2 ticks of the check / update callbacks (docs/32 3.0)
+volatile unsigned ps1ProfSoundboard[2]; // counter-2 ticks of the check / update callbacks (docs/ports/mania/32 3.0)
 #endif
 
 void Soundboard_StaticUpdate(void)

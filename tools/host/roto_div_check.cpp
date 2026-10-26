@@ -1,4 +1,4 @@
-// docs/32 9u: PS1Roto.cpp's PS1DivShl16 against the int64 expression it replaces, (int32)(((int64)n << 16) / d), d > 0:
+// docs/ports/mania/32 9u: PS1Roto.cpp's PS1DivShl16 against the int64 expression it replaces, (int32)(((int64)n << 16) / d), d > 0:
 // edge cases plus 50,000,000 random pairs. c++ -O2 tools/host/roto_div_check.cpp. Exit 0 = identical.
 #include <cstdint>
 #include <cstdio>

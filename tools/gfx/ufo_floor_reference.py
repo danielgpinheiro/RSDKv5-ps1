@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""The PC's UFO playfield for one frame (docs/32 7.5 evidence): UFO_Setup_Scanline_Playfield's per-line maths (the
+"""The PC's UFO playfield for one frame (docs/ports/mania/32 7.5 evidence): UFO_Setup_Scanline_Playfield's per-line maths (the
 camera from tools/play/ufo_camera.gdb) with DrawLayerRotozoom's texel walk and each line's palette bank (the palette
 dumped from RAM), over the scene's Playfield layer and tiles; drawn over a framebuffer dump (320x240 BGR555) from the
 camera's clip line down, so the two can be compared side by side.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 9i: the sprite sheets a boss fight draws. A `make EXTRA_CPPFLAGS=-DPS1_COUNT_SHEETS=1` build counts the frames
+"""docs/ports/mania/32 9i: the sprite sheets a boss fight draws. A `make EXTRA_CPPFLAGS=-DPS1_COUNT_SHEETS=1` build counts the frames
 asked for per sheet (PS1Sprites.cpp g_ps1SheetDraws); boss.sh with SHEETS=1 dumps the counts at the boss's READY
 (OUT.sheets0.bin, with the surface table OUT.surfaces.bin) and when the next scene starts loading (OUT.sheets1.bin).
 Prints each loaded sheet with its draws during the fight and after it (to the act's end): 0 = a sheet the fight never asks

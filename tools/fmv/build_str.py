@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Mania's video sequences -> PS1 MDEC STR streams with their music as CD-XA inside (docs/32 phase 6.1; Sonic CD's
-tool, RSDKv3-ps1 docs/28 6.1). Golden rule: all conversion here; the PS1 only Huffman-decodes (VLC) and runs the MDEC,
+"""Mania's video sequences -> PS1 MDEC STR streams with their music as CD-XA inside (docs/ports/mania/32 phase 6.1; Sonic CD's
+tool, RSDKv3-ps1 docs/ports/sonic-cd/28 6.1). Golden rule: all conversion here; the PS1 only Huffman-decodes (VLC) and runs the MDEC,
 the drive decodes the audio.
 
 Mania's videos (Data/Video/*.ogv: Theora 1024x512, no audio) play over a music stream the game starts itself

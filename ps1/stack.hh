@@ -3,7 +3,7 @@
 
 // The main stack's overflow check (MA-188, the RSDKv3-ps1 CD-092 family, ../docs/44). nugget's allocator sizes the heap
 // up to __stack_start, the RAM top the stack grows down from; Sonic CD / Sonic 2 / Nexus moved their stack into a .bss
-// array for that. Mania never needed to: since docs/32 2.4a InitStorage (RSDK/Storage/Storage.cpp) ends STG at
+// array for that. Mania never needed to: since docs/ports/mania/32 2.4a InitStorage (RSDK/Storage/Storage.cpp) ends STG at
 // __stack_start - PS1_STACK_RESERVE and allocates the rest up to the RAM top as one guard block nothing else can get,
 // so the stack owns those 16 KB (before InitStorage the heap is ~1 MB below them). What was missing is a check: a stack
 // deeper than the reserve would write into STG's top, where the scene's code overlay sits. main() paints the reserve

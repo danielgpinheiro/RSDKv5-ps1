@@ -5,7 +5,7 @@
 
 #define DEBUGMODE_ADD_OBJ(object) DebugMode_AddObject(object->classID, object##_DebugDraw, object##_DebugSpawn)
 #if defined RETRO_PS1_BUILD
-// PS1 (docs/32 8.5): a scene registers at most ~18 debug objects (MSZ: the StageLoads' DEBUGMODE_ADD_OBJ calls);
+// PS1 (docs/ports/mania/32 8.5): a scene registers at most ~18 debug objects (MSZ: the StageLoads' DEBUGMODE_ADD_OBJ calls);
 // DebugMode_AddObject bounds-checks; 0x40 frees ~1.9 KB of every scene's STG (FBZ2's load needed it after phase 8)
 #define DEBUGMODE_OBJECT_COUNT    (0x40)
 #else

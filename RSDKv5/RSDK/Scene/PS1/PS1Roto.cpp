@@ -1,4 +1,4 @@
-// PS1 port (docs/32 4.1d): LAYER_ROTOZOOM layers (the title's island and clouds; later the UFO playfields, Pinball...)
+// PS1 port (docs/ports/mania/32 4.1d): LAYER_ROTOZOOM layers (the title's island and clouds; later the UFO playfields, Pinball...)
 // drawn by the GPU from their scanlines. Included by Scene.cpp after PS1Layers.cpp (its tile tables and span writer).
 //
 // DrawLayerRotozoom's software loop shows at screen (x1 + x, y) the texel P_y + x * D_y (scanlines[y].position /

@@ -1,5 +1,5 @@
 /*
- * Mania's user files on the memory card (docs/32 phase 8): the card side. The engine (RSDK/User/Core/UserStorage.cpp,
+ * Mania's user files on the memory card (docs/ports/mania/32 phase 8): the card side. The engine (RSDK/User/Core/UserStorage.cpp,
  * PS1 branch of LoadUserFile / SaveUserFile) keeps the sections and the packing and stages the payload in its own
  * memory; this file only names the card file and moves the bytes (ps1/memcard's in-place calls: no heap copies, the
  * heap is STG's at 2 MB). Blocking, called from the game's updates (no loading bracket: PS1LoadingBegin suspends the
@@ -54,7 +54,7 @@ uint32_t PS1UserCardRoom() {
     return 0;
 }
 
-// docs/32 9f: the card's free blocks (15 less the files' blocks) and whether Mania's file is there; 0xFFFFFFFF: no
+// docs/ports/mania/32 9f: the card's free blocks (15 less the files' blocks) and whether Mania's file is there; 0xFFFFFFFF: no
 // card / unreadable (the error in g_ps1CardLastError)
 uint32_t PS1UserCardFreeBlocks(uint32_t *hasFile) {
     psyqo::MemoryCardFileSystem::FileEntry list[15];

@@ -1,5 +1,5 @@
 /*
- * RSDKv5 (Sonic Mania) on the PS1: the psyqo application (docs/32 phase 2).
+ * RSDKv5 (Sonic Mania) on the PS1: the psyqo application (docs/ports/mania/32 phase 2).
  *
  * What RSDKv5/main.cpp + RunRetroEngine do on the PC, as psyqo's prepare / start / frame: the engine is
  * initialised once (storage, user core, the headless render device which also inits audio and input,
@@ -17,10 +17,10 @@
 #include "common/kernel/events.h"
 #include "common/syscalls/syscalls.h"
 
-#include "../ps1/gpu_detect.hh" // GPU type + flip-bit rectangles (docs/43 G3)
+#include "../ps1/gpu_detect.hh" // GPU type + flip-bit rectangles (docs/perf/43 G3)
 #include "../ps1/irq_guard.hh"
 #include "../ps1/loading.hh"
-#include "../ps1/pad.hh" // docs/32 9t: port 2 probed while empty, not polled every frame
+#include "../ps1/pad.hh" // docs/ports/mania/32 9t: port 2 probed while empty, not polled every frame
 #include "../ps1/stack.hh" // MA-188: the stack reserve's overflow check
 #include "../ps1/video.hh" // PS1Hblanks
 #include "../ps1/vram.hh"  // PS1VramServiceDump (GDB VRAM dumps)
@@ -57,14 +57,14 @@ PS1Pad *g_ps1Pad               = nullptr;
 psyqo::CDRomDevice *g_ps1CDRom = nullptr;
 
 extern "C" char __heap_start, __stack_start;
-#include "psyqo/alloc.h" // psyqo_heap_end (docs/32 9d)
+#include "psyqo/alloc.h" // psyqo_heap_end (docs/ports/mania/32 9d)
 extern "C" volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
 bool PS1FsFind(const char *path, uint32_t *lba, uint32_t *size);             // ps1/cdrom_fs.cpp
 void PS1VersionLoad();                                                       // ps1/version_text.cpp (build stamp)
-extern "C" volatile int g_ps1PlusChars;                                      // docs/32 9g: PS1ReadConfig below
+extern "C" volatile int g_ps1PlusChars;                                      // docs/ports/mania/32 9g: PS1ReadConfig below
 volatile int g_ps1PlusChars = 0;
 
-// docs/32 9b.5 (test harness): GDB breaks on ps1TestStop, called only at the frames it asked for (g_ps1TestStops, 0 =
+// docs/ports/mania/32 9b.5 (test harness): GDB breaks on ps1TestStop, called only at the frames it asked for (g_ps1TestStops, 0 =
 // unused), instead of a breakpoint whose condition GDB evaluates every frame (that ran the emulator at a few fps)
 volatile uint32_t g_ps1TestStops[8] = {};
 __attribute__((noinline)) void ps1TestStop() { __asm__ volatile(""); }
@@ -72,7 +72,7 @@ __attribute__((noinline)) void ps1TestStop() { __asm__ volatile(""); }
 extern volatile uint32_t g_ps1LoadingLoads; // ps1/loading.cpp (phase 13b: no frameskip across a load)
 
 extern "C" {
-// docs/32 phase 13b (user 2026-10-12): Options > Video > Frameskip (default Off). g_ps1LogicSteps is the scene's base (1,
+// docs/ports/mania/32 phase 13b (user 2026-10-12): Options > Video > Frameskip (default Off). g_ps1LogicSteps is the scene's base (1,
 // or 2 for the capped zones and the UFO stages); with Frameskip on a drawn frame runs as many logic steps as the vblanks
 // the last frame took (at least the base, at most PS1_SKIP_MAX: 15 drawn fps at worst; the rest dropped, never caught
 // up), so a slow stretch keeps the game's speed and draws fewer frames. A frame after a load runs the base. (At file
@@ -90,7 +90,7 @@ volatile uint32_t g_ps1StepsTotal = 0, g_ps1SkipFrames = 0; // logic steps run; 
 namespace {
 
 // Pad 1 -> g_ps1PadButtons (RSDK/Input/PS1): Up Down Left Right, A = Cross, B = Circle, C = L1, X = Square,
-// Y = Triangle, Z = R1, Start, Select. docs/32 9b.5: the menus' prompts draw X as Square and Y as Triangle (Save Select's
+// Y = Triangle, Z = R1, Start, Select. docs/ports/mania/32 9b.5: the menus' prompts draw X as Square and Y as Triangle (Save Select's
 // Delete, Game Options), as the PS4 version's layout; gameplay jumps on A / B / C / X, as there.
 void readPad() {
     using Pad = psyqo::AdvancedPad;
@@ -109,7 +109,7 @@ void readPad() {
     g_ps1Pad2Buttons = held2;
 }
 
-// docs/32 9g: Mighty and Ray (SonicMania/Game.h PS1_PLUS_CHARS), off unless the disc holds Data/PS1Config.txt (the
+// docs/ports/mania/32 9g: Mighty and Ray (SonicMania/Game.h PS1_PLUS_CHARS), off unless the disc holds Data/PS1Config.txt (the
 // builder's option writes it, "plus_characters=1"). Its presence is the switch: a file-index lookup, no read (a read
 // would take a CD window from the heap at boot).
 static void PS1ReadConfig()
@@ -119,14 +119,14 @@ static void PS1ReadConfig()
         g_ps1PlusChars = 1;
 }
 
-// docs/32 9f (user 2026-10-08, the UFO stages only): "30 fps, 2 logic steps". UFO_Setup's StageLoad sets g_ps1LogicSteps
+// docs/ports/mania/32 9f (user 2026-10-08, the UFO stages only): "30 fps, 2 logic steps". UFO_Setup's StageLoad sets g_ps1LogicSteps
 // to 2 (every scene load resets it to 1, RSDK/Scene/Object.cpp): the engine runs two logic steps a frame
 // (RSDK/Core/RetroEngine.cpp) and each frame is shown at least that many vblanks, so the game keeps its full speed at a
 // steady 30 fps. psyqo flips as soon as one vblank has passed since the last flip: a frame that finishes early waits
 // for its second, counted by the port's own BIOS VBlank event.
-// docs/32 choice 182 (user 2026-10-10): the zones (scene category 1) run the same way unless Options > Video >
+// docs/ports/mania/32 choice 182 (user 2026-10-10): the zones (scene category 1) run the same way unless Options > Video >
 // Uncapped FPS is Yes; g_ps1Uncapped is set from the options (SonicMania/Objects/Helpers/Options.c), 0 = capped.
-// docs/32 9t (user 2026-10-19): the target is 60 fps at one logic step everywhere: Uncapped FPS defaults to Yes and the
+// docs/ports/mania/32 9t (user 2026-10-19): the target is 60 fps at one logic step everywhere: Uncapped FPS defaults to Yes and the
 // UFO stages follow it too; its No (30 fps, two steps) is a test aid / user option.
 extern "C" {
 volatile int32 g_ps1LogicSteps   = 1;
@@ -188,13 +188,13 @@ class ManiaPS1App final : public psyqo::Application {
 #endif
         m_cdrom.resetBlocking(gpu());
         g_ps1CDRom = &m_cdrom;
-#if !PS1_NO_IRQ_GUARD // bisect switch (docs/32 2.2)
-        PS1IrqGuardInstall(); // real-hardware IRQ fixes (docs/31)
+#if !PS1_NO_IRQ_GUARD // bisect switch (docs/ports/mania/32 2.2)
+        PS1IrqGuardInstall(); // real-hardware IRQ fixes (docs/ports/rsdk-common/31)
 #endif
 #if PS1_SAMPLE
         PS1SamplerInstall(); // PC sampler (ps1/pc_sampler.cpp)
 #endif
-        m_pad.initialize(); // psyqo AdvancedPad's driver: port 1 every frame, port 2 while live (ps1/pad.hh, docs/32 9t)
+        m_pad.initialize(); // psyqo AdvancedPad's driver: port 1 every frame, port 2 while live (ps1/pad.hh, docs/ports/mania/32 9t)
         { // 9f: the port's vblank count (the UFO stages' pace)
             uint32_t ev = psyqo::Kernel::openEvent(0xf2000003, 2, EVENT_MODE_CALLBACK, []() { g_ps1VblankCount = g_ps1VblankCount + 1; });
             syscall_enableEvent(ev);
@@ -218,7 +218,7 @@ class ManiaPS1App final : public psyqo::Application {
         if (ok) {
             InitEngine();
 #if defined PS1_BOOT_CATEGORY
-            // `make BOOT=cat,index` (docs/32 2.5): start at that scene of GameConfig's lists, as the dev menu's stage
+            // `make BOOT=cat,index` (docs/ports/mania/32 2.5): start at that scene of GameConfig's lists, as the dev menu's stage
             // select does (the globals keep GameConfig's defaults).
             if (PS1_BOOT_CATEGORY < sceneInfo.categoryCount) {
                 sceneInfo.activeCategory = PS1_BOOT_CATEGORY;
@@ -305,8 +305,8 @@ class ManiaPS1App final : public psyqo::Application {
 #if PS1_FLIP_AB
         PS1FlipAbFrameStart(); // harness: the last frame's pictures at the checkpoints (ps1/gpu_detect.hh)
 #endif
-        PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/32 3.1c)
-        SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/32 phase 8)
+        PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/ports/mania/32 3.1c)
+        SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/ports/mania/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
         uint32_t t0 = PS1Hblanks();
         uint32_t vbl = g_ps1VblankCount;
@@ -337,7 +337,7 @@ class ManiaPS1App final : public psyqo::Application {
 #if PS1_FLIP_AB
             g_ps1PadButtons = PS1FlipAbPad(); // harness: the scripted pad
 #endif
-            PS1RenderBeginFrame(); // this frame's chain (docs/32 3.2)
+            PS1RenderBeginFrame(); // this frame's chain (docs/ports/mania/32 3.2)
             engineFrame();
             PS1RenderEndFrame();
 #if defined PS1_TEST_SLOW
@@ -346,7 +346,7 @@ class ManiaPS1App final : public psyqo::Application {
             for (uint32_t w = PS1Hblanks(), n = PS1_TEST_SLOW * (1 + g_ps1PerfFrames % 3) / 2; PS1HblanksSince(w) < n;) {}
 #endif
             if (g_ps1PerfFrames % 60 == 0)
-                PS1EntityCheckGhosts(); // empty entity slots must read as blank (docs/32 2.3)
+                PS1EntityCheckGhosts(); // empty entity slots must read as blank (docs/ports/mania/32 2.3)
         }
         uint32_t cpu     = PS1HblanksSince(t0);
 #if PS1_PROFILE

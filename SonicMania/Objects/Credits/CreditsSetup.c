@@ -10,7 +10,7 @@
 ObjectCreditsSetup *CreditsSetup;
 
 #if defined RETRO_PS1_BUILD
-// PS1 (docs/32 7b.14): stock creates every credits line at the start (874 UICreditsText of ~1 KB: ~900 KB). The PS1 keeps
+// PS1 (docs/ports/mania/32 7b.14): stock creates every credits line at the start (874 UICreditsText of ~1 KB: ~900 KB). The PS1 keeps
 // the list (its chars in STG: Text.cpp InitStringList) and one record per text line, and creates each line just before
 // it can start (UICreditsText_State_Init waits for the screen's lower edge), in a temp block (every one large here:
 // Zone.c ps1TempLargeStageMarker), and destroys it once it is above the screen: the same lines at the same places.

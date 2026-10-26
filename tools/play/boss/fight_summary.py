@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs/32 9i: one line per boss run (build/boss/bs_NAME.log from runrec.sh): the fight's timing from the harness's L B
+"""docs/ports/mania/32 9i: one line per boss run (build/boss/bs_NAME.log from runrec.sh): the fight's timing from the harness's L B
 lines (READY onwards: avg vblanks a frame x100, worst vblanks, worst CPU hblanks; at the last tick of the fight's
 phases), the hits, the guards of every L AT, and whether the next scene loaded.
 Usage: fight_summary.py NAME... (logs in build/boss, BOSS_WORK= to move)"""

@@ -6,7 +6,7 @@ using namespace RSDK;
 #include "Legacy/DrawingLegacy.cpp"
 #endif
 #if RETRO_PLATFORM == RETRO_PS1
-#include "PS1/PS1Sprites.cpp" // sprites from the atlas bindings (docs/32 3.4)
+#include "PS1/PS1Sprites.cpp" // sprites from the atlas bindings (docs/ports/mania/32 3.4)
 #endif
 
 // all render devices need to access the initial vertex buffer :skull:
@@ -208,7 +208,7 @@ char RSDK::drawGroupNames[0x10][0x10] = {
     "Draw Group 8", "Draw Group 9", "Draw Group 10", "Draw Group 11", "Draw Group 12", "Draw Group 13", "Draw Group 14", "Draw Group 15",
 };
 
-#if RETRO_PLATFORM != RETRO_PS1 // PS1 (docs/32 2.3m): no dev menu, no dev font (8 KB)
+#if RETRO_PLATFORM != RETRO_PS1 // PS1 (docs/ports/mania/32 2.3m): no dev menu, no dev font (8 KB)
 #include "RSDK/Dev/DevFont.hpp"
 #endif
 
@@ -275,7 +275,7 @@ void RSDK::RenderDeviceBase::ProcessDimming()
 void RSDK::GenerateBlendLookupTable()
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    // PS1 (docs/32 3.3): the GPU blends, so no software blend tables; but the RGB -> 565 tables below are how every
+    // PS1 (docs/ports/mania/32 3.3): the GPU blends, so no software blend tables; but the RGB -> 565 tables below are how every
     // palette colour is stored (LoadPalette, SetPaletteEntry, the tileset rows): skipped with the rest in phase 2, they
     // left every palette entry 0.
     goto rgbTables;
@@ -620,7 +620,7 @@ void RSDK::FillScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
     alphaG = CLAMP(alphaG, 0x00, 0xFF);
     alphaB = CLAMP(alphaB, 0x00, 0xFF);
 #if RETRO_PLATFORM == RETRO_PS1
-    if (alphaR + alphaG + alphaB) { // docs/32 3.5: what the frame drew so far, blended in the chain
+    if (alphaR + alphaG + alphaB) { // docs/ports/mania/32 3.5: what the frame drew so far, blended in the chain
         validDraw = true;
         PS1FadeScreen(color, alphaR, alphaG, alphaB);
     }
@@ -677,7 +677,7 @@ void RSDK::DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int32 
             break;
     }
 #if RETRO_PLATFORM == RETRO_PS1
-    if (!screenRelative) { // docs/32 3.6: a GPU line (approximate)
+    if (!screenRelative) { // docs/ports/mania/32 3.6: a GPU line (approximate)
         x1 = FROM_FIXED(x1) - currentScreen->position.x, y1 = FROM_FIXED(y1) - currentScreen->position.y;
         x2 = FROM_FIXED(x2) - currentScreen->position.x, y2 = FROM_FIXED(y2) - currentScreen->position.y;
     }
@@ -1242,7 +1242,7 @@ void RSDK::DrawRectangle(int32 x, int32 y, int32 width, int32 height, uint32 col
 
     validDraw = true;
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawRect(x, y, width, height, color, alpha, inkEffect); // docs/32 3.6
+    PS1DrawRect(x, y, width, height, color, alpha, inkEffect); // docs/ports/mania/32 3.6
     return;
 #endif
     int32 pitch         = currentScreen->pitch - width;
@@ -1395,7 +1395,7 @@ void RSDK::DrawCircle(int32 x, int32 y, int32 radius, uint32 color, int32 alpha,
             y = FROM_FIXED(y) - currentScreen->position.y;
         }
 #if RETRO_PLATFORM == RETRO_PS1
-        PS1DrawCircle(x, y, radius, color, alpha, inkEffect); // docs/32 3.6: the same rows, on the GPU
+        PS1DrawCircle(x, y, radius, color, alpha, inkEffect); // docs/ports/mania/32 3.6: the same rows, on the GPU
         return;
 #endif
 
@@ -1761,7 +1761,7 @@ void RSDK::DrawCircleOutline(int32 x, int32 y, int32 innerRadius, int32 outerRad
         if (left != right && top != bottom) {
 #if RETRO_PLATFORM == RETRO_PS1
             validDraw = true;
-            // docs/32 4.2a: the same pixels (inner^2 <= r^2 < outer^2 in [left, right) x [top, bottom)) as GPU rectangles
+            // docs/ports/mania/32 4.2a: the same pixels (inner^2 <= r^2 < outer^2 in [left, right) x [top, bottom)) as GPU rectangles
             PS1DrawCircleOutline(x, y, innerRadius, outerRadius, left, top, right, bottom, color, alpha, inkEffect);
             return;
 #endif
@@ -2014,7 +2014,7 @@ void RSDK::DrawFace(Vector2 *vertices, int32 vertCount, int32 r, int32 g, int32 
             break;
     }
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawFace(vertices, vertCount, r, g, b, alpha, inkEffect); // docs/32 3.6: the same rows, on the GPU
+    PS1DrawFace(vertices, vertCount, r, g, b, alpha, inkEffect); // docs/ports/mania/32 3.6: the same rows, on the GPU
     return;
 #endif
 
@@ -2272,7 +2272,7 @@ void RSDK::DrawBlendedFace(Vector2 *vertices, uint32 *colors, int32 vertCount, i
             break;
     }
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1DrawBlendedFace(vertices, colors, vertCount, alpha, inkEffect); // docs/32 3.6: GPU gouraud (approximate)
+    PS1DrawBlendedFace(vertices, colors, vertCount, alpha, inkEffect); // docs/ports/mania/32 3.6: GPU gouraud (approximate)
     return;
 #endif
 
@@ -2854,7 +2854,7 @@ void RSDK::DrawSprite(Animator *animator, Vector2 *position, bool32 screenRelati
         }
 
 #if RETRO_PLATFORM == RETRO_PS1
-        // PS1 (docs/32 3.4): the frame itself goes to the GPU (its atlas binding); the positions are DrawSpriteFlipped's
+        // PS1 (docs/ports/mania/32 3.4): the frame itself goes to the GPU (its atlas binding); the positions are DrawSpriteFlipped's
         switch (drawFX) {
             case FX_NONE:
                 PS1DrawFrame(frame, pos.x + frame->pivotX, pos.y + frame->pivotY, FLIP_NONE, sceneInfo.entity->inkEffect, sceneInfo.entity->alpha);
@@ -4015,7 +4015,7 @@ void RSDK::DrawDeformedSprite(uint16 sheetID, int32 inkEffect, int32 alpha)
     return;
 #endif
 #if RETRO_PS1_HEADLESS
-    return; // PS1 phase 2: headless (docs/32)
+    return; // PS1 phase 2: headless (docs/ports/mania/32)
 #endif
     switch (inkEffect) {
         default: break;
@@ -4400,7 +4400,7 @@ void RSDK::DrawTile(uint16 *tiles, int32 countX, int32 countY, Vector2 *position
 void RSDK::DrawAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 srcY, uint16 width, uint16 height)
 {
 #if RETRO_PLATFORM == RETRO_PS1
-    PS1TilesAniTile(sheetID, tileIndex, srcX, srcY, width, height); // re-points the tiles to the cells (docs/32 3.1a)
+    PS1TilesAniTile(sheetID, tileIndex, srcX, srcY, width, height); // re-points the tiles to the cells (docs/ports/mania/32 3.1a)
     return;
 #endif
 
@@ -4465,7 +4465,7 @@ void RSDK::DrawAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 src
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 (docs/32 3.4d): DrawString's characters are frames: they go to the GPU through their atlas bindings
+// PS1 (docs/ports/mania/32 3.4d): DrawString's characters are frames: they go to the GPU through their atlas bindings
 #define DrawSpriteFlipped(X, Y, W, H, SX, SY, DIR, INK, ALPHA, SHEET) PS1DrawFrame(frame, X, Y, DIR, INK, ALPHA)
 #endif
 void RSDK::DrawString(Animator *animator, Vector2 *position, String *string, int32 startFrame, int32 endFrame, int32 align, int32 spacing,

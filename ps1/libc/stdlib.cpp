@@ -6,7 +6,7 @@
 #include <stdint.h>
 #include "string.h"
 
-// docs/32 2.4a: the init reserve's high-water mark (RSDK/Storage/Storage.cpp sets the bounds): the end of the highest
+// docs/ports/mania/32 2.4a: the init reserve's high-water mark (RSDK/Storage/Storage.cpp sets the bounds): the end of the highest
 // block allocated inside it (operator new counts too: ps1/libc/new_guard.cpp).
 extern "C" {
 volatile uint32_t g_ps1ReserveHigh = 0;

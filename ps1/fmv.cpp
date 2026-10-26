@@ -1,5 +1,5 @@
 /*
- * Full-screen FMV — see fmv.hh. From Sonic CD (with its real-hardware fixes, docs/31); Mania (docs/32 6.2): 320x160 at
+ * Full-screen FMV — see fmv.hh. From Sonic CD (with its real-hardware fixes, docs/ports/rsdk-common/31); Mania (docs/ports/mania/32 6.2): 320x160 at
  * Y 40, Data/Video.
  */
 #include "fmv.hh"
@@ -19,7 +19,7 @@
 #include <psyqo/gpu.hh>
 
 extern psyqo::GPU *g_ps1GPU;
-extern PS1Pad *g_ps1Pad; // ps1/pad.hh (docs/32 9t)
+extern PS1Pad *g_ps1Pad; // ps1/pad.hh (docs/ports/mania/32 9t)
 
 void PS1RenderFmvFrame(int mode);           // render device, phase 6 (Sonic CD: ps1/render.cpp): 0 = black, 1 = new picture (bars only), 2 = repeat
 void PS1RenderFmvFade(int step);            // render device, phase 6 (Sonic CD: ps1/render.cpp): darken the whole frame by step / 255
@@ -45,7 +45,7 @@ volatile uint32_t g_ps1FmvOverlayForce = 0; // GDB test hook: 1 = diagnostics st
 #define FMV_Y           40  // Mania: 160 lines letterboxed in 240 (Sonic CD: 32, 176)
 #define FMV_FADE_STEP   8   // as upstream ProcessVideo: fadeMode += 8 per frame after a skip
 // Length watchdog: a video never plays longer than its frames at 15 fps (4 vblanks each at 60 Hz) plus
-// 5 s, whatever the stream does: the game always gets back control (the PSone FMV hang, docs/28).
+// 5 s, whatever the stream does: the game always gets back control (the PSone FMV hang, docs/ports/sonic-cd/28).
 #define FMV_VBLANKS_PER_FRAME 4
 #define FMV_SLACK_VBLANKS     300
 
@@ -256,7 +256,7 @@ void PS1FmvBeginFrame() {
             s_openVbl     = g_ps1GPU->getFrameCount();
             s_limitVbl    = (uint32_t)PS1VideoFrameCount() * FMV_VBLANKS_PER_FRAME + FMV_SLACK_VBLANKS;
             takeBase();
-            // Hardware test without a debugger (docs/28 appendix 12): R1 held as the video opens = hybrid
+            // Hardware test without a debugger (docs/ports/sonic-cd/28 appendix 12): R1 held as the video opens = hybrid
             // MDEC (DMA0 in, CPU out), L1 = DMA in and out, neither = automatic (PIO, falling back on faults).
             using Pad = psyqo::AdvancedPad;
             bool r1 = g_ps1Pad && g_ps1Pad->isButtonPressed(Pad::Pad::Pad1a, Pad::Button::R1);
@@ -318,7 +318,7 @@ int PS1FmvUpdate(bool skip) {
 
 bool PS1FmvActive() { return s_state == State::PLAYING; }
 
-// docs/32 6.2 (Mania): this player lives in the overlays of the folders that play videos; their register function
+// docs/ports/mania/32 6.2 (Mania): this player lives in the overlays of the folders that play videos; their register function
 // calls this (tools/gen_overlays.py), the next overlay load clears the table (ps1/video_ops.hh)
 extern "C" void PS1VideoLink() {
     g_ps1VideoOps.beginFrame   = PS1FmvBeginFrame;

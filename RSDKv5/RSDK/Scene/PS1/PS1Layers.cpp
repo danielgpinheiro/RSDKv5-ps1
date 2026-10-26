@@ -1,4 +1,4 @@
-// PS1 port (docs/32 3.3): tile layers drawn by the GPU. Included by Scene.cpp.
+// PS1 port (docs/ports/mania/32 3.3): tile layers drawn by the GPU. Included by Scene.cpp.
 //
 // DrawLayerHScroll's software loop draws each screen line from scanlines[line].position (the layer pixel at the
 // line's left edge, 16.16) with the line's palette bank (gfxLineBuffer). Here consecutive lines with the same X, a
@@ -15,7 +15,7 @@
 // palette bank that covers at least the tile band starting on its first line is one flat rectangle (GP0 60h: not dithered, psx-spx), drawn with the mask bit forced (GP0 E6h) so its
 // pixels read 0x8000 | colour like the tiles' CLUT entries.
 #include "../../../../ps1/gpu_chain_raw.hh"
-#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/43 G3)
+#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/perf/43 G3)
 #include "../../../../ps1/video.hh" // PS1Hblanks
 
 namespace RSDK
@@ -448,7 +448,7 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     uint32 yWord = (uint32)(uint16)sy << 16, vRow = (uint32)v0 << 8;
     uint32_t *w = e.w, *lim = e.hdr + 10, *end = e.end;
     uint32 page = e.page;
-    // docs/43 G3: on a GPU that draws flip rectangles (PS1FlipRectsLive) a flipped tile is the band's own sprite under its
+    // docs/perf/43 G3: on a GPU that draws flip rectangles (PS1FlipRectsLive) a flipped tile is the band's own sprite under its
     // texpage with GP0(E1h) bit 12 (X) / 13 (Y) (tile bits 0x400 / 0x800 << 2), from its last texel column u + 15 (odd, as
     // X flip wants: u is a multiple of 16) / row v + 15 - v0 (vFlip1 added to v + v0); page then carries the flip bits,
     // so the next unflipped piece differs from it and sends its own texpage
@@ -481,7 +481,7 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
         tex |= clut << 16;
         ++pieces;
         if (t & 0xC00) {
-            if (flipLive) { // docs/43 G3: the band's own sprite as a flip rectangle (see vFlip1 above)
+            if (flipLive) { // docs/perf/43 G3: the band's own sprite as a flip rectangle (see vFlip1 above)
                 tex += ((t & 0x400) ? 15u : 0u) + ((t & 0x800) ? vFlip1 : 0u);
                 tpage |= (uint32)(t & 0xC00) << 2;
                 ++frects;

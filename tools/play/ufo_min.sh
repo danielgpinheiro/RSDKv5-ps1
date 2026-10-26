@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9f (UFO 60 fps plan): a UFO stage's worst moments, timed in PCSX-Redux and DuckStation. The scripted pad steers
+# docs/ports/mania/32 9f (UFO 60 fps plan): a UFO stage's worst moments, timed in PCSX-Redux and DuckStation. The scripted pad steers
 # a chase (left / right turns of 50-90 frames, jumps) so the course's busy parts (the UFO, spheres, rings, shadows,
 # decorations) pass on screen, from frame FROM to TO (tools/play/scene_timing.gdb's window: worstV = the slowest frame,
 # min fps = 60 / worstV). Usage: tools/play/ufo_min.sh N [FROM TO] (N = 1-7, BOOT=3,N-1); EMUS / NOBUILD as perf_scene.sh.

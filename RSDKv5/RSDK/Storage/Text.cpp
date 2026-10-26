@@ -44,7 +44,7 @@ unsigned *calcKs(unsigned *k)
 }
 
 #if RETRO_PLATFORM == RETRO_PS1
-// PS1 (docs/32 2.3): the PS1 libc's sin/pow are single precision, so calcKs gave wrong constants and every hash made
+// PS1 (docs/ports/mania/32 2.3): the PS1 libc's sin/pow are single precision, so calcKs gave wrong constants and every hash made
 // at run time differed from the ones the data files carry (scene objects and variables, static-variable files). The
 // standard MD5 table (RFC 1321, floor(|sin(i + 1)| * 2^32)), generated on the host.
 unsigned kspace[64] = {

@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Scene tile images for the Mania PS1 port (docs/32 3.1a; golden rule: build time only).
+"""Scene tile images for the Mania PS1 port (docs/ports/mania/32 3.1a; golden rule: build time only).
 
 What RSDKv5's LoadStageGIF + DrawAniTile keep in RAM (tilesetPixels: 1024 tiles x 4 flips = 1 MB), done here once
 per scene, for VRAM:
@@ -11,7 +11,7 @@ per scene, for VRAM:
     otherwise 8-bit on the palette bank's 256-entry CLUT;
   - images packed in halfword space (an 8-bit image 8 halfwords wide, a 4-bit one 4) into the texture columns
     tools/gfx/vram_plan.py leaves to tiles; a column's images may mix depths (the depth is per primitive).
-  - one-colour lines (docs/32 3.3b): per layer, each pixel row on which every tile of the layer shows one opaque
+  - one-colour lines (docs/ports/mania/32 3.3b): per layer, each pixel row on which every tile of the layer shows one opaque
     colour (its palette index; 0 = drawn normally); the runtime draws a run of such lines as one rectangle. Stored only
     for layers with >= SOLID_MIN such lines, with a bitmask of the tiles those lines use (an animated-tile copy or a
     SetTile touching them switches the table off at run time).
@@ -33,7 +33,7 @@ Output <out>/<Folder>/Scene<N>.ptl (little-endian):
   hflip  : u16 tile, image [hflipCount], sorted by tile: the image of tile t H-flipped                   (4 B each)
   block  : u16 x, y, w, h (VRAM halfwords), u32 offset at dataOffset                            (12 B)
   pixels : at dataOffset (a sector boundary), each block's w*h halfwords row-major
-The header's last 6 bytes (docs/32 7.4): u16 lodFirst, u8 lodPagesW, lodPagesH, 2 pad: a UFO stage's floor minimap (the
+The header's last 6 bytes (docs/ports/mania/32 7.4): u16 lodFirst, u8 lodPagesW, lodPagesH, 2 pad: a UFO stage's floor minimap (the
 Dreamcast port's LOD texture: one texel per tile of the Playfield layer, its most common opaque colour, drawn beyond the
 real tiles' distance): lodPagesW x lodPagesH 4-bit texture pages (256 x 256 texels each: map tile (x, y) at page
 (x >> 8, y >> 8), texel (x & 255, y & 255); blocks in the tile columns after the images'), images lodFirst.. (row-major,
@@ -41,12 +41,12 @@ u = v = 0, the page's texpage, CLUT = the last CLUT: the 15 most used colours; t
 of them). lodFirst 0: none. Then (7.5) u16 patternImage (0: none): a UFO stage's "3D Floor" / "3D Roof" layer (16x16 tiles)
 pre-rendered as one 256x256 8-bit texture page (the Dreamcast port's floor / roof texture; blocks after the minimap's),
 drawn repeated; its image: u = v = 0, the page, CLUT 0xFFFF (the palette bank's).
-PTL3 (docs/32 9e) = PTL2 + after the H-flip pairs: u16 rotoCount, u16 0, then rotoCount x (u8 layer, u8 0, u16 image,
+PTL3 (docs/ports/mania/32 9e) = PTL2 + after the H-flip pairs: u16 rotoCount, u16 0, then rotoCount x (u8 layer, u8 0, u16 image,
 u16 ox, u16 oy): the ROTO_PAGES layers, each pre-rendered as one 256x256 page (its image: u = v = 0, 4-bit on its own
 CLUT or 8-bit on the bank's) holding the map's texels [ox, ox + 256) x [oy, oy + 256) (the rest of the map empty, or
 the map is the page); their tiles get no images (unless another layer shows them), no one-colour table. Blocks after the
 pattern page's. A scene without such layers stays PTL2 (byte-identical).
-PTL4 (docs/32 9v.3) = PTL3 (the rotozoom table always there, count 0 when none) + u8 opaque[128]: bit t set when tile t's
+PTL4 (docs/ports/mania/32 9v.3) = PTL3 (the rotozoom table always there, count 0 when none) + u8 opaque[128]: bit t set when tile t's
 16x16 pixels are all non-transparent (palette index != 0): the runtime skips background pieces such tiles of a later
 foreground layer cover on screen (occlusion: the same picture). Every scene is PTL4.
 
@@ -70,7 +70,7 @@ LOD_COLUMNS = TILE_COLUMNS + [(9, 1), (8, 1), (7, 1), (6, 1)]  # 7.4: a UFO floo
 
 
 SOLID_MIN = 16  # one-colour lines a layer needs for its table
-# 9e (docs/32): rotozoom layers drawn from one pre-rendered 256x256 texture page instead of tile quads (PS1Roto.cpp's
+# 9e (docs/ports/mania/32): rotozoom layers drawn from one pre-rendered 256x256 texture page instead of tile quads (PS1Roto.cpp's
 # page path), per folder: the layers' names. A layer qualifies when its map is 256x256 texels (the page repeats over the
 # plane) or its non-empty tiles fit one 256x256 block of a larger map (the page is that block, repeated with the map).
 ROTO_PAGES = {'Title': ('Clouds', 'Island'), 'DAGarden': ('Clouds', 'Island'), 'ERZ': ('Background 2',)}
@@ -325,7 +325,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             place[i] = (col, row, want, cur[2] * 16 // want, cur[1] * TILE)
             cur[2] += hw
     if folder not in EDGE_FREE_FLIPS:
-        # 9u (docs/32): inside each page the 4-bit images keep exactly the slots the packing gave them (same pages, same
+        # 9u (docs/ports/mania/32): inside each page the 4-bit images keep exactly the slots the packing gave them (same pages, same
         # lines: the atlas and the VRAM plan see the same blocks), but the slots off the page's edge texels (u, v not 0 /
         # 240) go to the images drawn flipped most often: a flipped tile on an edge passes the page (u - 1 or u + 16) and is
         # split out of line (PS1Layers.cpp EmitFlipped: ~49 hblanks a frame in SPZ1; 18-53 % of the flipped cells sat on

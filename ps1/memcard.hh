@@ -46,7 +46,7 @@ PS1McError PS1McLoad(PS1McPort port, const char *file, void *buf, uint32_t maxLe
                      uint16_t *outVersion);
 PS1McError PS1McDelete(PS1McPort port, const char *file);
 
-// Mania (docs/32 phase 8): no heap copies (the heap is STG's at 2 MB). `buf` holds PS1_MC_HEADER_SIZE bytes of room,
+// Mania (docs/ports/mania/32 phase 8): no heap copies (the heap is STG's at 2 MB). `buf` holds PS1_MC_HEADER_SIZE bytes of room,
 // then the data: the header is written in place, the file replaced by psyqo's writeFile (data first, directory last;
 // on OutOfSpace an existing file is deleted and the write retried). Load: the data lands at buf + PS1_MC_HEADER_SIZE.
 PS1McError PS1McSaveInPlace(PS1McPort port, const char *file, const char *title, const PS1McIcon &icon, uint8_t *buf,

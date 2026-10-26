@@ -1,5 +1,5 @@
 #!/bin/bash
-# 9b.5 (docs/32): shot.sh NAME STEPS FRAMES [CARD]: tools/play/shot.sh's pictures (8 MB natural build, both framebuffers
+# 9b.5 (docs/ports/mania/32): shot.sh NAME STEPS FRAMES [CARD]: tools/play/shot.sh's pictures (8 MB natural build, both framebuffers
 # at each frame of FRAMES) with the scripted pad of STEPS (as run.sh), on CARD (EMU_MC1, kept) if given; PRE_EXTRA = a
 # file of more GDB lines (@R@ = the build snapshot).
 H=$(cd "$(dirname "$0")" && pwd)

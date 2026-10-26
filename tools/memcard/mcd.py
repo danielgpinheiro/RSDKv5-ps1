@@ -12,14 +12,14 @@ then the icon frames, then the payload. The port's payload (ps1/memcard.cpp) sta
 Usage:
   mcd.py format OUT.mcd                 blank formatted card
   mcd.py raw OUT.mcd                    unformatted card (all zero)
-  mcd.py fill OUT.mcd N                 formatted card with N one-block files of another game (docs/32 9f: full cards)
+  mcd.py fill OUT.mcd N                 formatted card with N one-block files of another game (docs/ports/mania/32 9f: full cards)
   mcd.py list IMAGE                     directory + titles
   mcd.py extract IMAGE NAME [--icon OUT.png] [--data OUT.bin]
   mcd.py check IMAGE NAME [--title T] [--icon SYMBOL] [--pattern N]
                                         verify title, icon (vs tools/memcard/build_icons.py) and
                                         payload (header, CRC, N bytes of (i*7+3)&0xFF)
   mcd.py absent IMAGE NAME              succeed if NAME is not on the card
-  mcd.py msv IMAGE NAME [--dump DIR]    Mania's payload sections (docs/32 phase 8), each unpacked to DIR/<name>
+  mcd.py msv IMAGE NAME [--dump DIR]    Mania's payload sections (docs/ports/mania/32 phase 8), each unpacked to DIR/<name>
   mcd.py mania IMAGE SAVEDATA.bin [--out OUT.mcd]
                                         a PC Mania save RAM (65,536 B) as the port's card file (BAHBRW-00006MANIA,
                                         SaveData.bin = its first 0xA00 words); the file's blocks reused, else a new
@@ -119,7 +119,7 @@ def payload_data(p):
 
 
 def msv_sections(d):
-    """Mania's payload (docs/32 phase 8, RSDK/User/Core/UserStorage.cpp): 'MSV1', u16 count, u16 0, then per section
+    """Mania's payload (docs/ports/mania/32 phase 8, RSDK/User/Core/UserStorage.cpp): 'MSV1', u16 count, u16 0, then per section
     name[16], u32 raw, u32 packed, the packed words (u32 tokens: bit 31 = that many zero words, else that many literal
     words follow). -> [(name, raw bytes, packed bytes, unpacked data)]"""
     magic, count = struct.unpack_from('<4sH', d, 0)

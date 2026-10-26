@@ -1,4 +1,4 @@
-// PS1 port (docs/32 7.3): Scene3D's draw on the GTE (see PS1Scene3D.hpp and the notes in Scene3D.cpp); linked into the
+// PS1 port (docs/ports/mania/32 7.3): Scene3D's draw on the GTE (see PS1Scene3D.hpp and the notes in Scene3D.cpp); linked into the
 // overlays of the folders that draw 3D, which call PS1Scene3DLink as they load.
 #include "RSDK/Core/RetroEngine.hpp"
 #include "PS1Scene3D.hpp"

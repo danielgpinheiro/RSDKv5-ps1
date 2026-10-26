@@ -1,5 +1,5 @@
 #!/bin/bash
-# docs/32 9o: the PC sampler next to GHZ1's giant ring (frames 500-900), the ring used (ENABLED=0: wireframe, the default)
+# docs/ports/mania/32 9o: the PC sampler next to GHZ1's giant ring (frames 500-900), the ring used (ENABLED=0: wireframe, the default)
 # or live (ENABLED=1). Builds SAMPLE=1 BOOT=1,0 (2 MB) under the tree lock, EMU_RAM=8mb (the histogram at 0x80400000).
 # Output build/perf9o/ring<E>_hist.bin, then the report (top 30). Read the report before rebuilding (it maps through
 # the current ELFs).

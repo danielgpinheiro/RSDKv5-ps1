@@ -1,4 +1,4 @@
-// PS1 port (docs/32 3.4): sprites drawn by the GPU from the atlas (PS1Atlas.hpp) and tiles (PS1Tiles). Included by
+// PS1 port (docs/ports/mania/32 3.4): sprites drawn by the GPU from the atlas (PS1Atlas.hpp) and tiles (PS1Tiles). Included by
 // Drawing.cpp.
 //
 // DrawSprite keeps the frame record, whose binding (SpriteFrame::ps1U / ps1V / ps1Attr) says where its texels are: the
@@ -15,7 +15,7 @@
 // add / sub = modes 1 / 2 with the texture modulated by alpha / 2 (0x80 = 1.0). Tint, masked and unmasked are counted,
 // as are DrawSpriteFlipped / DrawSpriteRotozoom calls with sheet coordinates only (no frame, no tile).
 #include "../../../../ps1/gpu_chain_raw.hh"
-#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/43 G3)
+#include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/perf/43 G3)
 
 // Counters and the draw log at global scope, declared in no header: GDB then finds them by their plain names (an
 // extern "C" variable declared inside namespace RSDK gets the debug name RSDK::x, which GDB can't match to the ELF).
@@ -79,7 +79,7 @@ void PS1SpritesFrameBegin()
 #endif
 }
 
-// docs/32 phase 13c: SetClipBounds (Drawing.hpp) and the per-draw-group reset (Object.cpp) move the GPU's drawing area
+// docs/ports/mania/32 phase 13c: SetClipBounds (Drawing.hpp) and the per-draw-group reset (Object.cpp) move the GPU's drawing area
 // (GP0 E3h / E4h, psx-spx GPU "Drawing Area"; PS1ChainDrawArea, end inclusive) with the clip, in the chain's order: every
 // primitive drawn while the game clips is clipped, as on the PC (ShopWindow's reflections ran past their window: SPZ1's
 // smear; the sprite path only counted clipped draws in g_ps1SpriteClipTodo). Empty bounds need no area: PS1PcClip
@@ -295,7 +295,7 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
     if (ink.mode >= 0)
         tpage |= (uint32)ink.mode << 5, semi = 0x02000000;
     bool fx = direction & FLIP_X, fy = direction & FLIP_Y;
-    // 1:1 and flipped, on a GPU that draws flip rectangles (docs/43 G3): the 1:1 sprite below under the texpage with
+    // 1:1 and flipped, on a GPU that draws flip rectangles (docs/perf/43 G3): the 1:1 sprite below under the texpage with
     // GP0(E1h) bit 12 (X) / 13 (Y), from the frame's last texel (PS1FlipRectTex: where it allows it; else the exact quad
     // further down, the same pixels). Every sprite sends its own texpage, so the flip bits never reach another one.
     if ((fx || fy) && !shift && PS1FlipRectsLive()) {
@@ -476,7 +476,7 @@ inline int32 PS1LineBank(int32 y)
 }
 
 // A frame's binding as a texture page, CLUT and top-left texel. False: not in the atlas (counted)
-#if PS1_COUNT_SHEETS // docs/32 9i (evidence build): frames asked for, per sprite sheet (GDB dumps it around a boss fight)
+#if PS1_COUNT_SHEETS // docs/ports/mania/32 9i (evidence build): frames asked for, per sprite sheet (GDB dumps it around a boss fight)
 extern "C" {
 volatile uint32 g_ps1SheetDraws[SURFACE_COUNT];
 }
@@ -866,7 +866,7 @@ void PS1TintInvertRect(int32 x, int32 y, int32 w, int32 h)
     g_ps1TintInvertRects = g_ps1TintInvertRects + 1;
 }
 
-// docs/32 9r: INK_UNMASKED over a rectangle (clipped to the screen): the PC writes the colour wherever the frame does not
+// docs/ports/mania/32 9r: INK_UNMASKED over a rectangle (clipped to the screen): the PC writes the colour wherever the frame does not
 // hold the mask colour (SPZ1's ShopWindow: everything behind the lit panel turns dark, the player and his shield
 // included). The frame as drawn so far tells it by bit 15 (4.1b: the mask colour's CLUT entries and flats keep it
 // clear, every other pixel has it set). Per row, as PS1TintInvertRect: the row is copied to the scratch row, filled with
@@ -1510,7 +1510,7 @@ void RSDK::PS1DrawLine(int32 x1, int32 y1, int32 x2, int32 y2, uint32 color, int
 }
 
 // DrawBlendedFace after its ink checks: a gouraud fan (GP0 30h triangles; approximate)
-// docs/32 7.3: Scene3D's faces (PS1Atlas.hpp): G3 / G4 (F3 / F4 for the flat modes) written straight into the chain
+// docs/ports/mania/32 7.3: Scene3D's faces (PS1Atlas.hpp): G3 / G4 (F3 / F4 for the flat modes) written straight into the chain
 // arena, 32 at a time (PS1ChainBulkBegin); the ink as PS1FlatInk gives it (one pass; a mask colour: bit 15 forced)
 namespace
 {

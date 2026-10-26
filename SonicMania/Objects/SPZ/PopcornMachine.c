@@ -282,7 +282,7 @@ void PopcornMachine_State_Shaking(void)
     self->timer++;
     if (self->timer >= 25 && self->timer < 160) {
 #if defined RETRO_PS1_BUILD
-        // docs/32 phase 13c (user: "reduce the amount of popcorn sprites"): a kernel every 4th frame, 34 instead of 67
+        // docs/ports/mania/32 phase 13c (user: "reduce the amount of popcorn sprites"): a kernel every 4th frame, 34 instead of 67
         // (rotated sprites that also test every other kernel each frame: a quarter of those pairs); decoration only
         if (!(self->timer & 3)) {
 #else

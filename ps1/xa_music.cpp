@@ -1,5 +1,5 @@
 /*
- * CD-XA music — see xa_music.hh (from the Sonic 2 port; Mania: docs/32 5.2). Action pattern from ps1/cdrom_stream.cpp; XA command sequence
+ * CD-XA music — see xa_music.hh (from the Sonic 2 port; Mania: docs/ports/mania/32 5.2). Action pattern from ps1/cdrom_stream.cpp; XA command sequence
  * from PSn00bSDK examples/cdrom/cdxa and psx-spx cdromdrive.md (Setfilter, Setmode, ReadS).
  */
 #include "xa_music.hh"
@@ -73,7 +73,7 @@ struct Xa {
     // rebased at the start, each loop (IRQ) and pause.
     volatile uint32_t posBase = 0;
     volatile uint32_t posT0   = 0;
-    // docs/32 9f: a stop that doesn't wait (PS1XaStopAsync: the drive's Pause takes ~1,800 hblanks on a real drive /
+    // docs/ports/mania/32 9f: a stop that doesn't wait (PS1XaStopAsync: the drive's Pause takes ~1,800 hblanks on a real drive /
     // DuckStation, a 7-vblank freeze each time the music stopped or changed) and a start queued until the drive is
     // idle (PS1XaService, each frame)
     volatile bool stopping = false;
@@ -263,7 +263,7 @@ class DemuteAction : public psyqo::CDRomDevice::Action<DemuteState> {
 };
 DemuteAction s_demute;
 
-// PS1XaStop / PS1XaPause (PauseSound: the pause menu, 1-up jingles): wait for the drive's PAUSE. Bounded (docs/29: every
+// PS1XaStop / PS1XaPause (PauseSound: the pause menu, 1-up jingles): wait for the drive's PAUSE. Bounded (docs/ports/rsdk-common/29: every
 // CD wait needs a bound; tester report on the v3 / v4 ports 2026-10-10, freezes at 1-ups not reproduced in emulators):
 // after XA_WAIT_HBL without an answer the action is aborted (XaAction::abort), and after as long again it is given up
 // (the drive answers nothing at all). Root counter 1 wraps at 16 bits: the elapsed time is summed per iteration.

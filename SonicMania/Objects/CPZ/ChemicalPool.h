@@ -11,7 +11,7 @@ struct ObjectChemicalPool {
     TABLE(color surfaceColorsFlash[4], { 0xF0F0F0, 0xF0F0F0, 0xE0E0E0, 0xE0E0E0 });
     uint16 aniFrames;
 #if defined RETRO_PS1_BUILD
-// PS1 port (docs/32 7b): indexed by the pools' tile columns, and CPZ (the only zone with pools) is 1200 / 512 tiles wide:
+// PS1 port (docs/ports/mania/32 7b): indexed by the pools' tile columns, and CPZ (the only zone with pools) is 1200 / 512 tiles wide:
 // 0x500 columns (15 KB, not 48: CPZ1 was 21 KB short of STG); a pool past them is cut (ChemicalPool_Create)
 #define CHEMICALPOOL_COLUMNS (0x500)
 #else
@@ -46,7 +46,7 @@ struct EntityChemicalPool {
     int32 impactPowerSides;
     Hitbox hitbox;
 #if defined RETRO_PS1_BUILD
-    int32 vertexY[66]; // PS1 port (docs/32 7b): the vertices' y; their x stay Create's grid (ChemicalPool.c VX): 264 B a pool
+    int32 vertexY[66]; // PS1 port (docs/ports/mania/32 7b): the vertices' y; their x stay Create's grid (ChemicalPool.c VX): 264 B a pool
 #else
     Vector2 vertices[66];
 #endif
