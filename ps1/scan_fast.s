@@ -9,13 +9,17 @@
 # 2^28 of camera 0 on x (box +36) and rx is valid: for x - origin in [2^30, 7 * 2^28) or [-7 * 2^28, -2^30), stock's
 # x - camera (the same value less the camera's offset from the origin, < 2^28) cannot wrap and exceeds 3 * 2^28, more
 # than any rx + ox (< 2^29); HCZ2's second half had every entity left of x 11,776 back in the pass's camera loop.
-# Anything else (and an invalid position or range) returns the slot to the pass, which decides as stock. An
-# ACTIVE_BOUNDS slot gets inRange = 0 as soon as it is outside on x: if its y then sends it to the pass, the pass's
-# ACTIVE_BOUNDS decision writes inRange before anything reads it.
+# Anything else (and an invalid position or range) is a slot to decide: returned to the caller, or (9w.8) handed to the
+# update pass's helper (box +40, Object.cpp PS1UpdateOne: stock's decision and the update), which returns the range's
+# end (a callback may move it) or 0 when the camera union no longer holds (the scan then returns the next slot to the
+# pass); after it the scan reloads the box (a callback may move the cameras) and the live bits (it may create entities),
+# keeping nothing else across it. An ACTIVE_BOUNDS slot gets inRange = 0 as soon as it is outside on x: if its y then
+# makes it a slot to decide, stock's ACTIVE_BOUNDS decision writes inRange before anything reads it.
 # EntityBase **PS1ScanFastAsm(EntityBase **p, EntityBase **pend, uint32 s, const uint32 *box); p < pend; returns the
-# slot to decide or pend. box (Object.cpp ps1ScanBox), byte offsets: 0 minX, 4 w, 8 vx, 12 minY, 16 h, 20 vy,
-# 24 &ps1LiveBits[0], 28 the De Bruijn table, 32 &objectEntityPtr[0], 36 cameras near on x. Entity offsets: position 0 / 4, updateRange
-# 24 / 28, classID 54, inRange 56, active 76.
+# slot to decide, pend, or (helper) the slot after the one that ended the union. box (Object.cpp ps1ScanBox), byte
+# offsets: 0 minX, 4 w, 8 vx, 12 minY, 16 h, 20 vy, 24 &ps1LiveBits[0], 28 the De Bruijn table, 32 &objectEntityPtr[0],
+# 36 cameras near camera 0 on x, 40 the helper or 0. Entity offsets: position 0 / 4, updateRange 24 / 28, classID 54,
+# inRange 56, active 76. Frame: o32's 16-byte argument area, s0-s7, ra, p and the box across the helper call.
         .set noreorder
         .set noat
         .text
@@ -23,28 +27,37 @@
         .globl PS1ScanFastAsm
         .type PS1ScanFastAsm, @function
 PS1ScanFastAsm:
-        addiu   $sp, $sp, -28
-        sw      $s6, 24($sp)
-        sw      $s0, 0($sp)
-        sw      $s1, 4($sp)
-        sw      $s2, 8($sp)
-        sw      $s3, 12($sp)
-        sw      $s4, 16($sp)
-        sw      $s5, 20($sp)
-        lw      $t0, 0($a3)             # minX
-        lw      $t1, 4($a3)             # w
-        lw      $t2, 8($a3)             # vx
-        lw      $t3, 12($a3)            # minY
-        lw      $t4, 16($a3)            # h
-        lw      $t5, 20($a3)            # vy
-        lw      $v1, 24($a3)            # live bits
-        lw      $s3, 28($a3)            # De Bruijn table
-        lw      $s5, 32($a3)            # objectEntityPtr
-        lw      $s6, 36($a3)            # cameras near camera 0 on x
-        srl     $s0, $a2, 5
+        addiu   $sp, $sp, -64
+        sw      $s0, 16($sp)
+        sw      $s1, 20($sp)
+        sw      $s2, 24($sp)
+        sw      $s3, 28($sp)
+        sw      $s4, 32($sp)
+        sw      $s5, 36($sp)
+        sw      $s6, 40($sp)
+        sw      $s7, 44($sp)
+        sw      $ra, 48($sp)
+        move    $s6, $a3                # the box
+        sw      $a3, 56($sp)
+.Lenter:                                # a0 = p < a1 = pend
+        lui     $s2, 0x1000
+        lui     $s4, 0x2000
+        lw      $t0, 0($s6)             # minX
+        lw      $t1, 4($s6)             # w
+        lw      $t2, 8($s6)             # vx
+        lw      $t3, 12($s6)            # minY
+        lw      $t4, 16($s6)            # h
+        lw      $t5, 20($s6)            # vy
+        lw      $v1, 24($s6)            # live bits
+        lw      $s3, 28($s6)            # De Bruijn table
+        lw      $s5, 32($s6)            # objectEntityPtr
+        lui     $a2, 0x077C
+        subu    $at, $a0, $s5
+        srl     $at, $at, 2             # s
+        srl     $s0, $at, 5
         sll     $s0, $s0, 2
         addu    $s0, $v1, $s0           # s0 = &live[s >> 5]
-        andi    $at, $a2, 31
+        andi    $at, $at, 31
         lw      $a3, 0($s0)
         li      $v1, 32
         subu    $v1, $v1, $at
@@ -54,10 +67,7 @@ PS1ScanFastAsm:
         beqz    $v1, 1f
         srlv    $a3, $a3, $at           # a3 = the live bits from slot s on
         move    $s1, $a1
-1:      lui     $s2, 0x1000
-        lui     $s4, 0x2000
-        lui     $a2, 0x077C
-        ori     $a2, $a2, 0xB531        # the De Bruijn multiplier
+1:      ori     $a2, $a2, 0xB531        # the De Bruijn multiplier
 # invariant: a0 < s1; a3 = the live bits from a0's slot
 .Lnext:
         andi    $v1, $a3, 1
@@ -75,7 +85,7 @@ PS1ScanFastAsm:
         bltz    $at, .Lfarx
         addu    $at, $v0, $s2
         sltu    $at, $at, $s4           # (rx + 0x10000000) < 0x20000000: rx valid
-        beqz    $at, .Lret
+        beqz    $at, .Ldecide
         subu    $v1, $t9, $t0
         addu    $v1, $v1, $v0           # x - minX + rx
         sll     $at, $v0, 1
@@ -135,10 +145,10 @@ PS1ScanFastAsm:
         lw      $v0, 28($t6)            # ry
         nop
         addu    $at, $t9, $t5
-        bltz    $at, .Lret
+        bltz    $at, .Ldecide
         addu    $at, $v0, $s2
         sltu    $at, $at, $s4
-        beqz    $at, .Lret
+        beqz    $at, .Ldecide
         subu    $v1, $t9, $t3
         addu    $v1, $v1, $v0           # y - minY + ry
         sll     $at, $v0, 1
@@ -146,7 +156,7 @@ PS1ScanFastAsm:
         sltu    $at, $at, $v1
         bnez    $at, .Ladvance          # outside on y: settled (inRange already 0)
         nop
-        b       .Lret                   # inside on y too: stock decides
+        b       .Ldecide                # inside on y too: stock decides
         nop
 .Lnotbounds:
         li      $v1, 5
@@ -155,13 +165,13 @@ PS1ScanFastAsm:
         bltz    $at, .Lfarx
         addu    $at, $v0, $s2
         sltu    $at, $at, $s4
-        beqz    $at, .Lret
+        beqz    $at, .Ldecide
         subu    $v1, $t9, $t0
         addu    $v1, $v1, $v0
         sll     $at, $v0, 1
         addu    $at, $at, $t1
         sltu    $at, $at, $v1
-        beqz    $at, .Lret              # inside on x: stock decides
+        beqz    $at, .Ldecide           # inside on x: stock decides
         nop
 .Lsettle:
         b       .Ladvance
@@ -171,13 +181,15 @@ PS1ScanFastAsm:
         li      $v1, 3
         beq     $t8, $v1, .Lsettle      # ACTIVE_PAUSED
         nop
-        b       .Lret
+        b       .Ldecide
         nop
 .Lfarx:                                 # 9w.4 (see the header): x + vx < 0
-        beqz    $s6, .Lret              # (a camera 2^28 or more from camera 0 on x: stock decides)
+        lw      $at, 36($s6)
+        nop
+        beqz    $at, .Ldecide           # (a camera 2^28 or more from camera 0 on x: stock decides)
         addu    $at, $v0, $s2
         sltu    $at, $at, $s4           # rx valid
-        beqz    $at, .Lret
+        beqz    $at, .Ldecide
         addu    $at, $t9, $t2           # x + vx, in [0x80000000, 2^32)
         lui     $v1, 0xB000
         sltu    $v1, $at, $v1
@@ -186,18 +198,25 @@ PS1ScanFastAsm:
         sltu    $v1, $at, $v1
         beqz    $v1, .Lsettle           # [0xD0000000, 2^32): -7 * 2^28 <= x - origin < -2^30
         nop
-.Lret:
+.Ldecide:                               # a0's slot: stock decides
+        lw      $v1, 40($s6)            # 9w.8: the update pass's helper
+        nop
+        beqz    $v1, .Lout
         move    $v0, $a0
-.Lout:
-        lw      $s6, 24($sp)
-        lw      $s0, 0($sp)
-        lw      $s1, 4($sp)
-        lw      $s2, 8($sp)
-        lw      $s3, 12($sp)
-        lw      $s4, 16($sp)
-        lw      $s5, 20($sp)
-        jr      $ra
-        addiu   $sp, $sp, 28
+        sw      $a0, 52($sp)            # (kept in the frame across the call, as the box)
+        jalr    $v1                     # PS1UpdateOne(p): stock's decision and the update; the range's end, or 0
+        nop
+        lw      $s7, 52($sp)
+        lw      $s6, 56($sp)
+        move    $a1, $v0
+        beqz    $a1, .Lout              # the union no longer holds: the pass goes on from p + 1
+        addiu   $v0, $s7, 4
+        addiu   $a0, $s7, 4
+        sltu    $at, $a0, $a1
+        bnez    $at, .Lenter            # (the box and the live bits again)
+        nop
+        b       .Lout
+        move    $v0, $a1
 .Lblank:                                # inRange = false, and the slot leaves the live bits
         sw      $zero, 56($t6)
         subu    $v1, $a0, $s5
@@ -211,6 +230,17 @@ PS1ScanFastAsm:
         b       .Ladvance
         sw      $v1, 0($s0)
 .Lpend:
-        b       .Lout
         move    $v0, $a1
+.Lout:
+        lw      $ra, 48($sp)            # (first: the load delay would hand jr the helper call's ra)
+        lw      $s0, 16($sp)
+        lw      $s1, 20($sp)
+        lw      $s2, 24($sp)
+        lw      $s3, 28($sp)
+        lw      $s4, 32($sp)
+        lw      $s5, 36($sp)
+        lw      $s6, 40($sp)
+        lw      $s7, 44($sp)
+        jr      $ra
+        addiu   $sp, $sp, 64
         .size PS1ScanFastAsm, . - PS1ScanFastAsm

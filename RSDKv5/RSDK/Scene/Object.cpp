@@ -419,7 +419,7 @@ void RSDK::InitObjects()
 // |camera offset| <= 2^28, entity position in [-2^30, 2^30), range in [-2^28, 2^28)); otherwise, and inside the box,
 // the stock loop decides.
 #include "PS1/PS1ScanShared.hpp"
-RSDK::PS1ScanShared RSDK::ps1Scan = { { 0, 0, 0x40000000u, 0, 0, 0x40000000u, 0, 0, 0, 0 }, 0, 0, 0, 0, NULL, 0, 0, ~0u, 0,
+RSDK::PS1ScanShared RSDK::ps1Scan = { { 0, 0, 0x40000000u, 0, 0, 0x40000000u, 0, 0, 0, 0, 0 }, 0, 0, 0, 0, NULL, 0, 0, ~0u, 0,
                                      false, false, true };
 RSDK::EntityBase **(*RSDK::g_ps1ScanSleepFn)(RSDK::EntityBase **, RSDK::EntityBase **) = NULL;
 namespace
@@ -427,7 +427,7 @@ namespace
 bool s_camUnionOk = false;
 // 9w.1: the union box lives where ps1/scan_fast.s reads it: minX, w, vx, minY, h, vy, then the live bits, the De Bruijn
 // table and the slot table (set by PS1UpdateScan), then s_camNearX (9w.4: every camera within 2^28 of camera 0 on x)
-uint32 (&ps1ScanBox)[10] = ps1Scan.box; // (9w.6: in the state shared with PS1ScanSleep.cpp)
+uint32 (&ps1ScanBox)[11] = ps1Scan.box; // (9w.6: in the state shared with PS1ScanSleep.cpp)
 int32 &s_camMinX = (int32 &)ps1ScanBox[0], &s_camMinY = (int32 &)ps1ScanBox[3];
 // 9u.7: the union is relative to camera 0's position (HCZ2, 28,000 px wide, three cameras, and SPZ1's second half had
 // cameras past the absolute bounds): with d = x - origin and e = camera - origin in the bounds above (|e| < 2^30,
@@ -682,12 +682,19 @@ bool PS1StockInRange(const EntityBase *e)
             return false;
     }
 }
+// 9w.8: the slots the update pass's helper handled during this scan (decided as stock: not settled by the scan)
+uint16 s_auditDone[512];
+int32 s_auditDoneN = 0;
 void PS1ScanAsmCheck(EntityBase **p, EntityBase **q, EntityBase **pend)
 {
     g_ps1ScanAsmCalls = g_ps1ScanAsmCalls + 1;
     for (; p < q; ++p) {
         const EntityBase *e = *p;
         const uint32 s       = (uint32)(p - objectEntityPtr);
+        bool done            = false;
+        for (int32 k = 0; k < s_auditDoneN && !done; ++k) done = s_auditDone[k] == s;
+        if (done)
+            continue;
         const bool bit       = (ps1LiveBits[s >> 5] >> (s & 31)) & 1;
         g_ps1ScanAsmSlots    = g_ps1ScanAsmSlots + 1;
         if (e->classID ? (e->inRange || PS1StockInRange(e)) : (e->inRange || bit)) {
@@ -696,7 +703,8 @@ void PS1ScanAsmCheck(EntityBase **p, EntityBase **q, EntityBase **pend)
             g_ps1ScanAsmWrong = g_ps1ScanAsmWrong + 1;
         }
     }
-    if (q != pend) {
+    s_auditDoneN = 0;
+    if (q != pend && !ps1ScanBox[10]) { // (with the helper a return before the end follows a handled slot)
         const uint32 s = (uint32)(q - objectEntityPtr);
         if (!(*q)->classID || !((ps1LiveBits[s >> 5] >> (s & 31)) & 1)) {
             if (!g_ps1ScanAsmWrong)
@@ -796,6 +804,41 @@ __attribute__((always_inline)) inline bool32 PS1RangeDecide(EntityBase *ent)
     return inRange;
 }
 
+// 9w.8 (docs/ports/mania/32): the update pass's handling of one slot the scan could not settle (stock's range decision,
+// the update, the draw group), called by ps1/scan_fast.s itself (box +40) instead of a return to the pass for each one
+// (OOZ2's ~200 parallax sprites in range: the scan's entry and the pass's loop around every update). Returns the
+// range's end (a callback may add slots), or NULL when the camera union no longer holds (the pass goes on in C).
+int32 s_updPhase = 0;
+extern "C" __attribute__((noinline)) EntityBase **PS1UpdateOne(EntityBase **p)
+{
+    EntityBase *ent = *p; // class != 0 (the scan settles blank slots)
+#if PS1_CHECK_SCANASM || PS1_CHECK_UPDATESCAN
+    if (s_auditDoneN < 512)
+        s_auditDone[s_auditDoneN++] = (uint16)(p - objectEntityPtr);
+    if (!ent->classID) {
+        if (!g_ps1ScanAsmWrong)
+            g_ps1ScanAsmWho = (uint32)(p - objectEntityPtr) | 0x20000;
+        g_ps1ScanAsmWrong = g_ps1ScanAsmWrong + 1;
+    }
+#endif
+    if (PS1RangeDecide(ent)) {
+        sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
+        sceneInfo.entity     = ent;
+        PS1SlotMark(sceneInfo.entitySlot);
+        void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
+        if (update) {
+            PS1_PROF(0, stageObjectIDs[ent->classID], update());
+            PS1CameraUnion();
+        }
+        // stock reads these after the callback
+        if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
+            PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
+    }
+    if (!s_camUnionOk)
+        return NULL;
+    return objectEntityPtr + (s_updPhase ? ps1TempSlotEnd : ps1SceneSlotEnd);
+}
+
 PS1_HOT void PS1UpdatePass()
 {
     PS1DormantUpdate(); // 7b: dormant entities the cameras reach become entities first (PS1Entities.cpp)
@@ -810,11 +853,14 @@ PS1_HOT void PS1UpdatePass()
     EntityBase **p = objectEntityPtr, **pend = objectEntityPtr + ps1SceneSlotEnd;
     int32 phase     = 0;
     EntityBase *ent = NULL; // the last slot visited
+    s_updPhase      = 0;
+    ps1ScanBox[10]  = (uint32)PS1UpdateOne; // 9w.8 (the frozen pass's scans return their slots)
     for (;;) {
         if (p >= pend) {
             if (phase)
                 break;
             phase = 1, p = objectEntityPtr + TEMPENTITY_START, pend = objectEntityPtr + ps1TempSlotEnd;
+            s_updPhase = 1;
             continue;
         }
         EntityBase **q = PS1UpdateScan(p, pend);
@@ -823,25 +869,12 @@ PS1_HOT void PS1UpdatePass()
             continue;
         }
 
-        ent = *p; // class != 0 (the scan settles blank slots)
-        bool32 inRange = PS1RangeDecide(ent);
-
-        if (inRange) {
-            sceneInfo.entitySlot = (int32)(p - objectEntityPtr);
-            sceneInfo.entity     = ent;
-            PS1SlotMark(sceneInfo.entitySlot);
-            void (*update)(void) = objectClassList[stageObjectIDs[ent->classID]].update;
-            if (update) {
-                PS1_PROF(0, stageObjectIDs[ent->classID], update());
-                PS1CameraUnion();
-                pend = objectEntityPtr + (phase ? ps1TempSlotEnd : ps1SceneSlotEnd);
-            }
-            // stock reads these after the callback
-            if (sceneInfo.entity->drawGroup < DRAWGROUP_COUNT)
-                PS1_DRAWLIST_APPEND(&drawGroups[sceneInfo.entity->drawGroup], sceneInfo.entitySlot);
-        }
+        ent = *p; // a slot the stock loop decides (cameras the union can't take)
+        PS1UpdateOne(p);
+        pend = objectEntityPtr + (phase ? ps1TempSlotEnd : ps1SceneSlotEnd); // (a callback may add slots)
         ++p;
     }
+    ps1ScanBox[10] = 0;
     if (ent)
         sceneInfo.entity = ent;
     sceneInfo.entitySlot = ENTITY_COUNT;
@@ -1628,6 +1661,37 @@ void RSDK::ProcessFrozenObjects()
     RunModCallbacks(MODCB_ONLATEUPDATE, INT_TO_VOID(ENGINESTATE_FROZEN));
 #endif
 }
+#if RETRO_PLATFORM == RETRO_PS1
+// 9w.7 (docs/ports/mania/32): a draw list's entities, as the stock loop (in ProcessObjectDrawLists, kept for other
+// platforms) with its locals in registers: -Os kept the loop's state on the stack around each draw call. The list's
+// count and entries, sceneInfo.entity and the screen are re-read after each callback as stock does.
+__attribute__((noinline, optimize("O2"))) static void PS1DrawListRun(DrawList *list)
+{
+    for (int32 i = 0; i < list->entityCount; ++i) {
+        const uint16 slot    = list->entries[i];
+        EntityBase *e        = objectEntityPtr[slot];
+        sceneInfo.entitySlot = slot;
+        validDraw            = false;
+        sceneInfo.entity     = e;
+        if (!e->visible)
+            continue;
+        void (*draw)() = objectClassList[stageObjectIDs[e->classID]].draw;
+        if (draw)
+            PS1_PROF(1, stageObjectIDs[e->classID], draw());
+#if RETRO_VER_EGS || RETRO_USE_DUMMY_ACHIEVEMENTS
+        if (i == list->entityCount - 1)
+            SKU::DrawAchievements();
+#endif
+        EntityBase *d = (EntityBase *)sceneInfo.entity;
+        d->onScreen |= validDraw << sceneInfo.currentScreenID;
+        if (validDraw) { // 3.0f: this entity's onScreen may be set now
+            const int32 ds = d == objectEntityPtr[list->entries[i]] ? list->entries[i] : PS1EntitySlotOf(d);
+            if (ds >= 0)
+                PS1SlotMark(ds);
+        }
+    }
+}
+#endif
 void RSDK::ProcessObjectDrawLists()
 {
     if (sceneInfo.state != ENGINESTATE_LOAD && sceneInfo.state != (ENGINESTATE_LOAD | ENGINESTATE_STEPOVER)) {
@@ -1688,6 +1752,9 @@ void RSDK::ProcessObjectDrawLists()
                     }
 
                     PS1_PART_BEGIN(4);
+#if RETRO_PLATFORM == RETRO_PS1
+                    PS1DrawListRun(list); // 9w.7
+#else
                     for (int32 i = 0; i < list->entityCount; ++i) {
                         sceneInfo.entitySlot = list->entries[i];
                         validDraw            = false;
@@ -1713,6 +1780,7 @@ void RSDK::ProcessObjectDrawLists()
                         }
                     }
 
+#endif
                     PS1_PART_END(4);
                     for (int32 i = 0; i < list->layerCount; ++i) {
                         TileLayer *layer = &tileLayers[list->layerDrawList[i]];

@@ -8,8 +8,8 @@ namespace RSDK
 struct EntityBase;
 struct PS1ScanShared {
     // the union box as ps1/scan_fast.s reads it: minX, w, vx, minY, h, vy, the live bits, the De Bruijn table, the slot
-    // table, cameras near camera 0 on x (9w.4)
-    uint32 box[10];
+    // table, cameras near camera 0 on x (9w.4), the update pass's helper (9w.8)
+    uint32 box[11];
     int32 camX, camY, camOX, camOY; // the one camera (s_camOne)
     void *sleep;                    // the sleeping groups (STG, PS1ScanSleep.cpp's PS1SleepGroup); NULL: off
     int32 sleepOX, sleepOY;         // the camera offset the sleeping groups were measured with
