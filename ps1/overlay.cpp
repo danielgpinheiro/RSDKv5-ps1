@@ -8,6 +8,7 @@
 #include "video_ops.hh"
 #include "RSDK/Core/RetroEngine.hpp"
 #include "RSDK/Graphics/PS1/PS1Scene3D.hpp"
+#include "RSDK/Scene/PS1/PS1ScanShared.hpp"
 #include "common/syscalls/syscalls.h"
 
 using namespace RSDK;
@@ -91,6 +92,7 @@ void RSDK::PS1LoadOverlay(const char *sceneFolder, const char *scene)
     g_ps1DeformDraw = NULL;           // 7.5: and the deformed-sprite draw
     g_ps1RotoPageDraw = NULL;         // 9e: and the rotozoom pages' draw
     g_ps1VersionDraw  = NULL;         // and the title's build stamp (ps1/version_stamp.cpp)
+    RSDK::g_ps1ScanSleepFn = NULL;     // 9w.6: and the update scan's sleeping groups
     (void)ps1OvlStubsRef;
     strncpy(g_ps1OvlFolder, folder, sizeof(g_ps1OvlFolder) - 1);
     g_ps1OvlLoads = g_ps1OvlLoads + 1;

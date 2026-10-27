@@ -418,12 +418,16 @@ void RSDK::InitObjects()
 // for y): it skips the per-camera loop. The prefilter only applies where no sum can overflow (|camera position| < 2^30,
 // |camera offset| <= 2^28, entity position in [-2^30, 2^30), range in [-2^28, 2^28)); otherwise, and inside the box,
 // the stock loop decides.
+#include "PS1/PS1ScanShared.hpp"
+RSDK::PS1ScanShared RSDK::ps1Scan = { { 0, 0, 0x40000000u, 0, 0, 0x40000000u, 0, 0, 0, 0 }, 0, 0, 0, 0, NULL, 0, 0, ~0u, 0,
+                                     false, false, true };
+RSDK::EntityBase **(*RSDK::g_ps1ScanSleepFn)(RSDK::EntityBase **, RSDK::EntityBase **) = NULL;
 namespace
 {
 bool s_camUnionOk = false;
 // 9w.1: the union box lives where ps1/scan_fast.s reads it: minX, w, vx, minY, h, vy, then the live bits, the De Bruijn
 // table and the slot table (set by PS1UpdateScan), then s_camNearX (9w.4: every camera within 2^28 of camera 0 on x)
-uint32 ps1ScanBox[10] = { 0, 0, 0x40000000u, 0, 0, 0x40000000u };
+uint32 (&ps1ScanBox)[10] = ps1Scan.box; // (9w.6: in the state shared with PS1ScanSleep.cpp)
 int32 &s_camMinX = (int32 &)ps1ScanBox[0], &s_camMinY = (int32 &)ps1ScanBox[3];
 // 9u.7: the union is relative to camera 0's position (HCZ2, 28,000 px wide, three cameras, and SPZ1's second half had
 // cameras past the absolute bounds): with d = x - origin and e = camera - origin in the bounds above (|e| < 2^30,
@@ -431,10 +435,10 @@ int32 &s_camMinX = (int32 &)ps1ScanBox[0], &s_camMinY = (int32 &)ps1ScanBox[3];
 // into the constants: minX is stored as origin + min(e - ox) (mod 2^32), the validity test adds 2^30 - origin.
 // s_camAbs: camera 0 inside +-2^30 (the sleeping groups' margins assume it; with one camera)
 uint32 &s_camVX = ps1ScanBox[2], &s_camVY = ps1ScanBox[5];
-bool s_camAbs = true;
+bool &s_camAbs = ps1Scan.camAbs;
 // 7.4: one camera: ACTIVE_RBOUNDS slots (the UFO stages' rings and spheres: ~400) decided in the scan with stock's test
-bool s_camOne = false;
-int32 s_camX, s_camY, s_camOX, s_camOY;
+bool &s_camOne = ps1Scan.camOne;
+int32 &s_camX = ps1Scan.camX, &s_camY = ps1Scan.camY, &s_camOX = ps1Scan.camOX, &s_camOY = ps1Scan.camOY;
 // 9q's exact per-camera scan path (cameras the union can't take) went in 9u.12: since 9u.7 that is a camera 16,384 px or
 // more from camera 0, which no act has; the stock loop decides then
 uint32 &s_camW = ps1ScanBox[1], &s_camH = ps1ScanBox[4]; // max - min of the union, modulo 2^32
@@ -548,11 +552,6 @@ void PS1SlotAudit(bool range)
 // Update: blank slots, ACTIVE_NEVER / ACTIVE_PAUSED, and ACTIVE_BOUNDS outside the camera box are out of range.
 // 3.0d: a slot's six fields are loaded before any test (most slots are ACTIVE_BOUNDS entities, which need them all), so
 // the loads fill each other's delay slots instead of a nop after each (each load's result is ready one instruction on)
-#if PS1_CHECK_UPDATESCAN
-extern "C" {
-volatile uint32 g_ps1ScanSettled = 0, g_ps1ScanWrong = 0; // bounds slots settled out of range; of them, in range for stock
-}
-#endif
 #if PS1_CHECK_LIVEBITS
 extern "C" {
 volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: classed slots whose bit was clear (must stay 0)
@@ -597,77 +596,9 @@ volatile uint32 g_ps1LiveChecks = 0, g_ps1LiveWrong = 0; // evidence build: clas
 // (PS1ClassNote: create, reset, copy), a camera offset change, and every frame the scan takes the stock path. Opt-in per
 // scene: a StageLoad sets g_ps1ScanSleepWant (UFO_Setup; its stages' objects were reviewed: nothing writes an out-of-range
 // slot's position, range or active). PS1_CHECK_SLEEP: stock's test on every slot passed over (g_ps1SleepWrong).
-struct PS1SleepGroup {
-    int16 x, y;    // the camera (whole pixels) when the group went to sleep
-    uint16 margin; // pixels
-    uint16 pad;
-};
-PS1SleepGroup *s_sleep = NULL; // STG, (ENTITY_COUNT / 8) groups; NULL: off
-int32 s_sleepOX, s_sleepOY;    // the camera offset the sleeping groups were measured with
-uint32 s_grp = ~0u;            // the group the scan is in, and whether all its slots so far were settled out of range
-bool s_grpOk = false;
-uint32 s_grpLive = 0;
-inline uint32 PS1Isqrt(uint32 v) // floor(sqrt(v))
-{
-    uint32 r = 0, b = 1u << 30;
-    while (b > v) b >>= 2;
-    while (b) {
-        if (v >= r + b)
-            v -= r + b, r = (r >> 1) + b;
-        else
-            r >>= 1;
-        b >>= 2;
-    }
-    return r;
-}
-// pixels the camera may move (each axis) with this settled slot still out of range for stock; 0: none
-uint32 PS1SleepMargin(const EntityBase *e)
-{
-    const int32 x = e->position.x, y = e->position.y;
-    if (!PS1Small(x, 0x3FFFFFFF) || !PS1Small(y, 0x3FFFFFFF))
-        return 0;
-    if (e->active == ACTIVE_RBOUNDS) {
-        const int32 dx = x - s_camX, dy = y - s_camY;
-        const uint32 sx = (uint32)(dx < 0 ? -dx : dx) >> 16, sy = (uint32)(dy < 0 ? -dy : dy) >> 16;
-        const int32 R = (int32)((uint32)e->updateRange.x + (uint32)s_camOX);
-        if (sx > 16383 || sy > 16383 || R < 0 || R >= 0x40000000)
-            return 0;
-        const uint32 d2 = sx * sx + sy * sy;
-        if (d2 <= (uint32)R)
-            return 0;
-        const uint32 sr = PS1Isqrt(d2), rr = PS1Isqrt((uint32)R) + 1;
-        return sr > rr ? ((sr - rr) * 181) >> 8 : 0;
-    }
-    if (e->active == ACTIVE_BOUNDS) {
-        const int32 rx = e->updateRange.x, ry = e->updateRange.y;
-        if (!PS1Small(rx, 0x10000000) || !PS1Small(ry, 0x10000000))
-            return 0;
-        const int32 ax = abs(x - s_camX) - (rx + s_camOX), ay = abs(y - s_camY) - (ry + s_camOY);
-        const int32 slack = ax > ay ? ax : ay;
-        return slack > 0 ? (uint32)(slack - 1) >> 16 : 0;
-    }
-    return 0;
-}
-__attribute__((noinline)) void PS1SleepGroupSet(uint32 g)
-{
-    uint32 m = 0xFFFF;
-    for (uint32 k = 0; k < 8 && m; ++k) {
-        const EntityBase *e = objectEntityPtr[g * 8 + k];
-        if (e->classID) {
-            const uint32 em = PS1SleepMargin(e);
-            m = em < m ? em : m;
-        }
-    }
-    if (!m)
-        return;
-    s_sleep[g].x = (int16)(s_camX >> 16), s_sleep[g].y = (int16)(s_camY >> 16), s_sleep[g].margin = (uint16)m;
-    ps1SleepBits[g >> 5] |= 1u << (g & 31);
-}
-inline bool PS1SleepValid(uint32 g)
-{
-    const int32 mx = (s_camX >> 16) - s_sleep[g].x, my = (s_camY >> 16) - s_sleep[g].y;
-    return (uint32)((mx < 0 ? -mx : mx) + 1) <= s_sleep[g].margin && (uint32)((my < 0 ? -my : my) + 1) <= s_sleep[g].margin;
-}
+void *&s_sleep  = ps1Scan.sleep; // the sleeping groups (9w.6: their scan is PS1ScanSleep.cpp's, in the UFO overlays)
+int32 &s_sleepOX = ps1Scan.sleepOX, &s_sleepOY = ps1Scan.sleepOY;
+bool &s_grpOk    = ps1Scan.grpOk;
 } // namespace
 extern "C" volatile int32 g_ps1ScanSleepWant;
 volatile int32 g_ps1ScanSleepWant = 0; // set by a scene's StageLoad (SonicMania/Objects/UFO/UFO_Setup.c)
@@ -680,159 +611,26 @@ void PS1ScanSleepBegin()
     // 9f: a StageLoad asks for two (UFO_Setup); choice 182: the zones (category 1) take two unless Uncapped FPS is on
     g_ps1LogicSteps = (!g_ps1Uncapped && sceneInfo.activeCategory == 1) ? 2 : 1;
     s_sleep            = NULL; // (STG was reset by the load)
-    s_grp              = ~0u;
+    ps1Scan.grp        = ~0u;
     for (uint32 i = 0; i < sizeof(ps1SleepBits) / 4; ++i) ps1SleepBits[i] = 0;
 }
 void PS1ScanSleepEnd()
 {
     if (g_ps1ScanSleepWant)
-        AllocateStorage((void **)&s_sleep, sizeof(PS1SleepGroup) * (ENTITY_COUNT / 8), DATASET_STG, true);
+        AllocateStorage((void **)&s_sleep, 8 * (ENTITY_COUNT / 8), DATASET_STG, true); // (PS1ScanSleep.cpp's 8-byte groups)
     s_sleepOX = s_camOX, s_sleepOY = s_camOY;
 }
-#if PS1_CHECK_SLEEP
-} // namespace
-extern "C" {
-volatile uint32 g_ps1SleepSkipped = 0, g_ps1SleepWrong = 0; // slots passed over asleep; of them, not settled for stock
-}
-namespace
-{
-void PS1SleepCheck(uint32 g)
-{
-    for (uint32 k = 0; k < 8; ++k) {
-        const EntityBase *e = objectEntityPtr[g * 8 + k];
-        g_ps1SleepSkipped = g_ps1SleepSkipped + 1;
-        if (!e->classID)
-            continue;
-        bool in = true;
-        if (e->active == ACTIVE_RBOUNDS) {
-            int32 dx = e->position.x - s_camX, dy = e->position.y - s_camY;
-            int32 sx = FROM_FIXED(dx < 0 ? -dx : dx), sy = FROM_FIXED(dy < 0 ? -dy : dy);
-            in = (int32)((uint32)sx * (uint32)sx + (uint32)sy * (uint32)sy) <= (int32)((uint32)e->updateRange.x + (uint32)s_camOX);
-        }
-        else if (e->active == ACTIVE_BOUNDS)
-            in = abs(e->position.x - s_camX) <= e->updateRange.x + s_camOX && abs(e->position.y - s_camY) <= e->updateRange.y + s_camOY;
-        g_ps1SleepWrong = g_ps1SleepWrong + (in || e->inRange);
-    }
-}
-#endif
-#define PS1_SCAN_RET()                                                                                                 \
-    do {                                                                                                               \
-        s_grpOk = false;                                                                                               \
-        return p;                                                                                                      \
-    } while (0)
-PS1_HOT EntityBase **PS1UpdateScanC(EntityBase **p, EntityBase **pend)
+// Cameras the union can't take: the stock loop decides every live slot (blank ones settled, as everywhere)
+PS1_HOT EntityBase **PS1UpdateScanStock(EntityBase **p, EntityBase **pend)
 {
     uint32 s = (uint32)(p - objectEntityPtr);
-    if (!s_camUnionOk || !s_camOne || !s_camAbs) // (stock decides: every sleeping group wakes, entities may move meanwhile)
-        for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
-    if (!s_camUnionOk) { // the stock loop decides every live slot
-        for (; p < pend; ++p, ++s) {
-            PS1_LIVE_SKIP();
-            EntityBase *ent = *p;
-            if (ent->classID && ent->active != ACTIVE_NEVER && ent->active != ACTIVE_PAUSED)
-                return p;
-            ent->inRange = false;
-            if (!ent->classID)
-                ps1LiveBits[s >> 5] &= ~(1u << (s & 31));
-        }
-        return p;
-    }
-    const uint32 minX = (uint32)s_camMinX, minY = (uint32)s_camMinY, w = s_camW, h = s_camH, vx = s_camVX, vy = s_camVY;
-#if PS1_CHECK_UPDATESCAN
-    const bool sleepOn = s_sleep && s_camOne && s_camAbs;
-#else
-    const bool sleepOn = true; // (one box without sleeping groups: PS1ScanFastAsm)
-#endif
-    if (sleepOn && (s_camOX != s_sleepOX || s_camOY != s_sleepOY)) {
-        for (uint32 i = 0; i < sizeof(ps1SleepBits) / 4; ++i) ps1SleepBits[i] = 0;
-        s_sleepOX = s_camOX, s_sleepOY = s_camOY;
-    }
-    const uint32 send = (uint32)(pend - objectEntityPtr);
     for (; p < pend; ++p, ++s) {
-        if (sleepOn) {
-            PS1_LIVE_SKIP_WORDS();
-        }
-        else
-            PS1_LIVE_SKIP();
-        if (sleepOn && !(s & 7)) {
-            const uint32 g = s >> 3;
-            if ((ps1SleepBits[g >> 5] >> (g & 31)) & 1) {
-                if (s + 8 <= send && PS1SleepValid(g)) {
-#if PS1_CHECK_SLEEP
-                    PS1SleepCheck(g);
-#endif
-                    p += 7, s += 7;
-                    continue;
-                }
-                ps1SleepBits[g >> 5] &= ~(1u << (g & 31));
-            }
-            s_grp = g, s_grpOk = true, s_grpLive = 0;
-        }
+        PS1_LIVE_SKIP();
         EntityBase *ent = *p;
-        uint32 cls    = ent->classID;
-        uint32 active = ent->active;
-        uint32 x = (uint32)ent->position.x, rx = (uint32)ent->updateRange.x;
-        __asm__("" : "+r"(cls), "+r"(active), "+r"(x), "+r"(rx)); // all loaded here (GCC won't hoist loads over a branch)
-        if (cls) {
-            if (active == ACTIVE_BOUNDS) {
-                // x in [minX - rx, maxX + rx] <=> (uint32)(x - (minX - rx)) <= (uint32)(w + 2 * rx) when the interval is
-                // not empty; an empty one (negative offsets or ranges) answers "inside", which leaves it to the stock loop.
-                // 3.0g: outside on x (x and rx valid) is out of range for every camera whatever y is (stock needs both
-                // axes inside for one camera), so y and its range are loaded only for the slots inside on x
-                if ((int32)(x + vx) < 0 || (rx + 0x10000000u) >= 0x20000000u)
-                    PS1_SCAN_RET();
-                if (x - minX + rx <= w + 2 * rx) {
-                    uint32 y = (uint32)ent->position.y, ry = (uint32)ent->updateRange.y;
-                    if ((int32)(y + vy) < 0 || (ry + 0x10000000u) >= 0x20000000u || y - minY + ry <= h + 2 * ry)
-                        PS1_SCAN_RET();
-                }
-            }
-            else if (active == ACTIVE_XBOUNDS) {
-                // 9u: stock tests x only (|x - cx| <= rx + ox for some camera): outside the union on x (the same test as
-                // ACTIVE_BOUNDS' first axis, same validity bounds) is out of range for every camera; inside, stock decides
-                // (PSZ1's 215 crates each went back to the pass for stock's switch)
-                if ((int32)(x + vx) < 0 || (rx + 0x10000000u) >= 0x20000000u || x - minX + rx <= w + 2 * rx)
-                    PS1_SCAN_RET();
-            }
-            else if (active == ACTIVE_RBOUNDS && s_camOne) {
-                // stock's test for one camera, in its int32 arithmetic (wrapping as the PC's): out of range settles here
-                int32 dx = x - s_camX, dy = ent->position.y - s_camY;
-                int32 sx = FROM_FIXED(dx < 0 ? -dx : dx), sy = FROM_FIXED(dy < 0 ? -dy : dy);
-                if ((int32)((uint32)sx * (uint32)sx + (uint32)sy * (uint32)sy) <= (int32)((uint32)rx + (uint32)s_camOX))
-                    PS1_SCAN_RET();
-            }
-            else if (active != ACTIVE_NEVER && active != ACTIVE_PAUSED)
-                PS1_SCAN_RET();
-        }
-#if PS1_CHECK_UPDATESCAN // evidence build: stock's test on every slot settled here (GDB reads the counters)
-        if (cls && active == ACTIVE_XBOUNDS) {
-            g_ps1ScanSettled = g_ps1ScanSettled + 1;
-            for (int32 s = 0; s < cameraCount; ++s)
-                if (abs(ent->position.x - cameras[s].position.x) <= ent->updateRange.x + cameras[s].offset.x) {
-                    g_ps1ScanWrong = g_ps1ScanWrong + 1;
-                    break;
-                }
-        }
-        if (cls && active == ACTIVE_BOUNDS) {
-            g_ps1ScanSettled = g_ps1ScanSettled + 1;
-            for (int32 s = 0; s < cameraCount; ++s)
-                if (abs(ent->position.x - cameras[s].position.x) <= ent->updateRange.x + cameras[s].offset.x
-                    && abs(ent->position.y - cameras[s].position.y) <= ent->updateRange.y + cameras[s].offset.y) {
-                    g_ps1ScanWrong = g_ps1ScanWrong + 1;
-                    break;
-                }
-        }
-#endif
-        if (sleepOn && s_grp == (s >> 3)) {
-            if (cls) {
-                ++s_grpLive;
-                s_grpOk = s_grpOk && (active == ACTIVE_BOUNDS || active == ACTIVE_RBOUNDS);
-            }
-            if ((s & 7) == 7 && s_grpOk && s_grpLive)
-                PS1SleepGroupSet(s >> 3);
-        }
+        if (ent->classID && ent->active != ACTIVE_NEVER && ent->active != ACTIVE_PAUSED)
+            return p;
         ent->inRange = false;
-        if (!cls)
+        if (!ent->classID)
             ps1LiveBits[s >> 5] &= ~(1u << (s & 31));
     }
     return p;
@@ -843,10 +641,10 @@ PS1_HOT EntityBase **PS1UpdateScanC(EntityBase **p, EntityBase **pend)
 // state stays as the C loop leaves it with sleepOn false (a slot returned to the pass clears s_grpOk). The sleeping
 // groups are 0 without a sleep table (only PS1SleepGroupSet sets them, with one): their clear is left out then.
 extern "C" EntityBase **PS1ScanFastAsm(EntityBase **p, EntityBase **pend, uint32 s, const uint32 *box);
-#if PS1_CHECK_SCANASM
-// evidence build (make EXTRA_CPPFLAGS=-DPS1_CHECK_SCANASM=1, touch this file): every slot the assembly passed over has
-// inRange false and stock's test out of range for every camera (blank: its live bit clear), and the slot it returns is
-// live and classed (GDB reads the counters; g_ps1ScanAsmWrong must stay 0)
+#if PS1_CHECK_SCANASM || PS1_CHECK_UPDATESCAN
+// evidence build (make EXTRA_CPPFLAGS=-DPS1_CHECK_SCANASM=1, or the older PS1_CHECK_UPDATESCAN; touch this file): every
+// slot the assembly passed over has inRange false and stock's test out of range for every camera (blank: its live bit
+// clear), and the slot it returns is live and classed (GDB reads the counters; g_ps1ScanAsmWrong must stay 0)
 extern "C" {
 volatile uint32 g_ps1ScanAsmCalls = 0, g_ps1ScanAsmSlots = 0, g_ps1ScanAsmWrong = 0, g_ps1ScanAsmWho = 0;
 }
@@ -910,21 +708,22 @@ void PS1ScanAsmCheck(EntityBase **p, EntityBase **q, EntityBase **pend)
 #endif
 __attribute__((always_inline)) inline EntityBase **PS1UpdateScan(EntityBase **p, EntityBase **pend)
 {
-#if !PS1_CHECK_UPDATESCAN
-    if (s_camUnionOk && !(s_sleep && s_camOne && s_camAbs)) {
-        if (s_sleep)
-            for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
-        ps1ScanBox[6] = (uint32)ps1LiveBits, ps1ScanBox[7] = (uint32)s_ps1DeBruijn, ps1ScanBox[8] = (uint32)objectEntityPtr;
-        EntityBase **q = PS1ScanFastAsm(p, pend, (uint32)(p - objectEntityPtr), ps1ScanBox);
-#if PS1_CHECK_SCANASM
-        PS1ScanAsmCheck(p, q, pend);
+    // 9w.6: the sleeping groups (one camera, a sleep table, the UFO overlay's scan linked) keep their C scan, in the
+    // overlay; any other frame wakes every group (stock decides; sleeping is only a shortcut)
+    if (s_sleep && s_camUnionOk && s_camOne && s_camAbs && g_ps1ScanSleepFn)
+        return g_ps1ScanSleepFn(p, pend);
+    if (s_sleep)
+        for (uint32 w = 0; w < sizeof(ps1SleepBits) / 4; ++w) ps1SleepBits[w] = 0;
+    if (!s_camUnionOk)
+        return PS1UpdateScanStock(p, pend);
+    ps1ScanBox[6] = (uint32)ps1LiveBits, ps1ScanBox[7] = (uint32)s_ps1DeBruijn, ps1ScanBox[8] = (uint32)objectEntityPtr;
+    EntityBase **q = PS1ScanFastAsm(p, pend, (uint32)(p - objectEntityPtr), ps1ScanBox);
+#if PS1_CHECK_SCANASM || PS1_CHECK_UPDATESCAN
+    PS1ScanAsmCheck(p, q, pend);
 #endif
-        if (q != pend)
-            s_grpOk = false;
-        return q;
-    }
-#endif
-    return PS1UpdateScanC(p, pend);
+    if (q != pend)
+        s_grpOk = false;
+    return q;
 }
 
 // 9q: libc's abs, inline (it was a call per test: ~20 hblanks a frame in HCZ2): (v ^ v >> 31) - (v >> 31), INT_MIN stays
