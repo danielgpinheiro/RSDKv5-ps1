@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""docs/32 choice 182: the PS1's Video page (Options > Video > UNCAPPED FPS  NO / YES; phase 13b: FRAMESKIP with the
+"""docs/32 choice 182: the PS1's Video page (Options > Video > UNCAPPED FPS  NO / YES; 13b: FRAMESKIP with the
 stock OFF / ON) needs labels the game's text art doesn't have. They are built here, at build time, from the game's own
 letters: UI/TextEN.bin's list 17 ("PC Menu", the PC's video page: SCREEN FILTER, FULL SCREEN, VSYNC, OFF, ON, ...)
 draws an 11-pixel font with a one-pixel shadow.
@@ -31,14 +31,14 @@ LIST = 17
 FACE, SHADOW = 185, 178  # the font's two colours in TextEN.gif's palette
 # the labels ((list, frame): text) the glyphs are cut from: list 17's, and list 8's ("Character Names", the same 11-px
 # font: MIGHTY's I / G / T / Y and KNUCKLES' N / U / C / L / E / S are the PC menu's pixel for pixel) for the M and the K
-# (docs/32 phase 13b: FRAMESKIP) list 17 lacks
+# (docs/32 13b: FRAMESKIP) list 17 lacks
 SOURCES = {(LIST, 0): 'EXIT', (LIST, 1): 'DEFAULT', (LIST, 2): 'SCREEN FILTER', (LIST, 3): 'NONE', (LIST, 4): 'CLEAN',
            (LIST, 7): 'WINDOW SIZE', (LIST, 12): 'BIG PICTURE', (LIST, 13): 'WINDOW BORDER', (LIST, 14): 'FULL SCREEN',
            (LIST, 15): 'VSYNC', (LIST, 16): 'TRIPLE BUFFERING', (LIST, 17): 'OFF', (LIST, 18): 'ON',
            (8, 3): 'MIGHTY', (8, 2): 'KNUCKLES'}  # (list 8's TAILS kerns its T against the A: left out)
 # the new frames, in order (21, 22, 23, 24): text ('\n': a second line below, left-aligned), centred
 LABELS = [('UNCAPPED FPS\nMORE PRONE TO SLOWDOWNS', False), ('NO', True), ('YES', True),
-          ('FRAMESKIP\nFULL SPEED WITH FEWER FRAMES', False)]  # docs/32 phase 13b
+          ('FRAMESKIP\nFULL SPEED WITH FEWER FRAMES', False)]  # docs/32 13b
 FIRST_NEW = 21
 LINE_PITCH = 16  # a label's lines: 11 px + 5, the second line clear of the row's bar and the choice's lower edge
 

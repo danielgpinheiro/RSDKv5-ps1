@@ -1,4 +1,4 @@
-# docs/32 phase 13b: Frameskip keeps the game's logic. cap_logic.gdb's GHZ1 run (the same scripted inputs, counted per
+# docs/32 13b: Frameskip keeps the game's logic. cap_logic.gdb's GHZ1 run (the same scripted inputs, counted per
 # logic step) in builds with Frameskip off / on (`make BOOT=1,0 [CAP=1] [FSKIP=1]`), each also slowed with
 # `EXTRA_CPPFLAGS=-DPS1_TEST_SLOW=300` so the step count per drawn frame varies (touch ps1/rsdk5_main.cpp: no stamp):
 # the S lines must be identical; the V line counts the drawn frames and the frames that ran more than the base.

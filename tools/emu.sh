@@ -1,13 +1,10 @@
 # Sourced by the GDB harness (tools/play_test.sh, tools/boot_test.sh): starts an emulator on build/game.cue for
 # rsdkv5.elf and stops it again.
 #   EMU=redux (default)  PCSX-Redux, GDB port 3333, the EXE given with -exe (the disc's overlays and data)
-#                        EMU_SLOT=N (1-4): our own portable instance instead (../pcsx-redux-maniaN, a copy of the default
+#                        EMU_SLOT=N (1-4): our own portable instance instead (../../emu/pcsx-redux-maniaN, a copy of the default
 #                        settings made once; GDB port 3400+N, the suite's workers use 3350-3397), so parallel sessions in
 #                        their own worktrees each run one; a slot whose port is taken waits up to 10 minutes
 #   EMU=ds               DuckStation with the retail BIOS, GDB port 2345 (docs/31 §6), booted from the disc
-#   EMU=r16              docs/32 phase 13: the local 16 MB PCSX-Redux copy (../pcsx-redux-16mb/redux16mb, docs/34 §11 / §20)
-#                        on its own portable settings (../pcsx-redux-maniamods) and GDB port 3344, OpenBIOS, the EXE with
-#                        -exe: EMU_RAM=2mb (default) / 8mb / 16mb, EMU_VRAM=2mb for the 2 MB VRAM mod
 # Both emulators are shared with other sessions (2026-09-28, user: this port uses PCSX-Redux; DuckStation belongs to
 # another session). emu_start refuses to start an emulator that already runs; emu_stop kills only our own PID; the
 # settings a run changes are backed up and restored (pcsx.json / settings.ini).
@@ -18,14 +15,13 @@ EMU_PCSX=/Applications/PCSX-Redux.app/Contents/MacOS/PCSX-Redux
 EMU_PCSX_CFG="$HOME/.config/pcsx-redux/pcsx.json"
 EMU_DS=/Applications/DuckStation.app/Contents/MacOS/DuckStation
 EMU_DS_SET="$HOME/Library/Application Support/DuckStation/settings.ini"
-EMU_RAM=${EMU_RAM:-}   # 8mb: run any EXE with 8 MB (the PC sampler's counters live above 2 MB; phase 13's modded consoles)
-EMU_VRAM=${EMU_VRAM:-} # 2mb: EMU=r16 with the 2 MB VRAM mod
-EMU_R16=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-16mb/redux16mb
-EMU_R16_DIR=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-maniamods
-EMU_R16_PORT=3344
-EMU_R16_WEB=8104 # its web API (tools/play/vshot.sh: /api/v1/gpu/vram/raw, 2 MB with -2mbvram)
+EMU_RAM=${EMU_RAM:-}   # 8mb: run any EXE with 8 MB (the PC sampler's counters live above 2 MB; a measuring link only)
 EMU_SLOT=${EMU_SLOT:-}
-EMU_SLOT_DIR=$HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-mania$EMU_SLOT
+# the workspace root (2026-10-26 layout): the first parent with tools/workspace_links.txt (ports/<repo>,
+# work/worktrees/<name> and a run's build/boss/snaps/<name> copy alike)
+EMU_WS=$PWD
+while [ "$EMU_WS" != / ] && [ ! -f "$EMU_WS/tools/workspace_links.txt" ]; do EMU_WS=$(dirname "$EMU_WS"); done
+EMU_SLOT_DIR=$EMU_WS/emu/pcsx-redux-mania$EMU_SLOT
 EMU_SLOT_PORT=$((3400 + ${EMU_SLOT:-0}))
 EMU_SP=$(python3 -c "import struct;print(hex(struct.unpack_from('<I',open('rsdkv5.ps-exe','rb').read(0x34),0x30)[0]))")
 EMU_PID=
@@ -40,7 +36,6 @@ EMU_DS_HELD="$EMU_DS_SET.harness"
 emu_gdb_header() {
   echo "set pagination off"; echo "set confirm off"; echo "file rsdkv5.elf"; echo "set architecture mips:3000"
   if [ "$EMU" = ds ]; then echo "target remote localhost:2345"
-  elif [ "$EMU" = r16 ]; then echo "target remote localhost:$EMU_R16_PORT"
   elif [ -n "$EMU_SLOT" ]; then echo "target remote localhost:$EMU_SLOT_PORT"
   else echo "target remote localhost:3333"; fi
 }
@@ -105,27 +100,6 @@ OutputMuted = true/' "$EMU_CFG"; fi
     # its GDB stub listens once the app is up: slower while another emulator runs (a fixed 6 s missed it, 9b.2)
     sleep 4
     for _ in $(seq 1 26); do nc -z localhost 2345 2>/dev/null && break; sleep 1; done
-  elif [ "$EMU" = r16 ]; then
-    # phase 13: our own portable instance (settings, cards and GDB port apart from every other session's emulator)
-    nc -z localhost $EMU_R16_PORT 2>/dev/null && { echo "port $EMU_R16_PORT busy: our redux16mb already runs?" >&2; exit 2; }
-    mkdir -p $EMU_R16_DIR
-    [ -f $EMU_R16_DIR/pcsx.json ] || echo '{}' > $EMU_R16_DIR/pcsx.json
-    # muted; the debugger's first-chance breaks without DBE (bit 7): phase 13's 16 MB probe takes a bus error on purpose
-    # (ps1/hwdetect.cpp catches it; the stock config would stop GDB there)
-    /usr/bin/python3 -c "import json,sys;p=sys.argv[1];d=json.load(open(p));d.setdefault('SPU',{})['Mute']=True;e=d.setdefault('emulator',{}).setdefault('Debug',{});e['FirstChanceException']=e.get('FirstChanceException',7408)&~0x80;json.dump(d,open(p,'w'),indent=4)" $EMU_R16_DIR/pcsx.json
-    local mc1=${EMU_MC1:-$1.mc1.mcd} mc2=$1.mc2.mcd
-    [ -f "$mc1" ] || /usr/bin/python3 tools/memcard/mcd.py format "$mc1" >/dev/null
-    /usr/bin/python3 tools/memcard/mcd.py format "$mc2" >/dev/null
-    local mem=-2mb
-    case "$EMU_RAM" in 8mb) mem=-8mb;; 16mb) mem=-16mb;; esac
-    [ "$EMU_SP" != "0x801fff00" ] && [ "$mem" = -2mb ] && mem=-8mb
-    [ "$EMU_VRAM" = 2mb ] && mem="$mem -2mbvram"
-    echo "redux16mb $mem (port $EMU_R16_PORT)"
-    $EMU_R16 -portable $EMU_R16_DIR -bios $HOME/Files/Projetos_Infaliveis/PS1/pcsx-redux-16mb/openbios.bin -fastboot -exe rsdkv5.ps-exe -interpreter \
-      -debugger -gdb -gdb-port $EMU_R16_PORT -webserver -webserver-port $EMU_R16_WEB $mem -memcard1 "$mc1" -memcard2 "$mc2" -iso build/game.cue >/dev/null 2>&1 &
-    EMU_PID=$!
-    sleep 4
-    for _ in $(seq 1 20); do nc -z localhost $EMU_R16_PORT 2>/dev/null && break; sleep 1; done
   else
     # 4.2e: other sessions run isolated copies (-portable config, their own GDB port): only an instance on the default
     # config (this harness's pcsx.json and GDB port 3333) blocks this run
@@ -167,7 +141,7 @@ PYEOF
     # docs/32 9d: EMU_RETAIL=1 boots the disc through the user's retail BIOS with its intro (the Sony / PlayStation
     # screens stay in VRAM unless the game clears it), not the EXE straight into OpenBIOS
     local boot="-fastboot -exe rsdkv5.ps-exe"
-    [ "${EMU_RETAIL:-0}" = 1 ] && boot="-bios ${EMU_BIOS:-$HOME/Files/Projetos_Infaliveis/PS1/SCPH101.BIN}"
+    [ "${EMU_RETAIL:-0}" = 1 ] && boot="-bios ${EMU_BIOS:-$EMU_WS/data/bios/SCPH101.BIN}"
     # -NSAppSleepDisabled YES: macOS App Nap throttled a background run to ~20 % CPU once the display slept (2026-10-21)
     # -no-ui (user 2026-10-22: runs must not take the focus from the user's own full-screen apps): no window at all; the
     # emulation, GDB stub and VRAM are the same (timings are emulated). EMU_UI=1: with its window, as before

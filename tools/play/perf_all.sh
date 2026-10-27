@@ -3,7 +3,7 @@
 # emulators: each act swept every 768 px from x 256 to its FG width less 256 (sweep_timing.gdb: frames 90-149 after each
 # warp timed). Builds BOOT=1,i under the tree lock. Output build/perf9f/sweep_<TAG>_<i>_<emu>.txt (TAG=9n by default) +
 # tools/play/perf_all.py [TAG]'s table. CAP=1 (docs/32 choice 182): the capped zones (30 fps, two logic steps a frame).
-# FSKIP=1 (phase 13b): Frameskip on. EMUS: the emulators (perf_sweep.sh; default redux and ds).
+# FSKIP=1 (13b): Frameskip on. EMUS: the emulators (perf_sweep.sh; default redux and ds).
 set -u
 cd "$(dirname "$0")/../.."
 FROM=${1:-0}; TO=${2:-28}; TAG=${TAG:-9n}

@@ -2,7 +2,7 @@
 # docs/32 9f: frame timing of one scene in PCSX-Redux and DuckStation (tools/play/scene_timing.gdb: vsyncs per frame,
 # slow frames, CPU / GPU-wait / flip hblanks). Usage: tools/play/perf_scene.sh NAME BOOT [FROM TO] [RIGHT_FROM]
 # (frames FROM..TO, default 300..600; RIGHT_FROM: pad 1 holds right from that frame, through the scripted pad).
-# EMUS="redux ds" by default; NOBUILD=1 reuses the current build; CAP=1 / FSKIP=1 (choice 182 / phase 13b) for the build; SETS = GDB lines run at main (test switches). Output: build/perf9f/NAME_<emu>.txt (the T line).
+# EMUS="redux ds" by default; NOBUILD=1 reuses the current build; CAP=1 / FSKIP=1 (choice 182 / 13b) for the build; SETS = GDB lines run at main (test switches). Output: build/perf9f/NAME_<emu>.txt (the T line).
 set -u
 cd "$(dirname "$0")/../.."
 NAME=$1; BOOT=$2; FROM=${3:-300}; TO=${4:-600}; RIGHT=${5:-}

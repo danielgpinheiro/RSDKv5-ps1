@@ -2,7 +2,7 @@
 # boundary) is warped to the next point x = $swX0 + k * $swStep px, y = $swY (Zone.c's test warp, mode 2: player and
 # camera, the layer's whole bounds; the class is set only until the timing starts: Zone_PS1TestBoss scans every slot
 # each frame), drops onto the terrain, and frames 90-149 after the warp are timed:
-# "S x=... vsyncs x100 slow worstV cpu max gpuWait flip sprites speed x100" (phase 13b: logic steps a vblank, 100 = full
+# "S x=... vsyncs x100 slow worstV cpu max gpuWait flip sprites speed x100" (13b: logic steps a vblank, 100 = full
 # speed). `make BOOT=c,s`, make disc,
 # [EMU=ds] tools/play_test.sh <a copy with $swX0 / $swStep / $swEnd / $swY set first> OUT.
 set $swK = 0

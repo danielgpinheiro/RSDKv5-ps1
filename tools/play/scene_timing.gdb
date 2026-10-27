@@ -2,7 +2,7 @@
 # make disc, then [EMU=ds] tools/play_test.sh tools/play/scene_timing.gdb OUT. Two stops only (frames 300 and 600 by default
 # 300 and 600): over the window, frames, vsyncs (100 = 60 fps), frames slower than one
 # vblank, the worst frame's vblanks, CPU hblanks per frame (average / max: inside frame(), the GPU-arena wait included),
-# the GPU-arena wait (G) and the flip gap (F: the GPU finishing, then vblank) per frame; phase 13b: the game speed (logic
+# the GPU-arena wait (G) and the flip gap (F: the GPU finishing, then vblank) per frame; 13b: the game speed (logic
 # steps a vblank x100: 100 = full speed).
 set $winA = 300
 set $winB = 600

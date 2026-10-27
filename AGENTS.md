@@ -21,9 +21,8 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
 - Emulators (`tools/emu.sh`; all shared with other sessions: `pgrep` first, never a second instance, kill only your
   own PIDs, never `pkill`; runs are muted; the harness restores the settings it changes):
   - **`EMU=redux`** (the default; user 2026-10-16: "Use stock pcsx-redux instead of fork"): the stock PCSX-Redux app
-    (`/Applications/PCSX-Redux.app`, GDB 3333). `EMU=r16` (the patched `../pcsx-redux-16mb/redux16mb`, GDB 3344)
-    belongs to the parked `ps1-mods` work and the GTA III project; numbers measured on it in stock mode since 13b stay
-    valid as history. The perf scripts take `EMUS=`.
+    (`/Applications/PCSX-Redux.app`, GDB 3333); `EMU_SLOT=1-4` (2026-10-26) gives a parallel session its own portable
+    instance instead (`../pcsx-redux-maniaN`, GDB 3400+N). The perf scripts take `EMUS=`.
   - `EMU=ds`: DuckStation with the user's SCPH-101 BIOS (accurate settings, GDB 2345, `../docs/31` §6), allowed for
     Mania whenever no other session runs it (the same rule for every RSDK port, user 2026-10-16).
   - The Bash tool is zsh (`$REDUX_ARGS` doesn't word-split): launch emulators from bash scripts, i.e. the harness.
@@ -38,7 +37,7 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   michael-fadely forks) and our own PS1 ports. Not the Xbox v5 port.
 - **Scope: base Mania** (decided after phase 1): Mania mode, Sonic/Tails/Knuckles; no Encore, Mighty, Ray,
   Competition, replays, Puyo (reversible build/data switches).
-  *Updated 2026-10-16*: Sonic, Tails, Knuckles alone (Sonic & Tails only on the parked `ps1-mods`); Mighty and Ray on
+  *Updated 2026-10-26*: Sonic, Tails, Knuckles alone (Sonic & Tails was modded-console only, now out of scope); Mighty and Ray on
   this repo's discs (`PLUS ?= 1`, user 2026-10-09; the builder keeps `--plus-characters` off by default: the engine's
   license); Puyo in (9f, `1017bebe`); Pinball cut (9k); no Encore, Competition, replays.
 - **Graphics (phase 3.1, 2026-09-26)**: single characters (no Sonic & Tails: VRAM); character art 15 colours per frame;
@@ -61,9 +60,9 @@ History: "Resumed 2026-09-28" (the review after Sonic 2) and the superseded "His
 
 ## Branches and builder
 - `ps1`: the stock port (2 MB RAM, 1 MB VRAM) and the **only focus** (user 2026-10-15). Push to `fork ps1`.
-- `ps1-mods` (phase 13: 8/16 MB, 2 MB VRAM mod, Sonic & Tails, CD cache, full-res sprites; head `eaf7cadf`): **parked**.
-  No ps1-mods builds, discs, merges or builder `mods` exports unless the user asks; `build/dist_mods/` was deleted
-  2026-10-15.
+- Modded consoles (8/16 MB, 2 MB VRAM mod, Sonic & Tails, CD cache, full-res sprites; `ps1-mods` head `eaf7cadf`):
+  **out of the plan** since 2026-10-26 (user: "Remove mods consoles phase for now"). No ps1-mods builds, discs, merges or
+  builder `mods` exports; the branch stays untouched and unmerged. `build/dist_mods/` was deleted 2026-10-15.
 - Builder: private github.com/danielgpinheiro/Sonic-Mania-PS1-ISO-Builder (`../Sonic-Mania-PS1-ISO-Builder`), main
   `715d19e` pushed 2026-10-19 (executable from `c87bab35`, the title's build stamp; image SHA-256 `142f0522…`, `CHANGELOG.md`); its branch `mods` (`2533da0`) is local, never
   pushed. Refresh with `tools/export_builder.sh` (natural EXE only); publishing needs the user's OK.
@@ -122,7 +121,7 @@ before `target remote`, `set architecture mips:3000`).
 | `tools/mesh/build_meshes.py` | the Dreamcast optimiser pass (no stripify) then PMD6 with distance LODs (`make meshes`; `../docs/18`, `../docs/32` 7.2 / 7.4) |
 | `tools/build_assets.py`, `tools/export_builder.sh` | the builder's whole pipeline; the builder export |
 | `tools/emu.sh`, `tools/gdbw`, `tools/gdbrelay.py`, `tools/boot_test.sh`, `tools/play_test.sh`, `tools/load_profile.sh` | harness core: emulator start / stop (`EMU=`), the gdb 18 wrapper + relay, headless boot, GDB-scripted runs, load profile |
-| `tools/play/` | test scripts: GHZ1 run + reference, `perf_*.sh` timing, `shot.sh` / `vshot.sh` pictures, `menus/` (scripted pad), `boss/` (recipes, `snap.sh`; README), `deaths/`, `special/`, `wholegame/`, `ring/`, many `*.gdb` probes |
+| `tools/play/` | test scripts: GHZ1 run + reference, `perf_*.sh` timing, `shot.sh` pictures, `menus/` (scripted pad), `boss/` (recipes, `snap.sh`; README), `deaths/`, `special/`, `wholegame/`, `ring/`, many `*.gdb` probes |
 | `tools/smoke_*.sh`, `vramshot.py`, `pad.lua` | phase 0 harness |
 
 ## Invariants (from the Nexus, Sonic CD and Sonic 2 ports)

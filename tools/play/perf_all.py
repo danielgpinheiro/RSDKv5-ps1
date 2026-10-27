@@ -13,7 +13,7 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'buil
 print('%-4s %-10s %-6s %6s %8s %14s %8s %8s %6s %6s' % ('#', 'scene', 'emu', 'points', 'mean', 'worst (x)', 'cpu', 'cpuMax',
                                                        'speed', 'worst'))
 for i, s in enumerate(scenes):
-    for emu in ('redux', 'ds', 'r16'):
+    for emu in ('redux', 'ds'):
         p = os.path.join(OUT, 'sweep_%s_%d_%s.txt' % (TAG, i, emu))
         if not os.path.exists(p):
             continue
