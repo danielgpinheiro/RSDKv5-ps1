@@ -230,15 +230,22 @@ int32 s_tgCount = 0;
 // extra groups are the only ones with a count (a scene load clears every count): Begin clears those, Build lays out the
 // ones it fills (was: three walks over the 260 groups a frame). A group past the build's reach keeps the pointer the last
 // build that reached it set (into the pool: the first build lays out every group); with a count of 0 nothing reads it.
+// 9w.5: the update pass's collection over the marked slots (PS1TypeGroupsCollectMarked: no callback runs before the
+// build) counts the class and extra groups as it goes (s_tgCounted, s_tgHiNow); the frozen pass's adds (callbacks run
+// between them: they see the counts Begin cleared, as before) and the full-scan collection count in the build.
 namespace
 {
-int32 s_tgHi    = TYPE_COUNT;
+int32 s_tgHi     = TYPE_COUNT;
+int32 s_tgHiNow  = GROUP_ALL + 1;
 bool s_tgLaidAll = false;
+bool s_tgCounted = false;
 } // namespace
 
 void RSDK::PS1TypeGroupsBegin()
 {
-    s_tgCount = 0;
+    s_tgCount   = 0;
+    s_tgCounted = false;
+    s_tgHiNow   = GROUP_ALL + 1;
     for (int32 i = 0; i < s_tgHi; ++i) typeGroups[i].entryCount = 0;
     for (int32 i = TYPE_COUNT; i < TYPEGROUP_COUNT; ++i) typeGroups[i].entryCount = 0;
 }
@@ -280,6 +287,51 @@ __attribute__((optimize("O2"))) void RSDK::PS1TypeGroupsCollect(EntityBase **p, 
     s_tgCount = n;
 }
 
+// 9w.5: the marked slots of [s0, s1) (bits: one per slot, Object.cpp ps1SlotBits) in range and interacting, collected
+// and counted in one leaf loop (was: PS1SlotNext's table lookup and a call per slot, then the build's count loop). The
+// bad-header handling is the build's.
+__attribute__((optimize("Os"))) void RSDK::PS1TypeGroupsCollectMarked(const uint32 *bits, int32 s0, int32 s1)
+{
+    int32 n = s_tgCount, hi = s_tgHiNow;
+    for (int32 w = s0 & ~31; w < s1; w += 32) {
+        uint32 m = bits[w >> 5];
+        if (w < s0)
+            m &= ~0u << (s0 - w);
+        if (s1 - w < 32)
+            m &= (1u << (s1 - w)) - 1;
+        for (int32 s = w; m; ++s, m >>= 1) {
+            if (!(m & 1))
+                continue;
+            const EntityBase *e = objectEntityPtr[s];
+            if (!e->inRange || !e->interaction)
+                continue;
+            if (n >= PS1_TYPEGROUP_ENTITIES) {
+                g_ps1TypeGroupOverflow = g_ps1TypeGroupOverflow + 1;
+                continue;
+            }
+            uint32 c = e->classID, g = e->group;
+            if (g >= TYPEGROUP_COUNT || c >= TYPE_COUNT) {
+                if (!g_ps1BadGroups)
+                    g_ps1BadGroupWho = (uint32)s | c << 16, g_ps1BadGroupValue = g;
+                g_ps1BadGroups = g_ps1BadGroups + 1;
+                g              = 0;
+                if (c >= TYPE_COUNT)
+                    c = 0;
+            }
+            s_tgSlot[n]  = (uint16)s;
+            s_tgClass[n] = (uint16)c;
+            s_tgGroup[n] = (uint16)g;
+            ++n;
+            typeGroups[c].entryCount++;
+            if ((int32)c >= hi)
+                hi = c + 1;
+            if (g >= TYPE_COUNT)
+                typeGroups[g].entryCount++;
+        }
+    }
+    s_tgCount = n, s_tgHiNow = hi, s_tgCounted = true;
+}
+
 // The stock loop appends each entity to GROUP_ALL, its class's group and (group >= TYPE_COUNT) its extra group, in slot
 // order: the same lists, each one contiguous in the pool.
 volatile uint32 g_ps1TypeGroupPeak = 0; // most entities captured in one frame (GDB)
@@ -293,7 +345,9 @@ void RSDK::PS1TypeGroupsBuild()
     if ((uint32)count > g_ps1TypeGroupPeak)
         g_ps1TypeGroupPeak = count;
     int32 hi = GROUP_ALL + 1; // (Begin cleared the groups below s_tgHi and the extra ones)
-    for (int32 n = 0; n < count; ++n) {
+    if (s_tgCounted)
+        hi = s_tgHiNow;
+    for (int32 n = 0; !s_tgCounted && n < count; ++n) {
         if (s_tgGroup[n] >= TYPEGROUP_COUNT || s_tgClass[n] >= TYPE_COUNT) {
             if (!g_ps1BadGroups)
                 g_ps1BadGroupWho = s_tgSlot[n] | (uint32)s_tgClass[n] << 16, g_ps1BadGroupValue = s_tgGroup[n];
@@ -303,13 +357,15 @@ void RSDK::PS1TypeGroupsBuild()
                 s_tgClass[n] = 0;
         }
         const int32 c = s_tgClass[n];
-        typeGroups[GROUP_ALL].entryCount++;
         typeGroups[c].entryCount++;
         if (c >= hi)
             hi = c + 1;
         if (s_tgGroup[n] >= TYPE_COUNT)
             typeGroups[s_tgGroup[n]].entryCount++;
     }
+    // GROUP_ALL holds a count now only for the entities whose class index is 0 (forced by a bad header)
+    const bool allIsSlots = !typeGroups[GROUP_ALL].entryCount;
+    typeGroups[GROUP_ALL].entryCount += count;
     s_tgHi = hi;
     if (!s_tgLaidAll)
         hi = TYPE_COUNT, s_tgLaidAll = true;
@@ -322,11 +378,15 @@ void RSDK::PS1TypeGroupsBuild()
         if (++i == hi)
             i = TYPE_COUNT;
     }
+    // 9w.5: GROUP_ALL's list is the collected slots themselves unless an entity adds itself to it twice
+    TypeGroupList *all = &typeGroups[GROUP_ALL];
+    if (allIsSlots)
+        all->entries = s_tgSlot, all->entryCount = count, all = NULL; // (the pool's first `count` words go unused)
     for (int32 n = 0; n < count; ++n) {
         const uint16 slot = s_tgSlot[n];
-        TypeGroupList *g  = &typeGroups[GROUP_ALL];
-        g->entries[g->entryCount++] = slot;
-        g                           = &typeGroups[s_tgClass[n]];
+        if (all)
+            all->entries[all->entryCount++] = slot;
+        TypeGroupList *g            = &typeGroups[s_tgClass[n]];
         g->entries[g->entryCount++] = slot;
         if (s_tgGroup[n] >= TYPE_COUNT) {
             g                           = &typeGroups[s_tgGroup[n]];

@@ -896,11 +896,7 @@ PS1_HOT void PS1TypeGroupPass()
             if (phase == 0)
                 PS1SlotAudit(true);
 #endif
-            for (int32 s = PS1SlotNext(s0, s1); s < s1; s = PS1SlotNext(s + 1, s1)) {
-                EntityBase *e = objectEntityPtr[s];
-                if (e->inRange && e->interaction)
-                    PS1TypeGroupsAdd((uint16)s, e->classID, e->group);
-            }
+            PS1TypeGroupsCollectMarked(ps1SlotBits, s0, s1);
         }
         else {
             PS1TypeGroupsCollect(objectEntityPtr + s0, objectEntityPtr + s1);

@@ -114,6 +114,7 @@ void PS1TypeGroupsBegin();
 void PS1TypeGroupsAdd(uint16 slot, uint16 classID, uint16 group);
 void PS1TypeGroupsCollect(EntityBase **p, EntityBase **pend); // PS1TypeGroupsAdd for each in-range, interacting slot
 void PS1TypeGroupsBuild();
+void PS1TypeGroupsCollectMarked(const uint32 *bits, int32 s0, int32 s1); // 9w.5: the marked slots, counted
 
 // The scene file's entities (Scene.cpp LoadSceneAssets on PS1): parsed into compact records in DATASET_TMP (file slot,
 // class, position, the active variables' bytes), then placed in their final slots in one arena sized from them.
