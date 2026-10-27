@@ -1229,6 +1229,11 @@ bool DormCompare(const DormRec *r, const EntityBase *e, DormDiff *diff)
     const uint32 *a = (const uint32 *)e, *b = (const uint32 *)f;
     diff->n = 0;
     for (uint32 w = 0; w < s_dCapK[s_dUnique[r->unique]->spec] / 4u; ++w) {
+        // 9v.15: equal words first; the mask only for a differing one (built for every word it cost SPZ1 ~80 hblanks a
+        // frame late in the act: each record left live out of range is compared every frame)
+        const uint32 x = a[w] ^ b[w];
+        if (!x)
+            continue;
         uint32 m = 0xFFFFFFFF; // the word's bytes that count (the transient ones do not)
         for (int32 k = 0; k < 4; k += 2) {
             uint32 o = sp->transient[k], n = sp->transient[k + 1];
@@ -1236,7 +1241,7 @@ bool DormCompare(const DormRec *r, const EntityBase *e, DormDiff *diff)
                 if (n && 4 * w + i >= o && 4 * w + i < o + n)
                     m &= ~(0xFFu << (8 * i));
         }
-        if (!((a[w] ^ b[w]) & m))
+        if (!(x & m))
             continue;
         uint32 at = 4 * w;
         if (!sp->diffs || diff->n == PS1_DORMANT_DIFF_WORDS || at < offsetof(EntityBase, scale)
