@@ -54,6 +54,14 @@ struct PS1RotoPageRec {
 };
 #define PS1_TILE_ROTO_PAGES (4)
 PS1RotoPageRec s_rotoPage[PS1_TILE_ROTO_PAGES];
+PS1TileStripRec s_strip; // ps1-ufo (PTL5)
+uint16 s_stripClutFirst = 0;
+bool s_stripOn          = false;
+} // namespace
+extern "C" volatile int32 g_ps1StripOn;
+volatile int32 g_ps1StripOn = 1; // 0: the strip unused, every band from the tiles (GDB: A/B pictures)
+namespace
+{
 } // namespace
 namespace
 {
@@ -72,6 +80,8 @@ uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; 
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
+const PS1TileStripRec *RSDK::PS1TileStrip() { return s_ps1TileBlob && s_stripOn && g_ps1StripOn ? &s_strip : NULL; }
+uint16 RSDK::PS1TileStripClutFirst() { return s_ps1TileBlob && s_stripOn ? s_stripClutFirst : s_clutCount; }
 #if PS1_DEBUG_OVERLAY
 // ps1/debug_overlay.cpp: the scene's tile pixels in VRAM (0 without a .ptl: the counter keeps the last load's)
 uint32 RSDK::PS1TilesVramBytes() { return s_imageCount ? g_ps1TileVramBytes : 0; }
@@ -159,6 +169,7 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     g_ps1SolidLines = 0;
     s_hflipOff = s_hflipCount = 0;
     s_rotoPageCount = 0;
+    s_stripOn       = false;
     PS1HFlipCacheClear();
 
     char path[0x40];
@@ -174,7 +185,8 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
                     + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2 + h.solidBytes + h.hflipCount * 4;
     uint32 blocksBytes = h.blockCount * sizeof(PS1TileBlock);
     DataStorage *tmp   = &dataStorage[DATASET_TMP];
-    const bool v4      = !memcmp(h.magic, "PTL4", 4); // 9v.3: PTL3 (the table always there) + the tiles' opaque bits
+    const bool v5      = !memcmp(h.magic, "PTL5", 4); // ps1-ufo: PTL4 + a strip
+    const bool v4      = v5 || !memcmp(h.magic, "PTL4", 4); // 9v.3: PTL3 (the table always there) + the tiles' opaque bits
     bool v3            = v4 || !memcmp(h.magic, "PTL3", 4); // PTL2 + the rotozoom pages after the H-flip pairs (9e)
     if ((!v3 && memcmp(h.magic, "PTL2", 4)) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
         || blocksBytes + 128 * 2 > tmp->storageLimit || sizeof(h) + tables + blocksBytes > h.dataOffset) {
@@ -202,6 +214,15 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     }
     if (v4)
         Seek_Cur(&info, 128); // 9v.3's opaque bits (u8[128], bit t: tile t's pixels all opaque): no runtime user yet
+    if (v5) { // u16 count (1), u16 clutFirst, the record
+        uint16 sc[2];
+        ReadBytes(&info, sc, 4);
+        ReadBytes(&info, &s_strip, sizeof(s_strip));
+        s_stripClutFirst = sc[1];
+        s_stripOn = sc[0] == 1 && s_strip.layer < LAYER_COUNT && s_strip.bands <= 16 && sc[1] <= h.clutCount && s_strip.width
+                    && !(s_strip.width & 255) && s_strip.width <= 1024 && !(s_strip.width & (s_strip.width - 1));
+        g_ps1TileErrors = g_ps1TileErrors + !s_stripOn;
+    }
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
     s_imgOff     = 1024 * 2;
     s_clutOff    = s_imgOff + s_imageCount * sizeof(PS1TileImage);

@@ -89,7 +89,7 @@ void PS1FloorClutsReset()
 {
     s_cl    = PS1TileCluts();
     s_loads = g_ps1TileLoads;
-    s_nc    = s_cl ? PS1TileClutCount() : 0;
+    s_nc    = s_cl ? PS1TileStripClutFirst() : 0; // (ps1-ufo: a strip's CLUTs after the scene's own: no fog copies)
     if (s_nc > PS1_FLOOR_CLUTS || s_nc * 8 > PS1_FLOOR_CLUT_SLOTS)
         s_nc = 0; // no room for the copies: every tile drawn with bank 0 (counted)
     uint8 clutOf[16 * 20]; // (y - 240) * 20 + x / 16 -> CLUT index + 1

@@ -546,6 +546,46 @@ __attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
 
 void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
 
+// ps1-ufo: a band of the strip layer (PS1TileStrip, the UFO skies) drawn from the strip: the screen's 320 columns from
+// layer x on, as 2-3 sprites (GP0 64h, one a 256-texel page, the band's CLUT) instead of ~21 tile pieces: the same
+// texels at the same pixels (the tiles' palette indices through CLUTs of the same colours). False: rows outside the
+// strip, a palette bank, or a band with more than 15 colours (the tiles draw it)
+volatile uint32 g_ps1StripBands = 0; // bands drawn from the strip (total)
+static bool PS1StripBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+{
+    const PS1TileStripRec *st = PS1TileStrip();
+    const int32 r             = ly - (st ? st->rowFirst : 0);
+    if (!st || bank || r < 0 || r + h > st->bands * 16)
+        return false;
+    const uint32 clut = st->clut[r >> 4];
+    if (clut == 0xFFFF)
+        return false;
+    uint32 *hdr = (uint32 *)PS1ChainSpanBegin(18);
+    if (!hdr)
+        return true; // (the arena is full: the tiles would not fit either)
+    const uint32 mask = st->width - 1u, yw = (uint32)(uint16)sy << 16, vh = (uint32)r << 8, hh = (uint32)h << 16;
+    uint32 px = (uint32)x & mask;
+    int32 s   = 0;
+    for (;;) {
+        const uint32 u = px & 255;
+        int32 wd       = 256 - (int32)u;
+        wd             = wd > 320 - s ? 320 - s : wd;
+        hdr[1] = 0xE1000000 | st->tpage[px >> 8];
+        hdr[2] = 0x64808080;
+        hdr[3] = yw | (uint32)(uint16)s;
+        hdr[4] = clut << 16 | vh | u;
+        hdr[5] = hh | (uint32)wd;
+        s += wd, px = (px + (uint32)wd) & mask;
+        if (s >= 320)
+            break;
+        hdr[0] = 5u << 24 | ((uint32)(uintptr_t)(hdr + 6) & 0xFFFFFF);
+        hdr += 6;
+    }
+    PS1ChainSpanEnd((uint32_t *)hdr, 5, (uint32_t *)(hdr + 6));
+    g_ps1StripBands = g_ps1StripBands + 1;
+    return true;
+}
+
 // ps1-ufo: GetActiveEntities' walk (Object.cpp) with the position in *id instead of the foreach stack: the next entity of
 // the type group whose class is the group (read as the walk reaches it), or NULL at the end (the UFO objects' per-frame
 // foreach_active(UFO_Player): ~500 rings / spheres a frame went through the function table and the stack twice each)
@@ -570,5 +610,6 @@ extern "C" void PS1Scene3DLink()
     g_ps1S3DOps.draw  = PS1Scene3DDraw;
     g_ps1S3DOps.floor = PS1UfoFloorDraw;
     g_ps1S3DOps.sort  = PS1Scene3DSort;
+    g_ps1S3DOps.band  = PS1StripBand;
     s_sortN = 0, s_sortList = NULL;
 }
