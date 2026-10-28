@@ -16,6 +16,7 @@ volatile int32 g_ps1S3DLodPx = 40;   // 7.4: a model with a distance LOD uses it
 volatile uint32 g_ps1S3DLodDraws = 0; // models drawn with their LOD (total)
 volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
 volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
+volatile uint32 g_ps1SortMoves = 0, g_ps1SortCalls = 0; // ps1-ufo: the sorted group's insertion steps and sorts (totals)
 }
 
 namespace
@@ -466,6 +467,70 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     g_ps1S3DDraws  = g_ps1S3DDraws + 1;
     g_ps1S3DFaces  = g_ps1S3DFaces + o.drawn;
 }
+// ps1-ufo: the sorted draw group (UFO_Setup's group 4: ~100 rings and spheres in UFO5) in the order the engine's sort
+// gives (Object.cpp: descending zdepth, equal ones in list order), from last frame's order: the list is rebuilt in slot
+// order every frame and re-sorted from scratch there (~n^2 / 4 moves, ~30 hblanks a frame in UFO5); the depths barely
+// change between frames, so last frame's ranks put it nearly in order and the insertion sort that finishes it moves few.
+// Exact whatever the start (a strict order on (depth, list position)); entries last frame didn't have go at the end.
+uint16 s_sortSlot[PS1_DRAWLIST_MAX]; // last frame's list in list order
+uint16 s_sortRank[PS1_DRAWLIST_MAX]; // and each entry's place in its sorted order
+uint16 s_sortIdx[PS1_DRAWLIST_MAX];  // this frame: list positions in sort order (first: by last frame's rank)
+int32 s_sortN              = 0;
+const DrawList *s_sortList = NULL;
+__attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
+{
+    const int32 n = list->entityCount;
+    if (n > PS1_DRAWLIST_MAX)
+        return false;
+    int32 *const key  = (int32 *)0x1F800000; // the scratchpad (the layer drawer's, free between its calls), 256 words
+    uint16 *const idx = s_sortIdx;
+    uint16 *const e   = list->entries;
+    const int32 pn    = list == s_sortList && s_sortN <= PS1_DRAWLIST_MAX ? s_sortN : 0;
+    // last frame's rank of each entry (both lists in slot order: one walk), its list position put at that rank
+    for (int32 r = 0; r < pn; ++r) idx[r] = 0xFFFF;
+    int32 news = 0;
+    uint16 *const fresh = (uint16 *)(key + PS1_DRAWLIST_MAX) - n; // the scratchpad's end (read before the keys go in)
+    for (int32 i = 0, j = 0; i < n; ++i) {
+        const uint32 s = e[i];
+        while (j < pn && s_sortSlot[j] < s) ++j;
+        uint32 r = 0xFFFF;
+        if (j < pn && s_sortSlot[j] == s && s_sortRank[j] < pn && idx[s_sortRank[j]] == 0xFFFF)
+            r = s_sortRank[j];
+        if (r != 0xFFFF)
+            idx[r] = (uint16)i;
+        else
+            fresh[news++] = (uint16)i; // (not ascending lists, or new this frame)
+    }
+    int32 m = 0;
+    for (int32 r = 0; r < pn; ++r) // compacted in place (m <= r)
+        if (idx[r] != 0xFFFF)
+            idx[m++] = idx[r];
+    for (int32 k = 0; k < news; ++k) idx[m++] = fresh[k];
+    // the keys in that order, then the insertion sort: (k, i) before (k', i') when k > k' or k == k' and i < i'
+    for (int32 p = 0; p < n; ++p) key[p] = OBJECT_ENTITY(e[idx[p]])->zdepth;
+    uint32 moves = 0;
+    for (int32 p = 1; p < n; ++p) {
+        const int32 k  = key[p];
+        const uint32 i = idx[p];
+        int32 q        = p;
+        while (q > 0 && (key[q - 1] < k || (key[q - 1] == k && idx[q - 1] > i))) {
+            key[q] = key[q - 1], idx[q] = idx[q - 1];
+            --q;
+        }
+        key[q] = k, idx[q] = (uint16)i;
+        moves += (uint32)(p - q);
+    }
+    // the list in that order; this frame's list and ranks kept for the next
+    for (int32 i = 0; i < n; ++i) s_sortSlot[i] = e[i];
+    for (int32 p = 0; p < n; ++p) {
+        e[p]               = s_sortSlot[idx[p]];
+        s_sortRank[idx[p]] = (uint16)p;
+    }
+    s_sortN = n, s_sortList = list;
+    g_ps1SortMoves = g_ps1SortMoves + moves;
+    g_ps1SortCalls = g_ps1SortCalls + 1;
+    return true;
+}
 } // namespace
 
 void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
@@ -474,4 +539,6 @@ extern "C" void PS1Scene3DLink()
 {
     g_ps1S3DOps.draw  = PS1Scene3DDraw;
     g_ps1S3DOps.floor = PS1UfoFloorDraw;
+    g_ps1S3DOps.sort  = PS1Scene3DSort;
+    s_sortN = 0, s_sortList = NULL;
 }

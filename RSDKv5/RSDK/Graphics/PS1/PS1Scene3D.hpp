@@ -35,6 +35,7 @@ inline const int8 *PS1MeshNormal(const RSDK::Model *m, uint32 k)
 struct PS1Scene3DOps {
     void (*draw)(uint16 sceneID);
     void (*floor)(RSDK::TileLayer *layer); // 7.4: the UFO floor (PS1UfoFloor.cpp), for a layer whose scanlines carry a camera
+    bool (*sort)(RSDK::DrawList *list);   // ps1-ufo: a sorted draw group's order (PS1Scene3D.cpp); false: the engine sorts
 };
 extern PS1Scene3DOps g_ps1S3DOps;
 extern "C" {
