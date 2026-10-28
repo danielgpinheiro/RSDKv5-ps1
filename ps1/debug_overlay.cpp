@@ -5,6 +5,10 @@
 //                    the stack reserve, psyqo's heap blocks (counted by the --wrap wrappers below) and the STG dataset's
 //                    used part, its overlay code and tail blocks; free = psyqo's free bytes + STG's free middle + the
 //                    chain's extra block (STG lent per scene, given back before each load: counted as free)
+//   VRAM 812/1024K   the scene's VRAM as the loads fill it (the layout is tools/gfx/vram_plan.py's, fixed per scene at
+//                    build time): psyqo's two 320x240 framebuffers, the tile pages (.ptl), the atlas's default blocks
+//                    and its swap regions at their largest group (.atl), the CLUTs (tiles', atlas's, bank 0's row, the
+//                    INK_TINT and bank-CLUT scratch rows, the title's build stamp row); the overlay's own: 0
 // L2 + R2 together hides / shows it (both outside the port's 12-button map, ps1/rsdk5_main.cpp readPad: the game never
 // sees them); shown at boot. GDB: g_ps1DbgVisible, g_ps1DbgLog.
 //
@@ -42,6 +46,7 @@ extern "C" {
 extern volatile uint32_t g_ps1StepsTotal; // ps1/rsdk5_main.cpp: logic steps run
 }
 extern volatile uint32_t g_ps1LoadingLoads; // ps1/loading.cpp: loads begun
+extern "C" void (*g_ps1VersionDraw)(uint32_t colour, int32_t aR, int32_t aG, int32_t aB); // ps1/version_text.cpp: the stamp's
 extern "C" {
 extern volatile uint32_t g_ps1ReserveEnd, g_ps1ReserveHigh; // RSDK/Storage/Storage.cpp, ps1/libc/stdlib.cpp
 // nugget/ps-exe.ld: text, then rodata + data, then bss; the heap from bss's end to the RAM top (the stack's top)
@@ -112,6 +117,8 @@ volatile uint32_t g_ps1DbgSeconds = 0, g_ps1DbgFps = 0, g_ps1DbgTarget = 0, g_ps
 // main RAM (bytes): in use now, the most seen at a frame's end, and its parts at the last window
 volatile uint32_t g_ps1DbgRamUsed = 0, g_ps1DbgRamPeak = 0;
 volatile uint32_t g_ps1DbgHeap = 0, g_ps1DbgHeapTop = 0, g_ps1DbgStg = 0, g_ps1DbgStgFree = 0, g_ps1DbgLent = 0;
+// VRAM (bytes) at the last window: in all, and its parts
+volatile uint32_t g_ps1DbgVram = 0, g_ps1DbgVramTiles = 0, g_ps1DbgVramAtlas = 0, g_ps1DbgVramGroups = 0, g_ps1DbgVramClut = 0;
 volatile uint32_t g_ps1DbgPrims    = 0; // rectangles in the list (the box included)
 volatile uint32_t g_ps1DbgBadPrims = 0; // list words that are not a GP0 60h rectangle (must stay 0)
 // hblanks the overlay took: the last frame, the worst; the last frame that measured, the last that rebuilt the list, the
@@ -196,10 +203,13 @@ constexpr uint32_t BOX_BGR = 0x000000, TEXT_BGR = 0xF0F0F0; // GP0 colours (BGR)
 constexpr int FPS_W = 2;                                     // shown frames a second: up to 99
 constexpr uint32_t RAM_KB = PS1_DBG_RAM_KB;
 constexpr int RAM_W       = digitsOf(RAM_KB); // the used field as wide as the total
+constexpr uint32_t VRAM_KB = 1024;            // 1024 x 512 halfwords
+constexpr int VRAM_W       = digitsOf(VRAM_KB);
 // the lines' fixed text and their number fields (each field right-aligned in its width)
-constexpr int LINES = 2;
-constexpr int LINE_CHARS[LINES] = { 4 + FPS_W + 1 + 2,                      // "FPS ff/tt"
-                                    4 + RAM_W + 1 + digitsOf(RAM_KB) + 1 }; // "RAM uuuu/2048K"
+constexpr int LINES = 3;
+constexpr int LINE_CHARS[LINES] = { 4 + FPS_W + 1 + 2,                         // "FPS ff/tt"
+                                    4 + RAM_W + 1 + digitsOf(RAM_KB) + 1,      // "RAM uuuu/2048K"
+                                    5 + VRAM_W + 1 + digitsOf(VRAM_KB) + 1 }; // "VRAM uuuu/1024K"
 constexpr int maxChars()
 {
     int m = 0;
@@ -211,7 +221,8 @@ constexpr int BOX_X = RIGHT - BOX_W, BOX_Y = TOP;
 
 // the worst case: every variable digit its costliest glyph, every fixed part as drawn (the targets 60 / 50 alike)
 constexpr int MAX_RECTS = 1 + rectsOf("FPS /") + FPS_W * maxDigitRects() + (rectsOf("60") > rectsOf("50") ? rectsOf("60") : rectsOf("50")) +
-                          rectsOf("RAM /K") + RAM_W * maxDigitRects() + rectsOfNum(RAM_KB);
+                          rectsOf("RAM /K") + RAM_W * maxDigitRects() + rectsOfNum(RAM_KB) +
+                          rectsOf("VRAM /K") + VRAM_W * maxDigitRects() + rectsOfNum(VRAM_KB);
 constexpr int PER_FRAG  = 4;                                      // 12 words: fragments stay <= 14 (ps1/gpu_chain.cpp)
 constexpr int FRAGS     = (MAX_RECTS + PER_FRAG - 1) / PER_FRAG;
 constexpr int LIST_WORDS = FRAGS + 3 * MAX_RECTS;                // a header a fragment, 3 words a rectangle
@@ -276,6 +287,23 @@ uint32_t ramUsed(bool parts)
     return used;
 }
 
+// The scene's VRAM (see the top). The framebuffers: psyqo's W320 x 240 pair at (0, 0) and (0, 256); a 4-bit CLUT is
+// 16 entries (32 B); bank 0's CLUT (0, 240) 256 (PS1Layers.cpp PS1ClutUploadAll: the other banks' rows stay unused);
+// the INK_TINT scratch row 510 x 0-319 and the bank-CLUT scratch slots 318 / 319 (row 511, x 256-287:
+// RSDK/Graphics/PS1/PS1Sprites.cpp) are the runtime's (vram_plan.py keeps them from the atlases); the build stamp's text
+// row 511 x 0-255 and its CLUT at (288, 511) only while the title shows it (ps1/version_stamp.cpp).
+constexpr uint32_t VRAM_FB = 2 * 320 * 240 * 2, CLUT4 = 16 * 2, CLUT_FIXED = 256 * 2 + 320 * 2 + 2 * CLUT4;
+uint32_t vramUsed()
+{
+    uint32 groups = 0; // (the engine's uint32: unsigned int, not uint32_t's unsigned long)
+    g_ps1DbgVramTiles  = RSDK::PS1TilesVramBytes();
+    g_ps1DbgVramAtlas  = RSDK::PS1AtlasVramBytes(&groups);
+    g_ps1DbgVramGroups = groups;
+    g_ps1DbgVramClut   = (RSDK::PS1TileClutCount() + RSDK::PS1AtlasClutCount()) * CLUT4 + CLUT_FIXED +
+                         (g_ps1VersionDraw ? 256 * 2 + CLUT4 : 0);
+    return VRAM_FB + g_ps1DbgVramTiles + g_ps1DbgVramAtlas + groups + g_ps1DbgVramClut;
+}
+
 char *putStr(char *p, const char *s)
 {
     while (*s) *p++ = *s++;
@@ -294,6 +322,12 @@ void format()
     p       = putNum(p, kb(g_ps1DbgRamUsed), RAM_W);
     *p++    = '/';
     p       = putNum(p, RAM_KB, digitsOf(RAM_KB));
+    p       = putStr(p, "K");
+    *p      = 0;
+    p       = putStr(s_text[2], "VRAM ");
+    p       = putNum(p, kb(g_ps1DbgVram), VRAM_W);
+    *p++    = '/';
+    p       = putNum(p, VRAM_KB, digitsOf(VRAM_KB));
     p       = putStr(p, "K");
     *p      = 0;
 }
@@ -363,6 +397,7 @@ void measure(uint32_t vblanks, uint32_t rate)
     g_ps1DbgLogic  = ((g_ps1StepsTotal - s_winSteps) * rate + vblanks / 2) / vblanks;
     g_ps1DbgTarget = rate;
     g_ps1DbgRamUsed = ramUsed(true);
+    g_ps1DbgVram    = vramUsed();
 }
 
 // A [PERF] line builder: integers only, no printf (the port's vsnprintf, float support included, took ~15 hblanks)
@@ -396,6 +431,9 @@ void logFormat()
     l.k(" data=", (uint32_t)(&__data_end - &__fdata_start)).k(" bss=", (uint32_t)(&__bss_end - &__bss_start));
     l.k(" heap=", g_ps1DbgHeap).k(" hpeak=", g_ps1DbgHeapTop).k(" stg=", g_ps1DbgStg).k(" stgfree=", g_ps1DbgStgFree);
     l.k(" rsvtop=", rsvTop).k(" lent=", g_ps1DbgLent).k(" stack=", PS1_STACK_RESERVE).s(" su=").u(g_ps1StackUnused).s("B");
+    l.k(" vram=", g_ps1DbgVram).s("/").u(VRAM_KB).s("K ").u(pct(g_ps1DbgVram, VRAM_KB * 1024)).s("%").k(" fb=", VRAM_FB);
+    l.k(" tiles=", g_ps1DbgVramTiles).k(" atlas=", g_ps1DbgVramAtlas).k(" groups=", g_ps1DbgVramGroups);
+    l.s(" clut=").u(g_ps1DbgVramClut).s("B");
     l.s(" overlay_vram=0 overlay_prims=").u(g_ps1DbgPrims).s("/").u(MAX_RECTS).s(" overlay_buf=").u(sizeof(s_list));
     l.s("B overlay_hbl=").u(g_ps1DbgHblMeasure).s("/").u(g_ps1DbgHblRebuild).s("/").u(g_ps1DbgHblLog);
     l.s("/").u(g_ps1DbgHblMax).s("\n");
@@ -418,6 +456,7 @@ void PS1DebugOverlayFrame(bool draw)
         g_ps1DbgTarget   = rate;
         g_ps1DbgHeapPeak = g_ps1DbgHeapLive;
         g_ps1DbgRamUsed  = ramUsed(true);
+        g_ps1DbgVram     = vramUsed();
         format();
     }
     uint32_t ram = ramUsed(false);
