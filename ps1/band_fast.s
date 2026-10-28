@@ -9,7 +9,8 @@
 # PS1BandAsmCtx (PS1Layers.cpp), byte offsets:
 #   0 w, 4 lim, 8 end, 12 page, 16 chunk (u16 *), 20 sub, 24 tx, 28 xsize, 32 chunkRow, 36 rowSel, 40 sx, 44 yWord,
 #   48 tileImage (u16 *), 52 images (6-byte records), 56 flipLive, 60 pieces, 64 frects, 68 ps1SegPool, 72 ps1RowPool,
-#   76 t (out), 80 flipCopies (9v.10: the scene has a copy of every flipped tile: a flipped tile goes to the C body)
+#   76 t (out), 80 flipCopies (9v.10: the scene has a copy of every flipped tile; ps1-ufo: a flipped tile's copy found in
+#   PS1TileHFlipImage's cache is drawn here, a miss goes to the C body)
         .set noreorder
         .set noat
         .text
@@ -148,10 +149,41 @@ PS1BandFastAsm:
         addiu   $s0, $s0, 4             # (delay) ++w
 
 .Lflip:                                 # t3 = t & 0xC00
-        lw      $at, 80($a0)            # 9v.10: flip copies: the C body draws the tile's copy (before the flip rectangle)
+        lw      $at, 80($a0)            # 9v.10: flip copies: the tile's copy (before the flip rectangle)
         nop
-        bnez    $at, .Lbailpiece
+        beqz    $at, .Lnocopy
+        andi    $t2, $t1, 0x800         # (delay)
+        # ps1-ufo: the copy from PS1TileHFlipImage's cache (PS1Tiles.hpp: key t & 0x3FF, or t & 0xFFF with a V flip; entry
+        # key << 16 | image), an unflipped piece of that image; a miss or no copy: the C body (it fills the cache, counts)
+        beqz    $t2, 12f
+        andi    $t2, $t1, 0x3FF         # (delay) key
+        andi    $t2, $t1, 0xFFF
+12:     srl     $t3, $t2, 6
+        xor     $t3, $t3, $t2
+        andi    $t3, $t3, 63
+        sll     $t3, $t3, 2
+        lui     $at, %hi(_ZN4RSDK13ps1HFlipCacheE)
+        addu    $at, $at, $t3
+        lw      $t3, %lo(_ZN4RSDK13ps1HFlipCacheE)($at)
         nop
+        srl     $at, $t3, 16
+        bne     $at, $t2, .Lbailpiece
+        andi    $t3, $t3, 0xFFFF        # (delay) the copy's image
+        beq     $t3, $t5, .Lbailpiece
+        sll     $t2, $t3, 1             # (delay)
+        sll     $t3, $t3, 2
+        addu    $t2, $t2, $t3
+        addu    $t2, $a3, $t2           # &images[copy]
+        lhu     $t3, 4($t2)             # clut
+        lhu     $t0, 0($t2)             # u | v << 8
+        lhu     $v0, 2($t2)             # tpage
+        bne     $t3, $t5, 13f
+        nop
+        li      $t3, 0x3C00             # an 8-bit copy: bank 0's row (as above)
+13:     sll     $t3, $t3, 16
+        b       .Lpiece
+        or      $t0, $t0, $t3           # (delay) tex
+.Lnocopy:
         bnez    $t4, .Llive
         andi    $t2, $t0, 0xFF          # (delay) u
         andi    $t3, $t1, 0x400
