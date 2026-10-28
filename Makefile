@@ -204,6 +204,9 @@ endif
 endif
 ifneq ($(DEBUG_OVERLAY),)
 CPPFLAGS += -DPS1_DEBUG_OVERLAY=1
+# its heap counters: every block psyqo's allocator hands out or takes back (operator new: ps1/libc/new_guard.cpp)
+LDFLAGS  += -Wl,--wrap,libc_malloc -Wl,--wrap,libc_free -Wl,--wrap,libc_realloc
+LDFLAGS  += -Wl,--wrap,_ZdlPv -Wl,--wrap,_ZdaPv -Wl,--wrap,_ZdlPvj -Wl,--wrap,_ZdaPvj
 endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
@@ -222,7 +225,7 @@ PS1_BOOT_OBJS    := ps1/rsdk5_main.o ps1/gpu_detect.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 # (Drawing.o: it includes Graphics/PS1/PS1RenderDevice.cpp, which has no object of its own)
 PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/perf_hud.o
-PS1_OVL_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/gpu_chain.o ps1/debug_overlay.o
+PS1_OVL_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/gpu_chain.o ps1/debug_overlay.o ps1/libc/new_guard.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
 PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o \
                     SonicMania/Objects/UFO/UFO_Decoration.o SonicMania/Objects/UFO/UFO_Shadow.o
@@ -263,6 +266,8 @@ LDFLAGS  += -Wl,--gc-sections
 ps1/mdec.o: CPPFLAGS += -O2
 # Renderer hot paths (tile bands, chain appends): speed over size.
 ps1/gpu_chain.o: CPPFLAGS += -O2
+# the debug overlay's once-a-second rebuild and log line (a DEBUG_OVERLAY=1 build only)
+ps1/debug_overlay.o: CPPFLAGS += -O2
 # docs/32 7.3: the 3D draw (an overlay's: speed over size)
 RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o ps1/gte3d.o RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o: CPPFLAGS += -O2
 # docs/32 7.3: the UFO stage's objects (an overlay: no resident RAM) call abs() inline (~20 hblanks a frame as calls)

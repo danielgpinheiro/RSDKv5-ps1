@@ -62,6 +62,7 @@ void PS1ChainAllocTrim(uint32_t *end);
 void PS1ChainLinkList(uint32_t *first, uint32_t *last, int lastWords);
 #if PS1_DEBUG_OVERLAY
 bool PS1ChainStaticBegin(); // before a static list's rewrite + PS1ChainLinkList (ps1/debug_overlay.cpp); false: no arena
+uint32_t PS1ChainExtraBytes(); // the chain's extra block from STG's tail (0: none this scene)
 #endif
 uint32_t *PS1ChainBulkBegin(int n, int wpp);
 void PS1ChainBulkEnd(int used);

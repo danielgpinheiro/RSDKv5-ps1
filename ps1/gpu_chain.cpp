@@ -419,6 +419,7 @@ bool PS1ChainStaticBegin() {
     arenaReady();
     return true;
 }
+uint32_t PS1ChainExtraBytes() { return s_extraWords * 4; } // the block STG lends the chain this scene (4.2d)
 #endif
 
 void PS1ChainSprite16(const psyqo::Prim::Sprite16x16 &s) {

@@ -3,9 +3,9 @@
 # PCSX-Redux; these F lines come through GDB on both emulators). Stops at frames 600, 900 and 1200 (g_ps1TestStops: no
 # per-frame breakpoint). Options, set before this script (a wrapper that sources it): $cap = 1 starts capped
 # (g_ps1Uncapped 0: 30 fps, two logic steps; BOOT= builds start uncapped); $hide = 1 hides the overlay from frame 900
-# (the on / off A/B: frames 600-900 against 900-1200 of the same run).
+# (the on / off A/B: frames 600-900 against 900-1200 of the same run); $nolog = 1 without the [PERF] line.
 define ps1_ovl
-  printf "F %u fps=%u/%u logic=%u prims=%u bad=%u hbl=%u max=%u rebuild=%u log=%u vis=%u cpu=%u flip=%u\n", *(unsigned *)&::g_ps1PerfFrames, *(unsigned *)&::g_ps1DbgFps, *(unsigned *)&::g_ps1DbgTarget, *(unsigned *)&::g_ps1DbgLogic, *(unsigned *)&::g_ps1DbgPrims, *(unsigned *)&::g_ps1DbgBadPrims, *(unsigned *)&::g_ps1DbgHbl, *(unsigned *)&::g_ps1DbgHblMax, *(unsigned *)&::g_ps1DbgHblRebuild, *(unsigned *)&::g_ps1DbgHblLog, *(unsigned *)&::g_ps1DbgVisible, *(unsigned *)&::g_ps1PerfLastHbl, *(unsigned *)&::g_ps1PerfFlipHbl
+  printf "F %u fps=%u/%u logic=%u prims=%u bad=%u hbl=%u max=%u measure=%u rebuild=%u log=%u vis=%u cpu=%u flip=%u\n", *(unsigned *)&::g_ps1PerfFrames, *(unsigned *)&::g_ps1DbgFps, *(unsigned *)&::g_ps1DbgTarget, *(unsigned *)&::g_ps1DbgLogic, *(unsigned *)&::g_ps1DbgPrims, *(unsigned *)&::g_ps1DbgBadPrims, *(unsigned *)&::g_ps1DbgHbl, *(unsigned *)&::g_ps1DbgHblMax, *(unsigned *)&::g_ps1DbgHblMeasure, *(unsigned *)&::g_ps1DbgHblRebuild, *(unsigned *)&::g_ps1DbgHblLog, *(unsigned *)&::g_ps1DbgVisible, *(unsigned *)&::g_ps1PerfLastHbl, *(unsigned *)&::g_ps1PerfFlipHbl
 end
 tbreak main
 commands
@@ -15,6 +15,9 @@ set var g_ps1TestStops[1] = 900
 set var g_ps1TestStops[2] = 1200
 if !$_isvoid($cap)
   set var g_ps1Uncapped = 0
+end
+if !$_isvoid($nolog)
+  set var g_ps1DbgLog = 0
 end
 continue
 end
