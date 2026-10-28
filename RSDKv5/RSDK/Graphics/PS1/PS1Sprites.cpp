@@ -212,6 +212,19 @@ bool PS1PcClipRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, in
     if (!(rotation & 0x1FF))
         angle = rotation & 0x1FF;
     int32 sine = sin512LookupTable[angle], cosine = cos512LookupTable[angle];
+    int32 left = currentScreen->pitch, right = 0, top = currentScreen->size.y, bottom = 0;
+    if (!sine && cosine == 512) { // ps1-ufo: scaled only (UFO rings / spheres): the same corners, the zero terms left out
+        const int32 sx = scaleX * 512 >> 9, sy = scaleY * 512 >> 9;
+        const int32 xa = x + ((direction == FLIP_X ? sx * (2 - pivotX) : sx * (pivotX - 2)) >> 9);
+        const int32 xb = x + (sx * (direction == FLIP_X ? -2 - pivotX - w : pivotX + 2 + w) >> 9);
+        const int32 ya = y + (sy * (pivotY - 2) >> 9), yb = y + (sy * (pivotY + 2 + h) >> 9);
+        left = xa < left ? xa : left, left = xb < left ? xb : left;
+        right = xa > right ? xa : right, right = xb > right ? xb : right;
+        top = ya < top ? ya : top, top = yb < top ? yb : top;
+        bottom = ya > bottom ? ya : bottom, bottom = yb > bottom ? yb : bottom;
+        goto clip;
+    }
+    {
     int32 fullScaleXS = scaleX * sine >> 9, fullScaleXC = scaleX * cosine >> 9;
     int32 fullScaleYS = scaleY * sine >> 9, fullScaleYC = scaleY * cosine >> 9;
     int32 posX[4], posY[4], xMax, scaledX1, scaledX2, scaledY1, scaledY2;
@@ -231,13 +244,14 @@ bool PS1PcClipRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, in
     posX[1] = x + ((scaledXMaxC + scaledY1) >> 9), posY[1] = y + ((scaledY2 - scaledXMaxS) >> 9);
     posX[2] = x + ((scaledYMaxS + scaledX2) >> 9), posY[2] = y + ((scaledYMaxC - scaledX1) >> 9);
     posX[3] = x + ((scaledXMaxC + scaledYMaxS) >> 9), posY[3] = y + ((scaledYMaxC - scaledXMaxS) >> 9);
-    int32 left = currentScreen->pitch, right = 0, top = currentScreen->size.y, bottom = 0;
     for (int32 i = 0; i < 4; ++i) {
         left   = posX[i] < left ? posX[i] : left;
         right  = posX[i] > right ? posX[i] : right;
         top    = posY[i] < top ? posY[i] : top;
         bottom = posY[i] > bottom ? posY[i] : bottom;
     }
+    }
+clip:
     left   = left < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : left;
     right  = right > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : right;
     top    = top < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : top;
@@ -391,6 +405,12 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
     int32 X0 = fx ? -pivotX - w : pivotX, X1 = X0 + w, Y0 = pivotY, Y1 = pivotY + h;
     int32 xs[2] = { X0, X1 }, ys[2] = { Y0, Y1 };
     int32 minX = 0x7FFFFFFF, minY = 0x7FFFFFFF, maxX = -0x7FFFFFFF, maxY = -0x7FFFFFFF;
+    if (!s && c == 512) { // ps1-ufo: scaled only: the same corners, the zero terms left out
+        const int32 xa = x + (X0 * sxc >> 9), xb = x + (X1 * sxc >> 9), ya = y + (Y0 * syc >> 9), yb = y + (Y1 * syc >> 9);
+        cx[0] = cx[2] = xa, cx[1] = cx[3] = xb, cy[0] = cy[1] = ya, cy[2] = cy[3] = yb;
+        minX = xa < xb ? xa : xb, maxX = xa < xb ? xb : xa, minY = ya < yb ? ya : yb, maxY = ya < yb ? yb : ya;
+    }
+    else
     for (int32 k = 0; k < 4; ++k) {
         int32 X = xs[k & 1], Y = ys[k >> 1];
         cx[k] = x + ((X * sxc + Y * sys) >> 9);
