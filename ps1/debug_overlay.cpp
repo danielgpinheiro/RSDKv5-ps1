@@ -178,6 +178,21 @@ constexpr GlyphIndex makeGlyphIndex()
     return t;
 }
 constexpr GlyphIndex kGlyphIndex = makeGlyphIndex();
+// each glyph rectangle as the rebuild uses it, one word: x | y << 16 (its place in the cell, added to the cell's GPU
+// position word) | w << 3 | h << 19 (the size word after >> 3) | hole << 31
+struct GlyphWords {
+    uint32_t of[sizeof(kDbgGlyphRects) / sizeof(kDbgGlyphRects[0])];
+};
+constexpr GlyphWords makeGlyphWords()
+{
+    GlyphWords t{};
+    for (unsigned r = 0; r < sizeof(t.of) / sizeof(t.of[0]); ++r) {
+        uint32_t v = kDbgGlyphRects[r];
+        t.of[r]    = (v & 7) | (v >> 3 & 7) << 16 | ((v >> 6 & 7) + 1) << 3 | ((v >> 9 & 7) + 1) << 19 | (v >> 12 & 1) << 31;
+    }
+    return t;
+}
+constexpr GlyphWords kGlyphWords = makeGlyphWords();
 constexpr int rectsOf(char c) { return kDbgGlyphStart[glyphOf(c) + 1] - kDbgGlyphStart[glyphOf(c)]; }
 constexpr int rectsOf(const char *s)
 {
@@ -208,7 +223,7 @@ constexpr int maxDigitRects()
 // --- layout: 5x7 glyphs in 6 x 8 cells, a 2-pixel margin inside the box, the box's top-right corner at (304, 16): inside
 // the TV's overscan, clear of Mania's HUD and PERF_HUD (both top-left)
 constexpr int CELL = 6, PITCH = 8, MARGIN = 2, RIGHT = 304, TOP = 16;
-constexpr uint32_t BOX_BGR = 0x000000, TEXT_BGR = 0xF0F0F0; // GP0 colours (BGR)
+constexpr uint32_t BOX_BGR = 0x000000, TEXT_BGR = 0xF0F0F0, SLOW_BGR = 0x00F0F0; // GP0 colours (BGR): black, white, yellow
 constexpr int FPS_W = 2;                                     // shown frames a second: up to 99
 constexpr uint32_t RAM_KB = PS1_DBG_RAM_KB;
 constexpr int RAM_W       = digitsOf(RAM_KB); // the used field as wide as the total
@@ -242,6 +257,9 @@ constexpr int FRAGS     = (MAX_RECTS + PER_FRAG - 1) / PER_FRAG;
 constexpr int LIST_WORDS = FRAGS + 3 * MAX_RECTS;                // a header a fragment, 3 words a rectangle
 
 uint32_t s_list[LIST_WORDS];
+} // namespace
+extern "C" const uint16_t g_ps1DbgBox[4] = { BOX_X, BOX_Y, BOX_W, BOX_H }; // (tools/play/overlay_ab.sh: the box's pixels)
+namespace {
 uint32_t *s_last    = nullptr; // the list's last fragment header (psyqo writes it when the next fragment is chained)
 int s_lastWords     = 0;
 char s_text[LINES][maxChars() + 1];
@@ -250,9 +268,10 @@ bool s_started      = false;
 bool s_comboHeld    = false;
 // the [PERF] line: formatted on one frame, written over the next ones in chunks (the TTY write is the slow part)
 constexpr int LOG_CHUNK = 96;
-char s_log[400];
+char s_log[384]; // (a line: ~330 characters)
 int s_logLen = 0, s_logPos = 0;
-int s_logStep = 0; // 0: nothing to do, 1: to format, 2: writing
+int s_logStep = 0; // 0: nothing to do, 1 / 2: to format (its two halves, a frame each), 3: writing
+uint32_t s_lastVbl = 0;
 uint32_t s_winVbl = 0xFFFFFFFF, s_winFrames = 0, s_winSteps = 0, s_winLoads = 0;
 
 // v right-aligned in `width` cells (blank cells before it); clamped to what fits
@@ -362,50 +381,46 @@ void format()
     *p      = 0;
 }
 
-// The list from s_text: the box, then each glyph's rectangles, four to a fragment (headers linking each to the next; the
-// last one's psyqo writes). Only after PS1ChainStaticBegin: the last frame's chain no longer reads these words.
-struct Writer {
-    uint32_t *w, *hdr;
-    int k, n;
-    void rect(uint32_t bgr, int x, int y, int wd, int ht)
-    {
-        if (!hdr || k == PER_FRAG) {
+// The list from s_text: the box, then each glyph's rectangles, four to a fragment (each header linking to the next; the
+// last one's psyqo writes). Only after PS1ChainStaticBegin: the last frame's chain no longer reads these words. The FPS
+// line in yellow while the rate is under the target. (-O2 for this one, -Os elsewhere: the rebuild at half the time,
+// GHZ1 13 -> 6 hblanks, for a few hundred bytes; the whole object at -O2 took 7 KB more for 2-3 hblanks of the rest.)
+__attribute__((optimize("O2"))) void rebuild()
+{
+    uint32_t *w = s_list, *hdr = nullptr;
+    int k = PER_FRAG, n = 0;
+    auto put = [&](uint32_t cmd, uint32_t xy, uint32_t wh) {
+        if (k == PER_FRAG) {
             if (hdr)
-                *hdr = (uint32_t)(3 * k) << 24 | ((uintptr_t)w & 0xFFFFFF);
+                *hdr = (uint32_t)(3 * PER_FRAG) << 24 | ((uintptr_t)w & 0xFFFFFF);
             hdr = w++;
             k   = 0;
         }
-        w[0] = 0x60000000 | bgr;
-        w[1] = (uint32_t)y << 16 | (uint16_t)x;
-        w[2] = (uint32_t)ht << 16 | (uint16_t)wd;
+        w[0] = cmd, w[1] = xy, w[2] = wh;
         w += 3, ++k, ++n;
-    }
-};
-
-void rebuild()
-{
-    Writer o = { s_list, nullptr, 0, 0 };
-    o.rect(BOX_BGR, BOX_X, BOX_Y, BOX_W, BOX_H);
+    };
+    const uint32_t box = 0x60000000 | BOX_BGR;
+    put(box, (uint32_t)BOX_Y << 16 | BOX_X, (uint32_t)BOX_H << 16 | BOX_W);
     for (int l = 0; l < LINES; ++l) {
-        int x = BOX_X + MARGIN, y = BOX_Y + MARGIN + l * PITCH;
-        for (const char *c = s_text[l]; *c; ++c, x += CELL) {
+        const uint32_t text = 0x60000000 | (l == 0 && g_ps1DbgFps < g_ps1DbgTarget ? SLOW_BGR : TEXT_BGR);
+        uint32_t xy         = (uint32_t)(BOX_Y + MARGIN + l * PITCH) << 16 | (BOX_X + MARGIN);
+        for (const char *c = s_text[l]; *c; ++c, xy += CELL) {
             unsigned i = (unsigned)(uint8_t)*c - 32;
             int g      = i < 96 ? kGlyphIndex.of[i] : kDbgGlyphCount - 1;
             for (int r = kDbgGlyphStart[g]; r < kDbgGlyphStart[g + 1]; ++r) {
-                uint16_t v = kDbgGlyphRects[r];
-                o.rect(v >> 12 & 1 ? BOX_BGR : TEXT_BGR, x + (v & 7), y + (v >> 3 & 7), (v >> 6 & 7) + 1, (v >> 9 & 7) + 1);
+                uint32_t v = kGlyphWords.of[r];
+                put(v >> 31 ? box : text, xy + (v & 0x70007), v >> 3 & 0x70007);
             }
         }
     }
-    s_last      = o.hdr;
-    s_lastWords = 3 * o.k;
-    g_ps1DbgPrims = (uint32_t)o.n;
-    uint32_t bad  = 0;
-    for (uint32_t *f = s_list; f; f = f == s_last ? nullptr : (uint32_t *)(0x80000000 | (*f & 0xFFFFFF))) {
-        int words = f == s_last ? s_lastWords : (int)(*f >> 24);
-        for (int i = 0; i < words; i += 3)
-            bad += (f[1 + i] >> 24) != 0x60;
-    }
+    s_last        = hdr;
+    s_lastWords   = 3 * k;
+    g_ps1DbgPrims = (uint32_t)n;
+    // the list holds GP0 60h rectangles and nothing else (no texture, CLUT, texpage or drawing-mode command)
+    uint32_t bad = 0;
+    for (uint32_t *f = s_list; f < w; f += 1 + 3 * PER_FRAG)
+        for (int j = 0; j < PER_FRAG && f + 1 + 3 * j < w; ++j)
+            bad += (f[1 + 3 * j] >> 24) != 0x60;
     g_ps1DbgBadPrims = bad;
 }
 
@@ -431,50 +446,53 @@ void measure(uint32_t vblanks, uint32_t rate)
     g_ps1DbgSpu     = spuUsed();
 }
 
-// A [PERF] line builder: integers only, no printf (the port's vsnprintf, float support included, took ~15 hblanks)
-struct Line {
-    char *p, *end;
-    Line &s(const char *t)
-    {
-        while (*t && p < end) *p++ = *t++;
-        return *this;
-    }
-    Line &u(uint32_t v)
-    {
+// The [PERF] line: integers only, no printf (the port's vsnprintf, float support included, took ~15 hblanks a line).
+// A format string's %u takes the next value, %k the next value in bytes as KB (rounded); the rest is copied.
+char *logPut(char *p, const char *f, const uint32_t *v)
+{
+    char *end = s_log + sizeof(s_log) - 1;
+    while (*f && p < end) {
+        if (f[0] != '%' || (f[1] != 'u' && f[1] != 'k')) {
+            *p++ = *f++;
+            continue;
+        }
+        uint32_t x = f[1] == 'k' ? kb(*v++) : *v++;
         char d[10];
         int n = 0;
-        do d[n++] = (char)('0' + v % 10);
-        while ((v /= 10) && n < 10);
+        do d[n++] = (char)('0' + x % 10);
+        while ((x /= 10) && n < 10);
         while (n && p < end) *p++ = d[--n];
-        return *this;
+        f += 2;
     }
-    Line &k(const char *key, uint32_t bytes) { return s(key).u(kb(bytes)); } // " key=KB"
-};
+    return p;
+}
 
-void logFormat()
+// The line in two halves, a frame each: its start (frames, main RAM), then the rest (VRAM, SPU, the overlay's own).
+// (KB unless B; text / data / bss: the EXE's, data = rodata + data; reverb: its work area's bytes, 0 = off)
+void logStart()
 {
-    // (KB unless B; text / data / bss: the EXE's, data = rodata + data)
     uint32_t ram = g_ps1DbgRamUsed, rsvTop = g_ps1ReserveEnd > g_ps1ReserveHigh ? g_ps1ReserveEnd - g_ps1ReserveHigh : 0;
-    Line l   = { s_log, s_log + sizeof(s_log) - 1 };
-    l.s("[PERF] t=").u(g_ps1DbgSeconds).s(" fps=").u(g_ps1DbgFps).s("/").u(g_ps1DbgTarget).s(" logic=").u(g_ps1DbgLogic);
-    l.k(" ram=", ram).s("/").u(RAM_KB).s("K ").u(pct(ram, RAM_KB * 1024)).s("%").k(" peak=", g_ps1DbgRamPeak);
-    l.k(" kern=", (uint32_t)(uintptr_t)&__ftext_start - 0x80000000).k(" text=", (uint32_t)(&__text_end - &__ftext_start));
-    l.k(" data=", (uint32_t)(&__data_end - &__fdata_start)).k(" bss=", (uint32_t)(&__bss_end - &__bss_start));
-    l.k(" heap=", g_ps1DbgHeap).k(" hpeak=", g_ps1DbgHeapTop).k(" stg=", g_ps1DbgStg).k(" stgfree=", g_ps1DbgStgFree);
-    l.k(" rsvtop=", rsvTop).k(" lent=", g_ps1DbgLent).k(" stack=", PS1_STACK_RESERVE).s(" su=").u(g_ps1StackUnused).s("B");
-    l.k(" vram=", g_ps1DbgVram).s("/").u(VRAM_KB).s("K ").u(pct(g_ps1DbgVram, VRAM_KB * 1024)).s("%").k(" fb=", VRAM_FB);
-    l.k(" tiles=", g_ps1DbgVramTiles).k(" atlas=", g_ps1DbgVramAtlas).k(" groups=", g_ps1DbgVramGroups);
-    l.s(" clut=").u(g_ps1DbgVramClut).s("B");
-    l.k(" spu=", g_ps1DbgSpu).s("/").u(SPU_KB).s("K ").u(pct(g_ps1DbgSpu, SPU_AVAIL)).s("%").s(" spures=").u(SPU_RESERVED);
-    l.s("B reverb=");
-    if (g_ps1DbgReverb)
-        l.u(g_ps1DbgReverb).s("B");
-    else
-        l.s("off");
-    l.s(" overlay_vram=0 overlay_prims=").u(g_ps1DbgPrims).s("/").u(MAX_RECTS).s(" overlay_buf=").u(sizeof(s_list));
-    l.s("B overlay_hbl=").u(g_ps1DbgHblMeasure).s("/").u(g_ps1DbgHblRebuild).s("/").u(g_ps1DbgHblLog);
-    l.s("/").u(g_ps1DbgHblMax).s("\n");
-    s_logLen = (int)(l.p - s_log);
+    const uint32_t v[] = { g_ps1DbgSeconds, g_ps1DbgFps, g_ps1DbgTarget, g_ps1DbgLogic, ram, RAM_KB, pct(ram, RAM_KB * 1024),
+                           g_ps1DbgRamPeak, (uint32_t)(uintptr_t)&__ftext_start - 0x80000000,
+                           (uint32_t)(&__text_end - &__ftext_start), (uint32_t)(&__data_end - &__fdata_start),
+                           (uint32_t)(&__bss_end - &__bss_start), g_ps1DbgHeap, g_ps1DbgHeapTop, g_ps1DbgStg, g_ps1DbgStgFree,
+                           rsvTop, g_ps1DbgLent, PS1_STACK_RESERVE, g_ps1StackUnused };
+    s_logLen = (int)(logPut(s_log,
+                            "[PERF] t=%u fps=%u/%u logic=%u ram=%k/%uK %u% peak=%k kern=%k text=%k data=%k bss=%k heap=%k "
+                            "hpeak=%k stg=%k stgfree=%k rsvtop=%k lent=%k stack=%k su=%uB",
+                            v) - s_log);
+}
+
+void logRest()
+{
+    const uint32_t v[] = { g_ps1DbgVram, VRAM_KB, pct(g_ps1DbgVram, VRAM_KB * 1024), VRAM_FB, g_ps1DbgVramTiles,
+                           g_ps1DbgVramAtlas, g_ps1DbgVramGroups, g_ps1DbgVramClut, g_ps1DbgSpu, SPU_KB,
+                           pct(g_ps1DbgSpu, SPU_AVAIL), SPU_RESERVED, g_ps1DbgReverb, g_ps1DbgPrims, MAX_RECTS,
+                           sizeof(s_list), g_ps1DbgHblMeasure, g_ps1DbgHblRebuild, g_ps1DbgHblLog, g_ps1DbgHblMax };
+    s_logLen = (int)(logPut(s_log + s_logLen,
+                            " vram=%k/%uK %u% fb=%k tiles=%k atlas=%k groups=%k clut=%uB spu=%k/%uK %u% spures=%uB reverb=%u "
+                            "overlay_vram=0 overlay_prims=%u/%u overlay_buf=%uB overlay_hbl=%u/%u/%u/%u\n",
+                            v) - s_log);
     s_logPos = 0;
 }
 
@@ -500,9 +518,11 @@ void PS1DebugOverlayFrame(bool draw)
     uint32_t ram = ramUsed(false);
     if (ram > g_ps1DbgRamPeak)
         g_ps1DbgRamPeak = ram;
-    // a window starts again after a load (no frame is shown while it runs: the seconds of a load are not a frame rate)
-    // (a window counts the frames shown after its first vblank, its first frame's)
-    if (s_winLoads != g_ps1LoadingLoads || s_winVbl == 0xFFFFFFFF)
+    // a window starts again after a load or any frame longer than a second (a video plays inside one: the game shows no
+    // frame of its own meanwhile; such seconds are not a frame rate). It counts the frames shown after its first one.
+    bool stall = vbl - s_lastVbl > rate;
+    s_lastVbl  = vbl;
+    if (s_winLoads != g_ps1LoadingLoads || s_winVbl == 0xFFFFFFFF || stall)
         s_winVbl = vbl, s_winFrames = 0, s_winSteps = g_ps1StepsTotal, s_winLoads = g_ps1LoadingLoads;
     else
         ++s_winFrames;
@@ -522,9 +542,12 @@ void PS1DebugOverlayFrame(bool draw)
         PS1ChainLinkList(s_list, s_last, s_lastWords);
     }
     if (!measured && !rebuilt && s_logStep) { // the log line's part for this frame
-        if (s_logStep == 1) {
-            logFormat();
-            s_logStep = 2;
+        if (s_logStep < 3) {
+            if (s_logStep == 1)
+                logStart();
+            else
+                logRest();
+            s_logStep = s_logStep + 1;
         }
         else {
             int n = s_logLen - s_logPos < LOG_CHUNK ? s_logLen - s_logPos : LOG_CHUNK;

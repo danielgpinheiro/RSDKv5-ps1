@@ -5,7 +5,7 @@
 # (g_ps1Uncapped 0: 30 fps, two logic steps; BOOT= builds start uncapped); $hide = 1 hides the overlay from frame 900
 # (the on / off A/B: frames 600-900 against 900-1200 of the same run); $nolog = 1 without the [PERF] line.
 define ps1_ovl
-  printf "F %u fps=%u/%u logic=%u prims=%u bad=%u hbl=%u max=%u measure=%u rebuild=%u log=%u vis=%u cpu=%u flip=%u\n", *(unsigned *)&::g_ps1PerfFrames, *(unsigned *)&::g_ps1DbgFps, *(unsigned *)&::g_ps1DbgTarget, *(unsigned *)&::g_ps1DbgLogic, *(unsigned *)&::g_ps1DbgPrims, *(unsigned *)&::g_ps1DbgBadPrims, *(unsigned *)&::g_ps1DbgHbl, *(unsigned *)&::g_ps1DbgHblMax, *(unsigned *)&::g_ps1DbgHblMeasure, *(unsigned *)&::g_ps1DbgHblRebuild, *(unsigned *)&::g_ps1DbgHblLog, *(unsigned *)&::g_ps1DbgVisible, *(unsigned *)&::g_ps1PerfLastHbl, *(unsigned *)&::g_ps1PerfFlipHbl
+  printf "F %u fps=%u/%u logic=%u prims=%u bad=%u hbl=%u max=%u measure=%u rebuild=%u log=%u vis=%u cpu=%u flip=%u ram=%u stgfree=%u vram=%u spu=%u\n", *(unsigned *)&::g_ps1PerfFrames, *(unsigned *)&::g_ps1DbgFps, *(unsigned *)&::g_ps1DbgTarget, *(unsigned *)&::g_ps1DbgLogic, *(unsigned *)&::g_ps1DbgPrims, *(unsigned *)&::g_ps1DbgBadPrims, *(unsigned *)&::g_ps1DbgHbl, *(unsigned *)&::g_ps1DbgHblMax, *(unsigned *)&::g_ps1DbgHblMeasure, *(unsigned *)&::g_ps1DbgHblRebuild, *(unsigned *)&::g_ps1DbgHblLog, *(unsigned *)&::g_ps1DbgVisible, *(unsigned *)&::g_ps1PerfLastHbl, *(unsigned *)&::g_ps1PerfFlipHbl, *(unsigned *)&::g_ps1DbgRamUsed, *(unsigned *)&::g_ps1DbgStgFree, *(unsigned *)&::g_ps1DbgVram, *(unsigned *)&::g_ps1DbgSpu
 end
 tbreak main
 commands

@@ -267,8 +267,6 @@ LDFLAGS  += -Wl,--gc-sections
 ps1/mdec.o: CPPFLAGS += -O2
 # Renderer hot paths (tile bands, chain appends): speed over size.
 ps1/gpu_chain.o: CPPFLAGS += -O2
-# the debug overlay's once-a-second rebuild and log line (a DEBUG_OVERLAY=1 build only)
-ps1/debug_overlay.o: CPPFLAGS += -O2
 # docs/32 7.3: the 3D draw (an overlay's: speed over size)
 RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o ps1/gte3d.o RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o: CPPFLAGS += -O2
 # docs/32 7.3: the UFO stage's objects (an overlay: no resident RAM) call abs() inline (~20 hblanks a frame as calls)
