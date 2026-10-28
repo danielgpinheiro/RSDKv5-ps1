@@ -8,8 +8,10 @@
 # Output: build/dev/SonicMania-PS1-DEV.bin / .cue, with rsdkv5.elf and the overlay ELFs (GDB symbols).
 # Run it with the emulator's 8 MB RAM option on (DuckStation: Settings > Console > Enable 8MB RAM; PCSX-Redux:
 # Configuration > Emulation > 8MB), off again for the stock discs; with 2 MB it stops at a red screen.
-# Harness runs (tools/emu.sh reads the EXE and the disc from the current directory) start in the shadow.
-# Usage: tools/dev_disc.sh [BOOT=c,i] [other make switches]
+# Harness runs (tools/emu.sh reads the EXE and the disc from the current directory) start in the shadow, so
+# KEEP_SHADOW=1 keeps it for tools/play/devmenu/run.sh (which deletes it when it ends); by default the shadow is deleted
+# once the disc is copied out (user 2026-10-28: delete the runs' copies after them; the next build is a full one).
+# Usage: [KEEP_SHADOW=1] tools/dev_disc.sh [BOOT=c,i] [other make switches]
 set -e
 cd "$(dirname "$0")/.."
 REPO=$PWD
@@ -45,4 +47,9 @@ sed 's/"game\.bin"/"SonicMania-PS1-DEV.bin"/' build/game.cue > "$OUT/SonicMania-
 cp rsdkv5.elf rsdkv5.ps-exe "$OUT/"
 for e in build/gen/ovl/*/*.elf; do cp "$e" "$OUT/ovl/"; done
 printf '%s %s\n' "$(cat "$PS1_VERSION_FILE")" "$*" > "$OUT/BUILD.txt"
-echo "dev disc: $OUT/SonicMania-PS1-DEV.cue ($(cat "$OUT/BUILD.txt"); shadow $SH)"
+if [ "${KEEP_SHADOW:-0}" = 1 ]; then
+  echo "dev disc: $OUT/SonicMania-PS1-DEV.cue ($(cat "$OUT/BUILD.txt"); shadow kept: $SH)"
+else
+  cd "$REPO" && rm -rf "$SH"
+  echo "dev disc: $OUT/SonicMania-PS1-DEV.cue ($(cat "$OUT/BUILD.txt"); shadow deleted)"
+fi

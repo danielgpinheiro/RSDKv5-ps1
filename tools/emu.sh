@@ -44,7 +44,7 @@ emu_gdb_header() {
 emu_restore() {
   [ -n "$EMU_BAK" ] || return 0
   if [ "$EMU" = ds ] && [ -f "$EMU_DS_HELD" ]; then cp "$EMU_DS_HELD" "$EMU_CFG" && rm -f "$EMU_DS_HELD"
-  elif [ -f "$EMU_BAK" ]; then cp "$EMU_BAK" "$EMU_CFG"; fi
+  elif [ -f "$EMU_BAK" ]; then cp "$EMU_BAK" "$EMU_CFG" && rm -f "$EMU_BAK"; fi
   EMU_BAK=
 }
 
@@ -165,4 +165,7 @@ emu_stop() {
     EMU_PID=
   fi
   emu_restore
+  # user 2026-10-28: what a run leaves goes when it ends. A slot's instance holds only run state (its settings copy,
+  # logs): emptied, the folder kept (the shims point at it; the next run copies the default settings again)
+  if [ -n "$EMU_SLOT" ] && [ -d "$EMU_SLOT_DIR" ]; then find "$EMU_SLOT_DIR" -mindepth 1 -delete; fi
 }

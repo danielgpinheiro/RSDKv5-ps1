@@ -11,14 +11,15 @@
 #     stamp) / 915
 #   DEVMENU_RUN=2mb (any dev disc, run with 2 MB: EMU_RAM=2mb): the RAM probe's verdict (g_ps1DevMenuBuild 2, init
 #     stopped) and a picture of the red screen (frame() clears it red every frame: GDB stops in psyqo's GPU::clear)
-# EMU=ds for DuckStation. No snapshot: the shadow copy is the run's tree.
+# EMU=ds for DuckStation. No snapshot: the shadow copy is the run's tree (`KEEP_SHADOW=1 tools/dev_disc.sh ...` keeps it
+# for this script), deleted when the run ends unless KEEP_SHADOW=1 (user 2026-10-28: delete the runs' copies after them).
 set -u
 R=$(cd "$(dirname "$0")/../../.." && pwd)
 OUT=$1
 SH=${2:-$(cd "$R/../.." && pwd)/work/shadow/mania-devmenu}
 mkdir -p "$(dirname "$OUT")"
 OUT=$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")
-[ -f "$SH/rsdkv5.ps-exe" ] && [ -f "$SH/build/game.cue" ] || { echo "no dev build in $SH: run tools/dev_disc.sh"; exit 1; }
+[ -f "$SH/rsdkv5.ps-exe" ] && [ -f "$SH/build/game.cue" ] || { echo "no dev build in $SH: run KEEP_SHADOW=1 tools/dev_disc.sh"; exit 1; }
 mipsel-none-elf-nm "$SH/rsdkv5.elf" | grep -q g_ps1DevMenuBuild || { echo "$SH/rsdkv5.elf is not a DEVMENU build"; exit 1; }
 rm -f "$OUT"_f*.bin "$OUT"_f*.png
 
@@ -134,3 +135,5 @@ for f in sorted(glob.glob(sys.argv[1] + '_f*_y*.bin')):
     im.save(f[:-4] + '.png')
     print('picture', f[:-4] + '.png')
 P
+rm -f "$OUT"_f*.bin
+case "${KEEP_SHADOW:-0}:$SH" in 1:*) ;; *"/work/shadow/"?*) rm -rf "$SH"; echo "shadow deleted: $SH" ;; esac

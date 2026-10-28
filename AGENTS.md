@@ -93,7 +93,8 @@ make BOOT=1,0 CAP=1 | FSKIP=1   # a BOOT= build starts uncapped: CAP=1 capped at
 make PS1_LOGS=1 | PERF_HUD=1 | PROFILE=1 | SAMPLE=1   # game logs kept / timing HUD / per-class CPU / PC sampler (EMU_RAM=8mb)
 tools/dev_disc.sh [BOOT=c,i]    # the DEVMENU=1 debug disc (8 MB link; Select opens the engine's stage select), built in
                                 # ../../work/shadow/mania-devmenu -> build/dev/SonicMania-PS1-DEV.cue; emulator 8 MB RAM on
-                                # (docs/ports/mania/32 "Stage Select dev menu"); dist / export refuse it; tools/play/devmenu/run.sh
+                                # (docs/ports/mania/32 "Stage Select dev menu"); dist / export refuse it; the shadow is
+                                # deleted after (KEEP_SHADOW=1 keeps it for tools/play/devmenu/run.sh, which deletes it)
 make UFO_NO_DECOR=0 UFO_NO_SHADOWS=0   # the UFO stages' stock look (both 1 by default)
 python3 tools/build_assets.py --rsdk Data.rsdk --exe ... --ovl ... --work W --out O   # the builder's whole pipeline
 tools/export_builder.sh ../Sonic-Mania-PS1-ISO-Builder   # refresh the builder (natural EXE only)
@@ -189,6 +190,16 @@ asks (or per verified step while the user is away).
 - Snapshot cleanup (`f0a83464`): run scripts delete the build snapshot they made (`tools/play/boss/snap.sh -d NAME`);
   `KEEP_SNAP=1` keeps it for `NOBUILD=1` reuse; making a snapshot prunes any older than `SNAP_DAYS` (3) days. Every new
   run script must do the same (228 GB had piled up).
+- Cleanup after runs (user 2026-10-28; `../../AGENTS.md` "Cleanup after runs"): once the results are read, delete what
+  the runs made:
+  - shadows (`../../work/shadow/<yours>`; `tools/dev_disc.sh` and `tools/play/devmenu/run.sh` delete theirs unless
+    `KEEP_SHADOW=1`);
+  - worktrees (`git worktree remove ../../work/worktrees/<yours>`), never one with uncommitted work;
+  - the emulator state: an `EMU_SLOT` run empties `../../emu/pcsx-redux-maniaN` when it ends (the folder stays), and
+    `EMU=redux` restores `pcsx.json` and deletes its backup.
+
+  `../../tests/run.py` deletes its own shadow and `tests/cache/mania/release.*` when it ends (`--keep` before a
+  `--no-build` run).
 - No Claude / AI attribution in commits or PRs (no `Co-Authored-By` trailer).
 
 ## GPU type and flip rectangles (2026-10-19, ledger MA-190)
