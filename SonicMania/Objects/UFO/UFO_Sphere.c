@@ -22,6 +22,13 @@ void UFO_Sphere_LateUpdate(void)
 {
     RSDK_THIS(UFO_Sphere);
 
+#if defined RETRO_PS1_BUILD
+    int32 w[3];
+    if (PS1GteCamSpace(UFO_Camera->matWorld.values, self->position.x, self->height, self->position.y, ps1UfoCamGen, w)) {
+        self->worldPos.x = w[0], self->worldPos.y = w[1], self->zdepth = w[2];
+        return;
+    }
+#endif
     int32 x = self->position.x >> 8;
     int32 y = self->height >> 8;
     int32 z = self->position.y >> 8;

@@ -8,6 +8,9 @@
 #include "Game.h"
 
 ObjectUFO_Camera *UFO_Camera;
+#if defined RETRO_PS1_BUILD
+uint32 ps1UfoCamGen = 0;
+#endif
 
 void UFO_Camera_Update(void) {}
 
@@ -18,6 +21,9 @@ void UFO_Camera_LateUpdate(void)
     StateMachine_Run(self->state);
 
     UFO_Camera_HandleCamPos();
+#if defined RETRO_PS1_BUILD
+    ++ps1UfoCamGen; // matWorld may have changed (only this object writes it): PS1GteCamSpace reloads it
+#endif
 }
 
 void UFO_Camera_StaticUpdate(void) {}
