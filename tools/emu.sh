@@ -148,8 +148,13 @@ PYEOF
     # emulation, GDB stub and VRAM are the same (timings are emulated). EMU_UI=1: with its window, as before
     local ui=-no-ui
     [ "${EMU_UI:-0}" = 1 ] && ui=
+    # EMU_LOG=FILE: the emulator's log, the game's TTY included (a DEBUG_OVERLAY build's [PERF] lines, docs/ports/mania/32
+    # "Debug overlay"), to FILE; EMU_WEB=1: its web server (tools/vramshot.py's VRAM dumps)
+    local extra=()
+    [ -n "${EMU_LOG:-}" ] && extra+=(-logfile "$EMU_LOG")
+    [ "${EMU_WEB:-0}" = 1 ] && extra+=(-webserver)
     "$EMU_PCSX" $ui -NSAppSleepDisabled YES $boot -interpreter -debugger -gdb -gdb-port $gport $portable $ram -memcard1 "$mc1" -memcard2 "$mc2" \
-      -iso build/game.cue >/dev/null 2>&1 < /dev/null &
+      ${extra[@]+"${extra[@]}"} -iso build/game.cue >/dev/null 2>&1 < /dev/null &
     EMU_PID=$!
     sleep 4
   fi

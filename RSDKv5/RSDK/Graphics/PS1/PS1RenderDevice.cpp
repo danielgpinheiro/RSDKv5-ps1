@@ -121,6 +121,9 @@ void RSDK::PS1FrameStart(bool clear)
 #if PS1_PERF_HUD
 void PS1PerfHudDraw(); // ps1/perf_hud.cpp (docs/ports/mania/32 9f)
 #endif
+#if PS1_DEBUG_OVERLAY
+void PS1DebugOverlayFrame(bool draw); // ps1/debug_overlay.cpp (docs/ports/mania/32 "Debug overlay")
+#endif
 extern "C" {
 extern void (*g_ps1VersionDraw)(uint32_t colour, int32_t aR, int32_t aG, int32_t aB); // ps1/version_text.cpp
 extern uint32_t g_ps1VersionFade[4];
@@ -135,6 +138,9 @@ void RSDK::PS1RenderEndFrame()
     g_ps1VersionFade[1] = g_ps1VersionFade[2] = g_ps1VersionFade[3] = 0;
 #if PS1_PERF_HUD
     PS1PerfHudDraw();
+#endif
+#if PS1_DEBUG_OVERLAY
+    PS1DebugOverlayFrame(sceneInfo.state != ENGINESTATE_VIDEOPLAYBACK); // FPS / RAM / VRAM / SPU on top; not over a video
 #endif
     if (g_ps1FlipFrameUsed) { // docs/perf/43 G3: whatever draws after the frame (loading icon, video) starts without flip bits
         g_ps1FlipFrameUsed = false;

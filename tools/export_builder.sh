@@ -4,7 +4,7 @@
 # the decompilation's object sources the atlas tools read (builder/SonicMania/Objects, with their license) and the
 # Dreamcast port's mesh optimiser (MIT, built on the user's machine). No game data. The builder's own files
 # (build_iso.py, README.md, LICENSE.md, licenses/, requirements.txt) live in its repository and are not touched here.
-# The executable must be the natural game (`make`, not a BOOT= / PROFILE / SAMPLE / PERF_HUD / DEVMENU / 8 MB link).
+# The executable must be the natural game (`make`, not a BOOT= / PROFILE / SAMPLE / PERF_HUD / DEVMENU / DEBUG_OVERLAY / 8 MB link).
 # Usage: tools/export_builder.sh DEST   (e.g. ../Sonic-Mania-PS1-ISO-Builder)
 set -e
 DEST=${1:?usage: tools/export_builder.sh DEST}
@@ -18,6 +18,8 @@ if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "rsdkv5.ps
 # the DEVMENU debug build (8 MB, docs/ports/mania/32 "Stage Select dev menu"): its stamp, its marker, the EXE's stack, each alone
 if [ -n "$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "a DEVMENU= build: run make first"; exit 1; fi
 if mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DevMenuBuild; then echo "rsdkv5.elf holds the dev menu (DEVMENU=): run make first"; exit 1; fi
+if [ -n "$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then
+  echo "a DEBUG_OVERLAY= build: run make first"; exit 1; fi
 if [ "$(od -An -tx4 -j48 -N4 rsdkv5.ps-exe | tr -d ' ')" != "801fff00" ]; then echo "rsdkv5.ps-exe's stack is not the 2 MB one: run make first"; exit 1; fi
 OPTSRC=${DC_MESH_OPT_SRC:-../../Dreamcast/mania-mesh-optimizer}
 [ -f "$OPTSRC/CMakeLists.txt" ] || { echo "the mesh optimiser's sources are not at $OPTSRC (DC_MESH_OPT_SRC=)"; exit 1; }

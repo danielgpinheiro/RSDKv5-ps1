@@ -88,6 +88,12 @@ ps1/pad.cpp \
 ifneq ($(DEVMENU),)
 PS1_SRCS += ps1/dev_menu.cpp
 endif
+# `make DEBUG_OVERLAY=1` (docs/ports/mania/32 "Debug overlay"): FPS, main RAM, VRAM and SPU RAM in the top-right corner as
+# flat rectangles (no VRAM), L2 + R2 hides / shows it, and a [PERF] TTY line a second (ps1/debug_overlay.cpp). A debug
+# build: `make dist` and tools/export_builder.sh refuse it.
+ifneq ($(DEBUG_OVERLAY),)
+PS1_SRCS += ps1/debug_overlay.cpp
+endif
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 
@@ -196,6 +202,9 @@ ifneq ($(SAMPLE),)
 $(error DEVMENU=1 links at 8 MB: the PC sampler's histogram (0x80400000, ps1/pc_sampler.cpp) would sit inside STG)
 endif
 endif
+ifneq ($(DEBUG_OVERLAY),)
+CPPFLAGS += -DPS1_DEBUG_OVERLAY=1
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -211,7 +220,9 @@ LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(LINK_RAM) -Wl,-Map,rsdkv5.map
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
 PS1_BOOT_OBJS    := ps1/rsdk5_main.o ps1/gpu_detect.o
 PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
-PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/PS1/PS1RenderDevice.o ps1/perf_hud.o
+# (Drawing.o: it includes Graphics/PS1/PS1RenderDevice.cpp, which has no object of its own)
+PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/perf_hud.o
+PS1_OVL_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/gpu_chain.o ps1/debug_overlay.o
 PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o
 PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o \
                     SonicMania/Objects/UFO/UFO_Decoration.o SonicMania/Objects/UFO/UFO_Shadow.o
@@ -227,6 +238,7 @@ $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
+$(call ps1_stamp,dbgovl,$(DEBUG_OVERLAY),$(PS1_OVL_OBJS))
 $(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
 # (a tree that never built DEVMENU=1 gets its empty stamp dated 2000: its natural objects are kept, not all rebuilt)
 $(shell mkdir -p build/gen; [ -f build/gen/devmenu.txt ] || [ -n "$(DEVMENU)" ] || { echo > build/gen/devmenu.txt; touch -t 200001010000 build/gen/devmenu.txt; })
@@ -237,6 +249,7 @@ $(PS1_RAM_OBJS): build/gen/ram.txt
 $(PS1_PROFILE_OBJS): build/gen/profile.txt
 $(PS1_SAMPLE_OBJS): build/gen/sample.txt
 $(PS1_HUD_OBJS): build/gen/perfhud.txt
+$(PS1_OVL_OBJS): build/gen/dbgovl.txt
 $(PS1_UFOCUT_OBJS): build/gen/ufocut.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
@@ -384,6 +397,7 @@ dist:
 	@if [ -n "$$(cat build/gen/boot.txt)" ]; then echo "dist: rsdkv5.ps-exe is a BOOT= test build"; exit 1; fi
 	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
 	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
+	@if [ -n "$$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then echo "dist: a DEBUG_OVERLAY= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
 	@# the DEVMENU debug build (8 MB): its stamp, its marker symbol and the EXE header's stack pointer, each on its own
 	@if [ -n "$$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "dist: a DEVMENU= build"; exit 1; fi
