@@ -18,6 +18,9 @@ extern "C" __attribute__((noinline)) void PS1OutOfMemory(unsigned int size)
 }
 
 extern "C" void PS1NoteAlloc(void *p, size_t size); // ps1/libc/stdlib.cpp: the init reserve's high-water mark
+#if PS1_DEBUG_OVERLAY
+extern "C" void PS1DbgHeapNew(void *p); // ps1/debug_overlay.cpp: alloc.c's operator new calls its own libc_malloc (not wrapped)
+#endif
 
 extern "C" void *__wrap__Znwj(unsigned int size)
 {
@@ -25,6 +28,9 @@ extern "C" void *__wrap__Znwj(unsigned int size)
     if (!p)
         PS1OutOfMemory(size);
     PS1NoteAlloc(p, size);
+#if PS1_DEBUG_OVERLAY
+    PS1DbgHeapNew(p);
+#endif
     return p;
 }
 
@@ -34,5 +40,8 @@ extern "C" void *__wrap__Znaj(unsigned int size)
     if (!p)
         PS1OutOfMemory(size);
     PS1NoteAlloc(p, size);
+#if PS1_DEBUG_OVERLAY
+    PS1DbgHeapNew(p);
+#endif
     return p;
 }

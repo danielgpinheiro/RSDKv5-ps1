@@ -407,6 +407,21 @@ void PS1ChainInvalidateTPage() { s_tpageValid = false; }
 
 bool g_ps1ChainSkipPrims = false;
 
+#if PS1_DEBUG_OVERLAY
+// ps1/debug_overlay.cpp's display list lives outside the arena and is linked with PS1ChainLinkList every frame: the open
+// batch is closed first, then the wait a first arena write does (the last frame's DMA may still read the list's nodes,
+// which the overlay rewrites only after this). false: no arena this frame (nothing else is drawn either).
+bool PS1ChainStaticBegin() {
+    if (g_ps1ChainSkipPrims || !s_cur)
+        return false;
+    runHook();
+    flushBatch();
+    arenaReady();
+    return true;
+}
+uint32_t PS1ChainExtraBytes() { return s_extraWords * 4; } // the block STG lends the chain this scene (4.2d)
+#endif
+
 void PS1ChainSprite16(const psyqo::Prim::Sprite16x16 &s) {
     if (g_ps1ChainSkipPrims)
         return;

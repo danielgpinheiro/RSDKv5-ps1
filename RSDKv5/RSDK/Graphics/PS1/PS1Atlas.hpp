@@ -44,6 +44,9 @@ void PS1AtlasPlayerGroup(); // 9l: each frame after the music's groups: the play
 const uint8 *PS1AtlasDropped(const uint32 *hash); // 7b: a sprite file's dropped animations (Scene<N>.pda entry), or NULL // 7b: the groups a music track brings (AudioDevice::FrameInit, before its XA)
 const PS1AtlasClut *PS1AtlasCluts();
 uint16 PS1AtlasClutCount();
+#if PS1_DEBUG_OVERLAY
+uint32 PS1AtlasVramBytes(uint32 *groupExtra); // ps1/debug_overlay.cpp
+#endif
 
 // 3.4 (PS1Sprites.cpp): a frame at screen (x, y) (its top-left, as DrawSpriteFlipped gets it) through the GPU chain
 void PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha);

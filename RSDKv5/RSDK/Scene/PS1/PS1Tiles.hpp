@@ -32,6 +32,9 @@ uint16 PS1TilePatternImage(); // 7.5: a UFO stage's 3D floor / roof texture (256
 const PS1TileImage *PS1TileImages();
 const PS1TileClut *PS1TileCluts();
 uint16 PS1TileClutCount();
+#if PS1_DEBUG_OVERLAY
+uint32 PS1TilesVramBytes(); // ps1/debug_overlay.cpp
+#endif
 // One-colour lines (docs/32 3.3b): the layer's table (palette index per pixel row, 0 = drawn with tiles), NULL when the
 // scene has none for it (or a tile on its lines changed: SetTile on the layer, DrawAniTile on one of those tiles).
 // The pointer is into the STG block: use it within one draw.

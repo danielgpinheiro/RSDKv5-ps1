@@ -72,6 +72,10 @@ uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; 
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
+#if PS1_DEBUG_OVERLAY
+// ps1/debug_overlay.cpp: the scene's tile pixels in VRAM (0 without a .ptl: the counter keeps the last load's)
+uint32 RSDK::PS1TilesVramBytes() { return s_imageCount ? g_ps1TileVramBytes : 0; }
+#endif
 
 // The pairs' answers cached per tile (3.3g: the column tables ask for every H-flipped column; per-line rows show a few
 // tiles): tile << 16 | image, direct-mapped (PS1Tiles.hpp: the test inline); cleared when the pairs load or change

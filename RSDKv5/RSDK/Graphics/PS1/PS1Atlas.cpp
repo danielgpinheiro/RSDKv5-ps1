@@ -108,6 +108,26 @@ void PS1AtlasPatches(FileInfo *info, const PS1AtlasGroup *g, bool clear, uint8 *
 
 const PS1AtlasClut *RSDK::PS1AtlasCluts() { return s_ps1AtlasBlob ? (const PS1AtlasClut *)(s_ps1AtlasBlob + s_clutOff) : NULL; }
 uint16 RSDK::PS1AtlasClutCount() { return s_clutCount; }
+#if PS1_DEBUG_OVERLAY
+// ps1/debug_overlay.cpp: the atlas's VRAM, as tools/gfx/build_atlas.py packs it: the default blocks (resident + the
+// player's normal group + the event start group, uploaded at the load), and in each swap region (player / event) what
+// its largest group needs beyond the group loaded with the scene. 0 without an atlas (the counter keeps the last load's).
+uint32 RSDK::PS1AtlasVramBytes(uint32 *groupExtra)
+{
+    uint32 most[2] = {}, start[2] = {};
+    for (int32 g = 0; s_ps1AtlasBlob && g < s_groupCount; ++g) {
+        const PS1AtlasGroup *gr = &Groups()[g];
+        if (gr->region > 1)
+            continue;
+        if (gr->pixelBytes > most[gr->region])
+            most[gr->region] = gr->pixelBytes;
+        if (gr->loadedAtStart)
+            start[gr->region] = gr->pixelBytes;
+    }
+    *groupExtra = most[0] - start[0] + most[1] - start[1];
+    return s_ps1AtlasBlob ? g_ps1AtlasVramBytes : 0;
+}
+#endif
 
 // 7b: the scene's dropped animations (Scene<N>.pda, tools/gfx/build_atlas.py dropped_animations)
 uint8 *s_ps1Pda = NULL;
