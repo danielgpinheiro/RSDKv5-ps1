@@ -124,7 +124,7 @@ void UFO_ItemBox_State_HasContents(void)
 {
     RSDK_THIS(UFO_ItemBox);
 
-    foreach_active(UFO_Player, player)
+    ufo_foreach_active(UFO_Player, player)
     {
         if (self->timer) {
             self->timer--;

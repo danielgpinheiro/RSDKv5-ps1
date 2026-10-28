@@ -112,7 +112,7 @@ void UFO_Sphere_State_Fixed(void)
 
     switch (self->type) {
         case UFO_SPHERE_BLUE: {
-            foreach_active(UFO_Player, player)
+            ufo_foreach_active(UFO_Player, player)
             {
                 int32 rx = (self->position.x - player->position.x) >> 16;
                 int32 ry = (self->height - player->height - 0xA0000) >> 16;
@@ -136,7 +136,7 @@ void UFO_Sphere_State_Fixed(void)
             break;
 
         case UFO_SPHERE_MINE: {
-            foreach_active(UFO_Player, player)
+            ufo_foreach_active(UFO_Player, player)
             {
                 if (player->state != UFO_Player_State_Trip && player->state != UFO_Player_State_Springboard
                     && player->state != UFO_Player_State_UFOCaught_Charge && player->state != UFO_Player_State_UFOCaught_Released) {
@@ -164,7 +164,7 @@ void UFO_Sphere_State_Fixed(void)
             break;
         }
         case UFO_SPHERE_SPIKES: {
-            foreach_active(UFO_Player, player)
+            ufo_foreach_active(UFO_Player, player)
             {
                 if (player->state != UFO_Player_State_Trip && player->state != UFO_Player_State_Springboard
                     && player->state != UFO_Player_State_UFOCaught_Charge && player->state != UFO_Player_State_UFOCaught_Released) {

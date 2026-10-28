@@ -210,7 +210,7 @@ bool32 UFO_Circuit_CheckNodeChange(void)
 {
     RSDK_THIS(UFO_Circuit);
 
-    foreach_active(UFO_Player, player)
+    ufo_foreach_active(UFO_Player, player)
     {
         EntityUFO_Circuit *curNode    = self->curNode;
         EntityUFO_Circuit *targetNode = NULL;
@@ -298,7 +298,7 @@ void UFO_Circuit_State_UFO(void)
         }
 
         if (!UFO_Setup->timedOut) {
-            foreach_active(UFO_Player, player)
+            ufo_foreach_active(UFO_Player, player)
             {
                 rx = (self->position.x - player->position.x) >> 16;
                 ry = (self->height - player->height - 0xA0000) >> 16;

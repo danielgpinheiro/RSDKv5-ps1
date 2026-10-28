@@ -76,4 +76,15 @@ void UFO_Setup_State_FinishFadeout(void);
 void UFO_Setup_State_HandleRingDrain(void);
 void UFO_Setup_State_TimedOver(void);
 
+#if defined RETRO_PS1_BUILD
+// ps1-ufo: foreach_active without the engine's foreach stack (RSDK/Graphics/PS1/PS1Scene3D.cpp, the UFO overlays): the
+// same walk of the class's type group, entity by entity (no foreach_break / foreach_return in these loops)
+void *PS1ActiveNext(uint16 group, int32 *id);
+#define ufo_foreach_active(type, entityOut)                                                                            \
+    Entity##type *entityOut = NULL;                                                                                    \
+    for (int32 entityOut##Id_ = 0; (entityOut = (Entity##type *)PS1ActiveNext(type->classID, &entityOut##Id_)) != NULL;)
+#else
+#define ufo_foreach_active foreach_active
+#endif
+
 #endif //! OBJ_UFO_SETUP_H

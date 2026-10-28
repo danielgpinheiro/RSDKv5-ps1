@@ -535,6 +535,25 @@ __attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
 
 void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
 
+// ps1-ufo: GetActiveEntities' walk (Object.cpp) with the position in *id instead of the foreach stack: the next entity of
+// the type group whose class is the group (read as the walk reaches it), or NULL at the end (the UFO objects' per-frame
+// foreach_active(UFO_Player): ~500 rings / spheres a frame went through the function table and the stack twice each)
+extern "C" void *PS1ActiveNext(uint16 group, int32 *id)
+{
+    if (group >= TYPEGROUP_COUNT)
+        return NULL;
+    const TypeGroupList &g = typeGroups[group];
+    for (int32 k = *id; k < g.entryCount; ++k) {
+        Entity *e = OBJECT_ENTITY(g.entries[k]);
+        if (e->classID == group) {
+            *id = k + 1;
+            return e;
+        }
+    }
+    *id = g.entryCount;
+    return NULL;
+}
+
 extern "C" void PS1Scene3DLink()
 {
     g_ps1S3DOps.draw  = PS1Scene3DDraw;
