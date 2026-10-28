@@ -81,6 +81,14 @@ ps1/vram.cpp \
 ps1/stack.cpp \
 ps1/pad.cpp \
 
+# `make DEVMENU=1` (docs/ports/mania/32 "Stage Select dev menu"): the engine's dev menu, its stage select only, opened with
+# Select, on an 8 MB link (run it with the emulator's 8 MB RAM option on; a console showing 2 MB stops at a red screen).
+# A debug build for the emulators: `make dist` and tools/export_builder.sh refuse it; tools/dev_disc.sh builds its disc
+# in a shadow copy, never in this checkout.
+ifneq ($(DEVMENU),)
+PS1_SRCS += ps1/dev_menu.cpp
+endif
+
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 
 # The smoke test has no engine.
@@ -182,6 +190,12 @@ ifneq ($(FLIPAB_OFF),)
 CPPFLAGS += -DPS1_FLIP_AB_OFF=1
 endif
 endif
+ifneq ($(DEVMENU),)
+CPPFLAGS += -DPS1_DEVMENU=1
+ifneq ($(SAMPLE),)
+$(error DEVMENU=1 links at 8 MB: the PC sampler's histogram (0x80400000, ps1/pc_sampler.cpp) would sit inside STG)
+endif
+endif
 # `make EXTRA_CPPFLAGS=-D...`: debug/bisect switches (e.g. -DPS1_NO_IRQ_GUARD=1).
 CPPFLAGS += $(EXTRA_CPPFLAGS)
 # `make MEASURE_RAM=8M`: a measuring link only (sizes of an over-budget build); the port targets 2 MB.
@@ -189,7 +203,9 @@ MEASURE_RAM ?= 2M
 ifneq ($(MEASURE_RAM),2M)
 CPPFLAGS  += -DPS1_DEBUG_BIGRAM=1 # measuring datasets (RSDKv5/RSDK/Storage/Storage.cpp); never a release setting
 endif
-LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(MEASURE_RAM) -Wl,-Map,rsdkv5.map
+# DEVMENU=1 links at 8 MB without PS1_DEBUG_BIGRAM's datasets and audits (STG takes the RAM above 2 MB by itself)
+LINK_RAM := $(if $(and $(DEVMENU),$(filter 2M,$(MEASURE_RAM))),8M,$(MEASURE_RAM))
+LDFLAGS   += -Wl,--defsym,RAM_SIZE=$(LINK_RAM) -Wl,-Map,rsdkv5.map
 # The switches above are defines: a stamp per switch (rewritten only when its value changes) rebuilds just the
 # objects that read it, so a BOOT= / MEASURE_RAM= / PROFILE= change can't leave a stale object behind. A change also
 # deletes those objects: an object compiled in the same second as the stamp (another make running) looks up to date.
@@ -201,6 +217,8 @@ PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/P
                     SonicMania/Objects/UFO/UFO_Decoration.o SonicMania/Objects/UFO/UFO_Shadow.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
                     RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/Global/Soundboard.o
+# DEVMENU: every engine and PS1-layer object (the link size changes all of them; no game object includes an engine header)
+PS1_DEVMENU_OBJS := ps1/rsdk5_main.o ps1/dev_menu.o $(patsubst %.s,%.o,$(patsubst %.cpp,%.o,$(ENGINE_SRCS) $(PS1_SRCS)))
 define ps1_stamp
 $(shell mkdir -p build/gen; [ -f build/gen/$(1).txt ] && [ "$$(cat build/gen/$(1).txt)" = "$(2)" ] || { echo "$(2)" > build/gen/$(1).txt; rm -f $(3); })
 endef
@@ -210,6 +228,10 @@ $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
 $(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
+# (a tree that never built DEVMENU=1 gets its empty stamp dated 2000: its natural objects are kept, not all rebuilt)
+$(shell mkdir -p build/gen; [ -f build/gen/devmenu.txt ] || [ -n "$(DEVMENU)" ] || { echo > build/gen/devmenu.txt; touch -t 200001010000 build/gen/devmenu.txt; })
+$(call ps1_stamp,devmenu,$(DEVMENU),$(PS1_DEVMENU_OBJS))
+$(PS1_DEVMENU_OBJS): build/gen/devmenu.txt
 $(PS1_BOOT_OBJS): build/gen/boot.txt
 $(PS1_RAM_OBJS): build/gen/ram.txt
 $(PS1_PROFILE_OBJS): build/gen/profile.txt
@@ -363,6 +385,10 @@ dist:
 	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
 	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
+	@# the DEVMENU debug build (8 MB): its stamp, its marker symbol and the EXE header's stack pointer, each on its own
+	@if [ -n "$$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "dist: a DEVMENU= build"; exit 1; fi
+	@if mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DevMenuBuild; then echo "dist: rsdkv5.elf holds the dev menu (DEVMENU=)"; exit 1; fi
+	@if [ "$$(od -An -tx4 -j48 -N4 rsdkv5.ps-exe | tr -d ' ')" != "801fff00" ]; then echo "dist: rsdkv5.ps-exe's stack is not the 2 MB one"; exit 1; fi
 	# 9l (2026-10-09): build/iso's overlays are linked against the EXE that made them; a dist after another link's
 	# make disc (an 8 MB picture run) shipped 8 MB overlays with the 2 MB EXE (black screen at the SEGA logo): the disc
 	# tree is always rebuilt from this EXE first

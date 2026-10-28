@@ -612,6 +612,11 @@ void RSDK::ProcessEngine()
         case ENGINESTATE_DEVMENU:
             ProcessInput();
             currentScreen = &screens[0];
+#if PS1_DEVMENU
+            // no draw list opens this frame: the menu's boxes would go into the chain before FlipScreen's clear; the last
+            // frame repeated first draws them over it, as the PC's framebuffer keeps it
+            PS1FrameStart(false);
+#endif
 
             if (devMenu.state)
                 devMenu.state();

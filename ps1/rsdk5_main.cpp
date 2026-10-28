@@ -29,6 +29,13 @@ void PS1McPrepare(); // ps1/memcard.hh (phase 8: the user files on the card; its
 #include "RSDK/Core/RetroEngine.hpp"
 
 extern "C" void LinkGameLogicDLL(RSDK::EngineInfo *info); // SonicMania/Game.c (RETRO_STANDALONE 0)
+#if PS1_DEVMENU
+extern "C" { // `make DEVMENU=1`: the stage select dev menu on an 8 MB debug link (ps1/dev_menu.cpp)
+void PS1DevMenuCommands();
+void PS1DevRamProbe();
+extern volatile uint32_t g_ps1DevMenuBuild;
+}
+#endif
 void PS1SamplerInstall(); // ps1/pc_sampler.cpp (make SAMPLE=1)
 
 using namespace RSDK;
@@ -183,6 +190,13 @@ class ManiaPS1App final : public psyqo::Application {
     }
 
     void start() override {
+#if PS1_DEVMENU
+        if (g_ps1DevMenuBuild != 8) { // frame() keeps the screen red
+            printf("DEVMENU build needs 8 MB RAM: turn the emulator's 8 MB option on\n");
+            g_ps1InitDone = 2;
+            return;
+        }
+#endif
 #if PS1_PROFILE
         *(volatile uint16_t *)0xBF801124 = 0x200; // root counter 2: system clock / 8, free-running (the profile's clock)
 #endif
@@ -278,6 +292,9 @@ class ManiaPS1App final : public psyqo::Application {
             if (!engine.hardPause) {
                 foreachStackPtr  = foreachStackList;
                 debugHitboxCount = 0;
+#if PS1_DEVMENU
+                PS1DevMenuCommands(); // Select: the stage select dev menu, before the devices read the pad
+#endif
                 ProcessInputDevices();
                 if (engine.devMenu)
                     ProcessDebugCommands();
@@ -308,6 +325,12 @@ class ManiaPS1App final : public psyqo::Application {
         PS1AtlasServiceRequests(); // a GDB-requested sprite group load (docs/ports/mania/32 3.1c)
         SKU::PS1CardTestService(); // a GDB-requested user file save / load (docs/ports/mania/32 phase 8)
         PS1VramServiceDump(); // a GDB-requested VRAM readback (8 MB measuring link), while the GPU is idle
+#if PS1_DEVMENU
+        if (g_ps1DevMenuBuild != 8) { // the 8 MB debug link on a console showing 2 MB (start() stopped)
+            gpu().clear({{0xC0, 0x00, 0x00}});
+            return;
+        }
+#endif
         uint32_t t0 = PS1Hblanks();
         uint32_t vbl = g_ps1VblankCount;
         {
@@ -377,6 +400,9 @@ ManiaPS1App s_app;
 
 // The stack reserve painted first (ps1/stack.hh, MA-188): its guard words and low-water mark.
 int main() {
+#if PS1_DEVMENU
+    PS1DevRamProbe(); // the 8 MB debug link on a console showing 2 MB (ps1/dev_menu.cpp)
+#endif
     PS1StackPaint();
     return s_app.run();
 }

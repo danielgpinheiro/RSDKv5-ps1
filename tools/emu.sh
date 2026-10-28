@@ -16,6 +16,7 @@ EMU_PCSX_CFG="$HOME/.config/pcsx-redux/pcsx.json"
 EMU_DS=/Applications/DuckStation.app/Contents/MacOS/DuckStation
 EMU_DS_SET="$HOME/Library/Application Support/DuckStation/settings.ini"
 EMU_RAM=${EMU_RAM:-}   # 8mb: run any EXE with 8 MB (the PC sampler's counters live above 2 MB; a measuring link only)
+                       # 2mb: any EXE with 2 MB (an 8 MB link included: the DEVMENU build's 2 MB guard)
 EMU_SLOT=${EMU_SLOT:-}
 # the workspace root (2026-10-26 layout): the first parent with tools/workspace_links.txt (ports/<repo>,
 # work/worktrees/<name> and a run's build/boss/snaps/<name> copy alike)
@@ -75,7 +76,7 @@ PYEOF
     if grep -q '^OutputMuted = ' "$EMU_CFG"; then sed -i '' 's/^OutputMuted = .*/OutputMuted = true/' "$EMU_CFG"
     else sed -i '' 's/^\[Audio\]$/[Audio]\
 OutputMuted = true/' "$EMU_CFG"; fi
-    if [ "$EMU_SP" != "0x801fff00" ] || [ "$EMU_RAM" = 8mb ]; then
+    if { [ "$EMU_SP" != "0x801fff00" ] || [ "$EMU_RAM" = 8mb ]; } && [ "$EMU_RAM" != 2mb ]; then
       sed -i '' 's/^Enable8MBRAM = false/Enable8MBRAM = true/' "$EMU_CFG"
       echo "8 MB RAM (SP $EMU_SP, EMU_RAM=$EMU_RAM): DuckStation Enable8MBRAM on for this run"
     fi
@@ -131,8 +132,8 @@ for pad in d.get('pads', []):
 json.dump(d, open(p, 'w'), indent=4)
 PYEOF
     local ram=-2mb
-    if [ "$EMU_SP" != "0x801fff00" ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
-    [ "$EMU_RAM" = 8mb ] && ram=-8mb
+    if [ "$EMU_SP" != "0x801fff00" ] && [ "$EMU_RAM" != 2mb ]; then ram=-8mb; echo "8 MB debug EXE (SP $EMU_SP): PCSX-Redux -8mb for this run"; fi
+    [ "$EMU_RAM" = 8mb ] && ram=-8mb # (EMU_RAM=2mb: an 8 MB link on a 2 MB console, the DEVMENU build's red screen)
     # phase 8: the game writes the memory card: every run gets its own formatted card images (never the shared
     # memcard1/2.mcd of the default config); EMU_MC1=FILE keeps a card across runs (made if missing)
     local mc1=${EMU_MC1:-$1.mc1.mcd} mc2=$1.mc2.mcd

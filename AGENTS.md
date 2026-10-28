@@ -91,6 +91,9 @@ make dist                       # licensed disc (../LICENSE.DAT) from the natura
                                 # BOOT= / MEASURE_RAM / PROFILE / SAMPLE / PERF_HUD builds); runs make disc first
 make BOOT=1,0 CAP=1 | FSKIP=1   # a BOOT= build starts uncapped: CAP=1 capped at 30 fps, FSKIP=1 Frameskip on
 make PS1_LOGS=1 | PERF_HUD=1 | PROFILE=1 | SAMPLE=1   # game logs kept / timing HUD / per-class CPU / PC sampler (EMU_RAM=8mb)
+tools/dev_disc.sh [BOOT=c,i]    # the DEVMENU=1 debug disc (8 MB link; Select opens the engine's stage select), built in
+                                # ../../work/shadow/mania-devmenu -> build/dev/SonicMania-PS1-DEV.cue; emulator 8 MB RAM on
+                                # (docs/ports/mania/32 "Stage Select dev menu"); dist / export refuse it; tools/play/devmenu/run.sh
 make UFO_NO_DECOR=0 UFO_NO_SHADOWS=0   # the UFO stages' stock look (both 1 by default)
 python3 tools/build_assets.py --rsdk Data.rsdk --exe ... --ovl ... --work W --out O   # the builder's whole pipeline
 tools/export_builder.sh ../Sonic-Mania-PS1-ISO-Builder   # refresh the builder (natural EXE only)

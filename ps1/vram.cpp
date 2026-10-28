@@ -19,7 +19,7 @@ volatile uint32_t g_ps1VramDumps = 0;
 __attribute__((noinline)) void PS1VramDumpHook(uint32_t halfwords) { __asm__ volatile("" ::"r"(halfwords)); }
 }
 
-#if PS1_DEBUG_BIGRAM
+#if PS1_DEBUG_BIGRAM || PS1_DEVMENU // (the DEVMENU debug build's pictures too)
 #define PS1_VRAM_DUMP_HW (256 * 512) // 256 KB: four texture columns of both page rows, or a framebuffer
 extern "C" {
 uint16_t g_ps1VramDumpBuf[PS1_VRAM_DUMP_HW];

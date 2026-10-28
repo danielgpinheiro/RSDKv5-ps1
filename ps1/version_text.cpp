@@ -21,7 +21,11 @@ uint32_t g_ps1VersionFade[4] = { 0, 0, 0, 0 }; // the frame's last PS1FadeScreen
 }
 
 // Boot (before the first load): one sector into a stack buffer (no heap, no read-ahead window).
+#if PS1_DEVMENU
+static void PS1VersionRead() {
+#else
 void PS1VersionLoad() {
+#endif
     uint32_t lba = 0, size = 0;
     uint32_t sec[512]; // one sector, word aligned for the CD DMA
     if (!PS1FsFind("VERSION.TXT", &lba, &size) || !size || !g_ps1CDRom->readSectorsBlocking(lba, 1, sec, *g_ps1GPU))
@@ -34,3 +38,14 @@ void PS1VersionLoad() {
         g_ps1VersionFound   = 1;
     }
 }
+#if PS1_DEVMENU
+// `make DEVMENU=1`: the title's stamp marks the 8 MB debug build ("v a1b2c3d4 dev"; the stamp draws up to 21 characters)
+void PS1VersionLoad() {
+    PS1VersionRead();
+    int n = 0;
+    while (g_ps1VersionText[n]) ++n;
+    const char *dev = " dev";
+    for (int i = 0; dev[i] && n < (int)sizeof(g_ps1VersionText) - 1; ++i) g_ps1VersionText[n++] = dev[i];
+    g_ps1VersionText[n] = 0;
+}
+#endif

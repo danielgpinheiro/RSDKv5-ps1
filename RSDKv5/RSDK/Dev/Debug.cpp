@@ -273,14 +273,24 @@ void DevMenu_HandleTouchControls(int8 cornerButton)
 } // namespace RSDK
 #endif
 
+#if PS1_DEVMENU
+namespace RSDK
+{
+void PS1DevCategoryMenu(); // ps1/dev_menu.cpp (docs/ports/mania/32 "Stage Select dev menu")
+}
+#endif
 void RSDK::OpenDevMenu()
 {
-#if RETRO_PLATFORM == RETRO_PS1
+#if RETRO_PLATFORM == RETRO_PS1 && !PS1_DEVMENU
     // PS1 port (docs/ports/mania/32 6.2): the dev menu is the PC's debugging tool (keyboard hot keys, a corner tap); the PS1 has no
     // way to drive it, and its 14.7 KB of resident code would come out of STG (GHZ1's margin): never opened
     return;
 #endif
+#if PS1_DEVMENU
+    devMenu.state     = PS1DevCategoryMenu; // `make DEVMENU=1` (8 MB debug link): the stage select only (ps1/dev_menu.cpp)
+#else
     devMenu.state     = DevMenu_MainMenu;
+#endif
     devMenu.selection = 0;
     devMenu.scrollPos = 0;
     devMenu.timer     = 0;

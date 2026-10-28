@@ -4551,9 +4551,15 @@ void RSDK::DrawString(Animator *animator, Vector2 *position, String *string, int
 #if RETRO_PLATFORM == RETRO_PS1
 #undef DrawSpriteFlipped
 #endif
+#if PS1_DEVMENU
+void PS1DevString(const char *string, int32 x, int32 y, int32 align, uint32 color); // ps1/dev_menu.cpp: flat rectangles
+#endif
 void RSDK::DrawDevString(const char *string, int32 x, int32 y, int32 align, uint32 color)
 {
 #if RETRO_PLATFORM == RETRO_PS1
+#if PS1_DEVMENU
+    PS1DevString(string, x, y, align, color);
+#endif
     return; // PS1: no dev font (2.3m); phase 3 draws text with the GPU
 #else
     uint16 color16 = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];

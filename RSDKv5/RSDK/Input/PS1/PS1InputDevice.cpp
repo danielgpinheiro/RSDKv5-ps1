@@ -39,6 +39,9 @@ static uint16 PS1PadScriptButtons()
 }
 
 using namespace RSDK;
+#if PS1_DEVMENU
+extern "C" volatile uint16_t g_ps1DevSwallow; // ps1/dev_menu.cpp
+#endif
 
 // docs/ports/mania/32 4.2a: created at init just above a CD read window that is freed afterwards, the heap device (56 bytes) split
 // the hole the chain arena takes after each load: the menu (2 MB) found 32.8 + 22.8 KB and no 51 KB arena. The pads
@@ -60,6 +63,10 @@ void SKU::InputDevicePS1::UpdateInput()
         this->buttonMasks = g_ps1Pad2Buttons | g_ps1Pad2TestMask;
     else
         this->buttonMasks = g_ps1PadButtons | g_ps1PadTestMask | (::g_ps1PadScriptSteps ? PS1PadScriptButtons() : 0);
+#if PS1_DEVMENU
+    if (!this->port)
+        this->buttonMasks &= ~g_ps1DevSwallow; // the Select that toggled the dev menu, until released (ps1/dev_menu.cpp)
+#endif
     uint16 changed        = this->buttonMasks ^ this->prevButtonMasks;
 
     this->inactiveTimer[0] = this->buttonMasks ? 0 : this->inactiveTimer[0] + 1;
