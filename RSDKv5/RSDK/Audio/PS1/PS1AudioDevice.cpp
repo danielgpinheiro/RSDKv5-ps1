@@ -175,6 +175,10 @@ void RSDK::PS1SfxLoadBank(const char *folder, const char *id)
     strcpy(s_bankPath, path);
     s_bankCrc = head[2];
 }
+#if PS1_DEBUG_OVERLAY
+// ps1/debug_overlay.cpp: the samples in SPU RAM from 0x1000 (0 after a failed bank load: the counter keeps the last one's)
+uint32 RSDK::PS1SfxBankBytes() { return s_bankPath[0] ? g_ps1SfxBankBytes : 0; }
+#endif
 
 void RSDK::PS1StreamQueue(int32 c)
 {

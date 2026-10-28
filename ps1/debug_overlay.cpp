@@ -9,6 +9,13 @@
 //                    build time): psyqo's two 320x240 framebuffers, the tile pages (.ptl), the atlas's default blocks
 //                    and its swap regions at their largest group (.atl), the CLUTs (tiles', atlas's, bank 0's row, the
 //                    INK_TINT and bank-CLUT scratch rows, the title's build stamp row); the overlay's own: 0
+//   SPU 297/508K     the scene's SFX bank (PS1SfxLoadBank: its samples from 0x1000 up) / the sample area: SPU RAM's
+//                    512 KB less what is reserved (ps1/spu.hh): 0x0000-0x0FFF, the capture buffers the hardware writes
+//                    (CD audio input is on: XA music plays through it, no SPU RAM of its own), and the 32-byte silent
+//                    block at 0x7FFE0 the idle voices loop on, which also holds the reverb work address (0x7FFF0).
+//                    Reverb is off; read back each second (SPUCNT bit 7, psx-spx "SPU Reverb Registers": while it is
+//                    clear the SPU writes nothing to the work area): were it on, its area, 80000h - mBASE * 8 bytes,
+//                    would count as used
 // L2 + R2 together hides / shows it (both outside the port's 12-button map, ps1/rsdk5_main.cpp readPad: the game never
 // sees them); shown at boot. GDB: g_ps1DbgVisible, g_ps1DbgLog.
 //
@@ -31,6 +38,7 @@
 
 #include "gpu_chain_raw.hh"
 #include "pad.hh"
+#include "spu.hh"   // PS1_SPU_SAMPLE_START / END
 #include "stack.hh" // PS1_STACK_RESERVE, g_ps1StackUnused
 #include "video.hh" // PS1Hblanks
 
@@ -119,6 +127,7 @@ volatile uint32_t g_ps1DbgRamUsed = 0, g_ps1DbgRamPeak = 0;
 volatile uint32_t g_ps1DbgHeap = 0, g_ps1DbgHeapTop = 0, g_ps1DbgStg = 0, g_ps1DbgStgFree = 0, g_ps1DbgLent = 0;
 // VRAM (bytes) at the last window: in all, and its parts
 volatile uint32_t g_ps1DbgVram = 0, g_ps1DbgVramTiles = 0, g_ps1DbgVramAtlas = 0, g_ps1DbgVramGroups = 0, g_ps1DbgVramClut = 0;
+volatile uint32_t g_ps1DbgSpu = 0, g_ps1DbgReverb = 0; // SPU RAM bytes the SFX bank takes; the reverb work area (0: off)
 volatile uint32_t g_ps1DbgPrims    = 0; // rectangles in the list (the box included)
 volatile uint32_t g_ps1DbgBadPrims = 0; // list words that are not a GP0 60h rectangle (must stay 0)
 // hblanks the overlay took: the last frame, the worst; the last frame that measured, the last that rebuilt the list, the
@@ -205,11 +214,15 @@ constexpr uint32_t RAM_KB = PS1_DBG_RAM_KB;
 constexpr int RAM_W       = digitsOf(RAM_KB); // the used field as wide as the total
 constexpr uint32_t VRAM_KB = 1024;            // 1024 x 512 halfwords
 constexpr int VRAM_W       = digitsOf(VRAM_KB);
+constexpr uint32_t SPU_AVAIL = PS1_SPU_SAMPLE_END - PS1_SPU_SAMPLE_START, SPU_RESERVED = 512 * 1024 - SPU_AVAIL; // 4,128 B
+constexpr uint32_t SPU_KB    = (SPU_AVAIL + 512) / 1024;                                                     // 508
+constexpr int SPU_W          = digitsOf(SPU_KB);
 // the lines' fixed text and their number fields (each field right-aligned in its width)
-constexpr int LINES = 3;
+constexpr int LINES = 4;
 constexpr int LINE_CHARS[LINES] = { 4 + FPS_W + 1 + 2,                         // "FPS ff/tt"
                                     4 + RAM_W + 1 + digitsOf(RAM_KB) + 1,      // "RAM uuuu/2048K"
-                                    5 + VRAM_W + 1 + digitsOf(VRAM_KB) + 1 }; // "VRAM uuuu/1024K"
+                                    5 + VRAM_W + 1 + digitsOf(VRAM_KB) + 1,   // "VRAM uuuu/1024K"
+                                    4 + SPU_W + 1 + digitsOf(SPU_KB) + 1 };   // "SPU uuu/508K"
 constexpr int maxChars()
 {
     int m = 0;
@@ -222,7 +235,8 @@ constexpr int BOX_X = RIGHT - BOX_W, BOX_Y = TOP;
 // the worst case: every variable digit its costliest glyph, every fixed part as drawn (the targets 60 / 50 alike)
 constexpr int MAX_RECTS = 1 + rectsOf("FPS /") + FPS_W * maxDigitRects() + (rectsOf("60") > rectsOf("50") ? rectsOf("60") : rectsOf("50")) +
                           rectsOf("RAM /K") + RAM_W * maxDigitRects() + rectsOfNum(RAM_KB) +
-                          rectsOf("VRAM /K") + VRAM_W * maxDigitRects() + rectsOfNum(VRAM_KB);
+                          rectsOf("VRAM /K") + VRAM_W * maxDigitRects() + rectsOfNum(VRAM_KB) +
+                          rectsOf("SPU /K") + SPU_W * maxDigitRects() + rectsOfNum(SPU_KB);
 constexpr int PER_FRAG  = 4;                                      // 12 words: fragments stay <= 14 (ps1/gpu_chain.cpp)
 constexpr int FRAGS     = (MAX_RECTS + PER_FRAG - 1) / PER_FRAG;
 constexpr int LIST_WORDS = FRAGS + 3 * MAX_RECTS;                // a header a fragment, 3 words a rectangle
@@ -257,7 +271,7 @@ char *putNum(char *p, uint32_t v, int width)
     return p;
 }
 constexpr uint32_t kb(uint32_t bytes) { return (bytes + 512) / 1024; }
-constexpr uint32_t pct(uint32_t part, uint32_t whole) { return whole ? (part / 64 * 100 + whole / 128) / (whole / 64) : 0; }
+constexpr uint32_t pct(uint32_t part, uint32_t whole) { return whole ? part / 64 * 100 / (whole / 64) : 0; } // rounded down
 
 // Main RAM in use (see the top): what the EXE's link spans (kernel + EXE + heap up to the RAM top) less what is free in
 // psyqo's heap and in STG. With `parts`, its parts for the window's values too.
@@ -304,6 +318,16 @@ uint32_t vramUsed()
     return VRAM_FB + g_ps1DbgVramTiles + g_ps1DbgVramAtlas + groups + g_ps1DbgVramClut;
 }
 
+// SPU RAM in use: the bank, plus the reverb work area beyond the silent block if reverb is on (SPUCNT 1F801DAAh bit 7,
+// mBASE 1F801DA2h in 8-byte units; 16-bit reads through KSEG1)
+uint32_t spuUsed()
+{
+    uint16_t cnt  = *(volatile uint16_t *)0xBF801DAA, base = *(volatile uint16_t *)0xBF801DA2;
+    uint32_t work = cnt & 0x80 ? 0x80000 - (uint32_t)base * 8 : 0;
+    g_ps1DbgReverb = work;
+    return RSDK::PS1SfxBankBytes() + (work > 512 * 1024 - PS1_SPU_SAMPLE_END ? work - (512 * 1024 - PS1_SPU_SAMPLE_END) : 0);
+}
+
 char *putStr(char *p, const char *s)
 {
     while (*s) *p++ = *s++;
@@ -328,6 +352,12 @@ void format()
     p       = putNum(p, kb(g_ps1DbgVram), VRAM_W);
     *p++    = '/';
     p       = putNum(p, VRAM_KB, digitsOf(VRAM_KB));
+    p       = putStr(p, "K");
+    *p      = 0;
+    p       = putStr(s_text[3], "SPU ");
+    p       = putNum(p, kb(g_ps1DbgSpu), SPU_W);
+    *p++    = '/';
+    p       = putNum(p, SPU_KB, digitsOf(SPU_KB));
     p       = putStr(p, "K");
     *p      = 0;
 }
@@ -398,6 +428,7 @@ void measure(uint32_t vblanks, uint32_t rate)
     g_ps1DbgTarget = rate;
     g_ps1DbgRamUsed = ramUsed(true);
     g_ps1DbgVram    = vramUsed();
+    g_ps1DbgSpu     = spuUsed();
 }
 
 // A [PERF] line builder: integers only, no printf (the port's vsnprintf, float support included, took ~15 hblanks)
@@ -434,6 +465,12 @@ void logFormat()
     l.k(" vram=", g_ps1DbgVram).s("/").u(VRAM_KB).s("K ").u(pct(g_ps1DbgVram, VRAM_KB * 1024)).s("%").k(" fb=", VRAM_FB);
     l.k(" tiles=", g_ps1DbgVramTiles).k(" atlas=", g_ps1DbgVramAtlas).k(" groups=", g_ps1DbgVramGroups);
     l.s(" clut=").u(g_ps1DbgVramClut).s("B");
+    l.k(" spu=", g_ps1DbgSpu).s("/").u(SPU_KB).s("K ").u(pct(g_ps1DbgSpu, SPU_AVAIL)).s("%").s(" spures=").u(SPU_RESERVED);
+    l.s("B reverb=");
+    if (g_ps1DbgReverb)
+        l.u(g_ps1DbgReverb).s("B");
+    else
+        l.s("off");
     l.s(" overlay_vram=0 overlay_prims=").u(g_ps1DbgPrims).s("/").u(MAX_RECTS).s(" overlay_buf=").u(sizeof(s_list));
     l.s("B overlay_hbl=").u(g_ps1DbgHblMeasure).s("/").u(g_ps1DbgHblRebuild).s("/").u(g_ps1DbgHblLog);
     l.s("/").u(g_ps1DbgHblMax).s("\n");
@@ -457,6 +494,7 @@ void PS1DebugOverlayFrame(bool draw)
         g_ps1DbgHeapPeak = g_ps1DbgHeapLive;
         g_ps1DbgRamUsed  = ramUsed(true);
         g_ps1DbgVram     = vramUsed();
+        g_ps1DbgSpu      = spuUsed();
         format();
     }
     uint32_t ram = ramUsed(false);
