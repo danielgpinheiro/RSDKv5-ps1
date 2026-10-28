@@ -16,6 +16,7 @@ volatile int32 g_ps1S3DLodPx = 40;   // 7.4: a model with a distance LOD uses it
 volatile uint32 g_ps1S3DLodDraws = 0; // models drawn with their LOD (total)
 volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
 volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
+volatile int32 g_ps1S3DBlendGte = 1; // ps1-ufo: the keyframe blend on the GTE (0: the CPU's, s3d_blend.s)
 volatile uint32 g_ps1SortMoves = 0, g_ps1SortCalls = 0; // ps1-ufo: the sorted group's insertion steps and sorts (totals)
 }
 
@@ -161,6 +162,10 @@ extern "C" int PS1S3DFacesTriAsm(PS1S3DAsmCtx *c);
 // the components that differ (GDB evidence).
 extern "C" void PS1S3DBlend16(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
 extern "C" void PS1S3DBlend8(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
+// ps1-ufo: the same on the GTE (INTPL, three components a command, no CPU multiply; ps1/s3d_blend.s), the default
+extern "C" void PS1S3DBlendGte16(const int16 *a, const int16 *b, int16 *out, int32 comps, int32 t);
+extern "C" void PS1S3DBlendGte8(const int8 *a, const int8 *b, int16 *out, int32 comps, int32 t);
+extern "C" volatile int32 g_ps1S3DBlendGte;
 extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
 static void PS1S3DBlendC(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
 {
@@ -177,11 +182,17 @@ static void PS1S3DBlendC(bool pos16, const uint8 *fa, const uint8 *fb, int16 *ou
 static void PS1S3DBlend(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
 {
     const uint32 per = pos16 ? 2 : 4; // components a word
-    if (!g_ps1S3DAsm || (((uintptr_t)fa | (uintptr_t)fb) & 3) || (n & (per - 1))) {
+    if (g_ps1S3DBlendGte && g_ps1S3DAsm && n % 3 == 0) {
+        if (pos16)
+            PS1S3DBlendGte16((const int16 *)fa, (const int16 *)fb, out, n, t);
+        else
+            PS1S3DBlendGte8((const int8 *)fa, (const int8 *)fb, out, n, t);
+    }
+    else if (!g_ps1S3DAsm || (((uintptr_t)fa | (uintptr_t)fb) & 3) || (n & (per - 1))) {
         PS1S3DBlendC(pos16, fa, fb, out, n, t); // (a mesh built before the padding)
         return;
     }
-    if (pos16)
+    else if (pos16)
         PS1S3DBlend16((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 2, t);
     else
         PS1S3DBlend8((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 4, t);
