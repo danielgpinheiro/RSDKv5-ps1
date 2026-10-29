@@ -108,3 +108,86 @@ PS1S3DBlend8:
 2:      jr      $ra
         nop
         .size PS1S3DBlend8, .-PS1S3DBlend8
+
+# ps1-ufo: the same blends on the GTE, three components an INTPL (psx-spx "GTE General Purpose Calculation Commands":
+# with sf = 1, lm = 0: IR = FC - IR, then IR = IR_old + (IR * IR0) >> 12, saturated to 16 bits), no CPU multiply:
+#   PS1S3DBlendGte16(a, b, out, comps, t): IR = a, FC = b, IR0 = t << 4: a + floor((b - a) * t / 256), the C's exactly
+#     while |b - a| < 32768 (the keyframes of one vertex: PS1_CHECK_BLEND compares every component with the C)
+#   PS1S3DBlendGte8(a, b, out, comps, t):  IR = a << 7, FC = b << 7: (a << 7) + floor((b - a) * t / 2), always exact
+# comps: a multiple of 3 (whole vertices); a, b, out need no alignment. GTE registers it writes: IR0-IR3, RFC-BFC (the
+# projection's own are set before every model's: PS1Gte3DSetup).
+        .globl PS1S3DBlendGte16
+        .type PS1S3DBlendGte16, @function
+PS1S3DBlendGte16:
+        lw      $t9, 16($sp)            # t
+        beqz    $a3, 2f
+        sll     $t9, $t9, 4             # (delay) IR0 = t * 16 (4.12)
+        mtc2    $t9, $8
+1:      lh      $t0, 0($a0)
+        lh      $t1, 2($a0)
+        lh      $t2, 4($a0)
+        lh      $t3, 0($a1)
+        lh      $t4, 2($a1)
+        lh      $t5, 4($a1)
+        mtc2    $t0, $9                 # IR1-3 = a
+        mtc2    $t1, $10
+        mtc2    $t2, $11
+        ctc2    $t3, $21                # RFC, GFC, BFC = b
+        ctc2    $t4, $22
+        ctc2    $t5, $23
+        addiu   $a0, $a0, 6
+        addiu   $a1, $a1, 6
+        cop2    0x0980011               # INTPL
+        addiu   $a3, $a3, -3
+        mfc2    $t0, $9
+        mfc2    $t1, $10
+        mfc2    $t2, $11
+        sh      $t0, 0($a2)
+        sh      $t1, 2($a2)
+        sh      $t2, 4($a2)
+        bnez    $a3, 1b
+        addiu   $a2, $a2, 6             # (delay)
+2:      jr      $ra
+        nop
+        .size PS1S3DBlendGte16, .-PS1S3DBlendGte16
+
+        .globl PS1S3DBlendGte8
+        .type PS1S3DBlendGte8, @function
+PS1S3DBlendGte8:
+        lw      $t9, 16($sp)            # t
+        beqz    $a3, 2f
+        sll     $t9, $t9, 4             # (delay)
+        mtc2    $t9, $8
+1:      lb      $t0, 0($a0)
+        lb      $t1, 1($a0)
+        lb      $t2, 2($a0)
+        lb      $t3, 0($a1)
+        lb      $t4, 1($a1)
+        lb      $t5, 2($a1)
+        sll     $t0, $t0, 7
+        sll     $t1, $t1, 7
+        sll     $t2, $t2, 7
+        sll     $t3, $t3, 7
+        sll     $t4, $t4, 7
+        sll     $t5, $t5, 7
+        mtc2    $t0, $9
+        mtc2    $t1, $10
+        mtc2    $t2, $11
+        ctc2    $t3, $21
+        ctc2    $t4, $22
+        ctc2    $t5, $23
+        addiu   $a0, $a0, 3
+        addiu   $a1, $a1, 3
+        cop2    0x0980011               # INTPL
+        addiu   $a3, $a3, -3
+        mfc2    $t0, $9
+        mfc2    $t1, $10
+        mfc2    $t2, $11
+        sh      $t0, 0($a2)
+        sh      $t1, 2($a2)
+        sh      $t2, 4($a2)
+        bnez    $a3, 1b
+        addiu   $a2, $a2, 6             # (delay)
+2:      jr      $ra
+        nop
+        .size PS1S3DBlendGte8, .-PS1S3DBlendGte8

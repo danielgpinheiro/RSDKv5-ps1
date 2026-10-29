@@ -17,6 +17,7 @@
 #include "../../../../ps1/gpu_chain_raw.hh"
 #include "../../../../ps1/gpu_detect.hh" // flip-bit rectangles (docs/perf/43 G3)
 #include "../../../../ps1/video.hh" // PS1Hblanks
+#include "RSDK/Graphics/PS1/PS1Scene3D.hpp" // g_ps1S3DOps.band: a strip layer's bands (the UFO overlays, ps1-ufo)
 
 namespace RSDK
 {
@@ -1400,9 +1401,18 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
     const int32 st   = ps1LayerStep[layer - tileLayers]; // 9v.7: this layer's step (0: the global one; callback layers: 1)
     const int32 lq   = ~((st ? st : g_ps1LineStep) - 1);  // 9v
     const int32 nq   = st ? st - 1 : 0;
+    // ps1-ufo: the strip layer's bands go to the strip drawer (the UFO overlays); a band it leaves goes to the tiles
+    const PS1TileStripRec *sr = PS1TileStrip();
+    bool (*const strip)(TileLayer *, int32, int32, int32, int32, uint8) =
+        sr && sr->layer == (uint8)(layer - tileLayers) ? g_ps1S3DOps.band : NULL;
 #define PS1_FLUSH_GROUP()                                                                                              \
     do {                                                                                                               \
-        if (groupCount == 1)                                                                                           \
+        if (strip) {                                                                                                   \
+            for (int32 g_ = 0; g_ < groupCount; ++g_)                                                                  \
+                if (!strip(layer, group[g_].sy, group[g_].h, group[g_].x, group[g_].ly, group[g_].bank))               \
+                    DrawBand(layer, group[g_].sy, group[g_].h, group[g_].x, group[g_].ly, group[g_].bank);             \
+        }                                                                                                              \
+        else if (groupCount == 1)                                                                                      \
             DrawBand(layer, group[0].sy, group[0].h, group[0].x, group[0].ly, group[0].bank);                          \
         else if (groupCount > 1)                                                                                       \
             DrawRowBands(layer, group, groupCount);                                                                    \

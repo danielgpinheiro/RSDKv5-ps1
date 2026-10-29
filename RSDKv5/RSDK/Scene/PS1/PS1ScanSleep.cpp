@@ -40,9 +40,13 @@ inline uint32 PS1Isqrt(uint32 v) // floor(sqrt(v))
     }
     return r;
 }
-// pixels the camera may move (each axis) with this settled slot still out of range for stock; 0: none
+// pixels the camera may move (each axis) with this settled slot still out of range for stock; 0: none. ps1-ufo:
+// ACTIVE_NEVER / ACTIVE_PAUSED are out of range wherever the camera is: no limit (0xFFFF; the review above: nothing writes
+// an out-of-range slot's active; a class write wakes the group)
 uint32 PS1SleepMargin(const EntityBase *e)
 {
+    if (e->active == ACTIVE_NEVER || e->active == ACTIVE_PAUSED)
+        return 0xFFFF;
     const int32 x = e->position.x, y = e->position.y;
     if (!PS1Small(x, 0x3FFFFFFF) || !PS1Small(y, 0x3FFFFFFF))
         return 0;
@@ -104,7 +108,7 @@ void PS1SleepCheck(uint32 g)
         g_ps1SleepSkipped = g_ps1SleepSkipped + 1;
         if (!e->classID)
             continue;
-        bool in = true;
+        bool in = e->active != ACTIVE_NEVER && e->active != ACTIVE_PAUSED; // (stock: never in range; others decided below)
         if (e->active == ACTIVE_RBOUNDS) {
             int32 dx = e->position.x - ps1Scan.camX, dy = e->position.y - ps1Scan.camY;
             int32 sx = FROM_FIXED(dx < 0 ? -dx : dx), sy = FROM_FIXED(dy < 0 ? -dy : dy);
@@ -191,12 +195,14 @@ __attribute__((optimize("O2"))) static EntityBase **PS1ScanSleep(EntityBase **p,
             else if (active != ACTIVE_NEVER && active != ACTIVE_PAUSED)
                 PS1_SCAN_RET();
         }
+        // ps1-ufo: blank and never-active slots sleep too (in UFO5 ~190 blank slots in live words, the decorations
+        // UFO_NO_DECOR removes, and ~68 inactive UFO_Circuit nodes were tested every frame: groups of them never slept);
+        // a group of blank slots only sleeps with no limit (a class write into it wakes it)
         if (ps1Scan.grp == (s >> 3)) {
-            if (cls) {
-                ++ps1Scan.grpLive;
-                ps1Scan.grpOk = ps1Scan.grpOk && (active == ACTIVE_BOUNDS || active == ACTIVE_RBOUNDS);
-            }
-            if ((s & 7) == 7 && ps1Scan.grpOk && ps1Scan.grpLive)
+            if (cls)
+                ps1Scan.grpOk = ps1Scan.grpOk && (active == ACTIVE_BOUNDS || active == ACTIVE_RBOUNDS || active == ACTIVE_NEVER
+                                                  || active == ACTIVE_PAUSED);
+            if ((s & 7) == 7 && ps1Scan.grpOk)
                 PS1SleepGroupSet(s >> 3);
         }
         ent->inRange = false;

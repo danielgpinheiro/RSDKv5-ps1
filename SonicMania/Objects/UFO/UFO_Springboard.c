@@ -12,7 +12,7 @@ ObjectUFO_Springboard *UFO_Springboard;
 void UFO_Springboard_Update(void)
 {
     RSDK_THIS(UFO_Springboard);
-    foreach_active(UFO_Player, player)
+    ufo_foreach_active(UFO_Player, player)
     {
         if (player->bumperTimer <= 12 && player->stateInput) {
             Vector2 pivotPos = player->position;

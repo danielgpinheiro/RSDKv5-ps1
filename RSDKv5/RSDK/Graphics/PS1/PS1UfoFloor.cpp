@@ -30,6 +30,7 @@ extern volatile uint32 g_ps1FadeCalls, g_ps1FadeOpaque, g_ps1TintGrey; // RSDK/S
 extern volatile uint32 g_ps1LayoutWrites;                                  // RSDK/Scene/Scene.cpp PS1SetTile
 volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
 volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
+volatile uint32 g_ps1FloorSpanRows = 0, g_ps1FloorSpanWrong = 0; // ps1-ufo PS1_CHECK_FLOORSPAN: rows checked / differing
 #if UFO_FLOOR_NEAR // 9f: a detail cut (Makefile UFO_FLOOR_NEAR=1)
 volatile int32 g_ps1FloorFar    = 12;
 #else
@@ -88,7 +89,7 @@ void PS1FloorClutsReset()
 {
     s_cl    = PS1TileCluts();
     s_loads = g_ps1TileLoads;
-    s_nc    = s_cl ? PS1TileClutCount() : 0;
+    s_nc    = s_cl ? PS1TileStripClutFirst() : 0; // (ps1-ufo: a strip's CLUTs after the scene's own: no fog copies)
     if (s_nc > PS1_FLOOR_CLUTS || s_nc * 8 > PS1_FLOOR_CLUT_SLOTS)
         s_nc = 0; // no room for the copies: every tile drawn with bank 0 (counted)
     uint8 clutOf[16 * 20]; // (y - 240) * 20 + x / 16 -> CLUT index + 1
@@ -163,6 +164,16 @@ uint32 PS1FloorClutFill(uint32 k, int32 bank, uint32 ownClut)
     return attr;
 }
 
+// ps1-ufo: (int64)a * b / d with the CPU's 32-bit divide when a * b fits (the same truncated quotient; libgcc's
+// 64-bit divide is a loop of a few hundred cycles on the console)
+inline int64 PS1FloorMulDiv(int32 a, int32 b, int32 d)
+{
+    int32 p;
+    if (!__builtin_mul_overflow(a, b, &p) && d != -1)
+        return p / d;
+    return (int64)a * b / d;
+}
+
 // The x extent of the convex quad V (4 corners, quarter pixels) over the band y in [ya, yb]. False: no overlap
 bool PS1FloorSpan(const int32 V[4][2], int32 ya, int32 yb, int32 &xmin, int32 &xmax)
 {
@@ -194,6 +205,96 @@ bool PS1FloorSpan(const int32 V[4][2], int32 ya, int32 yb, int32 &xmin, int32 &x
     }
     return any;
 }
+
+// ps1-ufo: PS1FloorSpan for the rows [y0 + r step, y0 + r step + step - 1], r = 0, 1, 2... asked in order, with no
+// divide a row. An edge's x at a line ey into it is p.x + trunc(ex * ey / dy) = p.x + sgn * floor(|ex| ey / dy); its end
+// lines give its vertices exactly (ey = 0: p.x; ey = dy: p.x + ex); the band's two inner lines (ya, yb) move by `step`
+// a row, so their quotients and remainders step by |ex| step / dy and its remainder (set up once, by the same divide).
+// The same x values as PS1FloorSpan (PS1_CHECK_FLOORSPAN: both run, g_ps1FloorSpanWrong counts the rows that differ).
+struct PS1FloorSpanner {
+    struct Line {
+        int32 ey = -1; // the line this state holds (-1: none)
+        uint32 q = 0, r = 0;
+    };
+    struct Edge {
+        int32 px, py, qy, ex, dy, sgn;
+        uint32 ax, Q, R; // |ex|; |ex| step / dy and its remainder (dda: |ex| step fits 32 bits)
+        bool dda;
+        Line a, b; // the bands' first / last lines
+    } e[4];
+    int32 y0, step;
+    void Init(const int32 V[4][2], int32 y0_, int32 step_)
+    {
+        y0 = y0_, step = step_;
+        for (int32 k = 0; k < 4; ++k) {
+            const int32 *p = V[k], *q = V[(k + 1) & 3];
+            if (p[1] > q[1]) {
+                const int32 *t = p;
+                p = q, q = t;
+            }
+            Edge &g = e[k];
+            g.px = p[0], g.py = p[1], g.qy = q[1], g.ex = q[0] - p[0], g.dy = q[1] - p[1];
+            g.sgn = g.ex < 0 ? -1 : 1, g.ax = (uint32)(g.ex < 0 ? -g.ex : g.ex);
+            g.dda = g.dy > 0 && g.ax < (1u << 20); // (step <= 1024)
+            g.Q = g.dda ? g.ax * (uint32)step / (uint32)g.dy : 0, g.R = g.dda ? g.ax * (uint32)step % (uint32)g.dy : 0;
+            g.a.ey = g.b.ey = -1;
+        }
+    }
+    // x at line ey (0 < ey < dy) of edge g through its line state s (stepped when ey is the next one, else set up)
+    static inline int32 At(Edge &g, Line &s, int32 ey, int32 step)
+    {
+        if (g.dda && s.ey >= 0 && ey == s.ey + step) {
+            s.q += g.Q, s.r += g.R;
+            if (s.r >= (uint32)g.dy)
+                ++s.q, s.r -= (uint32)g.dy;
+        }
+        else {
+            const uint64 n = (uint64)g.ax * (uint32)ey;
+            s.q = (uint32)(n / (uint32)g.dy), s.r = (uint32)(n % (uint32)g.dy);
+        }
+        s.ey = ey;
+        return g.px + g.sgn * (int32)s.q;
+    }
+    bool Row(int32 r, int32 &xmin, int32 &xmax)
+    {
+        const int32 ya = y0 + r * step, yb = ya + step - 1;
+        bool any = false;
+        for (int32 k = 0; k < 4; ++k) {
+            Edge &g = e[k];
+            if (g.qy < ya || g.py > yb)
+                continue;
+            int32 x0, x1;
+            if (!g.dy)
+                x0 = x1 = g.px;
+            else {
+                x0 = g.py >= ya ? g.px : At(g, g.a, ya - g.py, step);
+                x1 = g.qy <= yb ? g.px + g.ex : At(g, g.b, yb - g.py, step);
+            }
+            const int32 lo = x0 < x1 ? x0 : x1, hi = x0 < x1 ? x1 : x0;
+            if (!any || lo < xmin)
+                xmin = lo;
+            if (!any || hi > xmax)
+                xmax = hi;
+            any = true;
+        }
+#if PS1_CHECK_FLOORSPAN
+        int32 cmin = 0, cmax = 0;
+        const bool cany = PS1FloorSpan(V0, ya, yb, cmin, cmax);
+        if (cany != any || (any && (cmin != xmin || cmax != xmax)))
+            g_ps1FloorSpanWrong = g_ps1FloorSpanWrong + 1;
+        g_ps1FloorSpanRows = g_ps1FloorSpanRows + 1;
+#endif
+        return any;
+    }
+#if PS1_CHECK_FLOORSPAN
+    const int32 (*V0)[2];
+#endif
+};
+#if PS1_CHECK_FLOORSPAN
+#define PS1_SPANNER_INIT(sp, V, y0, step) ((sp).Init(V, y0, step), (sp).V0 = (V))
+#else
+#define PS1_SPANNER_INIT(sp, V, y0, step) (sp).Init(V, y0, step)
+#endif
 
 #define PS1_FLOOR_MAX_ROWS 128 // tile rows of the region
 
@@ -281,6 +382,24 @@ void PS1FloorRegion(const PS1FloorCtx &c, int32 f0, int32 f1, int32 V[4][2])
 // (bit pairs: known, non-empty) until the layout changes (PS1SetTile's counter) or another layer / scene is drawn
 #define PS1_LOD_CELLS 4096
 uint32 s_lodKnown[PS1_LOD_CELLS / 32], s_lodSet[PS1_LOD_CELLS / 32];
+// ps1-ufo: each cell row's first / last non-empty cell (cleared with the cell bits; bit r of s_lodRowKnown: known;
+// lo > hi: none), so a row's span leaves out its empty ends (the track is ~21 % of the map)
+#define PS1_LOD_ROWS 128
+uint8 s_lodRowLo[PS1_LOD_ROWS], s_lodRowHi[PS1_LOD_ROWS];
+uint32 s_lodRowKnown[PS1_LOD_ROWS / 32];
+// whether cell (column mx >> 3, row my >> 3) has a chunk that is not chunk 0, through the per-cell cache
+inline bool PS1LodCellSet(const TileLayer *layer, const uint16 *chunkRow0, const uint16 *chunkRow1, int32 mx, uint32 cell, bool cache)
+{
+    const uint32 cw = cell >> 5, cb = 1u << (cell & 31);
+    if (cache && (s_lodKnown[cw] & cb))
+        return (s_lodSet[cw] & cb) != 0;
+    const uint32 c0   = (uint32)mx >> 2;
+    const bool any = PS1ChunkAt(layer, chunkRow0, c0) | PS1ChunkAt(layer, chunkRow0, c0 + 1) | PS1ChunkAt(layer, chunkRow1, c0)
+                     | PS1ChunkAt(layer, chunkRow1, c0 + 1);
+    if (cache)
+        s_lodKnown[cw] |= cb, s_lodSet[cw] = any ? s_lodSet[cw] | cb : s_lodSet[cw] & ~cb;
+    return any;
+}
 const TileLayer *s_lodLayer = NULL;
 uint32 s_lodWrites = 0, s_lodLoads = 0xFFFFFFFF;
 // The minimap cells (8 x 8 tiles, 512 quarter pixels) between forward distances fA (the real tiles' end: cells wholly
@@ -302,6 +421,7 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
     const bool cache = cells <= PS1_LOD_CELLS;
     if (cache && (layer != s_lodLayer || g_ps1LayoutWrites != s_lodWrites || g_ps1TileLoads != s_lodLoads)) {
         memset(s_lodKnown, 0, sizeof(s_lodKnown));
+        memset(s_lodRowKnown, 0, sizeof(s_lodRowKnown));
         s_lodLayer = layer, s_lodWrites = g_ps1LayoutWrites, s_lodLoads = g_ps1TileLoads;
     }
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
@@ -309,14 +429,41 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
     const int32 cy0 = minY >> 9;
     int32 nRows = (maxY >> 9) - cy0 + 1;
     nRows = nRows > PS1_FLOOR_MAX_ROWS ? PS1_FLOOR_MAX_ROWS : nRows;
+    PS1FloorSpanner sp;
+    PS1_SPANNER_INIT(sp, V, cy0 << 9, 512);
     for (int32 r = 0; r < nRows; ++r) { // each row's cells (9f: first, so that corner rows are shared)
-        int32 xmin, xmax, cyy = cy0 + r;
+        int32 xmin, xmax;
         s_rowA[r] = 1, s_rowB[r] = 0;
-        if (!PS1FloorSpan(V, cyy << 9, (cyy << 9) + 511, xmin, xmax))
+        if (!sp.Row(r, xmin, xmax))
             continue;
         int32 ca = xmin >> 9, cb = xmax >> 9;
         if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
             cb = ca + PS1_FLOOR_MAX_COLS - 1;
+        // ps1-ufo: the row's empty ends left out (its cells there are all skipped below: the same quads, fewer
+        // corners projected); only when the span doesn't wrap round the map
+        const int32 cellRows = (hMask + 1) >> 3, crow = ((cy0 + r) << 3 & hMask) >> 3, n = cb - ca + 1;
+        if (cache && (int32)cellsW <= 256 && cellRows <= PS1_LOD_ROWS && n < (int32)cellsW) {
+            const uint32 kw = (uint32)crow >> 5, kb = 1u << (crow & 31);
+            if (!(s_lodRowKnown[kw] & kb)) {
+                const int32 my = crow << 3;
+                const uint16 *row0 = PS1ChunkRow(layer, (uint32)my >> 2), *row1 = PS1ChunkRow(layer, ((uint32)my >> 2) + 1);
+                int32 lo = 255, hi = -1;
+                for (int32 cx = 0; cx < (int32)cellsW; ++cx)
+                    if (PS1LodCellSet(layer, row0, row1, cx << 3, (uint32)crow * cellsW + (uint32)cx, true))
+                        lo = cx < lo ? cx : lo, hi = cx;
+                s_lodRowLo[crow] = (uint8)(hi < 0 ? 255 : lo), s_lodRowHi[crow] = (uint8)(hi < 0 ? 0 : hi);
+                s_lodRowKnown[kw] |= kb;
+            }
+            const int32 lo = s_lodRowLo[crow], hi = s_lodRowHi[crow], wa = ca & (int32)(cellsW - 1);
+            if (lo > hi)
+                continue; // (s_rowA > s_rowB: no cells)
+            if (wa + n <= (int32)cellsW) {
+                const int32 a = wa > lo ? wa : lo, b = wa + n - 1 < hi ? wa + n - 1 : hi;
+                if (a > b)
+                    continue;
+                cb = ca + (b - wa), ca = ca + (a - wa);
+            }
+        }
         s_rowA[r] = (int16)ca, s_rowB[r] = (int16)cb;
     }
     PS1FloorRows rows;
@@ -418,10 +565,12 @@ __attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx
     const int32 cy0 = minY >> 10;
     int32 nRows = (maxY >> 10) - cy0 + 1;
     nRows = nRows > PS1_FLOOR_MAX_ROWS ? PS1_FLOOR_MAX_ROWS : nRows;
+    PS1FloorSpanner sp;
+    PS1_SPANNER_INIT(sp, V, cy0 << 10, 1024);
     for (int32 r = 0; r < nRows; ++r) { // each row's cells (9f: first, so that corner rows are shared)
-        int32 xmin, xmax, cyy = cy0 + r;
+        int32 xmin, xmax;
         s_rowA[r] = 1, s_rowB[r] = 0;
-        if (!PS1FloorSpan(V, cyy << 10, (cyy << 10) + 1023, xmin, xmax))
+        if (!sp.Row(r, xmin, xmax))
             continue;
         int32 ca = xmin >> 10, cb = xmax >> 10;
         if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
@@ -520,7 +669,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             int32 i = (e ? y2 : y1) - cy, den = i * cX + 256 * sX;
             if (!den || (den > 0) != (hq > 0))
                 continue;
-            int64 f = (int64)hq * (256 * cX - sX * i) / den;
+            int64 f = PS1FloorMulDiv(hq, 256 * cX - sX * i, den);
             if (f <= 0)
                 continue;
             int32 fi = f > 0x7FFF ? 0x7FFF : (int32)f;
@@ -547,9 +696,9 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     int32 dB = iB * cX + 256 * sX, dT = iT * cX + 256 * sX;
     if (dB <= 0) // the whole clip is above the horizon
         return;
-    int32 fNear = (int32)((int64)hq * (256 * cX - sX * iB) / dB) - 64, fTop = 0x7FFF;
+    int32 fNear = (int32)PS1FloorMulDiv(hq, 256 * cX - sX * iB, dB) - 64, fTop = 0x7FFF;
     if (dT > 0) {
-        int64 f = (int64)hq * (256 * cX - sX * iT) / dT + 64;
+        int64 f = PS1FloorMulDiv(hq, 256 * cX - sX * iT, dT) + 64;
         fTop    = f < 0x7FFF ? (int32)f : 0x7FFF;
     }
     fNear     = fNear < 0 ? 0 : fNear;
@@ -580,10 +729,12 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     // pass 1: each tile row's columns (the region's span less its empty ends: whole empty chunks skipped)
     const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
     uint32 todo = 0;
+    PS1FloorSpanner sp;
+    PS1_SPANNER_INIT(sp, V, ty0 << 6, 64);
     for (int32 r = 0; r < nRows; ++r) {
         int32 ty = ty0 + r, xmin, xmax;
         s_rowA[r] = 1, s_rowB[r] = 0;
-        if (!PS1FloorSpan(V, ty << 6, (ty << 6) + 63, xmin, xmax))
+        if (!sp.Row(r, xmin, xmax))
             continue;
         int32 txa = xmin >> 6, txb = xmax >> 6;
         const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2);

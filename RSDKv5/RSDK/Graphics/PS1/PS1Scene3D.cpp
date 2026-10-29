@@ -16,6 +16,8 @@ volatile int32 g_ps1S3DLodPx = 40;   // 7.4: a model with a distance LOD uses it
 volatile uint32 g_ps1S3DLodDraws = 0; // models drawn with their LOD (total)
 volatile uint32 g_ps1S3DModelFaces[MODEL_COUNT]; // faces looked at per model (total; GDB: where the 3D time goes)
 volatile uint32 g_ps1S3DModelDraws[MODEL_COUNT]; // times each model was drawn (total)
+volatile int32 g_ps1S3DBlendGte = 1; // ps1-ufo: the keyframe blend on the GTE (0: the CPU's, s3d_blend.s)
+volatile uint32 g_ps1SortMoves = 0, g_ps1SortCalls = 0; // ps1-ufo: the sorted group's insertion steps and sorts (totals)
 }
 
 namespace
@@ -160,6 +162,10 @@ extern "C" int PS1S3DFacesTriAsm(PS1S3DAsmCtx *c);
 // the components that differ (GDB evidence).
 extern "C" void PS1S3DBlend16(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
 extern "C" void PS1S3DBlend8(const uint32 *a, const uint32 *b, uint32 *out, int32 words, int32 t);
+// ps1-ufo: the same on the GTE (INTPL, three components a command, no CPU multiply; ps1/s3d_blend.s), the default
+extern "C" void PS1S3DBlendGte16(const int16 *a, const int16 *b, int16 *out, int32 comps, int32 t);
+extern "C" void PS1S3DBlendGte8(const int8 *a, const int8 *b, int16 *out, int32 comps, int32 t);
+extern "C" volatile int32 g_ps1S3DBlendGte;
 extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
 static void PS1S3DBlendC(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
 {
@@ -176,11 +182,17 @@ static void PS1S3DBlendC(bool pos16, const uint8 *fa, const uint8 *fb, int16 *ou
 static void PS1S3DBlend(bool pos16, const uint8 *fa, const uint8 *fb, int16 *out, int32 n, int32 t)
 {
     const uint32 per = pos16 ? 2 : 4; // components a word
-    if (!g_ps1S3DAsm || (((uintptr_t)fa | (uintptr_t)fb) & 3) || (n & (per - 1))) {
+    if (g_ps1S3DBlendGte && g_ps1S3DAsm && n % 3 == 0) {
+        if (pos16)
+            PS1S3DBlendGte16((const int16 *)fa, (const int16 *)fb, out, n, t);
+        else
+            PS1S3DBlendGte8((const int8 *)fa, (const int8 *)fb, out, n, t);
+    }
+    else if (!g_ps1S3DAsm || (((uintptr_t)fa | (uintptr_t)fb) & 3) || (n & (per - 1))) {
         PS1S3DBlendC(pos16, fa, fb, out, n, t); // (a mesh built before the padding)
         return;
     }
-    if (pos16)
+    else if (pos16)
         PS1S3DBlend16((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 2, t);
     else
         PS1S3DBlend8((const uint32 *)fa, (const uint32 *)fb, (uint32 *)out, n / 4, t);
@@ -466,12 +478,139 @@ __attribute__((optimize("O2"))) static void PS1Scene3DDraw(uint16 sceneID)
     g_ps1S3DDraws  = g_ps1S3DDraws + 1;
     g_ps1S3DFaces  = g_ps1S3DFaces + o.drawn;
 }
+// ps1-ufo: the sorted draw group (UFO_Setup's group 4: ~100 rings and spheres in UFO5) in the order the engine's sort
+// gives (Object.cpp: descending zdepth, equal ones in list order), from last frame's order: the list is rebuilt in slot
+// order every frame and re-sorted from scratch there (~n^2 / 4 moves, ~30 hblanks a frame in UFO5); the depths barely
+// change between frames, so last frame's ranks put it nearly in order and the insertion sort that finishes it moves few.
+// Exact whatever the start (a strict order on (depth, list position)); entries last frame didn't have go at the end.
+uint16 s_sortSlot[PS1_DRAWLIST_MAX]; // last frame's list in list order
+uint16 s_sortRank[PS1_DRAWLIST_MAX]; // and each entry's place in its sorted order
+uint16 s_sortIdx[PS1_DRAWLIST_MAX];  // this frame: list positions in sort order (first: by last frame's rank)
+int32 s_sortN              = 0;
+const DrawList *s_sortList = NULL;
+__attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
+{
+    const int32 n = list->entityCount;
+    if (n > PS1_DRAWLIST_MAX)
+        return false;
+    int32 *const key  = (int32 *)0x1F800000; // the scratchpad (the layer drawer's, free between its calls), 256 words
+    uint16 *const idx = s_sortIdx;
+    uint16 *const e   = list->entries;
+    const int32 pn    = list == s_sortList && s_sortN <= PS1_DRAWLIST_MAX ? s_sortN : 0;
+    // last frame's rank of each entry (both lists in slot order: one walk), its list position put at that rank
+    for (int32 r = 0; r < pn; ++r) idx[r] = 0xFFFF;
+    int32 news = 0;
+    uint16 *const fresh = (uint16 *)(key + PS1_DRAWLIST_MAX) - n; // the scratchpad's end (read before the keys go in)
+    for (int32 i = 0, j = 0; i < n; ++i) {
+        const uint32 s = e[i];
+        while (j < pn && s_sortSlot[j] < s) ++j;
+        uint32 r = 0xFFFF;
+        if (j < pn && s_sortSlot[j] == s && s_sortRank[j] < pn && idx[s_sortRank[j]] == 0xFFFF)
+            r = s_sortRank[j];
+        if (r != 0xFFFF)
+            idx[r] = (uint16)i;
+        else
+            fresh[news++] = (uint16)i; // (not ascending lists, or new this frame)
+    }
+    int32 m = 0;
+    for (int32 r = 0; r < pn; ++r) // compacted in place (m <= r)
+        if (idx[r] != 0xFFFF)
+            idx[m++] = idx[r];
+    for (int32 k = 0; k < news; ++k) idx[m++] = fresh[k];
+    // the keys in that order, then the insertion sort: (k, i) before (k', i') when k > k' or k == k' and i < i'
+    for (int32 p = 0; p < n; ++p) key[p] = OBJECT_ENTITY(e[idx[p]])->zdepth;
+    uint32 moves = 0;
+    for (int32 p = 1; p < n; ++p) {
+        const int32 k  = key[p];
+        const uint32 i = idx[p];
+        int32 q        = p;
+        while (q > 0 && (key[q - 1] < k || (key[q - 1] == k && idx[q - 1] > i))) {
+            key[q] = key[q - 1], idx[q] = idx[q - 1];
+            --q;
+        }
+        key[q] = k, idx[q] = (uint16)i;
+        moves += (uint32)(p - q);
+    }
+    // the list in that order; this frame's list and ranks kept for the next
+    for (int32 i = 0; i < n; ++i) s_sortSlot[i] = e[i];
+    for (int32 p = 0; p < n; ++p) {
+        e[p]               = s_sortSlot[idx[p]];
+        s_sortRank[idx[p]] = (uint16)p;
+    }
+    s_sortN = n, s_sortList = list;
+    g_ps1SortMoves = g_ps1SortMoves + moves;
+    g_ps1SortCalls = g_ps1SortCalls + 1;
+    return true;
+}
 } // namespace
 
 void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
+
+// ps1-ufo: a band of the strip layer (PS1TileStrip, the UFO skies) drawn from the strip: the screen's 320 columns from
+// layer x on, as 2-3 sprites (GP0 64h, one a 256-texel page, the band's CLUT) instead of ~21 tile pieces: the same
+// texels at the same pixels (the tiles' palette indices through CLUTs of the same colours). False: rows outside the
+// strip, a palette bank, or a band with more than 15 colours (the tiles draw it)
+volatile uint32 g_ps1StripBands = 0; // bands drawn from the strip (total)
+static bool PS1StripBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+{
+    const PS1TileStripRec *st = PS1TileStrip();
+    const int32 r             = ly - (st ? st->rowFirst : 0);
+    if (!st || bank || r < 0 || r + h > st->bands * 16)
+        return false;
+    const uint32 clut = st->clut[r >> 4];
+    if (clut == 0xFFFF)
+        return false;
+    uint32 *hdr = (uint32 *)PS1ChainSpanBegin(18);
+    if (!hdr)
+        return true; // (the arena is full: the tiles would not fit either)
+    const uint32 mask = st->width - 1u, yw = (uint32)(uint16)sy << 16, vh = (uint32)r << 8, hh = (uint32)h << 16;
+    uint32 px = (uint32)x & mask;
+    int32 s   = 0;
+    for (;;) {
+        const uint32 u = px & 255;
+        int32 wd       = 256 - (int32)u;
+        wd             = wd > 320 - s ? 320 - s : wd;
+        hdr[1] = 0xE1000000 | st->tpage[px >> 8];
+        hdr[2] = 0x64808080;
+        hdr[3] = yw | (uint32)(uint16)s;
+        hdr[4] = clut << 16 | vh | u;
+        hdr[5] = hh | (uint32)wd;
+        s += wd, px = (px + (uint32)wd) & mask;
+        if (s >= 320)
+            break;
+        hdr[0] = 5u << 24 | ((uint32)(uintptr_t)(hdr + 6) & 0xFFFFFF);
+        hdr += 6;
+    }
+    PS1ChainSpanEnd((uint32_t *)hdr, 5, (uint32_t *)(hdr + 6));
+    g_ps1StripBands = g_ps1StripBands + 1;
+    return true;
+}
+
+// ps1-ufo: GetActiveEntities' walk (Object.cpp) with the position in *id instead of the foreach stack: the next entity of
+// the type group whose class is the group (read as the walk reaches it), or NULL at the end (the UFO objects' per-frame
+// foreach_active(UFO_Player): ~500 rings / spheres a frame went through the function table and the stack twice each)
+extern "C" void *PS1ActiveNext(uint16 group, int32 *id)
+{
+    if (group >= TYPEGROUP_COUNT)
+        return NULL;
+    const TypeGroupList &g = typeGroups[group];
+    for (int32 k = *id; k < g.entryCount; ++k) {
+        Entity *e = OBJECT_ENTITY(g.entries[k]);
+        if (e->classID == group) {
+            *id = k + 1;
+            return e;
+        }
+    }
+    *id = g.entryCount;
+    return NULL;
+}
 
 extern "C" void PS1Scene3DLink()
 {
     g_ps1S3DOps.draw  = PS1Scene3DDraw;
     g_ps1S3DOps.floor = PS1UfoFloorDraw;
+    g_ps1S3DOps.sort  = PS1Scene3DSort;
+    g_ps1S3DOps.band  = PS1StripBand;
+    PS1GteCamLoad(nullptr); // (until UFO_Camera's first LateUpdate)
+    s_sortN = 0, s_sortList = NULL;
 }

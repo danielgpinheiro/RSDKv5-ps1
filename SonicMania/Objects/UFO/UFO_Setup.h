@@ -76,4 +76,19 @@ void UFO_Setup_State_FinishFadeout(void);
 void UFO_Setup_State_HandleRingDrain(void);
 void UFO_Setup_State_TimedOver(void);
 
+#if defined RETRO_PS1_BUILD
+// ps1-ufo: foreach_active without the engine's foreach stack (RSDK/Graphics/PS1/PS1Scene3D.cpp, the UFO overlays): the
+// same walk of the class's type group, entity by entity (no foreach_break / foreach_return in these loops)
+void *PS1ActiveNext(uint16 group, int32 *id);
+// ps1-ufo: a ring's / sphere's camera-space position on the GTE, exactly as their LateUpdates compute it (ps1/gte3d.hh
+// PS1GteCamSpace; 0: not done, compute it as stock); UFO_Camera's LateUpdate loads its matrix (PS1GteCamLoad)
+void PS1GteCamLoad(const int32 (*m)[4]);
+int PS1GteCamSpace(int32 x, int32 y, int32 z, int32 *out);
+#define ufo_foreach_active(type, entityOut)                                                                            \
+    Entity##type *entityOut = NULL;                                                                                    \
+    for (int32 entityOut##Id_ = 0; (entityOut = (Entity##type *)PS1ActiveNext(type->classID, &entityOut##Id_)) != NULL;)
+#else
+#define ufo_foreach_active foreach_active
+#endif
+
 #endif //! OBJ_UFO_SETUP_H

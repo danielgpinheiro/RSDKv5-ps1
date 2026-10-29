@@ -18,6 +18,9 @@ void UFO_Camera_LateUpdate(void)
     StateMachine_Run(self->state);
 
     UFO_Camera_HandleCamPos();
+#if defined RETRO_PS1_BUILD
+    PS1GteCamLoad(UFO_Camera->matWorld.values); // (only this object writes matWorld: the rings' and spheres' GTE transform)
+#endif
 }
 
 void UFO_Camera_StaticUpdate(void) {}

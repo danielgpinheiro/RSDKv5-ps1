@@ -15,6 +15,7 @@ int32 RSDK::stageObjectIDs[OBJECT_COUNT];
 
 #if RETRO_PLATFORM == RETRO_PS1
 #include "PS1/PS1Entities.cpp" // per-slot entity storage (docs/ports/mania/32 2.3)
+#include "RSDK/Graphics/PS1/PS1Scene3D.hpp" // g_ps1S3DOps.sort: the UFO stages' sorted group (PS1Scene3D.cpp)
 #else
 EntityBase RSDK::objectEntityList[ENTITY_COUNT];
 #endif
@@ -1720,7 +1721,10 @@ void RSDK::ProcessObjectDrawLists()
                     // (the title's 3D sprites: ~45 hblanks a frame). With a swap only on a strictly greater zdepth its
                     // result is the stable descending order: here the same order by a stable insertion sort on the keys
                     // read once (in the scratchpad: free between the layer drawer's calls; longer lists sort as stock)
-                    if (list->sorted && list->entityCount <= 170) {
+                    // UFO (ps1-ufo): the overlay's sort, coherent from frame to frame (the same order); false: as below
+                    if (list->sorted && g_ps1S3DOps.sort && g_ps1S3DOps.sort(list)) {
+                    }
+                    else if (list->sorted && list->entityCount <= 170) {
                         int32 n      = list->entityCount;
                         int32 *key   = (int32 *)0x1F800000;
                         uint16 *slot = (uint16 *)(0x1F800000 + 170 * sizeof(int32));

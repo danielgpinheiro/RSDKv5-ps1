@@ -8,13 +8,19 @@
 
 volatile uint32_t g_ps1GteVertices = 0;
 volatile uint32_t g_ps1GteFlagged  = 0;
+volatile uint32_t g_ps1GteCamLeft = 0; // ps1-ufo: PS1GteCamSpace calls left to the caller (total)
 
 namespace {
 inline uint32_t pack(int lo, int hi) { return (uint32_t)(uint16_t)lo | ((uint32_t)(uint16_t)hi << 16); }
 }
 
+namespace {
+uint32_t s_rotGen = 0; // PS1Gte3DSetup calls (the rotation matrix changed)
+}
+
 void PS1Gte3DSetup(const int32_t r[9], int32_t trx, int32_t trY, int32_t trz, uint32_t h, int32_t ofx, int32_t ofy) {
     using namespace psyqo::GTE;
+    ++s_rotGen;
     write<Register::R11R12, Unsafe>(pack(r[0], r[1]));
     write<Register::R13R21, Unsafe>(pack(r[2], r[3]));
     write<Register::R22R23, Unsafe>(pack(r[4], r[5]));
@@ -97,6 +103,54 @@ __attribute__((always_inline)) inline int project(const int16_t *xyz, int count,
     return flagged;
 }
 } // namespace
+
+namespace {
+uint32_t s_camRot = 0xFFFFFFFF; // the GTE rotation the camera's matrix was loaded as
+const int32_t (*s_camM)[4] = nullptr;
+int32_t s_camT[3];
+bool s_camOk = false;
+}
+
+static void PS1GteCamPut() {
+    using namespace psyqo::GTE;
+    const int32_t (*m)[4] = s_camM;
+    write<Register::R11R12, Unsafe>(pack(m[0][0], m[0][1]));
+    write<Register::R13R21, Unsafe>(pack(m[0][2], m[1][0]));
+    write<Register::R22R23, Unsafe>(pack(m[1][1], m[1][2]));
+    write<Register::R31R32, Unsafe>(pack(m[2][0], m[2][1]));
+    write<Register::R33, Safe>((uint32_t)(uint16_t)m[2][2]);
+    s_camRot = ++s_rotGen; // (anyone else's matrix is gone: their next PS1Gte3DSetup reloads it)
+}
+
+void PS1GteCamLoad(const int32_t (*m)[4]) {
+    s_camM  = m;
+    s_camOk = m != nullptr;
+    for (int r = 0; r < 3 && s_camOk; ++r)
+        for (int c = 0; c < 3; ++c) s_camOk = s_camOk && m[r][c] >= -256 && m[r][c] <= 256;
+    if (s_camOk) {
+        s_camT[0] = m[0][3], s_camT[1] = m[1][3], s_camT[2] = m[2][3];
+        PS1GteCamPut();
+    }
+}
+
+int PS1GteCamSpace(int32_t x, int32_t y, int32_t z, int32_t *out) {
+    using namespace psyqo::GTE;
+    // whole pixels within +-16383 (on the 16.16 values: the low half 0, x + (16383 << 16) in [0, 32766 << 16])
+    if (((x | y | z) & 0xFFFF) || (uint32_t)(x + 0x3FFF0000) > 0x7FFE0000u || (uint32_t)(y + 0x3FFF0000) > 0x7FFE0000u
+        || (uint32_t)(z + 0x3FFF0000) > 0x7FFE0000u || !s_camOk) {
+        g_ps1GteCamLeft = g_ps1GteCamLeft + 1;
+        return 0;
+    }
+    if (s_camRot != s_rotGen) // another GTE user since the camera's load
+        PS1GteCamPut();
+    write<Register::VXY0, Unsafe>((uint32_t)x >> 16 | ((uint32_t)y & 0xFFFF0000u));
+    write<Register::VZ0, Safe>((uint32_t)(z >> 16));
+    Kernels::mvmva<Kernels::MX::RT, Kernels::MV::V0, Kernels::TV::Zero, Kernels::SF::Unshifted>();
+    out[0] = s_camT[0] + (int32_t)readRaw<Register::MAC1, Safe>();
+    out[1] = s_camT[1] + (int32_t)readRaw<Register::MAC2, Safe>();
+    out[2] = s_camT[2] + (int32_t)readRaw<Register::MAC3, Safe>();
+    return 1;
+}
 
 int PS1Gte3DProject(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz) {
     return project<0>(xyz, count, sxy, sz, nullptr, 0, 0, 0);

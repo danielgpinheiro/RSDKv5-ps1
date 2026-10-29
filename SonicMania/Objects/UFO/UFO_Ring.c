@@ -19,6 +19,13 @@ void UFO_Ring_LateUpdate(void)
 {
     RSDK_THIS(UFO_Ring);
 
+#if defined RETRO_PS1_BUILD
+    int32 w[3];
+    if (PS1GteCamSpace(self->position.x, self->height, self->position.y, w)) {
+        self->worldX = w[0], self->worldY = w[1], self->zdepth = w[2];
+        return;
+    }
+#endif
     int32 x = self->position.x >> 8;
     int32 y = self->height >> 8;
     int32 z = self->position.y >> 8;
@@ -124,7 +131,7 @@ void UFO_Ring_State_NormalRing(void)
 {
     RSDK_THIS(UFO_Ring);
 
-    foreach_active(UFO_Player, player)
+    ufo_foreach_active(UFO_Player, player)
     {
         int32 rx = (self->position.x - player->position.x) >> 16;
         int32 ry = (self->height - player->height - 0xA0000) >> 16;

@@ -22,5 +22,15 @@ int PS1Gte3DProjectOc(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz
 int PS1Gte3DProjectNear(const int16_t *xyz, int count, uint32_t *sxy, uint16_t *sz, uint8_t *oc, uint32_t zmin, int32_t sw,
                         int32_t sh);
 
+// ps1-ufo: the UFO stages' camera-space transform of a ring / sphere (UFO_Ring / UFO_Sphere_LateUpdate's three rows
+// m[r][3] + (y * m[r][1] >> 8) + (z * m[r][2] >> 8) + (x * m[r][0] >> 8), x / y / z the 16.16 position >> 8) as one GTE
+// MVMVA: exact when the position is whole pixels within +-16383 and every |m[r][c]| <= 256 (each stock term is then
+// p * m with no rounding or overflow, and the GTE's 44-bit sum keeps the same low 32 bits). PS1GteCamLoad: the camera's
+// matrix (UFO_Camera's LateUpdate, the only writer; nullptr: none), loaded into the GTE now and again after another
+// GTE user. PS1GteCamSpace: 0 when not done (the caller computes it as stock)
+extern "C" void PS1GteCamLoad(const int32_t (*m)[4]);
+extern "C" int PS1GteCamSpace(int32_t x, int32_t y, int32_t z, int32_t *out);
+
 extern volatile uint32_t g_ps1GteVertices; // vertices projected (total)
+extern volatile uint32_t g_ps1GteCamLeft; // PS1GteCamSpace calls left to the caller (total)
 extern volatile uint32_t g_ps1GteFlagged;  // ... of them flagged (total)
