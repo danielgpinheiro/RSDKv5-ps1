@@ -212,4 +212,12 @@ __attribute__((optimize("O2"))) static EntityBase **PS1ScanSleep(EntityBase **p,
     return p;
 }
 
+// ps1-ufo2: the scan in assembly (ps1/scan_sleep.s: the same decisions and writes; its group-sleep call comes back here).
+// PS1_SCAN_SLEEP_C=1 or the PS1_CHECK_SLEEP audit: the C above
+extern "C" void PS1SleepGroupSetC(uint32 g) { PS1SleepGroupSet(g); }
+extern "C" EntityBase **PS1ScanSleepAsm(EntityBase **p, EntityBase **pend);
+#if PS1_SCAN_SLEEP_C || PS1_CHECK_SLEEP
 extern "C" void PS1ScanSleepLink() { g_ps1ScanSleepFn = PS1ScanSleep; }
+#else
+extern "C" void PS1ScanSleepLink() { g_ps1ScanSleepFn = PS1ScanSleepAsm; }
+#endif

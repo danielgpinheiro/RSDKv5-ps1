@@ -68,6 +68,7 @@ ps1/gte3d.cpp \
 ps1/s3d_faces.s \
 ps1/s3d_blend.s \
 ps1/floor_quads.s \
+ps1/scan_sleep.s \
 ps1/band_fast.s \
 ps1/scan_fast.s \
 ps1/fmv.cpp \
