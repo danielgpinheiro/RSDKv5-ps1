@@ -1402,9 +1402,8 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
     const int32 lq   = ~((st ? st : g_ps1LineStep) - 1);  // 9v
     const int32 nq   = st ? st - 1 : 0;
     // ps1-ufo: the strip layer's bands go to the strip drawer (the UFO overlays); a band it leaves goes to the tiles
-    const PS1TileStripRec *sr = PS1TileStrip();
     bool (*const strip)(TileLayer *, int32, int32, int32, int32, uint8) =
-        sr && sr->layer == (uint8)(layer - tileLayers) ? g_ps1S3DOps.band : NULL;
+        PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
 #define PS1_FLUSH_GROUP()                                                                                              \
     do {                                                                                                               \
         if (strip) {                                                                                                   \
@@ -1593,14 +1592,18 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     if (s_bankLine >= 0) // 7b.7: the frame's extra bank's CLUTs, before any span opens
         PS1BankTiles(gfxLineBuffer[s_bankLine]);
     bool oneBank = s_oneBank;
+    bool (*const strip)(TileLayer *, int32, int32, int32, int32, uint8) =
+        PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
     if (layer->ps1Uniform) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
         // palette bank changes), as the scan below would find them
         int32 x = layer->ps1UniformX;
         x       = x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x;
-        PS1Emit e; // one span for the layer (3.3j)
-        EmitOpen(e);
-        e.page = 0xFFFFFFFF;
+        PS1Emit e; // one span for the layer (3.3j; a strip layer's bands open their own: ps1-ufo2)
+        if (!strip) {
+            EmitOpen(e);
+            e.page = 0xFFFFFFFF;
+        }
         for (int32 cy = y1; cy < y2;) {
             int32 ly   = (layer->ps1UniformY + cy) % heightPx;
             uint8 bank = gfxLineBuffer[cy];
@@ -1612,10 +1615,14 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
                     h = k;
                     break;
                 }
-            DrawBandInto(e, layer, cy, h, x, ly, bank);
+            if (!strip) // ps1-ufo2: a strip layer's band from its strip (UFO6's sky), else from its tiles
+                DrawBandInto(e, layer, cy, h, x, ly, bank);
+            else if (!strip(layer, cy, h, x, ly, bank))
+                DrawBand(layer, cy, h, x, ly, bank);
             cy += h;
         }
-        EmitClose(e);
+        if (!strip)
+            EmitClose(e);
         PS1_LT_ADD(0, PS1T() - tl);
         uint32 dt         = PS1HblanksSince(t0);
         g_ps1LayerHbl     = g_ps1LayerHbl + dt;

@@ -54,8 +54,10 @@ struct PS1RotoPageRec {
 };
 #define PS1_TILE_ROTO_PAGES (4)
 PS1RotoPageRec s_rotoPage[PS1_TILE_ROTO_PAGES];
-PS1TileStripRec s_strip; // ps1-ufo (PTL5)
+#define PS1_TILE_STRIPS 3
+PS1TileStripRec s_strip[PS1_TILE_STRIPS]; // ps1-ufo (PTL5)
 uint16 s_stripClutFirst = 0;
+uint8 s_stripCount      = 0;
 bool s_stripOn          = false;
 } // namespace
 extern "C" volatile int32 g_ps1StripOn;
@@ -80,7 +82,15 @@ uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; 
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
-const PS1TileStripRec *RSDK::PS1TileStrip() { return s_ps1TileBlob && s_stripOn && g_ps1StripOn ? &s_strip : NULL; }
+const PS1TileStripRec *RSDK::PS1TileStrip(int32 layer)
+{
+    if (!s_ps1TileBlob || !s_stripOn || !g_ps1StripOn)
+        return NULL;
+    for (uint32 i = 0; i < s_stripCount; ++i)
+        if (s_strip[i].layer == layer)
+            return &s_strip[i];
+    return NULL;
+}
 uint16 RSDK::PS1TileStripClutFirst() { return s_ps1TileBlob && s_stripOn ? s_stripClutFirst : s_clutCount; }
 #if PS1_DEBUG_OVERLAY
 // ps1/debug_overlay.cpp: the scene's tile pixels in VRAM (0 without a .ptl: the counter keeps the last load's)
@@ -214,13 +224,19 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
     }
     if (v4)
         Seek_Cur(&info, 128); // 9v.3's opaque bits (u8[128], bit t: tile t's pixels all opaque): no runtime user yet
-    if (v5) { // u16 count (1), u16 clutFirst, the record
+    if (v5) { // u16 count (1-3), u16 clutFirst, the records
         uint16 sc[2];
         ReadBytes(&info, sc, 4);
-        ReadBytes(&info, &s_strip, sizeof(s_strip));
         s_stripClutFirst = sc[1];
-        s_stripOn = sc[0] == 1 && s_strip.layer < LAYER_COUNT && s_strip.bands <= 16 && sc[1] <= h.clutCount && s_strip.width
-                    && !(s_strip.width & 255) && s_strip.width <= 1024 && !(s_strip.width & (s_strip.width - 1));
+        s_stripCount     = (uint8)(sc[0] <= PS1_TILE_STRIPS ? sc[0] : 0);
+        s_stripOn        = s_stripCount && sc[1] <= h.clutCount;
+        if (s_stripCount)
+            ReadBytes(&info, s_strip, sizeof(PS1TileStripRec) * s_stripCount);
+        for (uint32 i = 0; i < s_stripCount; ++i) {
+            const PS1TileStripRec &st = s_strip[i];
+            s_stripOn = s_stripOn && st.layer < LAYER_COUNT && st.bands <= 16 && st.width && !(st.width & 255) && st.width <= 1024
+                        && !(st.width & (st.width - 1));
+        }
         g_ps1TileErrors = g_ps1TileErrors + !s_stripOn;
     }
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;

@@ -553,13 +553,13 @@ void PS1UfoFloorDraw(TileLayer *layer); // PS1UfoFloor.cpp
 volatile uint32 g_ps1StripBands = 0; // bands drawn from the strip (total)
 static bool PS1StripBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
-    const PS1TileStripRec *st = PS1TileStrip();
+    const PS1TileStripRec *st = PS1TileStrip((int32)(layer - tileLayers));
     const int32 r             = ly - (st ? st->rowFirst : 0);
     if (!st || bank || r < 0 || r + h > st->bands * 16)
         return false;
     const uint32 clut = st->clut[r >> 4];
-    if (clut == 0xFFFF)
-        return false;
+    if (clut >= 0xFFFE)
+        return clut == 0xFFFE; // (an empty band: nothing to draw; 0xFFFF: the tiles draw it)
     uint32 *hdr = (uint32 *)PS1ChainSpanBegin(18);
     if (!hdr)
         return true; // (the arena is full: the tiles would not fit either)

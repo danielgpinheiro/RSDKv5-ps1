@@ -45,7 +45,7 @@ void PS1TileSolidDrop(int32 layer); // SetTile on the layer (-1: every layer); a
 bool PS1TileRotoPage(int32 layer, PS1TileImage *image, int32 *ox, int32 *oy); // ox bit 16: the map repeats the page (9u.18)
 // ps1-ufo: a PTL5 scene's strip (tools/gfx/build_tiles.py STRIP_LAYERS: the UFO skies): layer rows [rowFirst, rowFirst +
 // 16 * bands) pre-rendered 4-bit, `width` texels across width / 256 texture pages (tpage[k]: texels [256k, 256k + 256),
-// v = row - rowFirst), band b (16 rows) on CLUT clut[b] (0xFFFF: the tiles draw it); clutFirst: its first CLUT in
+// v = row - rowFirst), band b (16 rows) on CLUT clut[b] (0xFFFF: the tiles draw it; 0xFFFE: empty); clutFirst: its first CLUT in
 // PS1TileCluts() (the ones before are the tiles'). NULL: none. Drawn by the UFO overlays (PS1Scene3D.cpp PS1StripBand)
 struct PS1TileStripRec {
     uint8 layer, bands;
@@ -53,7 +53,7 @@ struct PS1TileStripRec {
     uint16 tpage[4];
     uint16 clut[16];
 };
-const PS1TileStripRec *PS1TileStrip();
+const PS1TileStripRec *PS1TileStrip(int32 layer); // ps1-ufo2: up to PS1_TILE_STRIPS a scene, by layer index
 uint16 PS1TileStripClutFirst(); // PS1TileClutCount() without a strip
 // The image of `tile` H-flipped (built for the tiles per-line rows show H-flipped), PS1_TILE_NONE if there is none
 // key: the tile (H), tile | 0x800 (V), tile | 0xC00 (both); PS1_TILE_NONE: no copy. 9u.14: the cache test inline (a call per
