@@ -593,6 +593,8 @@ struct PS1Band {
     uint8 h, bank;
     int32 x, ly, d; // d: first column relative to the group's first band (DrawRowBands)
 };
+// ps1-ufo: the UFO overlays' strip drawer (g_ps1S3DOps.band): false leaves the band to the tiles
+typedef bool (*PS1StripFn)(TileLayer *, int32, int32, int32, int32, uint8);
 
 // The bands of one tile row (2..16, same palette bank), each at its own X: the columns any of them shows are looked
 // up once into the scratchpad's column table, then each band's pieces come from it. The same pieces as DrawBand.
@@ -1389,6 +1391,16 @@ void RSDK::PS1TintScreenGrey()
 #endif
 }
 
+// ps1-ufo: a strip layer's bands through the strip drawer (the UFO overlays), a band it leaves from the tiles; out of
+// line, read from layer->ps1Strip at each flush (a strip pointer kept across the scan below cost 1.8 KB of resident
+// code in spills and copies: FBZ2's STG room)
+__attribute__((noinline)) void PS1StripBands(TileLayer *layer, const PS1Band *group, int32 count)
+{
+    const PS1StripFn strip = g_ps1S3DOps.band;
+    for (int32 g = 0; g < count; ++g)
+        if (!strip(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank))
+            DrawBand(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank);
+}
 // The bands of a layer's lines [y1, y2) (3.3b), grouped per tile row: from the scanlines ProcessParallax filled, or
 // (Direct, 3.3h) from the layer's lineScroll and each scroll info's X (xOf), the rows consecutive from scrollY on line 0
 template <bool Direct>
@@ -1402,15 +1414,10 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
     const int32 lq   = ~((st ? st : g_ps1LineStep) - 1);  // 9v
     const int32 nq   = st ? st - 1 : 0;
     // ps1-ufo: the strip layer's bands go to the strip drawer (the UFO overlays); a band it leaves goes to the tiles
-    bool (*const strip)(TileLayer *, int32, int32, int32, int32, uint8) =
-        PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
 #define PS1_FLUSH_GROUP()                                                                                              \
     do {                                                                                                               \
-        if (strip) {                                                                                                   \
-            for (int32 g_ = 0; g_ < groupCount; ++g_)                                                                  \
-                if (!strip(layer, group[g_].sy, group[g_].h, group[g_].x, group[g_].ly, group[g_].bank))               \
-                    DrawBand(layer, group[g_].sy, group[g_].h, group[g_].x, group[g_].ly, group[g_].bank);             \
-        }                                                                                                              \
+        if (layer->ps1Strip)                                                                                           \
+            PS1StripBands(layer, group, groupCount);                                                                   \
         else if (groupCount == 1)                                                                                      \
             DrawBand(layer, group[0].sy, group[0].h, group[0].x, group[0].ly, group[0].bank);                          \
         else if (groupCount > 1)                                                                                       \
@@ -1592,14 +1599,14 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     if (s_bankLine >= 0) // 7b.7: the frame's extra bank's CLUTs, before any span opens
         PS1BankTiles(gfxLineBuffer[s_bankLine]);
     bool oneBank = s_oneBank;
-    bool (*const strip)(TileLayer *, int32, int32, int32, int32, uint8) =
-        PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
+    const PS1StripFn strip = PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
+    layer->ps1Strip        = strip != NULL;
     if (layer->ps1Uniform) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
         // palette bank changes), as the scan below would find them
         int32 x = layer->ps1UniformX;
         x       = x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x;
-        PS1Emit e; // one span for the layer (3.3j; a strip layer's bands open their own: ps1-ufo2)
+        PS1Emit e; // one span for the layer (3.3j; a strip layer's bands open their own: ps1-ufo2, UFO6's sky)
         if (!strip) {
             EmitOpen(e);
             e.page = 0xFFFFFFFF;
@@ -1615,10 +1622,12 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
                     h = k;
                     break;
                 }
-            if (!strip) // ps1-ufo2: a strip layer's band from its strip (UFO6's sky), else from its tiles
+            if (strip) {
+                const PS1Band b = { (int16)cy, (uint8)h, bank, x, ly, 0 };
+                PS1StripBands(layer, &b, 1);
+            }
+            else
                 DrawBandInto(e, layer, cy, h, x, ly, bank);
-            else if (!strip(layer, cy, h, x, ly, bank))
-                DrawBand(layer, cy, h, x, ly, bank);
             cy += h;
         }
         if (!strip)

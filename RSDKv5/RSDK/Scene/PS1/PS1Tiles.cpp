@@ -82,7 +82,7 @@ uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; 
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
 uint16 RSDK::PS1TileClutCount() { return s_clutCount; }
-const PS1TileStripRec *RSDK::PS1TileStrip(int32 layer)
+__attribute__((noinline)) const PS1TileStripRec *RSDK::PS1TileStrip(int32 layer)
 {
     if (!s_ps1TileBlob || !s_stripOn || !g_ps1StripOn)
         return NULL;
@@ -91,7 +91,7 @@ const PS1TileStripRec *RSDK::PS1TileStrip(int32 layer)
             return &s_strip[i];
     return NULL;
 }
-uint16 RSDK::PS1TileStripClutFirst() { return s_ps1TileBlob && s_stripOn ? s_stripClutFirst : s_clutCount; }
+uint16 RSDK::PS1TileStripClutFirst() { return s_stripClutFirst; } // (the scene's CLUT count without a strip: set at the load)
 #if PS1_DEBUG_OVERLAY
 // ps1/debug_overlay.cpp: the scene's tile pixels in VRAM (0 without a .ptl: the counter keeps the last load's)
 uint32 RSDK::PS1TilesVramBytes() { return s_imageCount ? g_ps1TileVramBytes : 0; }
@@ -173,7 +173,7 @@ void RSDK::PS1TilesRelease()
 bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
 {
     PS1TilesRelease();
-    s_imageCount = s_clutCount = s_sheetCount = s_cellCount = 0;
+    s_imageCount = s_clutCount = s_sheetCount = s_cellCount = s_stripClutFirst = 0;
     memset(s_solidOff, 0, sizeof(s_solidOff));
     s_solidMaskOff  = 0;
     g_ps1SolidLines = 0;
@@ -232,14 +232,15 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
         s_stripOn        = s_stripCount && sc[1] <= h.clutCount;
         if (s_stripCount)
             ReadBytes(&info, s_strip, sizeof(PS1TileStripRec) * s_stripCount);
-        for (uint32 i = 0; i < s_stripCount; ++i) {
+        for (uint32 i = 0; i < s_stripCount; ++i) { // (width 256, 512 or 1024)
             const PS1TileStripRec &st = s_strip[i];
-            s_stripOn = s_stripOn && st.layer < LAYER_COUNT && st.bands <= 16 && st.width && !(st.width & 255) && st.width <= 1024
+            s_stripOn = s_stripOn && st.layer < LAYER_COUNT && st.bands <= 16 && (uint32)(st.width - 256) <= 768
                         && !(st.width & (st.width - 1));
         }
         g_ps1TileErrors = g_ps1TileErrors + !s_stripOn;
     }
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
+    s_stripClutFirst = s_stripOn ? s_stripClutFirst : s_clutCount;
     s_imgOff     = 1024 * 2;
     s_clutOff    = s_imgOff + s_imageCount * sizeof(PS1TileImage);
     s_sheetOff   = s_clutOff + s_clutCount * sizeof(PS1TileClut);

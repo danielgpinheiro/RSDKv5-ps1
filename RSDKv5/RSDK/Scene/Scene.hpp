@@ -139,6 +139,7 @@ struct TileLayer {
     // nothing writes lineScroll later), and this frame's uniform scroll when ProcessParallax found no per-line work
     uint8 ps1LineScrollOne, ps1Uniform;
     uint8 ps1Direct; // 3.3h: this frame's lines come from lineScroll and the scroll infos (no deformation), from row ps1UniformY
+    uint8 ps1Strip;  // ps1-ufo: this frame's bands from the scene's VRAM strip (PS1DrawLayerHScroll: PTL5, the UFO overlays)
     int16 ps1UniformX, ps1UniformY;
     // PS1 (docs/32 2.3g, 7b): the layer's chunk index has ps1ChunkRows rows of ps1ChunkStride chunks (the layer's size in
     // 4x4-tile chunks), then a row of chunk 0: columns / rows past the layer read chunk 0 (the stock padding); 7b.3c:

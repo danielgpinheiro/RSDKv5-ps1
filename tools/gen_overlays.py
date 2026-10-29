@@ -377,8 +377,14 @@ def stubs(argv):
     must, copy_refs, ro_funcs = overlay_reach(light, resident_game_objs())
     keep = set()
     for fo in folders:
+        # ps1-ufo2: minus what the folder's own EXTRAS objects define (linked into its overlay: the UFO objects' calls to
+        # PS1ActiveNext / PS1GteCamSpace bind there; kept, they were 0.8 KB of resident code only the UFO stages run)
+        xdef = set()
+        for name, (_, eobjs, _) in EXTRAS.items():
+            if fo in extra_folders(name):
+                xdef |= set(nm_syms([os.path.join(REPO, o) for o in eobjs], '--defined-only'))
         for u in nm_syms(objs_of(fo), '-u'):
-            if u in res_def and (fo not in light or u not in ro_funcs or u in must):
+            if u in res_def and u not in xdef and (fo not in light or u not in ro_funcs or u in must):
                 keep.add(u)
     for u in copy_refs:
         if u in res_def and (u not in ro_funcs or u in must):
