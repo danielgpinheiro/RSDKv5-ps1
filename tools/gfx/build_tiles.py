@@ -102,7 +102,10 @@ STRIP_LAYERS = {'UFO1': (('Background 1', 384), ('Background 2', 384)),
                 'UFO7': (('Background 1', 384), ('Background 2', 384))}
 STRIP_BANDS = 16
 STRIP_MAX = 3              # strip records a scene (the runtime's PS1_TILE_STRIPS)
-STRIP_ATLAS_COLUMNS = 5    # texture columns a strip after the first must leave free (the atlases take 3-4, a deform sheet 1)
+# texture columns a strip after the first must leave free (ps1-ufo2: 3, the UFO atlases build in them for every character;
+# 5 where a deform sheet takes one more: UFO7's UFO_Plasma, gen_overlays EXTRAS 'deform')
+STRIP_ATLAS_COLUMNS = 3
+STRIP_ATLAS_COLUMNS_DEFORM = {'UFO7': 5}
 
 
 class TileError(Exception):
@@ -585,7 +588,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             raise TileError('%s%s: %s can not be a strip (%d px wide, rows %d+)' % (folder, scene_id, name, width, row0))
         free = [(c, r) for r in (0, 1) for c in reversed(V.TEX_COLUMNS) if (c, r) not in taken]
         need = width // V.PAGE
-        if len(free) < need or (strips and len(free) - need < STRIP_ATLAS_COLUMNS):
+        if len(free) < need or (strips and len(free) - need < STRIP_ATLAS_COLUMNS_DEFORM.get(folder, STRIP_ATLAS_COLUMNS)):
             if not strips:
                 raise TileError('%s%s: no %d free columns for the %s strip' % (folder, scene_id, need, name))
             continue
