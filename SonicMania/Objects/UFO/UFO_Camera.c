@@ -8,9 +8,6 @@
 #include "Game.h"
 
 ObjectUFO_Camera *UFO_Camera;
-#if defined RETRO_PS1_BUILD
-uint32 ps1UfoCamGen = 0;
-#endif
 
 void UFO_Camera_Update(void) {}
 
@@ -22,7 +19,7 @@ void UFO_Camera_LateUpdate(void)
 
     UFO_Camera_HandleCamPos();
 #if defined RETRO_PS1_BUILD
-    ++ps1UfoCamGen; // matWorld may have changed (only this object writes it): PS1GteCamSpace reloads it
+    PS1GteCamLoad(UFO_Camera->matWorld.values); // (only this object writes matWorld: the rings' and spheres' GTE transform)
 #endif
 }
 

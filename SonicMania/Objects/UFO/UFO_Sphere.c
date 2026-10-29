@@ -24,7 +24,7 @@ void UFO_Sphere_LateUpdate(void)
 
 #if defined RETRO_PS1_BUILD
     int32 w[3];
-    if (PS1GteCamSpace(UFO_Camera->matWorld.values, self->position.x, self->height, self->position.y, ps1UfoCamGen, w)) {
+    if (PS1GteCamSpace(self->position.x, self->height, self->position.y, w)) {
         self->worldPos.x = w[0], self->worldPos.y = w[1], self->zdepth = w[2];
         return;
     }

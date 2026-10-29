@@ -611,5 +611,6 @@ extern "C" void PS1Scene3DLink()
     g_ps1S3DOps.floor = PS1UfoFloorDraw;
     g_ps1S3DOps.sort  = PS1Scene3DSort;
     g_ps1S3DOps.band  = PS1StripBand;
+    PS1GteCamLoad(nullptr); // (until UFO_Camera's first LateUpdate)
     s_sortN = 0, s_sortList = NULL;
 }
