@@ -488,19 +488,12 @@ uint16 s_sortRank[PS1_DRAWLIST_MAX]; // and each entry's place in its sorted ord
 uint16 s_sortIdx[PS1_DRAWLIST_MAX];  // this frame: list positions in sort order (first: by last frame's rank)
 int32 s_sortN              = 0;
 const DrawList *s_sortList = NULL;
-__attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
+// The sort's starting order: last frame's rank of each entry (both lists in slot order: one walk), its list position put
+// at that rank, then the entries new this frame (fresh: the scratchpad's end, read before the keys go in)
+__attribute__((optimize("O2"), noinline)) static void PS1SortRanks(const uint16 *e, int32 n, int32 pn, uint16 *idx, uint16 *fresh)
 {
-    const int32 n = list->entityCount;
-    if (n > PS1_DRAWLIST_MAX)
-        return false;
-    int32 *const key  = (int32 *)0x1F800000; // the scratchpad (the layer drawer's, free between its calls), 256 words
-    uint16 *const idx = s_sortIdx;
-    uint16 *const e   = list->entries;
-    const int32 pn    = list == s_sortList && s_sortN <= PS1_DRAWLIST_MAX ? s_sortN : 0;
-    // last frame's rank of each entry (both lists in slot order: one walk), its list position put at that rank
     for (int32 r = 0; r < pn; ++r) idx[r] = 0xFFFF;
     int32 news = 0;
-    uint16 *const fresh = (uint16 *)(key + PS1_DRAWLIST_MAX) - n; // the scratchpad's end (read before the keys go in)
     for (int32 i = 0, j = 0; i < n; ++i) {
         const uint32 s = e[i];
         while (j < pn && s_sortSlot[j] < s) ++j;
@@ -517,6 +510,22 @@ __attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
         if (idx[r] != 0xFFFF)
             idx[m++] = idx[r];
     for (int32 k = 0; k < news; ++k) idx[m++] = fresh[k];
+}
+__attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
+{
+    const int32 n = list->entityCount;
+    if (n > PS1_DRAWLIST_MAX)
+        return false;
+    int32 *const key  = (int32 *)0x1F800000; // the scratchpad (the layer drawer's, free between its calls), 256 words
+    uint16 *const idx = s_sortIdx;
+    uint16 *const e   = list->entries;
+    const int32 pn    = list == s_sortList && s_sortN <= PS1_DRAWLIST_MAX ? s_sortN : 0;
+    // ps1-ufo2: the same entries as last frame (most frames): idx still holds last frame's order (the walk below would
+    // rebuild it: entry i at rank s_sortRank[i])
+    int32 same = pn == n;
+    for (int32 i = 0; i < n && same; ++i) same = e[i] == s_sortSlot[i];
+    if (!same)
+        PS1SortRanks(e, n, pn, idx, (uint16 *)(key + PS1_DRAWLIST_MAX) - n);
     // the keys in that order, then the insertion sort: (k, i) before (k', i') when k > k' or k == k' and i < i'
     for (int32 p = 0; p < n; ++p) key[p] = OBJECT_ENTITY(e[idx[p]])->zdepth;
     uint32 moves = 0;
@@ -532,7 +541,8 @@ __attribute__((optimize("O2"))) static bool PS1Scene3DSort(DrawList *list)
         moves += (uint32)(p - q);
     }
     // the list in that order; this frame's list and ranks kept for the next
-    for (int32 i = 0; i < n; ++i) s_sortSlot[i] = e[i];
+    if (!same)
+        for (int32 i = 0; i < n; ++i) s_sortSlot[i] = e[i];
     for (int32 p = 0; p < n; ++p) {
         e[p]               = s_sortSlot[idx[p]];
         s_sortRank[idx[p]] = (uint16)p;
