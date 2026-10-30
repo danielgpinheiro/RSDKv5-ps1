@@ -624,6 +624,11 @@ extern "C" void *PS1ActiveNext(uint16 group, int32 *id)
 extern "C" void PS1StripBands(TileLayer *layer, const void *bands, int32 count); // PS1Layers.cpp (resident)
 extern "C" void PS1DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank);          // PS1Layers.cpp's DrawSolid
 extern "C" volatile int32 g_ps1LineStep;
+// ps1-ufo2 (round 3, B1; user 2026-10-22: coarser parallax allowed): these layers' per-line steps in blocks of this many
+// layer rows (the deformation and the X held per block, as a ps1LayerStep row; 0: g_ps1LineStep's 4)
+extern "C" {
+volatile int32 g_ps1UfoSkyStep = 8;
+}
 struct PS1SkyBand { // PS1Layers.cpp's PS1Band
     int16 sy;
     uint8 h, bank;
@@ -649,7 +654,8 @@ __attribute__((optimize("O2"))) static void PS1SkyDraw(TileLayer *layer, bool on
     const uint8 *lsBase  = layer->lineScroll ? layer->lineScroll : &layer->ps1LineScrollOne;
     const int32 lsStep   = layer->lineScroll ? 1 : 0;
     const int32 *deform  = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
-    const int32 st       = ps1LayerStep[layer - tileLayers];
+    const int32 st0      = ps1LayerStep[layer - tileLayers];
+    const int32 st       = st0 ? st0 : g_ps1UfoSkyStep; // (round 3, B1: the shimmer in coarser blocks)
     const int32 q        = (st ? st : (g_ps1LineStep > 1 ? g_ps1LineStep : 1)) - 1; // the fill's deformation blocks
     const int32 nq       = st ? st - 1 : 0;                                          // the scan's X blocks
     const uint8 *solid   = PS1TileSolidLines((int32)(layer - tileLayers), heightPx); // one colour a row (or none)
