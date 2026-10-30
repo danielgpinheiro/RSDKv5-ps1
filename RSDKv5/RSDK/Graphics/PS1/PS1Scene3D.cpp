@@ -628,6 +628,7 @@ extern "C" volatile int32 g_ps1LineStep;
 // layer rows (the deformation and the X held per block, as a ps1LayerStep row; 0: g_ps1LineStep's 4)
 extern "C" {
 volatile int32 g_ps1UfoSkyStep = 8;
+volatile int32 g_ps1UfoSpriteFar = 0x20000; // ps1-ufo2 (round 3, B3): UFO_Ring / UFO_Sphere not drawn from this depth (a quarter size; 0x7FFFFFFF: all)
 }
 struct PS1SkyBand { // PS1Layers.cpp's PS1Band
     int16 sy;

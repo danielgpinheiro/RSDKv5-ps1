@@ -43,7 +43,11 @@ void UFO_Ring_Draw(void)
 {
     RSDK_THIS(UFO_Ring);
 
+#if defined RETRO_PS1_BUILD
+    if (self->zdepth >= 0x100 && self->zdepth < g_ps1UfoSpriteFar) {
+#else
     if (self->zdepth >= 0x100) {
+#endif
         self->direction = self->animator.frameID > 8;
 
         Vector2 drawPos;

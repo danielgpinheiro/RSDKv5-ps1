@@ -46,6 +46,10 @@ void UFO_Sphere_Draw(void)
 {
     RSDK_THIS(UFO_Sphere);
 
+#if defined RETRO_PS1_BUILD
+    if (self->drawGroup == 4 && self->zdepth >= g_ps1UfoSpriteFar)
+        return; // (round 3, B3: far spheres not drawn)
+#endif
     if (self->drawGroup == 4 && self->zdepth >= 0x100) {
         self->direction = self->animator.frameID > 8;
         self->drawPos.x = (ScreenInfo->center.x + (self->worldPos.x << 8) / self->zdepth) << 16;

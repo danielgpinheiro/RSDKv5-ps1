@@ -84,6 +84,9 @@ void *PS1ActiveNext(uint16 group, int32 *id);
 // PS1GteCamSpace; 0: not done, compute it as stock); UFO_Camera's LateUpdate loads its matrix (PS1GteCamLoad)
 void PS1GteCamLoad(const int32 (*m)[4]);
 int PS1GteCamSpace(int32 x, int32 y, int32 z, int32 *out);
+// ps1-ufo2 (round 3, B3; user 2026-10-30: far sprites may go): rings and spheres at this camera depth or farther are
+// not drawn (0x7FFFFFFF: all; 0x8000 is full size, 0x20000 a quarter); RSDK/Graphics/PS1/PS1Scene3D.cpp
+extern volatile int32 g_ps1UfoSpriteFar;
 #define ufo_foreach_active(type, entityOut)                                                                            \
     Entity##type *entityOut = NULL;                                                                                    \
     for (int32 entityOut##Id_ = 0; (entityOut = (Entity##type *)PS1ActiveNext(type->classID, &entityOut##Id_)) != NULL;)
