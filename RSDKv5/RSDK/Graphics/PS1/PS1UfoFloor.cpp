@@ -39,6 +39,7 @@ volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dream
 volatile int32 g_ps1FloorLodFar = 160; // the minimap's (up to the horizon's clip line)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
 volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
+volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap's 16 x 16 cells from here, tiles (0: none)
 }
 
 namespace
@@ -543,6 +544,117 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
         PS1ChainBulkEnd((int)((w - bulk) / 10));
     return quads;
 }
+// ps1-ufo2 (round 3, B2; user 2026-10-22: mild visible simplification allowed): the minimap from g_ps1FloorCoarseFar tiles
+// on in cells of 16 x 16 tiles (1024 quarter pixels): the same minimap texels (16 a cell side), a quarter of the quads and
+// half the rows of PS1FloorLod's 8 x 8 cells; a cell is drawn when any of its four 8 x 8 cells has a chunk; its fog bank
+// is its centre's. Drawn before PS1FloorLod, which takes the nearer cells up to that distance (and covers the overlap).
+__attribute__((optimize("O2"), noinline)) uint32 PS1FloorLodCoarse(const PS1FloorCtx &c, TileLayer *layer, int32 fA, int32 f1)
+{
+    const uint32 info = PS1TileLodInfo();
+    if (!info || f1 <= fA)
+        return 0;
+    const int32 lodFirst = info & 0xFFFF, pw = (info >> 16) & 0xFF;
+    const PS1TileImage *images = PS1TileImages();
+    const int32 f0 = fA - 724 > 0 ? fA - 724 : 0; // a cell's half diagonal: 512 x 1.414
+    int32 V[4][2];
+    PS1FloorRegion(c, f0, f1, V);
+    int32 minY = V[0][1], maxY = V[0][1];
+    for (int32 k = 1; k < 4; ++k) minY = V[k][1] < minY ? V[k][1] : minY, maxY = V[k][1] > maxY ? V[k][1] : maxY;
+    const int32 wMask = (1 << layer->widthShift) - 1, hMask = (1 << layer->heightShift) - 1;
+    const uint32 cellsW = (uint32)(wMask + 1) >> 3, cells = cellsW * ((uint32)(hMask + 1) >> 3);
+    const bool cache = cells <= PS1_LOD_CELLS;
+    if (cache && (layer != s_lodLayer || g_ps1LayoutWrites != s_lodWrites || g_ps1TileLoads != s_lodLoads)) {
+        memset(s_lodKnown, 0, sizeof(s_lodKnown));
+        memset(s_lodRowKnown, 0, sizeof(s_lodRowKnown));
+        s_lodLayer = layer, s_lodWrites = g_ps1LayoutWrites, s_lodLoads = g_ps1TileLoads;
+    }
+    uint32 *w = NULL, *wend = NULL, *bulk = NULL;
+    uint32 quads = 0;
+    const int32 cy0 = minY >> 10;
+    int32 nRows = (maxY >> 10) - cy0 + 1;
+    nRows = nRows > PS1_FLOOR_MAX_ROWS ? PS1_FLOOR_MAX_ROWS : nRows;
+    PS1FloorSpanner sp;
+    PS1_SPANNER_INIT(sp, V, cy0 << 10, 1024);
+    for (int32 r = 0; r < nRows; ++r) {
+        int32 xmin, xmax;
+        s_rowA[r] = 1, s_rowB[r] = 0;
+        if (!sp.Row(r, xmin, xmax))
+            continue;
+        int32 ca = xmin >> 10, cb = xmax >> 10;
+        if (cb - ca + 1 > PS1_FLOOR_MAX_COLS)
+            cb = ca + PS1_FLOOR_MAX_COLS - 1;
+        s_rowA[r] = (int16)ca, s_rowB[r] = (int16)cb;
+    }
+    PS1FloorRows rows;
+    for (int32 r = 0; r < nRows; ++r, rows.Next()) {
+        if (s_rowB[r] < s_rowA[r]) {
+            rows.botN = 0;
+            continue;
+        }
+        const int32 cyy = cy0 + r, ca = s_rowA[r];
+        const int32 n = s_rowB[r] - ca + 1, zq = (cyy << 10) - c.camY;
+        rows.Row(r, nRows, 1024, 10, c.camX, c.hq, zq);
+        const uint32 *xyA = rows.topXY + (ca - rows.topA), *xyB = rows.botXY + (ca - rows.botA);
+        const uint16 *zA = rows.topZ + (ca - rows.topA), *zB = rows.botZ + (ca - rows.botA);
+        const int32 badT = rows.topBad, badB = rows.botBad;
+        const int32 my = (cyy << 4) & hMask; // the cell's first tile row (a multiple of 16: my + 8 stays in the layer)
+        const uint16 *cr0 = PS1ChunkRow(layer, (uint32)my >> 2), *cr1 = PS1ChunkRow(layer, ((uint32)my >> 2) + 1);
+        const uint16 *cr2 = PS1ChunkRow(layer, ((uint32)my >> 2) + 2), *cr3 = PS1ChunkRow(layer, ((uint32)my >> 2) + 3);
+        const uint32 rowCell0 = ((uint32)my >> 3) * cellsW, rowCell1 = rowCell0 + cellsW;
+        int32 fd = c.sA * (((ca << 10) + 512) - c.camX) + c.cA * (zq + 512);
+        const int32 fStep = c.sA * 1024;
+        for (int32 i = 0; i < n; ++i, fd += fStep) {
+            const int32 mx = ((ca + i) << 4) & wMask;
+            const uint32 cx = (uint32)mx >> 3;
+            if (!(PS1LodCellSet(layer, cr0, cr1, mx, rowCell0 + cx, cache) || PS1LodCellSet(layer, cr0, cr1, mx + 8, rowCell0 + cx + 1, cache)
+                  || PS1LodCellSet(layer, cr2, cr3, mx, rowCell1 + cx, cache)
+                  || PS1LodCellSet(layer, cr2, cr3, mx + 8, rowCell1 + cx + 1, cache)))
+                continue; // sixteen empty chunks
+            const int32 fc = fd >> 10;
+            if (fc + 724 < fA || fc - 724 > f1)
+                continue;
+            if ((badT || badB) && (!zA[i] || !zA[i + 1] || !zB[i] || !zB[i + 1]))
+                continue;
+            const uint32 img = (uint32)(lodFirst + (my >> 8) * pw + (mx >> 8));
+            int32 bank = fd >> 19;
+            bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
+            const uint32 k = s_imgClut[img];
+            uint32 clut    = s_attr[k][bank];
+            if (!clut) {
+                if (w) {
+                    PS1ChainBulkEnd((int)((w - bulk) / 10));
+                    w = wend = NULL;
+                }
+                clut = PS1FloorClutFill(k, bank, images[img].clut);
+            }
+            const uint32 u = mx & 255, vv = my & 255;
+            const uint32 uR = u + 16 > 255 ? 255 : u + 16, vB = vv + 16 > 255 ? 255 : vv + 16;
+            if (w == wend) {
+                if (w)
+                    PS1ChainBulkEnd(32);
+                w = bulk = (uint32 *)PS1ChainBulkBegin(32, 9);
+                if (!w)
+                    return quads;
+                wend = w + 32 * 10;
+            }
+            w[0] = 0x2C808080;
+            w[1] = xyA[i];
+            w[2] = clut << 16 | vv << 8 | u;
+            w[3] = xyA[i + 1];
+            w[4] = (uint32)images[img].tpage << 16 | vv << 8 | uR;
+            w[5] = xyB[i];
+            w[6] = vB << 8 | u;
+            w[7] = xyB[i + 1];
+            w[8] = vB << 8 | uR;
+            w += 10;
+            ++quads;
+        }
+    }
+    if (w && w != bulk)
+        PS1ChainBulkEnd((int)((w - bulk) / 10));
+    return quads;
+}
+
 // 7.5: a "3D Floor" / "3D Roof" layer (the Dreamcast's texture: its 16x16 tiles pre-rendered into one 256x256 page,
 // PS1TilePatternImage) as cells of the whole pattern (1024 quarter pixels), repeated, over the forward distances its clip
 // lines see (a roof: above the camera, hq < 0) up to g_ps1FloorLodFar; each cell the bank of its centre's distance
@@ -713,7 +825,13 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     PS1Gte3DSetup((const int32_t *)R, 0, 0, 0, 256, cx << 16, cy << 16);
     PS1ChainDrawArea(x1, y1, x2, y2);
     // the minimap beyond the real tiles (drawn first: the real tiles cover it where both are)
-    g_ps1FloorLodQuads = g_ps1FloorLodQuads + PS1FloorLod(ctx, layer, far > fNear ? far : fNear, lodFar);
+    const int32 lodA = far > fNear ? far : fNear, coarse = g_ps1FloorCoarseFar * 64; // (round 3, B2)
+    if (coarse > lodA && coarse < lodFar) {
+        g_ps1FloorLodQuads = g_ps1FloorLodQuads + PS1FloorLodCoarse(ctx, layer, coarse, lodFar);
+        g_ps1FloorLodQuads = g_ps1FloorLodQuads + PS1FloorLod(ctx, layer, lodA, coarse);
+    }
+    else
+        g_ps1FloorLodQuads = g_ps1FloorLodQuads + PS1FloorLod(ctx, layer, lodA, lodFar);
     if (far <= fNear) {
         PS1ChainDrawAreaReset();
         return;
