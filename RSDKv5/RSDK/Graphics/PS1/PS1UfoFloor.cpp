@@ -82,7 +82,11 @@ uint16 s_attr[PS1_FLOOR_CLUTS + 2][8]; // this frame: CLUT attribute per (s_imgC
 uint16 s_raw[8][PS1_FLOOR_CLUTS][16];  // [bank][clut][entry]: the raw colours of the uploaded copies
 uint16 s_rawOk[8];                    // bit c: s_raw[b][c] valid
 uint32 s_lod = 0;                     // PS1TileLodInfo() when the tables were built
-uint32 s_sum8[8], s_sum8Ok;           // 8-bit rows: a checksum of the bank's colours uploaded (bit b: valid)
+uint32 s_sum8Ok;                      // 8-bit rows: bit b, s_pal8[b] holds bank b's colours uploaded
+// ps1-ufo2: the colours each 8-bit row was uploaded from (entries 0-255 as 128 words; entry 0 not compared): compared
+// two entries a load (the checksum it replaces ran 255 rotate-adds a bank every frame: UFO6's pattern floor ~12 hblanks)
+typedef uint32 __attribute__((may_alias)) PS1PalWord;
+uint32 s_pal8[8][128];
 uint32 s_frame = 0xFFFFFFFF, s_fadeSeen = 0xFFFFFFFF, s_vramGen = 0xFFFFFFFF;
 bool s_force = true;
 uint16 s_row[256];
@@ -130,13 +134,17 @@ uint32 PS1FloorClutFill(uint32 k, int32 bank, uint32 ownClut)
     if (k == PS1_FLOOR_K8) { // 8-bit: the bank's row
         attr = (uint32)(240 + bank) << 6;
         if (bank) {
-            uint32 sum = 0;
-            for (int32 i = 1; i < 256; ++i) sum = (sum << 1 | sum >> 31) + fullPalette[bank][i];
-            if (s_force || !(s_sum8Ok & (1u << bank)) || s_sum8[bank] != sum) {
+            const PS1PalWord *pw = (const PS1PalWord *)fullPalette[bank];
+            uint32 *cw           = s_pal8[bank];
+            bool same            = !s_force && (s_sum8Ok & (1u << bank)) && !((pw[0] ^ cw[0]) >> 16);
+            for (int32 i = 1; i < 128 && same; i += 4)
+                same = !((pw[i] ^ cw[i]) | (pw[i + 1] ^ cw[i + 1]) | (pw[i + 2] ^ cw[i + 2]) | (i + 3 < 128 ? pw[i + 3] ^ cw[i + 3] : 0));
+            if (!same) {
                 s_row[0] = 0;
                 for (int32 i = 1; i < 256; ++i) s_row[i] = PS1FloorClutColour(fullPalette[bank][i]);
                 PS1UploadClut(s_row, 256, 0, (int16)(240 + bank));
-                s_sum8[bank] = sum, s_sum8Ok |= 1u << bank;
+                for (int32 i = 0; i < 128; ++i) cw[i] = pw[i];
+                s_sum8Ok |= 1u << bank;
                 g_ps1FloorCluts = g_ps1FloorCluts + 1;
             }
         }
