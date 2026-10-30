@@ -36,7 +36,7 @@ volatile int32 g_ps1FloorFar    = 12;
 #else
 volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dreamcast: 40, then its LOD)
 #endif
-volatile int32 g_ps1FloorLodFar = 160; // the minimap's (up to the horizon's clip line)
+volatile int32 g_ps1FloorLodFar = 112; // the pattern floors (and the minimap, under g_ps1FloorMapFar), tiles (round 3: 160 -> 112)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
 volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
 volatile int32 g_ps1FloorMapFar = 64;    // ps1-ufo2 (round 3, B4): the Playfield's minimap ends here, tiles (pattern floors: LodFar)
