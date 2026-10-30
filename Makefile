@@ -333,6 +333,7 @@ objects:
 # phase 11: MANIA_DATA (the builder's data), as rsdk5_formats.data_root()
 GAME_DATA ?= $(or $(MANIA_DATA),../SonicMania_Extracted/Data)
 GFX_CHARACTERS ?= sonic tails knux mighty ray # 9b.1: an atlas per character (Scene<N>.atl, _tails, _knux; 9g: _mighty, _ray; presentation scenes: one)
+# (round 3: an atlas that does not fit stops the build; `| head -1 || exit 1` took head's status and kept a stale atlas)
 gfx:
 	for f in $(subst $(comma), ,$(STAGES)); do \
 	  ids=$$(cd $(GAME_DATA)/Stages/$$f && ls Scene*.bin | sed 's/Scene\(.*\)\.bin/\1/'); \
@@ -340,7 +341,8 @@ gfx:
 	  for i in $$ids; do \
 	    if [ -f tools/gfx/manifests/$$f$$i.txt ]; then \
 	      for c in $(GFX_CHARACTERS); do \
-	        /usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx $$f $$i $$c | head -1 || exit 1; \
+	        out=$$(/usr/bin/python3 tools/gfx/build_atlas.py $(GAME_DATA) build/iso/Data build/gfx $$f $$i $$c 2>&1) || { echo "$$out"; exit 1; }; \
+	        echo "$$out" | head -1; \
 	      done; \
 	    fi; \
 	  done; \
