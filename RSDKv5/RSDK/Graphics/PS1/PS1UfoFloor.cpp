@@ -32,15 +32,18 @@ volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_p
 volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
 volatile uint32 g_ps1FloorSpanRows = 0, g_ps1FloorSpanWrong = 0; // ps1-ufo PS1_CHECK_FLOORSPAN: rows checked / differing
 #if UFO_FLOOR_NEAR // 9f: a detail cut (Makefile UFO_FLOOR_NEAR=1)
-volatile int32 g_ps1FloorFar    = 12;
+volatile int32 g_ps1FloorFar    = 20;  // (user 2026-10-30: 20 tiles as Sonic CD's special stages, with mip levels; was 12)
 #else
 volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dreamcast: 40, then its LOD)
 #endif
-volatile int32 g_ps1FloorLodFar = 112; // the pattern floors (and the minimap, under g_ps1FloorMapFar), tiles (round 3: 160 -> 112)
+volatile int32 g_ps1FloorLodFar = 96; // the pattern floors (and the minimap, under g_ps1FloorMapFar), tiles (round 3: 160 -> 112 -> 96)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
 volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
-volatile int32 g_ps1FloorMapFar = 64;    // ps1-ufo2 (round 3, B4): the Playfield's minimap ends here, tiles (pattern floors: LodFar)
+volatile int32 g_ps1FloorMapFar = 48;    // ps1-ufo2 (round 3, B4): the Playfield's minimap ends here, tiles (pattern floors: LodFar; 64 -> 48)
 volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap's 16 x 16 cells from here, tiles (0: none)
+// ps1-ufo2 (user 2026-10-30: the floor's textures mipmapped): real tiles from these forward distances drawn from their
+// 8x8 / 4x4 levels (tools/gfx/build_tiles.py MIP_FLOORS / MIP_SIZES: 8x8 alone), tiles (beyond g_ps1FloorFar: none, A/B)
+volatile int32 g_ps1FloorMip1 = 10, g_ps1FloorMip2 = 16;
 }
 
 namespace
@@ -78,6 +81,7 @@ uint32 s_loads          = 0xFFFFFFFF; // g_ps1TileLoads when the tables were bui
 #define PS1_FLOOR_K8    PS1_FLOOR_CLUTS      // s_imgClut: an 8-bit image
 #define PS1_FLOOR_KNONE (PS1_FLOOR_CLUTS + 1) // s_imgClut: a CLUT of none of the scene's (bank 0 only)
 uint8 s_imgClut[1024];                // image -> its CLUT's index, or K8 / KNONE
+uint32 s_mip1 = 0, s_mipN = 0, s_mipLevels = 0; // ps1-ufo2: the 8x8 level's first image (the 4x4's: + s_mipN), images 0..s_mipN - 1 have them
 uint16 s_attr[PS1_FLOOR_CLUTS + 2][8]; // this frame: CLUT attribute per (s_imgClut, bank), 0: not checked yet
 uint16 s_raw[8][PS1_FLOOR_CLUTS][16];  // [bank][clut][entry]: the raw colours of the uploaded copies
 uint16 s_rawOk[8];                    // bit c: s_raw[b][c] valid
@@ -124,6 +128,16 @@ void PS1FloorClutsReset()
     }
     memset(s_rawOk, 0, sizeof(s_rawOk));
     s_sum8Ok = 0;
+    // ps1-ufo2: the mip levels' record, the image table's last entry ('M', 'P', 8x8 level's first image, count); one or two
+    // levels (8x8, 4x4) between it and the record
+    s_mip1 = s_mipN = s_mipLevels = 0;
+    if (table) {
+        const uint32 n = (uint32)((const uint8 *)PS1TileCluts() - (const uint8 *)im) / sizeof(PS1TileImage);
+        const PS1TileImage *m = n ? &im[n - 1] : NULL;
+        const uint32 levels = m && m->clut ? (n - 1 - m->tpage) / m->clut : 0;
+        if (m && m->u == 'M' && m->v == 'P' && (levels == 1 || levels == 2) && m->tpage + levels * m->clut + 1 == n)
+            s_mip1 = m->tpage, s_mipN = m->clut, s_mipLevels = levels;
+    }
 }
 
 // the attribute for (k = s_imgClut[img], bank) this frame, uploading the copy if needed (no bulk may be open: the
@@ -363,8 +377,9 @@ struct PS1FloorAsmCtx {
     const uint8 *imgClut;
     const uint16 *attr;
     uint32 *w, *wend;
+    int32 ext; // ps1-ufo2: the images' last texel (15; 7 / 3: the mip levels)
 };
-static_assert(sizeof(PS1FloorAsmCtx) == 68, "ps1/floor_quads.s reads these offsets");
+static_assert(sizeof(PS1FloorAsmCtx) == 72, "ps1/floor_quads.s reads these offsets");
 extern "C" int PS1FloorQuadsAsm(PS1FloorAsmCtx *c);
 uint16 s_t[PS1_FLOOR_MAX_COLS + 4]; // a row's drawable tiles (9f: their image and column too)
 uint16 s_tImg[PS1_FLOOR_MAX_COLS + 4];
@@ -902,6 +917,9 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     int32 topA = 0, topN = 0, topBad = 0; // the top corner row's first column, count, flagged corners
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 quads = 0, banks = 0;
+    // ps1-ufo2: forward distances (x 1024, as fd) from which the mip levels draw (none without them)
+    const int32 mip1 = s_mipN ? g_ps1FloorMip1 << 16 : 0x7FFFFFFF, mip2 = s_mipLevels > 1 ? g_ps1FloorMip2 << 16 : 0x7FFFFFFF;
+    const uint32 mipOff[3] = { 0, s_mip1, s_mip1 + s_mipN };
     for (int32 r = 0; r < nRows; ++r) {
         int32 txa = s_rowA[r], txb = s_rowB[r];
         if (txb < txa) {
@@ -954,14 +972,27 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const bool check  = topBad || botBad; // corners flagged: test each tile's
         if (g_ps1FloorAsm) { // 9f (UFO item 3c): ps1/floor_quads.s, the same quads
             PS1FloorAsmCtx c = { 0, nn, s_tCol, s_t, s_tImg, tXY, bXY, tZ, bZ, check, fd0, fStep, images, s_imgClut,
-                                 &s_attr[0][0], w, wend };
+                                 &s_attr[0][0], w, wend, 15 };
             int32 lastClut = -1;
+            // ps1-ufo2: the row in runs of one mip level (fd is linear along the row: at most three runs; the ends'
+            // levels tell when the whole row is one)
+#define PS1_FLOOR_LEVEL(j) ((fd0 + fStep * s_tCol[j]) >= mip2 ? 2 : (fd0 + fStep * s_tCol[j]) >= mip1 ? 1 : 0)
+            int32 lvl = nn ? PS1_FLOOR_LEVEL(0) : 0;
+            int32 end = nn && PS1_FLOOR_LEVEL(nn - 1) != lvl ? 1 : nn;
+            while (end < nn && PS1_FLOOR_LEVEL(end) == lvl) ++end;
+            c.nn = end, c.images = images + mipOff[lvl], c.ext = 15 >> lvl;
             for (;;) {
                 uint32 *w0 = c.w;
                 const int32 st = PS1FloorQuadsAsm(&c);
                 w = c.w, quads += (uint32)(w - w0) / 10;
-                if (!st)
-                    break;
+                if (!st) {
+                    if (end == nn)
+                        break;
+                    lvl = PS1_FLOOR_LEVEL(end), c.j = end; // the next run
+                    while (++end < nn && PS1_FLOOR_LEVEL(end) == lvl) {}
+                    c.nn = end, c.images = images + mipOff[lvl], c.ext = 15 >> lvl;
+                    continue;
+                }
                 if (st == 1) { // the bulk full (or none open)
                     if (w)
                         PS1ChainBulkEnd(32);
@@ -997,7 +1028,8 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             if (check && (!tZ[i] || !tZ[i + 1] || !bZ[i] || !bZ[i + 1]))
                 continue;
             const uint32 img = s_tImg[j];
-            const PS1TileImage &ti = images[img];
+            const int32 lvl  = fd >= mip2 ? 2 : fd >= mip1 ? 1 : 0, e = 15 >> lvl;
+            const PS1TileImage &ti = images[img + mipOff[lvl]];
             int32 bank = fd >> 19;
             bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
             const uint32 k = s_imgClut[img];
@@ -1013,7 +1045,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
             // texels [u, u + 15] x [v, v + 15]: the GPU's first pixel takes the edge's texel exactly, so an edge at
             // u + 16 would show the neighbouring image's column (the floor's tiles squeezed by 1/16, not seen)
             const uint32 uv = *(const uint16 *)&ti; // u | v << 8
-            uint32 tl = uv, tr = uv + 15, bl = uv + 0xF00, br = uv + 0xF0F;
+            uint32 tl = uv, tr = uv + e, bl = uv + (e << 8), br = uv + (e << 8) + e;
             if (t & 0x400) { // H-flip
                 uint32 x = tl;
                 tl = tr, tr = x, x = bl, bl = br, br = x;

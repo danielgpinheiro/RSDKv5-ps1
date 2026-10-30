@@ -6,7 +6,8 @@
 # PS1FloorAsmCtx (PS1UfoFloor.cpp), byte offsets:
 #   0 j (in / out), 4 nn, 8 col (u8), 12 tiles (u16), 16 imgs (u16), 20 tXY (u32), 24 bXY (u32), 28 tZ (u16), 32 bZ (u16),
 #   36 check (corners flagged: test each tile's), 40 fd0, 44 fStep, 48 images (PS1TileImage, 6 bytes), 52 imgClut (u8),
-#   56 attr (u16 [k][8]), 60 w (in / out), 64 wend
+#   56 attr (u16 [k][8]), 60 w (in / out), 64 wend, 68 ext (the images' last texel: 15, or 7 / 3 for the floor's mip
+#   levels, ps1-ufo2; images then points at the level's run, imgClut stays the full-size images')
         .set noreorder
         .set noat
         .text
@@ -24,6 +25,8 @@ PS1FloorQuadsAsm:
         sw      $s6, 24($sp)
         sw      $s7, 28($sp)
         sw      $fp, 32($sp)
+        sw      $ra, 36($sp)
+        lw      $ra, 68($a0)            # ext
         lw      $s0, 0($a0)             # j
         lw      $s1, 4($a0)             # nn
         lw      $s2, 8($a0)             # col
@@ -79,9 +82,10 @@ PS1FloorQuadsAsm:
         beqz    $t5, .Lclut
         lhu     $t6, 0($t4)             # (delay) uv = u | v << 8
         lhu     $t7, 2($t4)             # tpage
-        addiu   $t1, $t6, 15            # tr
-        addiu   $t4, $t6, 0xF00         # bl
-        addiu   $t3, $t6, 0xF0F         # br (tl = uv)
+        addu    $t1, $t6, $ra           # tr = uv + ext
+        sll     $t4, $ra, 8
+        addu    $t4, $t6, $t4           # bl = uv + (ext << 8)
+        addu    $t3, $t4, $ra           # br (tl = uv)
         andi    $at, $t2, 0x400
         beqz    $at, 3f
         andi    $at, $t2, 0x800         # (delay) V-flip
@@ -170,6 +174,7 @@ PS1FloorQuadsAsm:
         lw      $s6, 24($sp)
         lw      $s7, 28($sp)
         lw      $fp, 32($sp)
+        lw      $ra, 36($sp)
         nop
         jr      $ra
         addiu   $sp, $sp, 40            # (delay)

@@ -57,6 +57,11 @@ from clutFirst on), then stripCount x (u8 layer, u8 bands, u16 rowFirst, u16 wid
 rowFirst), each 16-row band on its own CLUT when its colours fit 15; the runtime draws a band of it as 2-3 sprites
 instead of ~21 tile pieces (the same pixels). A scene without one stays PTL4 (byte-identical).
 
+Floor mip levels (ps1-ufo2, MIP_FLOORS, no format change): the Playfield's images come first (0..mip_n - 1); after the
+rotozoom pages' images, each MIP_SIZES level (8x8; 4x4 too when listed) has mip_n images (image i's copy: level k's
+first + i, same CLUT), then one record image: u = 'M', v = 'P', tpage = the first level's first image, clut = mip_n
+(imageCount = that record's index + 1). The UFO floor's overlay reads it (PS1UfoFloor.cpp PS1FloorClutsReset).
+
 Usage: build_tiles.py DATA_DIR OUT_DIR FOLDER SCENE_ID... [--report]
 """
 import os, struct, sys
@@ -105,6 +110,10 @@ STRIP_MAX = 3              # strip records a scene (the runtime's PS1_TILE_STRIP
 # texture columns a strip after the first must leave free (ps1-ufo2: 3, the UFO atlases build in them for every character;
 # 5 where a deform sheet takes one more: UFO7's UFO_Plasma, gen_overlays EXTRAS 'deform')
 STRIP_ATLAS_COLUMNS = 3
+# ps1-ufo2: UFO floors whose Playfield images get mip levels (the image table's last entries; see build()), and their
+# sizes (8x8 alone: a 4x4 level greyed the far track's borders, pictures 2026-10-30; (8, 4) still builds)
+MIP_FLOORS = {'UFO1', 'UFO2', 'UFO3', 'UFO4', 'UFO5', 'UFO6', 'UFO7'}
+MIP_SIZES = (8,)
 STRIP_ATLAS_COLUMNS_DEFORM = {'UFO7': 5}
 
 
@@ -269,8 +278,15 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         return index[k]
 
     tile_image = [0xFFFF] * 1024
-    for t in used:
+    # ps1-ufo2 (MIP_FLOORS): the floor's (Playfield's) images first, images 0..mip_n - 1, so their mip levels are two runs
+    # of mip_n images
+    pf = [L for L in layers if L['name'] == 'Playfield' and L['type'] == 2] if folder in MIP_FLOORS else []
+    for t in sorted({v & 0x3FF for L in pf for v in L['tiles'] if v != 0xFFFF} & set(used)):
         tile_image[t] = image_of(gif[t * TILE:(t + 1) * TILE])
+    mip_n = len(images)
+    for t in used:
+        if tile_image[t] == 0xFFFF:
+            tile_image[t] = image_of(gif[t * TILE:(t + 1) * TILE])
     hflip = {}                      # tile -> image of the tile H-flipped (per-line rows only)
     for t in sorted(hflip_tiles([L for li, L in enumerate(layers) if li not in paged])):
         if t < ntiles:
@@ -370,6 +386,50 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             order = sorted(ims, key=lambda i: (-fw[i], i))  # the heaviest flipped images first, then the image order
             for i, sl in zip(order, inner + edge):
                 place[i] = sl
+    # ps1-ufo2 (user 2026-10-30: the floor's textures with mipmaps inside its real tiles' 20): images 0..mip_n - 1 at each
+    # MIP_SIZES size, each texel its block's most common opaque colour (ties: the one nearest the block's RGB mean;
+    # transparent when most of the block is), so thin borders keep their colours (the RGB mean snapped to the CLUT
+    # turned them grey: pictures 2026-10-30); 4-bit images keep their CLUT (the floor's fog copies serve them too).
+    # Packed in the slots the images left empty, then after them
+    mip_px, mip_place = {}, {}      # (size, image) -> pixels, (col, row, depth, u, v)
+    if mip_n:
+        pal = bank0_rgb(data, folder)
+        rgb = np.array([pal.get(p, (0, 0, 0)) for p in range(256)], np.float64)
+        for size in MIP_SIZES:
+            f = TILE // size
+            for i in range(mip_n):
+                blk = images[i].reshape(size, f, size, f).transpose(0, 2, 1, 3).reshape(size, size, f * f)
+                m = np.zeros((size, size), np.uint8)
+                for y in range(size):
+                    for x in range(size):
+                        o = blk[y, x][blk[y, x] != 0]
+                        if o.size * 2 >= f * f:
+                            c = np.bincount(o)
+                            top = np.flatnonzero(c == c.max())
+                            mean = rgb[o].mean(0)
+                            m[y, x] = top[int(((rgb[top] - mean) ** 2).sum(1).argmin())]
+                mip_px[(size, i)] = m
+        # first fit in cells of 1 halfword x 4 lines: the slots the images left empty (EDGE_FREE_FLIPS' edge holes, the
+        # last row's end) first, then on after the images
+        last = cur[0] + (1 if cur[1] or cur[2] else 0)
+        busy = np.zeros((len(columns), V.PAGE // 4, V.COL_HW), bool)
+        for pl in place:
+            ci = columns.index((pl[0], pl[1]))
+            hx = pl[3] * pl[2] // 16
+            busy[ci, pl[4] // 4:(pl[4] + TILE) // 4, hx:hx + TILE * pl[2] // 16] = True
+        for size in MIP_SIZES:
+            for want in (8, 4):
+                hw, ch = size * want // 16, size // 4
+                for i in (i for i in range(mip_n) if depth[i] == want):
+                    spot = next(((ci, y, x) for ci in range(len(columns)) for y in range(0, V.PAGE // 4, ch)
+                                 for x in range(0, V.COL_HW, hw) if not busy[ci, y:y + ch, x:x + hw].any()), None)
+                    if spot is None:
+                        raise TileError('%s%s: out of tile columns (mip levels)' % (folder, scene_id))
+                    ci, y, x = spot
+                    busy[ci, y:y + ch, x:x + hw] = True
+                    last = max(last, ci + 1)
+                    mip_place[(size, i)] = (columns[ci][0], columns[ci][1], want, x * 16 // want, y * 4)
+        cur = [last - 1, 0, 0]
     used_cols = columns[:cur[0] + 1] if images else []
     free = [c for c in columns if c not in used_cols]
 
@@ -391,6 +451,21 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             hx = X0 + u // 4
         vram[Y0:Y0 + TILE, hx:hx + words.shape[1]] = words
         lines[(col, row)] = max(lines.get((col, row), 0), v + TILE)
+    for (size, i), (col, row, d, u, v) in mip_place.items():
+        im, X0, Y0 = mip_px[(size, i)], col * V.COL_HW, row * V.PAGE + v
+        if d == 8:
+            words = im[:, 0::2].astype(np.uint16) | (im[:, 1::2].astype(np.uint16) << 8)
+            hx = X0 + u // 2
+        else:
+            lut = {p: n for n, p in enumerate(clut_maps[clut_of[i]]) if n}
+            lut[0] = 0
+            q = np.vectorize(lambda p: lut[p])(im).astype(np.uint16)
+            words = q[:, 0::4] | (q[:, 1::4] << 4) | (q[:, 2::4] << 8) | (q[:, 3::4] << 12)
+            hx = X0 + u // 4
+        if vram[Y0:Y0 + size, hx:hx + words.shape[1]].any():
+            raise TileError('%s%s: mip %d of image %d overlaps' % (folder, scene_id, size, i))
+        vram[Y0:Y0 + size, hx:hx + words.shape[1]] = words
+        lines[(col, row)] = max(lines.get((col, row), 0), v + size)
 
     # self-check: decode every image back
     for i, im in enumerate(images):
@@ -407,6 +482,17 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
             back = np.array(clut_maps[clut_of[i]], np.int32)[nib]
         if not np.array_equal(back, im.astype(np.int32)):
             raise TileError('%s%s: image %d does not decode back' % (folder, scene_id, i))
+    for (size, i), (col, row, d, u, v) in mip_place.items():
+        X0, Y0 = col * V.COL_HW, row * V.PAGE + v
+        if d == 8:
+            w = vram[Y0:Y0 + size, X0 + u // 2:X0 + u // 2 + size // 2].astype(np.int32)
+            back = np.stack([w & 0xFF, w >> 8], -1).reshape(size, size)
+        else:
+            w = vram[Y0:Y0 + size, X0 + u // 4:X0 + u // 4 + size // 4].astype(np.int32)
+            nib = np.stack([(w >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(size, size)
+            back = np.array(clut_maps[clut_of[i]], np.int32)[nib]
+        if not np.array_equal(back, mip_px[(size, i)].astype(np.int32)):
+            raise TileError('%s%s: mip %d of image %d does not decode back' % (folder, scene_id, size, i))
     for t in used:
         if not np.array_equal(images[tile_image[t]], gif[t * TILE:(t + 1) * TILE]):
             raise TileError('%s%s: tile %d maps to the wrong image' % (folder, scene_id, t))
@@ -673,6 +759,14 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         roto_tab = struct.pack('<HH', len(roto), 0) + roto_tab
     if not roto:
         roto_tab = struct.pack('<HH', 0, 0)
+    mip_first = roto_first + len(roto)
+    for size in MIP_SIZES if mip_n else ():
+        for i in range(mip_n):
+            col, row, d, u, v = mip_place[(size, i)]
+            img_tab += struct.pack('<BBHH', u, v, V.texpage(col, row, d),
+                                   V.clut_attr(*V.TILE_CLUT_SLOTS[clut_of[i]]) if d == 4 else 0xFFFF)
+    if mip_n:  # the last image: 'M', 'P', the first level's first image, mip_n (level k's first: + k * mip_n)
+        img_tab += struct.pack('<BBHH', 0x4D, 0x50, mip_first, mip_n)
     opaque = bytearray(128)
     for t in range(min(ntiles, 1024)):
         if np.all(gif[t * TILE:(t + 1) * TILE] != 0):
@@ -693,7 +787,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     head = (32 + 2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab)
             + len(roto_tab) + len(blk_tab))
     data_off = (head + 2047) // 2048 * 2048
-    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL5' if strips else b'PTL4', roto_first + len(roto), len(clut_maps),
+    out += struct.pack('<4sHHHHHHIIHHBBH', b'PTL5' if strips else b'PTL4', mip_first + (len(MIP_SIZES) * mip_n + 1 if mip_n else 0), len(clut_maps),
                        len(sheets), len(cells), len(blocks), len(solid_tab), data_off, len(pixels), len(hflip), lod_first,
                        lod_dims[0] if lod_pages else 0, lod_dims[1] if lod_pages else 0, pattern_image)
     out += struct.pack('<1024H', *tile_image) + img_tab + clut_tab + sheet_tab + cell_tab + solid_tab + hflip_tab + roto_tab + blk_tab
@@ -707,7 +801,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                   solid_count, sum(1 for c in solid_tabs if c is not None), len(hflip), len(out),
                   2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab),
                   '; minimap %dx%d pages (%s), CLUT %d' % (lod_dims[0], lod_dims[1], ' '.join('%d/%d' % c for c in lod_pages), lod_clut)
-                  if lod_pages else '') + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else '')
+                  if lod_pages else '') + ('; floor mips %s of %d images (images %d-%d)' % (' + '.join('%dx%d' % (z, z) for z in MIP_SIZES), mip_n, mip_first, mip_first + len(MIP_SIZES) * mip_n) if mip_n else '')
+              + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else '')
               + ''.join('; %s page %d-bit %d/%d at texel %d,%d' % (layers[li]['name'], d, c[0], c[1], ox, oy)
                         for li, _, ox, oy, c, d in roto)
               + ''.join('; %s strip rows %d-%d in %s, %d of %d bands' % (layers[st[0]]['name'], st[1], st[1] + STRIP_BANDS * TILE - 1,

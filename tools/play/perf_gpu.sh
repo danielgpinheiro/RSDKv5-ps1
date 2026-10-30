@@ -3,7 +3,7 @@
 # tools/play/perf_gpu.sh NAME BOOT FRAME [RIGHT_FROM]   (PCSX-Redux by default: the chain is the same in both; EMU=ds
 # works too). NOBUILD=1 reuses the current build. Output: build/perf9f/gpu_NAME.txt (its SUM line: GPU hblanks, pixels,
 # overdraw). WARPX= / WARPY= (9u.8): player 1 warped there at frame 300 (FRAME after 330). 9t: gpu_cost.py walks to psyqo's chain tail (m_chainTail / m_chainTailCount, m_chainHeadOversized) and clips
-# to the 320 x 240 screen, as the RSDKv3 / v4 copies (docs/perf/43).
+# to the 320 x 240 screen, as the RSDKv3 / v4 copies (docs/perf/43). SETS=: GDB lines run at main (a pad script).
 set -u
 cd "$(dirname "$0")/../.."
 NAME=$1; BOOT=$2; FRAME=$3; RIGHT=${4:-}
@@ -12,6 +12,7 @@ if [ "${NOBUILD:-0}" != 1 ]; then
   make -j8 BOOT=$BOOT > $OUT/b_gpu_$NAME.log 2>&1 && make disc > $OUT/d_gpu_$NAME.log 2>&1 || { echo "BUILD FAIL $NAME"; exit 1; }
 fi
 { printf 'tbreak main\ncommands\nsilent\nset var g_ps1TestStops[0] = %d\n' "$FRAME"
+  [ -n "${SETS:-}" ] && printf '%b' "$SETS"   # GDB lines at main (e.g. tools/play/ufo_min.sh's chase pad script)
   if [ -n "$RIGHT" ]; then
     printf 'set var g_ps1PadScript[0] = 0xFFFF\nset var g_ps1PadScript[1] = %s\nset var g_ps1PadScript[2] = 0x8\nset var g_ps1PadScript[3] = 60000\nset var g_ps1PadScriptSteps = 1\nset var g_ps1PadScriptStep = 0\n' "$RIGHT"
   fi
