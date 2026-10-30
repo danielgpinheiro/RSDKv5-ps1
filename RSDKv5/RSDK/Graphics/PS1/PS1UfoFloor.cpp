@@ -39,6 +39,7 @@ volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dream
 volatile int32 g_ps1FloorLodFar = 160; // the minimap's (up to the horizon's clip line)
 volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
 volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
+volatile int32 g_ps1FloorMapFar = 64;    // ps1-ufo2 (round 3, B4): the Playfield's minimap ends here, tiles (pattern floors: LodFar)
 volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap's 16 x 16 cells from here, tiles (0: none)
 }
 
@@ -814,7 +815,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         fTop    = f < 0x7FFF ? (int32)f : 0x7FFF;
     }
     fNear     = fNear < 0 ? 0 : fNear;
-    int32 far = g_ps1FloorFar * 64, lodFar = g_ps1FloorLodFar * 64;
+    int32 far = g_ps1FloorFar * 64, lodFar = (g_ps1FloorMapFar < g_ps1FloorLodFar ? g_ps1FloorMapFar : g_ps1FloorLodFar) * 64;
     far       = fTop < far ? fTop : far;
     lodFar    = fTop < lodFar ? fTop : lodFar;
     lodFar    = lodFar > 0x6400 ? 0x6400 : lodFar; // corners within 16 bits (the region reaches 1.18 x its distance)
