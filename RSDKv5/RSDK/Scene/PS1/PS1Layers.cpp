@@ -1394,13 +1394,15 @@ void RSDK::PS1TintScreenGrey()
 // ps1-ufo: a strip layer's bands through the strip drawer (the UFO overlays), a band it leaves from the tiles; out of
 // line, read from layer->ps1Strip at each flush (a strip pointer kept across the scan below cost 1.8 KB of resident
 // code in spills and copies: FBZ2's STG room)
-__attribute__((noinline)) void PS1StripBands(TileLayer *layer, const PS1Band *group, int32 count)
+extern "C" __attribute__((noinline)) void PS1StripBands(TileLayer *layer, const void *bands, int32 count)
 {
+    const PS1Band *group     = (const PS1Band *)bands; // (C linkage, untyped: the UFO overlays' skyDraw calls it too)
     const PS1StripFn strip = g_ps1S3DOps.band;
     for (int32 g = 0; g < count; ++g)
         if (!strip(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank))
             DrawBand(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank);
 }
+extern "C" void PS1DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank) { DrawSolid(sy, h, c, bank); } // (skyDraw's one-colour runs)
 // The bands of a layer's lines [y1, y2) (3.3b), grouped per tile row: from the scanlines ProcessParallax filled, or
 // (Direct, 3.3h) from the layer's lineScroll and each scroll info's X (xOf), the rows consecutive from scrollY on line 0
 template <bool Direct>
@@ -1639,8 +1641,9 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         g_ps1LayerUniform = g_ps1LayerUniform + 1;
         return;
     }
-    const uint8 *solid = PS1TileSolidLines((int32)(layer - tileLayers), heightPx);
-    if (layer->ps1Direct) {
+    if (layer->ps1Direct == 2) // ps1-ufo2: a deforming strip layer, drawn by the UFO overlay from its scroll infos
+        g_ps1S3DOps.skyDraw(layer, oneBank);
+    else if (const uint8 *solid = PS1TileSolidLines((int32)(layer - tileLayers), heightPx); layer->ps1Direct) {
         // 3.3h: every line's X is its scroll info's (no deformation): the same bands from lineScroll, no scanlines
         int16 xOf[0x80];
         for (int32 i = 0; i < layer->scrollInfoCount && i < 0x80; ++i) {

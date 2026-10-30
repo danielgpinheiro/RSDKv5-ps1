@@ -615,12 +615,142 @@ extern "C" void *PS1ActiveNext(uint16 group, int32 *id)
     return NULL;
 }
 
+// ps1-ufo2: a deforming strip layer (the UFO skies' horizon shimmer) drawn from its scroll infos. ProcessParallax would
+// fill each screen line's scanline (PS1FillHScrollLines, Scene.cpp: X = its scroll info's tilePos, plus the deformation
+// in blocks of g_ps1LineStep rows; Y = the layer row) and PS1ScanBands<false> (PS1Layers.cpp) would read them back into
+// bands, grouped per tile row, for PS1StripBands. skyDraw computes the same line values in order (a cursor: line, row,
+// line-scroll entry) and builds the same bands and groups; skyTake keeps it to the layers where that holds: a strip,
+// every line above the water (the fill's first loop). One-colour rows go as the scan's rectangles (PS1DrawSolid).
+extern "C" void PS1StripBands(TileLayer *layer, const void *bands, int32 count); // PS1Layers.cpp (resident)
+extern "C" void PS1DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank);          // PS1Layers.cpp's DrawSolid
+extern "C" volatile int32 g_ps1LineStep;
+struct PS1SkyBand { // PS1Layers.cpp's PS1Band
+    int16 sy;
+    uint8 h, bank;
+    int32 x, ly, d;
+};
+static_assert(sizeof(PS1SkyBand) == 16, "PS1Layers.cpp's PS1Band");
+static bool PS1SkyTake(TileLayer *layer) // (after ProcessParallax's uniform / direct decisions)
+{
+    const int32 li = (int32)(layer - tileLayers), pixelHeight = TILE_SIZE * layer->ysize;
+    return !layer->ps1Uniform && !layer->ps1Direct && pixelHeight <= 0x7FFF && PS1TileStrip(li)
+           && currentScreen->waterDrawPos >= currentScreen->size.y;
+}
+__attribute__((optimize("O2"))) static void PS1SkyDraw(TileLayer *layer, bool oneBank)
+{
+    const int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4; // (PS1DrawLayerHScroll's)
+    const int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
+    const int32 pixelHeight = heightPx; // (ProcessParallax's names and arithmetic)
+    int16 scrollPos =
+        FROM_FIXED((int32)((layer->scrollPos + (layer->parallaxFactor * currentScreen->position.y << 8)) & 0xFFFF0000)) % pixelHeight;
+    if (scrollPos < 0)
+        scrollPos += pixelHeight;
+    const ScrollInfo *si = layer->scrollInfo;
+    const uint8 *lsBase  = layer->lineScroll ? layer->lineScroll : &layer->ps1LineScrollOne;
+    const int32 lsStep   = layer->lineScroll ? 1 : 0;
+    const int32 *deform  = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
+    const int32 st       = ps1LayerStep[layer - tileLayers];
+    const int32 q        = (st ? st : (g_ps1LineStep > 1 ? g_ps1LineStep : 1)) - 1; // the fill's deformation blocks
+    const int32 nq       = st ? st - 1 : 0;                                          // the scan's X blocks
+    const uint8 *solid   = PS1TileSolidLines((int32)(layer - tileLayers), heightPx); // one colour a row (or none)
+    // the cursor: screen line i (counted from 0, as the fill), its layer row sp, its line-scroll entry ls
+    int32 i = y1, sp = scrollPos + y1;
+    while (sp >= pixelHeight)
+        sp -= pixelHeight;
+    const uint8 *ls = lsBase + sp * lsStep;
+#define PS1_SKY_X(px)                                                                                                  \
+    do {                                                                                                               \
+        const ScrollInfo *in_ = &si[*ls];                                                                              \
+        int32 xf_             = in_->tilePos;                                                                          \
+        if (in_->deform) {                                                                                             \
+            const int32 k_ = i - (sp & q);                                                                             \
+            xf_ += TO_FIXED(deform[k_ < 0 ? 0 : k_]);                                                                  \
+        }                                                                                                              \
+        (px) = FROM_FIXED(xf_);                                                                                        \
+        (px) = (px) >= widthPx ? (px) - widthPx : (px) < 0 ? (px) + widthPx : (px);                                     \
+    } while (0)
+#define PS1_SKY_NEXT()                                                                                                 \
+    do {                                                                                                               \
+        ++i;                                                                                                           \
+        if (++sp == pixelHeight)                                                                                       \
+            sp = 0, ls = lsBase;                                                                                       \
+        else                                                                                                           \
+            ls += lsStep;                                                                                              \
+    } while (0)
+    PS1SkyBand group[TILE_SIZE];
+    int32 groupCount = 0, x, ly = sp;
+    PS1_SKY_X(x);
+    for (int32 cy = y1; cy < y2;) { // (x, ly): line cy's; the cursor at cy
+        const uint8 bank   = gfxLineBuffer[cy];
+        const int32 rowEnd = TILE_SIZE - (ly & 15);
+        int32 h = 1, nx = 0, nly = 0;
+        bool held = false; // (nx, nly): the line that ended the band, the cursor on it
+        PS1_SKY_NEXT();
+        while (h < rowEnd && cy + h < y2) {
+            nly = sp;
+            PS1_SKY_X(nx);
+            if ((nx != x && ((ly + h) & nq) == 0) || nly != ly + h || (!oneBank && gfxLineBuffer[cy + h] != bank)) {
+                held = true;
+                break;
+            }
+            ++h;
+            PS1_SKY_NEXT();
+        }
+        if (solid && solid[ly]) { // the scan's one-colour run: a rectangle when it covers at least the band's lines
+            const uint8 c = solid[ly];
+            int32 r = 1;
+            while (cy + r < y2 && (oneBank || gfxLineBuffer[cy + r] == bank)) {
+                int32 rr = ly + r; // (the fill's rows: consecutive, wrapping)
+                while (rr >= pixelHeight)
+                    rr -= pixelHeight;
+                if (solid[rr] != c)
+                    break;
+                ++r;
+            }
+            if (r >= h) {
+                if (groupCount)
+                    PS1StripBands(layer, group, groupCount);
+                groupCount = 0;
+                PS1DrawSolid(cy, r, c, bank);
+                for (int32 k = h; k < r; ++k) // (the cursor is on line cy + h)
+                    PS1_SKY_NEXT();
+                cy += r;
+                if (cy < y2) {
+                    ly = sp;
+                    PS1_SKY_X(x);
+                }
+                continue;
+            }
+        }
+        if (groupCount && ((group[0].ly >> 4) != (ly >> 4) || group[0].bank != bank || groupCount == TILE_SIZE)) {
+            PS1StripBands(layer, group, groupCount);
+            groupCount = 0;
+        }
+        PS1SkyBand &g = group[groupCount++];
+        g.sy = (int16)cy, g.h = (uint8)h, g.bank = bank, g.x = x, g.ly = ly;
+        cy += h;
+        if (cy < y2) {
+            if (held)
+                x = nx, ly = nly;
+            else {
+                ly = sp;
+                PS1_SKY_X(x);
+            }
+        }
+    }
+#undef PS1_SKY_X
+#undef PS1_SKY_NEXT
+    PS1StripBands(layer, group, groupCount);
+}
+
 extern "C" void PS1Scene3DLink()
 {
     g_ps1S3DOps.draw  = PS1Scene3DDraw;
     g_ps1S3DOps.floor = PS1UfoFloorDraw;
     g_ps1S3DOps.sort  = PS1Scene3DSort;
     g_ps1S3DOps.band  = PS1StripBand;
+    g_ps1S3DOps.skyTake = PS1SkyTake;
+    g_ps1S3DOps.skyDraw = PS1SkyDraw;
     PS1GteCamLoad(nullptr); // (until UFO_Camera's first LateUpdate)
     s_sortN = 0, s_sortList = NULL;
 }

@@ -1676,6 +1676,13 @@ void RSDK::ProcessParallax(TileLayer *layer)
 #endif
                 }
             }
+            // ps1-ufo2: a deforming strip layer the UFO overlay draws from its scroll infos (g_ps1S3DOps.skyDraw): no fill
+            if (g_ps1S3DOps.skyTake && g_ps1S3DOps.skyTake(layer)) {
+                layer->ps1Direct = 2;
+#if !PS1_DEBUG_BIGRAM
+                break;
+#endif
+            }
 #endif
             uint8 *lsBase = PS1_LS_BASE(layer); // 7b: a one-value layer keeps no table (its value, not advanced)
             const int32 lsStep = PS1_LS_STEP(layer);

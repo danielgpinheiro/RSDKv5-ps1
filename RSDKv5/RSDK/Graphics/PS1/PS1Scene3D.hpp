@@ -39,6 +39,11 @@ struct PS1Scene3DOps {
     // ps1-ufo: a band of the strip layer (PS1TileStrip) from the strip: screen lines [sy, sy + h), layer rows [ly, ly + h),
     // layer x at the left edge, palette bank; false: not in the strip (the tiles draw it)
     bool (*band)(RSDK::TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank);
+    // ps1-ufo2: a deforming H-scroll layer with a strip. skyTake (ProcessParallax): true = the overlay draws it from its
+    // scroll infos and the scanlines are not filled (ps1Direct = 2); skyDraw (PS1DrawLayerHScroll) then draws its bands,
+    // the ones PS1ScanBands would build from those scanlines, through PS1StripBands
+    bool (*skyTake)(RSDK::TileLayer *layer);
+    void (*skyDraw)(RSDK::TileLayer *layer, bool oneBank); // (the clip's lines, oneBank: PS1DrawLayerHScroll's)
 };
 extern PS1Scene3DOps g_ps1S3DOps;
 extern "C" {
