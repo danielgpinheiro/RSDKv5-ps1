@@ -694,9 +694,13 @@ __attribute__((optimize("O2"))) static void PS1SkyDraw(TileLayer *layer, bool on
         bool held = false; // (nx, nly): the line that ended the band, the cursor on it
         PS1_SKY_NEXT();
         while (h < rowEnd && cy + h < y2) {
+            // (an X change ends the band only on a block's first row: the X is computed there, and for a line that ends
+            // the band on its bank; the rows stay consecutive inside a tile row, whose end the layer height is a multiple of)
             nly = sp;
-            PS1_SKY_X(nx);
-            if ((nx != x && ((ly + h) & nq) == 0) || nly != ly + h || (!oneBank && gfxLineBuffer[cy + h] != bank)) {
+            const bool blockRow = ((ly + h) & nq) == 0, gap = nly != ly + h, bankEnd = !oneBank && gfxLineBuffer[cy + h] != bank;
+            if (blockRow || gap || bankEnd)
+                PS1_SKY_X(nx);
+            if ((blockRow && nx != x) || gap || bankEnd) {
                 held = true;
                 break;
             }
