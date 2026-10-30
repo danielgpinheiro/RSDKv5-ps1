@@ -36,7 +36,11 @@ Usage: build_meshes.py SRC_DATA_DIR OUT_DATA_DIR   (needs the optimizer: DC_MESH
 import os, struct, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OPT = os.environ.get('DC_MESH_OPT') or os.path.join(HERE, '../../../../Dreamcast/mania-mesh-optimizer/cmake-build-release/mania-mesh-optimizer')
+# (the Dreamcast tree sits beside PS1/: four levels up before the 2026-10-26 reorganisation, five from ports/ or work/worktrees/)
+OPT = os.environ.get('DC_MESH_OPT') or next(
+    (p for p in (os.path.join(HERE, up, 'Dreamcast/mania-mesh-optimizer/cmake-build-release/mania-mesh-optimizer')
+                 for up in ('../../../..', '../../../../..', '../../../../../..')) if os.path.exists(p)),
+    os.path.join(HERE, '../../../../../Dreamcast/mania-mesh-optimizer/cmake-build-release/mania-mesh-optimizer'))
 
 CHAR = ['--simplify', '--bake-lighting']                     # model_process.sh: --simplify --stripify --bake-lighting
 # docs/ports/mania/32 7.3: the PS1 draws a tenth of the Dreamcast's triangles in a frame: the always-visible big meshes (the special
@@ -72,6 +76,11 @@ LOD_SHARE = {'Special/UFOChase.bin': 0.4, 'Decoration/Bird.bin': 0.35}  # UFO 0.
 # LOD"): drawn only by the UFO_LOWPOLY cut (the stock look draws the characters whole at any size)
 CUT_LODS = {'Special/%s%s.bin' % (c, a) for c in ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray') for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble')}
 LOD_SHARE.update({p: 0.5 for p in CUT_LODS})
+# ps1-ufo2 (round 3; user 2026-10-30: the 3D models may change): the meshes the default UFO_LOWPOLY build only ever draws as
+# their LOD (the characters' cut LODs, the UFO's distance LOD at any size) written as that LOD alone: its faces, colours and
+# order, only the positions it uses (re-indexed), no LOD record. The same faces at the same pixels; half the positions
+# blended and projected a frame. MESH_LOD_FULL=1: the full mesh + its LOD as before (the stock look, UFO_LOWPOLY=0)
+BAKE_LODS = set() if os.environ.get('MESH_LOD_FULL') else CUT_LODS | {'Special/UFOChase.bin'}
 # docs/ports/mania/32 7.4: meshes the game draws lit by the scene (not baked): their normals kept (frame 0, per face corner)
 NORMALS = {'Global/SpecialRing.bin', 'Special/ItemBox.bin'}  # 7.5: the item box's lit wireframe
 # docs/ports/mania/32 7.3: closed meshes, whose faces turned away from the camera are hidden anyway (the engine drops them: half the
@@ -176,15 +185,26 @@ def convert(path, src, pos8, culled):
         uniq.append(uniq[-1])
     pc = len(uniq)
     ccol = [colors[v] for v in idx]              # corner -> colour
-    out = struct.pack('<4sBBHHBBHH', b'PMD6', (0 if pos8 else 1) | (2 if culled else 0), fvc, pc, len(kept), step, 0, scale, len(idx))
-    out += struct.pack('<%dI' % len(idx), *ccol) + struct.pack('<%dH' % len(idx), *cidx)
+    baked = None
+    if path in BAKE_LODS and path in LOD_SHARE and fvc == 3:  # (ps1-ufo2: the LOD alone, see BAKE_LODS)
+        li, lc = cluster_lod(uniq, cidx, ccol, fvc, LOD_SHARE[path])
+        used = sorted(set(li))
+        remap = {u: k for k, u in enumerate(used)}
+        baked = [uniq[u] for u in li]            # each corner's positions (every kept frame), for the read back
+        uniq = [uniq[u] for u in used]
+        while len(uniq) % (4 if pos8 else 2):
+            uniq.append(uniq[-1])
+        pc, cidx, ccol = len(uniq), [remap[i] for i in li], list(lc)
+    ic0 = len(cidx)
+    out = struct.pack('<4sBBHHBBHH', b'PMD6', (0 if pos8 else 1) | (2 if culled else 0), fvc, pc, len(kept), step, 0, scale, ic0)
+    out += struct.pack('<%dI' % ic0, *ccol) + struct.pack('<%dH' % ic0, *cidx)
     out += b'\0' * (-len(out) % 4)               # (9f: the positions 4-aligned)
     fmt = '<%db' % (3 * pc) if pos8 else '<%dh' % (3 * pc)
     for fi in range(len(kept)):
         out += struct.pack(fmt, *[x for u in uniq for x in u[fi]])
     out += b'\0' * (-len(out) % 4)
     lod = None
-    if path in LOD_SHARE and fvc == 3:
+    if path in LOD_SHARE and fvc == 3 and not baked:
         lod = cluster_lod(uniq, cidx, ccol, fvc, LOD_SHARE[path])
         out = bytearray(out)
         out[4] |= 4 | (16 if path in CUT_LODS else 0)
@@ -212,7 +232,7 @@ def convert(path, src, pos8, culled):
         out = bytes(out)
     # read back: every corner's position (each frame) and colour as the Dreamcast pass left them
     magic, fl, fv, v2, f2, st, _, sc, ic = struct.unpack_from('<4sBBHHBBHH', out, 0)
-    assert (magic, v2, f2, st, sc, ic) == (b'PMD6', pc, len(kept), step, scale, len(idx)), path
+    assert (magic, v2, f2, st, sc, ic) == (b'PMD6', pc, len(kept), step, scale, ic0), path
     p = 16
     cols_b = struct.unpack_from('<%dI' % ic, out, p)
     p += 4 * ic
@@ -220,9 +240,13 @@ def convert(path, src, pos8, culled):
     p = (p + 2 * ic + 3) & ~3
     assert p % 4 == 0 and ((3 if pos8 else 6) * pc) % 4 == 0, path  # every frame 4-aligned
     worst = 0
-    for f in kept:
+    for fi, f in enumerate(kept):
         vals = struct.unpack_from(fmt, out, p)
         p += (3 if pos8 else 6) * pc
+        if baked:  # every corner: the LOD's stored position (this frame) and colour, as the unbaked LOD would read them
+            for c in range(ic0):
+                assert cols_b[c] == ccol[c] and tuple(vals[3 * idx_b[c]:3 * idx_b[c] + 3]) == baked[c][fi], path
+            continue
         for c, v in enumerate(idx):
             assert cols_b[c] == colors[v], path
             for k in range(3):
@@ -235,7 +259,7 @@ def convert(path, src, pos8, culled):
         n2 = struct.unpack_from('<H', out, p)[0]
         assert n2 == len(lod[0]) and all(i < pc for i in struct.unpack_from('<%dH' % n2, out, p + 4 + 4 * n2)), path
         assert set(struct.unpack_from('<%dI' % n2, out, p + 4)) <= set(colors), path
-    return out, (vc, pc, n, len(kept), step, len(idx) // fvc, pos8, scale, worst, len(lod[0]) // 3 if lod else 0)
+    return out, (vc, pc, n, len(kept), step, ic0 // fvc, pos8, scale, worst, len(lod[0]) // 3 if lod else 0)
 
 
 def main():
