@@ -28,6 +28,7 @@ extern volatile uint32_t g_ps1PerfFrames; // ps1/rsdk5_main.cpp: frames run
 extern "C" {
 extern volatile uint32 g_ps1FadeCalls, g_ps1FadeOpaque, g_ps1TintGrey; // RSDK/Scene/PS1/PS1Layers.cpp
 extern volatile uint32 g_ps1LayoutWrites;                                  // RSDK/Scene/Scene.cpp PS1SetTile
+extern volatile int32 g_ps1MaskRowsEnd;                                   // RSDK/Graphics/PS1/PS1RenderDevice.cpp
 volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
 volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
 volatile uint32 g_ps1FloorSpanRows = 0, g_ps1FloorSpanWrong = 0; // ps1-ufo PS1_CHECK_FLOORSPAN: rows checked / differing
@@ -858,6 +859,7 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         g_ps1FloorLodQuads = g_ps1FloorLodQuads + PS1FloorLod(ctx, layer, lodA, lodFar);
     if (far <= fNear) {
         PS1ChainDrawAreaReset();
+        g_ps1MaskRowsEnd = 0x7FFF; // (the minimap reaches the bottom)
         return;
     }
     int32 V[4][2];
@@ -920,6 +922,9 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
     // ps1-ufo2: forward distances (x 1024, as fd) from which the mip levels draw (none without them)
     const int32 mip1 = s_mipN ? g_ps1FloorMip1 << 16 : 0x7FFFFFFF, mip2 = s_mipLevels > 1 ? g_ps1FloorMip2 << 16 : 0x7FFFFFFF;
     const uint32 mipOff[3] = { 0, s_mip1, s_mip1 + s_mipN };
+    // ps1-ufo2: the lowest screen row a real tile reaches (a tile row is a line on screen: its ends' corners bound it; the
+    // minimap lies farther, higher); rows with flagged corners: no bound (g_ps1MaskRowsEnd, UFO7's plasma)
+    int32 maskEnd = -0x8000;
     for (int32 r = 0; r < nRows; ++r) {
         int32 txa = s_rowA[r], txb = s_rowB[r];
         if (txb < txa) {
@@ -970,6 +975,15 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         const int32 fd0   = sA * (((txa << 6) + 32) - camX) + cA * (zq + 32);
         const int32 fStep = sA * 64;
         const bool check  = topBad || botBad; // corners flagged: test each tile's
+        if (check)
+            maskEnd = 0x7FFF;
+        else if (nn) {
+            const int32 a = s_tCol[0], b = s_tCol[nn - 1] + 1;
+            const int32 m0 = (int32)tXY[a] >> 16 > (int32)tXY[b] >> 16 ? (int32)tXY[a] >> 16 : (int32)tXY[b] >> 16;
+            const int32 m1 = (int32)bXY[a] >> 16 > (int32)bXY[b] >> 16 ? (int32)bXY[a] >> 16 : (int32)bXY[b] >> 16;
+            const int32 m  = m0 > m1 ? m0 : m1;
+            maskEnd        = m > maskEnd ? m : maskEnd;
+        }
         if (g_ps1FloorAsm) { // 9f (UFO item 3c): ps1/floor_quads.s, the same quads
             PS1FloorAsmCtx c = { 0, nn, s_tCol, s_t, s_tImg, tXY, bXY, tZ, bZ, check, fd0, fStep, images, s_imgClut,
                                  &s_attr[0][0], w, wend, 15 };
@@ -1084,6 +1098,7 @@ done:
     if (w && w != bulk)
         PS1ChainBulkEnd((int)((w - bulk) / 10));
     PS1ChainDrawAreaReset();
+    g_ps1MaskRowsEnd = maskEnd >= 0x7FFF || maskEnd == -0x8000 ? 0x7FFF : maskEnd + 1; // (no real tile: the minimap may reach low)
     if (todo)
         g_ps1FloorTodo = g_ps1FloorTodo + todo;
     g_ps1FloorBanks = banks;

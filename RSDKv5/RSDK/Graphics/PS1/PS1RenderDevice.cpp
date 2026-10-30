@@ -11,6 +11,9 @@ extern "C" {
 volatile uint32 g_ps1RenderFrames  = 0; // frames opened with a clear
 volatile uint32 g_ps1RenderRepeats = 0; // frames that drew nothing (the last frame copied over)
 volatile uint32 g_ps1ClearColour   = 0; // clear colour, r | g << 8 | b << 16 (GDB; 3.2's test)
+// ps1-ufo2: the UFO floor's last drawn row + 1 this frame (PS1UfoFloor.cpp), read and reset by an INK_MASKED deformed
+// sprite (PS1Deform.cpp: UFO7's plasma shows only through the track's mask-colour texels); 0x7FFF: no bound
+volatile int32 g_ps1MaskRowsEnd = 0x7FFF;
 }
 namespace
 {
@@ -18,6 +21,7 @@ namespace
 bool s_ps1FrameOpen = false;
 void *s_ps1FrameClear = NULL; // this frame's clear (FastFill in the arena) and its colour: a FillScreen blends it too (3.5)
 uint32 s_ps1FrameClearColour = 0;
+uint32 *s_ps1FrameClearMask = NULL; // ps1-ufo2: the clear's mask rectangle (its span), NULL: none this frame
 }
 #include "../../../../ps1/video_ops.hh" // 6.2: the video player (an overlay's): a video opens / closes at a frame's start
 
@@ -95,6 +99,7 @@ void RSDK::PS1FrameStart(bool clear)
         uint32 c              = g_ps1ClearColour;
         s_ps1FrameClear       = PS1ChainClearRGB(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF);
         s_ps1FrameClearColour = c;
+        s_ps1FrameClearMask   = NULL;
         if (maskColor) {
             // 4.1b: the fill leaves bit 15 clear (psx-spx "Quick Rectangle Fill"), which INK_MASKED's mask test would
             // take for the mask colour: while a mask colour is set, the cleared screen is also a flat rectangle of the
@@ -108,6 +113,7 @@ void RSDK::PS1FrameStart(bool clear)
                 w[4] = (uint32)PS1_SCREEN_W_CLEAR | (uint32)SCREEN_YSIZE << 16;
                 w[5] = 0xE6000000;
                 PS1ChainSpanEnd(w, 5, w + 6);
+                s_ps1FrameClearMask = (uint32 *)w;
             }
         }
         g_ps1RenderFrames = g_ps1RenderFrames + 1;
@@ -238,6 +244,15 @@ void RenderDevice::UpdateFPSCap() {}
 bool RenderDevice::InitShaders() { return true; }
 void RenderDevice::LoadShader(const char *fileName, bool32 linear) {}
 
+// ps1-ufo2: an opaque rectangle over the whole screen (PS1Layers.cpp DrawSolid: UFO7's one-colour sky) hides everything
+// drawn before it: the clear's mask rectangle (a mask colour's frames: 320 x 240 flat, ~18 of UFO7's ~155 GPU hblanks a
+// frame in DuckStation's model) gets command 00h, a no-op (its next words, 0 and the size, read as no-ops too; a fade keeps
+// the command byte). The fill under it stays (~3 hblanks: dropping it too cost the resident EXE a 2 KB step)
+void RSDK::PS1FrameClearCovered()
+{
+    if (s_ps1FrameClearMask)
+        s_ps1FrameClearMask[2] = 0;
+}
 // 3.5: the frame's clear, re-coloured by a FillScreen (0x00BBGGRR as g_ps1ClearColour)
 uint32 RSDK::PS1FrameClearColour() { return s_ps1FrameClear ? s_ps1FrameClearColour : 0xFFFFFFFF; }
 void RSDK::PS1FrameClearSet(uint32 bgr)

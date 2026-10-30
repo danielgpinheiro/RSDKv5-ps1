@@ -13,6 +13,7 @@ using ShaderEntry = ShaderEntryBase;
 void PS1RenderBeginFrame();
 void PS1FrameStart(bool clear);
 uint32 PS1FrameClearColour();    // this frame's clear colour (0x00BBGGRR; 0xFFFFFFFF: no clear this frame)
+void PS1FrameClearCovered();     // ps1-ufo2: an opaque rectangle covers the screen: the clear's mask rectangle becomes a no-op
 void PS1FrameClearSet(uint32 bgr); // re-colour it (a FillScreen, docs/32 3.5)
 void PS1RenderEndFrame();
 

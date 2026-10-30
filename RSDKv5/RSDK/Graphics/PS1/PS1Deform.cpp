@@ -15,6 +15,7 @@ using namespace RSDK;
 extern "C" {
 volatile uint32 g_ps1DeformDraws = 0, g_ps1DeformStrips = 0, g_ps1DeformApprox = 0; // (totals)
 extern volatile uint32 g_ps1DeformTodo;
+extern volatile int32 g_ps1MaskRowsEnd; // RSDK/Graphics/PS1/PS1RenderDevice.cpp
 }
 
 namespace
@@ -65,7 +66,11 @@ __attribute__((optimize("O2"))) void PS1DeformDraw(uint16 sheetID, int32 inkEffe
     const uint32 cmd = 0x2C808080 | semi;
     uint32 *w = NULL, *wend = NULL, *bulk = NULL;
     uint32 strips = 0;
-    for (int32 y = y1; y < y2; y += 2) {
+    // ps1-ufo2: a masked sprite draws only on mask-colour pixels: none below the UFO floor's last row (UFO7's plasma,
+    // ~a quarter of its strips on some frames); strips starting there are left out, the others keep their words
+    const int32 yEnd = mask && g_ps1MaskRowsEnd < y2 ? g_ps1MaskRowsEnd : y2;
+    g_ps1MaskRowsEnd = 0x7FFF;
+    for (int32 y = y1; y < yEnd; y += 2) {
         const ScanlineInfo *s = &scanlines[y], *t = &scanlines[y + 1 < y2 ? y + 1 : y];
         const int32 dx = s->deform.x;
         if (dx <= 0 || s->deform.y) {

@@ -763,6 +763,8 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
     w[5] = 0xE6000000;
     PS1ChainSpanEnd(w, 5, w + 6);
     g_ps1LayerSolidRuns = g_ps1LayerSolidRuns + 1;
+    if (sy <= 0 && sy + h >= SCREEN_YSIZE) // ps1-ufo2: the whole screen (UFO7's sky): the clear under it is dead
+        PS1FrameClearCovered();
 }
 } // namespace
 
