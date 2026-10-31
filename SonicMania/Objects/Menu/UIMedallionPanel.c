@@ -41,8 +41,15 @@ void UIMedallionPanel_DrawPanel(void)
     Vector2 drawPos;
 
     ProgressRAM *progressRAM = GameProgress_GetProgressRAM();
+#if defined RETRO_PS1_BUILD
+    // PS1 port (user 2026-10-31): the PC's 424-pixel layout puts the panel's right column past the 320-pixel screen's
+    // edge (Extras): drawn 16 px further left, so its last medallion (centre x + 50, radius 6) ends inside the screen
+    const int32 left = TO_FIXED(49 + 16);
+#else
+    const int32 left = TO_FIXED(49);
+#endif
     for (int32 m = 0; m < GAMEPROGRESS_MEDAL_COUNT; ++m) {
-        drawPos.x = (self->position.x - TO_FIXED(49)) + TO_FIXED(14) * (m % 8);
+        drawPos.x = (self->position.x - left) + TO_FIXED(14) * (m % 8);
         drawPos.y = (self->position.y - TO_FIXED(21)) + TO_FIXED(14) * (m / 8);
 
         if (SceneInfo->inEditor)
