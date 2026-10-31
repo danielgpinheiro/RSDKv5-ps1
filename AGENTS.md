@@ -65,7 +65,7 @@ History: "Resumed 2026-09-28" (the review after Sonic 2) and the superseded "His
   **out of the plan** since 2026-10-26 (user: "Remove mods consoles phase for now"). No ps1-mods builds, discs, merges or
   builder `mods` exports; the branch stays untouched and unmerged. `build/dist_mods/` was deleted 2026-10-15.
 - Builder: private github.com/danielgpinheiro/Sonic-Mania-PS1-ISO-Builder (`../Sonic-Mania-PS1-ISO-Builder`), main
-  `715d19e` pushed 2026-10-19 (executable from `c87bab35`, the title's build stamp; image SHA-256 `142f0522…`, `CHANGELOG.md`); its branch `mods` (`2533da0`) is local, never
+  `13df6ec` pushed 2026-10-31 (executable from `7234a48f`, the title's build stamp; image SHA-256 `3b7c4fb1…`, equal to the port's `make disc PLUS=0` image except the two intro videos re-encoded by FFmpeg 9.0.2; `CHANGELOG.md`); its branch `mods` (`2533da0`) is local, never
   pushed. Refresh with `tools/export_builder.sh` (natural EXE only); publishing needs the user's OK.
 
 ## Build / run / debug
