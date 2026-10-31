@@ -39,7 +39,8 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   Competition, replays, Puyo (reversible build/data switches).
   *Updated 2026-10-26*: Sonic, Tails, Knuckles alone (Sonic & Tails was modded-console only, now out of scope); Mighty and Ray on
   this repo's discs (`PLUS ?= 1`, user 2026-10-09; the builder keeps `--plus-characters` off by default: the engine's
-  license); Puyo in (9f, `1017bebe`); Pinball cut (9k); no Encore, Competition, replays.
+  license); Puyo in (9f, `1017bebe`); Pinball in (9k, 2026-10-30: the star post with every gold medal; its table layers
+  are not drawn yet); no Encore, Competition, replays.
 - **Graphics (phase 3.1, 2026-09-26)**: single characters (no Sonic & Tails: VRAM); character art 15 colours per frame;
   bosses / big effects / UI art at half resolution where a scene needs it (least visible first, HUD last).
 - Icons: `../Memcard icons/sonic-mania-loading.gif` (loading, quantised to 15 colours), `mania-mc-icon.png`
@@ -49,9 +50,9 @@ submodule (the engine, `dependencies/RSDKv5/`) being ported to the PS1 with **ps
   before implementing (autonomous while the user sleeps: recommended choices, logged in `../docs/32`).
   *Updated 2026-10-19 (phase 9t)*: frame rate: **the target is 60 fps at one logic step in every act and the UFO
   stages, no frameskip, on a stock PS1**; every speed number is judged against 262 hblanks a frame at one step.
-  Options > Video > Uncapped FPS defaults to Yes; No puts the zones and the UFO stages at 30 fps with two logic steps
-  (9f `000a9102`, 9q `6c818598`); opt-in Frameskip (default Off, 13b `649b3d49`). Those modes are test aids / user
-  options, never the target. Mode: **fully autonomous** since
+  *Updated 2026-10-30*: the UFO stages run at 30 fps with two logic steps always; the Uncapped FPS option is gone
+  (`g_ps1Uncapped` a test knob: `make BOOT=c,i CAP=1` caps the zones); opt-in Frameskip (default Off, 13b `649b3d49`)
+  is the Video page's only row. Mode: **fully autonomous** since
   2026-10-09 ("Go fully autonomous until finish every phase"): plan → implement → verify with evidence → commit + push
   `fork ps1`; design choices logged in `../docs/32`'s choices table; publishing the builder needs the user's OK.
 
