@@ -92,10 +92,6 @@ void PS1AtlasRequestTrackGroups(const char *track); // docs/ports/mania/32 9i: a
 #ifdef __cplusplus
 extern "C"
 #endif
-void PS1SetUncapped(int on); // docs/ports/mania/32 choice 182: Options > Video > Uncapped FPS (zones capped at 30 fps when 0)
-#ifdef __cplusplus
-extern "C"
-#endif
 void PS1SetFrameskip(int on); // docs/ports/mania/32 phase 13b: Options > Video > Frameskip (off when 0)
 #ifdef __cplusplus
 extern "C"

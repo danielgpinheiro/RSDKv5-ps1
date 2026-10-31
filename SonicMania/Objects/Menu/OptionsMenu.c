@@ -168,12 +168,12 @@ void OptionsMenu_Initialize(void)
 // docs/ports/mania/32 choice 182 (user 2026-10-10): Video opens the PC page ("Video WIN": the PS1 reports PLATFORM_PC), kept to the
 // PS1's rows (PS1VideoRows: PC rows and their OFF / ON choices relabelled with frames the build adds to TextEN's
 // "PC Menu" list, tools/gfx/ps1_text.py), on the page's panel; the other rows, their choices and the apply prompt hidden.
-// Phase 13b (user 2026-10-12): a second row, FRAMESKIP OFF / ON (the FULL SCREEN row)
+// Phase 13b (user 2026-10-12): a second row, FRAMESKIP OFF / ON (the FULL SCREEN row). User 2026-10-30: the UNCAPPED FPS row
+// (the VSYNC row) removed: the acts run at 60 fps, the UFO stages at 30 (UFO_Setup), so FRAMESKIP is the only row
 typedef struct {
     uint8 pcFrame, label, choices[2];
 } PS1VideoRow;
 static const PS1VideoRow PS1VideoRows[] = {
-    { 15, PS1_TEXT_UNCAPPEDFPS, { PS1_TEXT_NO, PS1_TEXT_YES } }, // VSYNC
     { 14, PS1_TEXT_FRAMESKIP, { PS1_TEXT_OFF, PS1_TEXT_ON } },   // FULL SCREEN
 };
 #define PS1_VIDEO_ROWS ((int32)(sizeof(PS1VideoRows) / sizeof(PS1VideoRows[0])))
@@ -240,17 +240,6 @@ void OptionsMenu_PS1MoveOut(EntityUIButton *button)
         choice->active  = ACTIVE_NEVER;
         choice->position.y -= TO_FIXED(2048);
     }
-}
-
-void OptionsMenu_PS1UncappedButton_ActionCB(void)
-{
-    RSDK_THIS(UIButton);
-
-    OptionsRAM *options  = Options_GetOptionsRAM();
-    options->ps1Uncapped = self->selection; // 0 NO, 1 YES
-    PS1SetUncapped(self->selection);        // from the next scene load
-
-    Options->changed = true; // saved when the Options grid comes back (OptionsMenu_MenuSetupCB)
 }
 
 void OptionsMenu_PS1FrameskipButton_ActionCB(void)
@@ -347,7 +336,6 @@ void OptionsMenu_SetupActions(void)
                 case 14: button->choiceChangeCB = OptionsMenu_FullScreenButton_ActionCB; break;
                 case 15: button->choiceChangeCB = OptionsMenu_VSyncButton_ActionCB; break;
 #if defined RETRO_PS1_BUILD
-                case PS1_TEXT_UNCAPPEDFPS: button->choiceChangeCB = OptionsMenu_PS1UncappedButton_ActionCB; break;
                 case PS1_TEXT_FRAMESKIP: button->choiceChangeCB = OptionsMenu_PS1FrameskipButton_ActionCB; break;
 #endif
                 case 16: button->choiceChangeCB = OptionsMenu_TripleBufferButton_ActionCB; break;
@@ -428,9 +416,7 @@ void OptionsMenu_InitVideoOptionsMenu(void)
     for (int32 i = 0; i < control->buttonCount; ++i) {
         EntityUIButton *row = control->buttons[i];
         int32 sel           = -1;
-        if (row && row->frameID == PS1_TEXT_UNCAPPEDFPS)
-            sel = optionsRAM->ps1Uncapped;
-        else if (row && row->frameID == PS1_TEXT_FRAMESKIP)
+        if (row && row->frameID == PS1_TEXT_FRAMESKIP)
             sel = optionsRAM->ps1Frameskip;
         if (sel >= 0 && row->selection != sel)
             UIButton_SetChoiceSelection(row, sel);

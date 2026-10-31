@@ -236,12 +236,7 @@ void Options_LoadOptionsCallback(int32 status)
         RSDK.SetVideoSetting(VIDEOSETTING_STREAM_VOL, options->volMusic);
         RSDK.SetVideoSetting(VIDEOSETTING_SFX_VOL, options->volSfx);
 #if defined RETRO_PS1_BUILD
-        if (options->ps1Version < 1) { // docs/ports/mania/32 9t (user 2026-10-19): the default is 60 fps at one logic step, also on
-            options->ps1Uncapped = 1;  // an older card (whose 0 was the old default, No); a later No from the menu stays
-            options->ps1Version  = 1;
-            Options->changed     = true; // written with the next options save
-        }
-        PS1SetUncapped(options->ps1Uncapped); // from the next scene load
+        // (user 2026-10-30: no Uncapped FPS option any more: a card's ps1Uncapped / ps1Version bytes are ignored)
         PS1SetFrameskip(options->ps1Frameskip); // phase 13b: from the next frame (a new or older file: 0, off)
 #endif
     }

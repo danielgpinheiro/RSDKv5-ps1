@@ -131,18 +131,17 @@ static void PS1ReadConfig()
 // (RSDK/Core/RetroEngine.cpp) and each frame is shown at least that many vblanks, so the game keeps its full speed at a
 // steady 30 fps. psyqo flips as soon as one vblank has passed since the last flip: a frame that finishes early waits
 // for its second, counted by the port's own BIOS VBlank event.
-// docs/ports/mania/32 choice 182 (user 2026-10-10): the zones (scene category 1) run the same way unless Options > Video >
-// Uncapped FPS is Yes; g_ps1Uncapped is set from the options (SonicMania/Objects/Helpers/Options.c), 0 = capped.
-// docs/ports/mania/32 9t (user 2026-10-19): the target is 60 fps at one logic step everywhere: Uncapped FPS defaults to Yes and the
-// UFO stages follow it too; its No (30 fps, two steps) is a test aid / user option.
+// docs/ports/mania/32 choice 182 (user 2026-10-10): the zones (scene category 1) run the same way unless g_ps1Uncapped is 1.
+// 9t (user 2026-10-19): the target is 60 fps at one logic step; user 2026-10-30: the Uncapped FPS option left the Video
+// menu (acts and the other stages at 60 fps, the UFO stages always at 30 with two steps, UFO_Setup): g_ps1Uncapped is a
+// test knob only (GDB, `make BOOT=c,i CAP=1`: 0 caps the zones), never saved.
 extern "C" {
 volatile int32 g_ps1LogicSteps   = 1;
-#if defined PS1_BOOT_CATEGORY && !defined PS1_BOOT_CAP
-volatile int32 g_ps1Uncapped     = 1; // a BOOT= test build (no menu, no options): uncapped unless `make CAP=1`
+#if defined PS1_BOOT_CAP
+volatile int32 g_ps1Uncapped     = 0; // `make BOOT=c,i CAP=1`: the zones capped (a test aid; 9t's change left both branches 1)
 #else
-volatile int32 g_ps1Uncapped     = 1; // Options > Video > Uncapped FPS (applied at the next scene load; 9t: default Yes)
+volatile int32 g_ps1Uncapped     = 1; // the zones at one step (test knob: 0 caps them from the next scene load)
 #endif
-void PS1SetUncapped(int on) { g_ps1Uncapped = on ? 1 : 0; }
 volatile int g_ps1FlickShift = 0, g_ps1LastStep = 1; // 9r: ps1/ps1_limits.h PS1_FLICK / PS1_LAST_STEP
 volatile uint32_t g_ps1VblankCount = 0; // vblanks (the port's VBlank event)
 volatile uint32_t g_ps1PaceWaitHbl = 0; // hblanks the last frame waited for its pace
