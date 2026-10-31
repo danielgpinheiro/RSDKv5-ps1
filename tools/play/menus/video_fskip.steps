@@ -1,12 +1,12 @@
-# docs/32 13b (Options > Video: UNCAPPED FPS, FRAMESKIP): Title (Start), the autosave notice (A), Main Menu Down x2,
-# A (Options); A (Video), Down (FRAMESKIP), Right (OFF -> ON), B (back: the options saved); A (the Video page again: ON)
+# docs/32 13b (Options > Video: FRAMESKIP; user 2026-10-30: its only row, UNCAPPED FPS removed): Title (Start), the autosave
+# notice (A), Main Menu Down x2, A (Options); A (Video), Right (OFF -> ON), B (back: the options saved); A (the Video page
+# again: ON)
 1 400 0x400 4
 2 400 0x10 4
 2 480 0x2 4
 2 540 0x2 4
 2 600 0x10 4
 2 760 0x10 4
-2 900 0x2 4
 2 980 0x8 4
 2 1100 0x20 4
 2 1220 0x10 4

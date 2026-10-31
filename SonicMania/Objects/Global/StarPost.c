@@ -211,7 +211,13 @@ void StarPost_CheckBonusStageEntry(void)
 
 #if MANIA_USE_PLUS
                 ProgressRAM *progress = GameProgress_GetProgressRAM();
+#if defined RETRO_PS1_BUILD
+                // PS1 port (user 2026-10-30): Pinball as in Mania Plus, once every gold medal is collected (the port keeps the
+                // Plus DLC off, RSDK_AUTOBUILD: its check left out here; Encore stays out of scope)
+                if (progress && progress->allGoldMedals) {
+#else
                 if ((API.CheckDLC(DLC_PLUS) && progress && progress->allGoldMedals) || globals->gameMode == MODE_ENCORE) {
+#endif
                     SaveGame_GetSaveRAM()->storedStageID = SceneInfo->listPos;
                     RSDK.SetScene("Pinball", "");
                     Zone_StartFadeOut(10, 0xF0F0F0);

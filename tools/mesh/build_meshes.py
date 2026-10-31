@@ -49,8 +49,9 @@ CHAR_PS1 = CHAR + ['--simplify-index-threshold', '0.3', '--simplify-target-error
 DECOR_A = ['--simplify', '--bake-lighting', '--simplify-index-threshold', '0.015', '--simplify-target-error', '0.0225']
 DECOR_B = ['--simplify', '--bake-lighting', '--simplify-index-threshold', '0.005', '--simplify-target-error', '0.1']
 BIG = ['--simplify', '--simplify-index-threshold', '0.05', '--simplify-target-error', '0.1']
-# base Mania's meshes (every LoadMesh literal in the game, less Pinball (Encore) and Mighty / Ray) and the Dreamcast's
-# settings for each; POS8: 8-bit positions
+# base Mania's meshes (every LoadMesh literal in the game, less Mighty / Ray) and the Dreamcast's settings for each; POS8:
+# 8-bit positions. User 2026-10-30: Pinball's too (the Dreamcast has none: baked lighting, no simplification; ChuteHoop
+# is never loaded)
 MESHES = {}
 for c in ('Sonic', 'Tails', 'Knux', 'Mighty', 'Ray'):  # (9g: Mighty and Ray, the Plus characters setting)
     for a in ('Ball', 'Dash', 'Jog', 'Jump', 'Tumble'):
@@ -61,7 +62,9 @@ MESHES.update({'Special/ItemBox.bin': ['--simplify', '--bake-lighting'], 'Specia
                'Special/Springboard.bin': CHAR, 'Special/UFOChase.bin': CHAR_PS1,
                'Decoration/Bird.bin': DECOR_A, 'Decoration/Fish.bin': DECOR_A,
                'Global/SpecialRing.bin': [], 'SSZ/EggTower.bin': BIG, 'SSZ/MonarchPlans.bin': BIG,
-               'TMZ/MonarchBG.bin': [], 'TMZ/OrbNet.bin': []})
+               'TMZ/MonarchBG.bin': [], 'TMZ/OrbNet.bin': [],
+               'Pinball/Bumper.bin': ['--bake-lighting'], 'Pinball/Flipper.bin': ['--bake-lighting'],
+               'Pinball/TargetBumper.bin': ['--bake-lighting']})
 for d in ('Flower1', 'Flower2', 'Flower3', 'Pillar1', 'Pillar2', 'Tree'):
     MESHES['Decoration/%s.bin' % d] = DECOR_B
 POS8 = {p for p in MESHES if p.startswith('Special/') and p != 'Special/UFOChase.bin'} | {'Decoration/Bird.bin', 'Decoration/Fish.bin'}

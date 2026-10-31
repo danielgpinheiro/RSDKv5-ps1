@@ -53,11 +53,13 @@ if $step == 0 && (RSDK::sceneInfo.timeEnabled || g_ps1PerfFrames == $lf + 300)
 end
 # step 1: the UFO: no rings (time over), its results, back to the zone
 if $step == 1 && g_ps1PerfFrames == $lf + 300
-  set var UFO_Setup->rings = 0
+  set var ((ObjectUFO_Setup *)UFO_Setup)->rings = 0
   set var g_ps1TestBossClass = 0
 end
-# step 2: the zone again: onto a star post with 50 rings, then (90 frames later) into its bonus stars
+# step 2: the zone again: onto a star post with 50 rings, then (90 frames later) into its bonus stars (GOLD=1: every gold
+# medal collected, so the stars lead to Pinball instead of Blue Spheres, user 2026-10-30)
 if $step == 2
+  set var ((ProgressRAM *)&globals->saveRAM[0x900])->allGoldMedals = @GOLD@
   set var $p->rings = 50
   set var g_ps1TestBossClass = *(short *)StarPost
   set var g_ps1TestBossNth = @POSTNTH@
@@ -65,7 +67,7 @@ if $step == 2
   set var g_ps1TestBossDY = (g_ps1PerfFrames >= $lf + 390) ? -44 : 0
   set var g_ps1TestBossWarp = 1
 end
-# step 4: back from Blue Spheres
+# step 4: back from Blue Spheres (or Pinball)
 if $step == 4 && g_ps1PerfFrames == $lf + 300
   printf "L DONE\n"
   quit
