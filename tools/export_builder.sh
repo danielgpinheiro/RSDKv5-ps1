@@ -21,7 +21,8 @@ if mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DevMenuBuild; then echo "rsdkv5.
 if [ -n "$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then
   echo "a DEBUG_OVERLAY= build: run make first"; exit 1; fi
 if [ "$(od -An -tx4 -j48 -N4 rsdkv5.ps-exe | tr -d ' ')" != "801fff00" ]; then echo "rsdkv5.ps-exe's stack is not the 2 MB one: run make first"; exit 1; fi
-OPTSRC=${DC_MESH_OPT_SRC:-../../Dreamcast/mania-mesh-optimizer}
+# (the Dreamcast tree sits beside PS1/: three levels up from ports/RSDKv5-ps1 since the 2026-10-26 reorganisation, two before)
+OPTSRC=${DC_MESH_OPT_SRC:-$( [ -f ../../../Dreamcast/mania-mesh-optimizer/CMakeLists.txt ] && echo ../../../Dreamcast/mania-mesh-optimizer || echo ../../Dreamcast/mania-mesh-optimizer)}
 [ -f "$OPTSRC/CMakeLists.txt" ] || { echo "the mesh optimiser's sources are not at $OPTSRC (DC_MESH_OPT_SRC=)"; exit 1; }
 B=$DEST/builder
 rm -rf "$B" "$DEST/bin"
