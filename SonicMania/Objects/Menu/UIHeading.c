@@ -39,6 +39,15 @@ void UIHeading_Create(void *data)
 
     if (!SceneInfo->inEditor) {
         self->startPos      = self->position;
+#if defined RETRO_PS1_BUILD
+        // PS1 port: the 320-pixel menus put the two corner-prompt rows over the heading banner (UIButtonPrompt_PS1CornerPos);
+        // its blue ink used to start at y 21, room for one row only: the banner (and its title) moves 18 px down, ink 38-61,
+        // so row 1 (icon ink 8-27) stays clear above it and only row 2 (icon 31-50, label 36-45) overlaps its top rows — which
+        // the user asked for (2026-10-31: the prompts may cover the banner)
+        // startPos moves with it, or UITAZoneModule.c:1057 would restore the unshifted y when a module collapses
+        self->position.y += TO_FIXED(18);
+        self->startPos.y += TO_FIXED(18);
+#endif
         self->visible       = true;
         self->drawGroup     = 2;
         self->active        = ACTIVE_BOUNDS;
