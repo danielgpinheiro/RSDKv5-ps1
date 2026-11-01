@@ -107,6 +107,29 @@ void UISubHeading_Initialize(void)
         if (RSDK.CompareStrings(&tag, &control->tag, false))
             ManiaModeMenu->secretsMenu = control;
     }
+
+#if defined RETRO_PS1_BUILD
+    // PS1 port (user 2026-10-31, docs/ports/mania/32 4.2c): the PC's 424-pixel layout puts the Game Options page's value
+    // panels (ON / OFF / MANIA, canvas x 324 = screen 272 with the menu's camera at 52) 6 px from the 320-pixel screen's
+    // right edge: the column moves 16 px left, its edge 22 px clear, as the Extras rows' choices do; the label panels
+    // (canvas 144 = screen 92) stay where they are
+    EntityUIControl *secrets = ManiaModeMenu->secretsMenu;
+    if (secrets) {
+        for (int32 i = 0; i < secrets->buttonCount; ++i) {
+            EntityUIButton *row = secrets->buttons[i];
+            if (!row || row->choiceCount <= 0)
+                continue;
+
+            row->firstChoicePos.x -= TO_FIXED(16); // the stored position a re-created choice starts from
+
+            for (int32 c = 0; c < row->choiceCount; ++c) {
+                EntityUIButton *choice = UIButton_GetChoicePtr(row, c);
+                if (choice)
+                    choice->position.x -= TO_FIXED(16);
+            }
+        }
+    }
+#endif
 }
 
 void UISubHeading_HandleUnlocks(void)
