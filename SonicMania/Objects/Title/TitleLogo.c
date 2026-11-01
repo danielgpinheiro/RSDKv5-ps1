@@ -113,7 +113,16 @@ void TitleLogo_Create(void *data)
                 break;
 #endif
 
-            default: RSDK.SetSpriteAnimation(TitleLogo->aniFrames, self->type + 2, &self->mainAnimator, true, 0); break;
+            default:
+                RSDK.SetSpriteAnimation(TitleLogo->aniFrames, self->type + 2, &self->mainAnimator, true, 0);
+#if defined RETRO_PS1_BUILD
+                // PS1 port (user 2026-10-31): the PC's 424-pixel title screen keeps the SEGA copyright 14 px from its
+                // right edge (game x 409-454, its camera at 44); on the 320-pixel screen (TitleSetup's camera at 96)
+                // that is screen x 313-357, cut at 319: 52 px left, 261-305, the same margin back
+                if (self->type == TITLELOGO_COPYRIGHT)
+                    self->position.x -= TO_FIXED(52);
+#endif
+                break;
         }
 
         switch (self->type) {
