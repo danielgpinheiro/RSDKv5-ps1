@@ -1,6 +1,6 @@
-# Save Select (PS1): Title (Start), the autosave notice (A), Main Menu A on MANIA MODE (row 0) -> Save Select, whose four
-# corner prompts (A/CONFIRM, B/BACK, X/..., Y/...) fill both prompt rows (UIButtonPrompt_LateUpdate on the PS1 places them
-# at text rows 2-12 and 15-25, above the heading banner). Shot at 1900 shows the settled page.
+# Save Select (PS1): Title (Start), the autosave notice (A), Main Menu A on MANIA MODE (row 0) -> Save Select, whose
+# corner prompts (B/BACK and A/CONFIRM in row 1, Y/... in row 2) show both prompt rows (UIButtonPrompt_PS1CornerPos on the
+# PS1 puts row 1 at y 18 and row 2 at 41, over the heading banner). Shot at 1900 shows the settled page.
 1 400 0x400 4
 2 400 0x10 4
 2 480 0x10 4
