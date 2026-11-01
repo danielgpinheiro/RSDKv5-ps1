@@ -1,0 +1,7 @@
+# Game Options (PS1): Title (Start), the autosave notice (A), Main Menu A on MANIA MODE -> Save Select, then Triangle (Y)
+# on the top slot (no save) opens the Game Options page (MenuSetup_SaveSel_YPressCB). Its four corner prompts fill both
+# prompt rows; run it on a throwaway card so the game does not write to a real one.
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x10 4
+2 900 0x80 4

@@ -1,0 +1,8 @@
+# Extras screen as it opens (PS1): Title (Start), the notice (A), Main Menu Down x3 to Extras, A; stops there (extras.steps
+# cut after the Extras selection) so the shot shows the Extras list with the rows' current choices
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 520 0x2 4
+2 560 0x2 4
+2 620 0x10 4

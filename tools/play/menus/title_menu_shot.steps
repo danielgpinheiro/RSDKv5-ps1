@@ -1,0 +1,5 @@
+# The Title screen and then the Mania Mode menu as they settle (PS1): scene 1 is the Title (Start 400 frames after it
+# loads, ~f 900), scene 2 the Menu (the autosave notice's A 400 frames after it loads), so a shot at 850 shows the
+# settled Title and one at 2400 the settled Main Menu (tools/play/menus/shot.sh NAME this.steps 850,2400)
+1 400 0x400 4
+2 400 0x10 4
