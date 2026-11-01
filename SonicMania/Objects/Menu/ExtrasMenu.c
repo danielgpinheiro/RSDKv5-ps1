@@ -35,6 +35,29 @@ void ExtrasMenu_Initialize(void)
         if (RSDK.CompareStrings(&tag, &control->tag, false))
             ExtrasMenu->extrasControl = control;
     }
+
+#if defined RETRO_PS1_BUILD
+    // PS1 port (user 2026-10-31): the PC's 424-pixel layout puts the Extras rows' current choices at canvas x 332, whose
+    // bar (centre 280 on the 320-pixel screen) runs to 340 and has its top-right corner cut by the screen's edge (319):
+    // 24 px further left, 196-316, 4 px clear of the row bars (which end at 192). The row bars themselves stay put.
+    EntityUIControl *extrasList = ExtrasMenu->extrasControl;
+    if (extrasList) {
+        for (int32 i = 0; i < extrasList->buttonCount; ++i) {
+            EntityUIButton *row = extrasList->buttons[i];
+            if (!row || row->choiceCount <= 0)
+                continue;
+
+            // the stored position the engine copies onto a choice it creates, so a re-created button cannot snap back
+            row->firstChoicePos.x -= TO_FIXED(24);
+
+            for (int32 c = 0; c < row->choiceCount; ++c) {
+                EntityUIButton *choice = UIButton_GetChoicePtr(row, c);
+                if (choice)
+                    choice->position.x -= TO_FIXED(24);
+            }
+        }
+    }
+#endif
 }
 
 void ExtrasMenu_HandleUnlocks(void)
