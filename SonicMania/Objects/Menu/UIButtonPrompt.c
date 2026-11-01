@@ -70,7 +70,7 @@ void UIButtonPrompt_LateUpdate(void)
         EntityUIHeading *heading = (EntityUIHeading *)control->heading;
 #if defined RETRO_PS1_BUILD
         // docs/ports/mania/32 4.2c: the anchors assume a 424-pixel screen; on a narrower one the prompts move in by the difference's
-        // half (the same at 424)
+        // half (the same at 424). The PS1 port's corner rows are placed at draw time instead (UIButtonPrompt_PS1CornerPos)
         int32 inset = TO_FIXED((424 - ScreenInfo->size.x) >> 1);
 #else
         int32 inset = 0;
@@ -118,20 +118,71 @@ void UIButtonPrompt_StaticUpdate(void)
     UIButtonPrompt->inputSlot = deviceType == DEVICE_TYPE_KEYBOARD ? (gamepadType & 0xFF) : CONT_P1;
 }
 
+#if defined RETRO_PS1_BUILD
+// PS1 port (user 2026-10-31): the corner prompt rows are placed for the 320-pixel screen at draw time, never by moving the
+// entity: the menus find their prompts with UIControl_ContainsPos(control, &prompt->position) — UIControl.c:94 binds a
+// prompt to its control, OptionsMenu.c:225 hides the Y/APPLY prompt on the video page, MainMenu.c:69, MenuSetup.c:364,
+// TimeAttackMenu.c:104, CompetitionMenu.c:73 and UIReplayCarousel.c:566 pick theirs the same way — so a prompt moved out
+// of its control's rect came back as a second, unbound one on screen (a circle over the triangle on Game Options).
+// Rows (user 2026-10-31: icons back at 1:1, both rows lower, the prompts may cover the banner): the icon draws at the
+// artist's size now, so its ink runs from pos.y-10 to pos.y+9 and the text from pos.y-5 (11-px font). Row 1 at 18 gives an
+// 8-px top margin with the icon ink at y 8-27 and the label at 13-23; row 2 at 41 puts the icon ink at 31-50 and the label
+// at 36-46, so it covers the banner's top 13 ink rows (38-62, UIHeading_Create) — accepted, and nothing reaches page content
+// (starts at 66). The left column's icon starts at x 1 (text at x 24), the right column's frame
+// ends at x 313 (6 px clear of the screen). The frame's pivot (list 0: +12 x, -5 y) is DrawSprite's offset, so pos = text - pivot.
+bool32 UIButtonPrompt_PS1CornerPos(EntityUIButtonPrompt *self, Vector2 *pos)
+{
+    EntityUIControl *control = (EntityUIControl *)self->parent;
+    if (!control || !control->heading || !self->headingAnchor)
+        return false;
+
+    SpriteFrame *frame = RSDK.GetFrame(UIWidgets->textFrames, 0, self->promptID);
+    if (!frame)
+        return false;
+
+    bool32 row1 = self->headingAnchor == UIBUTTONPROMPT_ANCHOR_TOPRIGHT_ROW1
+                  || self->headingAnchor == UIBUTTONPROMPT_ANCHOR_TOPLEFT_ROW1;
+    bool32 right = self->headingAnchor == UIBUTTONPROMPT_ANCHOR_TOPRIGHT_ROW1
+                   || self->headingAnchor == UIBUTTONPROMPT_ANCHOR_TOPRIGHT_ROW2;
+
+    pos->y = TO_FIXED(ScreenInfo->position.y + (row1 ? 18 : 41));
+
+    if (right) {
+        int32 textRight = ScreenInfo->position.x + ScreenInfo->size.x - 6; // last text pixel at size.x - 7
+        pos->x          = TO_FIXED(textRight - (frame->pivotX + frame->width));
+    }
+    else {
+        pos->x = TO_FIXED(ScreenInfo->position.x + 12);
+    }
+
+    return true;
+}
+#endif
+
 void UIButtonPrompt_Draw(void)
 {
     RSDK_THIS(UIButtonPrompt);
 
     UIButtonPrompt_SetButtonSprites();
 
+#if defined RETRO_PS1_BUILD
+    Vector2 layoutPos = self->position;
+    Vector2 cornerPos;
+    if (UIButtonPrompt_PS1CornerPos(self, &cornerPos))
+        self->position = cornerPos;
+#endif
+
     RSDK.DrawSprite(&self->decorAnimator, NULL, false);
 
     self->drawFX = FX_SCALE;
     RSDK.DrawSprite(&self->buttonAnimator, NULL, false);
-
     self->drawFX = FX_NONE;
     if (self->textVisible)
         RSDK.DrawSprite(&self->promptAnimator, NULL, false);
+
+#if defined RETRO_PS1_BUILD
+    self->position = layoutPos;
+#endif
 }
 
 void UIButtonPrompt_Create(void *data)
