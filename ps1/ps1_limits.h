@@ -105,17 +105,20 @@ typedef struct {
     int count;         /* -1: more than PS1_CLASS_LIST_MAX (or never collected: adds 0 never matches after a load) */
     unsigned short slot[PS1_CLASS_LIST_MAX];
 } PS1ClassList;
+/* P8: a list's capacity is its slot array's (PS1ClassList: PS1_CLASS_LIST_MAX; a caller may declare a bigger one with the same
+ * three fields) */
+#define PS1_CLASS_LIST_CAP(list) ((int)(sizeof((list).slot) / sizeof((list).slot[0])))
 #define PS1_CLASS_LIST_SYNC(list, type)                                                                                                              \
     do {                                                                                                                                             \
         if ((list).adds != ps1ClassAdds || !(list).adds) {                                                                                           \
             int ps1N = 0;                                                                                                                            \
             foreach_all(type, ps1E)                                                                                                                  \
             {                                                                                                                                        \
-                if (ps1N < PS1_CLASS_LIST_MAX)                                                                                                       \
+                if (ps1N < PS1_CLASS_LIST_CAP(list))                                                                                                 \
                     (list).slot[ps1N] = (unsigned short)RSDK.GetEntitySlot(ps1E);                                                                    \
                 ++ps1N;                                                                                                                              \
             }                                                                                                                                        \
-            (list).count = ps1N <= PS1_CLASS_LIST_MAX ? ps1N : -1;                                                                                   \
+            (list).count = ps1N <= PS1_CLASS_LIST_CAP(list) ? ps1N : -1;                                                                             \
             (list).adds  = ps1ClassAdds;                                                                                                             \
         }                                                                                                                                            \
     } while (0)

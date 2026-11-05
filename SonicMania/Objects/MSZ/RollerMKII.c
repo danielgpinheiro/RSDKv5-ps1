@@ -261,10 +261,134 @@ bool32 RollerMKII_HandlePlatformCollisions(EntityPlatform *platform)
     return collided;
 }
 
+#if defined RETRO_PS1_BUILD
+// P8 (docs/perf/57): RollerMKII_HandleCollisions walked every PlaneSwitch, Platform, Spikes and BreakableWall of the act
+// for each roller each frame (MSZ2: ~290 checks a roller, 102 hblanks at x 1792, 43 of them the slot-range walks). The
+// same objects in the same order (slot lists as P6's PS1ClassList, foreach_all when one overflows), and an object's
+// check is skipped only where it cannot touch the roller, so nothing it writes changes:
+// - CheckObjectCollisionBox and TouchBox need the hitboxes to overlap on both axes, CheckObjectCollisionPlatform on x and
+//   the roller not above the platform's top (both TILECOLLISION variants): past both half-extents + 2 px (whole pixels,
+//   FROM_FIXED as the engine; the +2 covers Box's +-1 edges) they return C_NONE / false and write nothing;
+// - PlaneSwitch_CheckCollisions acts only when the roller, turned about the switch, is within 24 px across and size * 8
+//   px along it; the turn scales a length by sqrt(Sin256^2 + Cos256^2) / 256 >= 0.98 (the tables' smallest sum of
+//   squares is 64,962), so a roller more than 2 * (24 + 8 * size) + 4 px away on an axis cannot be inside; used only
+//   below 32,000 px of |dx| + |dy|, where stock's products cannot wrap;
+// - a Platform skipped still gets stock's two position writes, which end at `position = centerPos`.
+typedef struct {
+    unsigned int adds;
+    int count;
+    unsigned short slot[0x80];
+} PS1RollerList;
+static PS1RollerList ps1RollerSwitches, ps1RollerPlatforms, ps1RollerSpikes, ps1RollerWalls;
+
+// (abs is a libc call in this build)
+static inline __attribute__((always_inline)) int32 RollerMKII_PS1Abs(int32 v) { return v < 0 ? -v : v; }
+
+static inline __attribute__((always_inline)) int32 RollerMKII_PS1Ext(int32 a, int32 b)
+{
+    a = RollerMKII_PS1Abs(a), b = RollerMKII_PS1Abs(b);
+    return a > b ? a : b;
+}
+// the x / y reach (px) at which the hitboxes h (object) and the roller's can no longer overlap
+static inline __attribute__((always_inline)) int32 RollerMKII_PS1ReachX(Hitbox *h)
+{
+    return RollerMKII_PS1Ext(h->left, h->right) + RollerMKII_PS1Ext(RollerMKII->hitboxObject.left, RollerMKII->hitboxObject.right) + 2;
+}
+static inline __attribute__((always_inline)) int32 RollerMKII_PS1ReachY(Hitbox *h)
+{
+    return RollerMKII_PS1Ext(h->top, h->bottom) + RollerMKII_PS1Ext(RollerMKII->hitboxObject.top, RollerMKII->hitboxObject.bottom) + 2;
+}
+// Box / TouchBox: true when they cannot collide
+static inline __attribute__((always_inline)) bool32 RollerMKII_PS1Apart(EntityRollerMKII *self, int32 ox, int32 oy, Hitbox *h)
+{
+    return RollerMKII_PS1Abs((self->position.x >> 16) - (ox >> 16)) > RollerMKII_PS1ReachX(h)
+           || RollerMKII_PS1Abs((self->position.y >> 16) - (oy >> 16)) > RollerMKII_PS1ReachY(h);
+}
+static void RollerMKII_PS1Platform(EntityRollerMKII *self, EntityPlatform *platform)
+{
+    if (platform->state == Platform_State_Falling2 || platform->state == Platform_State_Hold)
+        return;
+    Hitbox *h = NULL;
+    switch (platform->collision) {
+        case PLATFORM_C_PLATFORM: h = RSDK.GetHitbox(&platform->animator, 0); break;
+        case PLATFORM_C_SOLID: h = RSDK.GetHitbox(&platform->animator, 1); break;
+        case PLATFORM_C_TILED: h = &platform->hitbox; break;
+        default: break; // no check, only the position writes
+    }
+    if (h) { // (no hitbox: stock's check returns C_NONE / false)
+        int32 px = platform->drawPos.x - platform->collisionOffset.x, py = platform->drawPos.y - platform->collisionOffset.y;
+        bool32 apart;
+        if (platform->collision == PLATFORM_C_PLATFORM)
+            apart = RollerMKII_PS1Abs((self->position.x >> 16) - (px >> 16)) > RollerMKII_PS1ReachX(h)
+                    || (self->position.y >> 16) - (py >> 16) < -RollerMKII_PS1ReachY(h);
+        else
+            apart = RollerMKII_PS1Apart(self, px, py, h);
+        if (!apart) {
+            RollerMKII_HandlePlatformCollisions(platform);
+            return;
+        }
+    }
+    platform->position = platform->centerPos;
+}
+static inline __attribute__((always_inline)) bool32 RollerMKII_PS1SwitchFar(EntityRollerMKII *self, EntityPlaneSwitch *ps)
+{
+    int32 ax = RollerMKII_PS1Abs((self->position.x >> 16) - (ps->position.x >> 16)), ay = RollerMKII_PS1Abs((self->position.y >> 16) - (ps->position.y >> 16));
+    int32 lim = 2 * (24 + 8 * ps->size) + 4;
+    return ax + ay < 32000 && (ax > lim || ay > lim);
+}
+#endif
+
 void RollerMKII_HandleCollisions(void)
 {
     RSDK_THIS(RollerMKII);
 
+#if defined RETRO_PS1_BUILD
+    PS1_CLASS_LIST_SYNC(ps1RollerSwitches, PlaneSwitch);
+    PS1_CLASS_LIST_SYNC(ps1RollerPlatforms, Platform);
+    PS1_CLASS_LIST_SYNC(ps1RollerSpikes, Spikes);
+    PS1_CLASS_LIST_SYNC(ps1RollerWalls, BreakableWall);
+    if (ps1RollerSwitches.count >= 0) {
+        PS1_FOREACH_LISTED(ps1RollerSwitches, PlaneSwitch, planeSwitch)
+        {
+            if (!RollerMKII_PS1SwitchFar(self, planeSwitch))
+                PlaneSwitch_CheckCollisions(planeSwitch, self, planeSwitch->flags, planeSwitch->size, true, Zone->playerDrawGroup[0],
+                                            Zone->playerDrawGroup[1]);
+        }
+    }
+    else {
+        foreach_all(PlaneSwitch, planeSwitch)
+        {
+            PlaneSwitch_CheckCollisions(planeSwitch, self, planeSwitch->flags, planeSwitch->size, true, Zone->playerDrawGroup[0],
+                                        Zone->playerDrawGroup[1]);
+        }
+    }
+    if (ps1RollerPlatforms.count >= 0) {
+        PS1_FOREACH_LISTED(ps1RollerPlatforms, Platform, platform) { RollerMKII_PS1Platform(self, platform); }
+    }
+    else {
+        foreach_all(Platform, platform) { RollerMKII_HandlePlatformCollisions(platform); }
+    }
+    if (ps1RollerSpikes.count >= 0) {
+        PS1_FOREACH_LISTED(ps1RollerSpikes, Spikes, spikes)
+        {
+            if (!RollerMKII_PS1Apart(self, spikes->position.x, spikes->position.y, &spikes->hitbox))
+                RollerMKII_HandleObjectCollisions((Entity *)spikes, &spikes->hitbox);
+        }
+    }
+    else {
+        foreach_all(Spikes, spikes) { RollerMKII_HandleObjectCollisions((Entity *)spikes, &spikes->hitbox); }
+    }
+    if (ps1RollerWalls.count >= 0) {
+        PS1_FOREACH_LISTED(ps1RollerWalls, BreakableWall, wall)
+        {
+            if (!RollerMKII_PS1Apart(self, wall->position.x, wall->position.y, &wall->hitbox))
+                RollerMKII_HandleObjectCollisions((Entity *)wall, &wall->hitbox);
+        }
+    }
+    else {
+        foreach_all(BreakableWall, wall) { RollerMKII_HandleObjectCollisions((Entity *)wall, &wall->hitbox); }
+    }
+#else
     foreach_all(PlaneSwitch, planeSwitch)
     {
         PlaneSwitch_CheckCollisions(planeSwitch, self, planeSwitch->flags, planeSwitch->size, true, Zone->playerDrawGroup[0],
@@ -274,6 +398,7 @@ void RollerMKII_HandleCollisions(void)
     foreach_all(Platform, platform) { RollerMKII_HandlePlatformCollisions(platform); }
     foreach_all(Spikes, spikes) { RollerMKII_HandleObjectCollisions((Entity *)spikes, &spikes->hitbox); }
     foreach_all(BreakableWall, wall) { RollerMKII_HandleObjectCollisions((Entity *)wall, &wall->hitbox); }
+#endif
 
     if (!self->collisionMode && self->state != RollerMKII_State_Bumped) {
         bool32 collided = self->direction == FLIP_X
