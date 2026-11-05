@@ -18,6 +18,11 @@ ObjectWaterfallSound *WaterfallSound;
 #define PS1_WATERFALL_MAX (0x40)
 static uint16 ps1WaterfallSlots[PS1_WATERFALL_MAX];
 static int32 ps1WaterfallCount = -1; // -1: not collected for this stage load; -2: too many (foreach_all)
+// P6 (docs/perf/57): each active sound's MathHelpers_Distance(sfxPos, centre) as the check computed it (0 inside the box:
+// sfxPos is the centre), for the update the Soundboard runs right after a true check (same frame, same centre, nothing
+// moved): one root a sound instead of two. ps1WaterfallRootOk: set by the check, cleared by the update.
+static int32 ps1WaterfallRoot[PS1_WATERFALL_MAX];
+static bool32 ps1WaterfallRootOk = false;
 
 static void PS1WaterfallCollect(void)
 {
@@ -89,7 +94,7 @@ volatile uint32 g_ps1WaterfallEarly = 0, g_ps1WaterfallEarlyWrong = 0; // 3.0e e
 #endif
 // the foreach_all body of WaterfallSound_SfxCheck_WaterfallLoop (the PS1 walks the collected slots; 3.0e: an exact
 // early-out before the first distance)
-static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldCenterX, int32 worldCenterY, int32 *pcount)
+static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldCenterX, int32 worldCenterY, int32 *pcount, int32 *root)
 {
 #define count (*pcount)
         sound->sfxActive = false;
@@ -107,6 +112,7 @@ static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldC
             sound->sfxActive = true;
             sound->sfxPos.x  = worldCenterX;
             sound->sfxPos.y  = worldCenterY;
+            *root            = 0; // (MathHelpers_SquareRoot(0))
         }
         else {
             // 3.0e: MathHelpers_Distance rounds sqrt(dx * dx + dy * dy) of whole pixels, never below the larger of dx and
@@ -126,7 +132,8 @@ static void WaterfallSound_PS1CheckOne(EntityWaterfallSound *sound, int32 worldC
             if (MathHelpers_Distance(sound->position.x, sound->position.y, worldCenterX, worldCenterY) - 8 * sound->size.y - 8 * sound->size.x
                 <= 0x2800000) {
                 if (MathHelpers_ConstrainToBox(&sound->sfxPos, worldCenterX, worldCenterY, sound->position, hitbox)) {
-                    if (MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY) <= 0x2800000) {
+                    *root = MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY);
+                    if (*root <= 0x2800000) {
                         sound->sfxActive = true;
                         ++count;
                     }
@@ -149,7 +156,8 @@ bool32 WaterfallSound_SfxCheck_WaterfallLoop(void)
     if (ps1WaterfallCount == -1)
         PS1WaterfallCollect();
     if (ps1WaterfallCount >= 0) {
-        PS1_FOREACH_WATERFALL(sound) { WaterfallSound_PS1CheckOne(sound, worldCenterX, worldCenterY, &count); }
+        PS1_FOREACH_WATERFALL(sound) { WaterfallSound_PS1CheckOne(sound, worldCenterX, worldCenterY, &count, &ps1WaterfallRoot[ps1W]); }
+        ps1WaterfallRootOk          = true;
         WaterfallSound->activeCount = count;
         return WaterfallSound->activeCount > 0;
     }
@@ -204,7 +212,10 @@ void WaterfallSound_SfxUpdate_WaterfallLoop(int32 sfxID)
         PS1_FOREACH_WATERFALL(sound)
         {
             if (sound->sfxActive) {
-                int16 sqRoot   = MIN(MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY) >> 16, 640);
+                int16 sqRoot   = MIN((ps1WaterfallRootOk ? ps1WaterfallRoot[ps1W]
+                                                         : MathHelpers_Distance(sound->sfxPos.x, sound->sfxPos.y, worldCenterX, worldCenterY))
+                                       >> 16,
+                                   640);
                 float volume   = (sqRoot / -640.0f) + 1.0f;
                 float distance = -1.0;
                 if (sound->sfxPos.x > worldLeft) {
@@ -219,6 +230,7 @@ void WaterfallSound_SfxUpdate_WaterfallLoop(int32 sfxID)
                 pan += volume * distance;
             }
         }
+        ps1WaterfallRootOk = false;
     }
     else
 #endif

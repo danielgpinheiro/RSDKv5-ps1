@@ -85,6 +85,44 @@ typedef struct {
 extern "C"
 #endif
 void PS1ClassNoteEntity(void *entity);
+
+/* P6 (docs/perf/57-mania-cost-per-act.md): a class's slots in slot order for a check that walks the whole class every
+ * frame (foreach_all reads every slot of the class's range: ~1,400 in MMZ2 for 24 BuzzSaws). Every write of a class into
+ * a slot (create, reset, copy, dormant wakes, scene placement, the game's own writes) goes through PS1ClassNote, which
+ * counts it in ps1ClassAdds: the list is collected again (one foreach_all) whenever that count moved, and each use
+ * checks the slot's class (one blanked since is skipped, as foreach_all skips it). Slots, not pointers: a PS1 entity
+ * block may move. The same entities in the same order as foreach_all; more than PS1_CLASS_LIST_MAX: count -1 and the
+ * caller takes foreach_all. The list lives in the object's file (its overlay), not in the resident EXE. */
+#ifdef __cplusplus
+extern "C"
+#else
+extern
+#endif
+unsigned int ps1ClassAdds;
+#define PS1_CLASS_LIST_MAX (0x40)
+typedef struct {
+    unsigned int adds; /* ps1ClassAdds when collected */
+    int count;         /* -1: more than PS1_CLASS_LIST_MAX (or never collected: adds 0 never matches after a load) */
+    unsigned short slot[PS1_CLASS_LIST_MAX];
+} PS1ClassList;
+#define PS1_CLASS_LIST_SYNC(list, type)                                                                                                              \
+    do {                                                                                                                                             \
+        if ((list).adds != ps1ClassAdds || !(list).adds) {                                                                                           \
+            int ps1N = 0;                                                                                                                            \
+            foreach_all(type, ps1E)                                                                                                                  \
+            {                                                                                                                                        \
+                if (ps1N < PS1_CLASS_LIST_MAX)                                                                                                       \
+                    (list).slot[ps1N] = (unsigned short)RSDK.GetEntitySlot(ps1E);                                                                    \
+                ++ps1N;                                                                                                                              \
+            }                                                                                                                                        \
+            (list).count = ps1N <= PS1_CLASS_LIST_MAX ? ps1N : -1;                                                                                   \
+            (list).adds  = ps1ClassAdds;                                                                                                             \
+        }                                                                                                                                            \
+    } while (0)
+#define PS1_FOREACH_LISTED(list, type, entityOut)                                                                                                    \
+    for (int ps1I = 0; ps1I < (list).count; ++ps1I)                                                                                                  \
+        for (Entity##type *entityOut = RSDK_GET_ENTITY((list).slot[ps1I], type); entityOut && entityOut->classID == type->classID;                 \
+             entityOut = NULL)
 #ifdef __cplusplus
 extern "C"
 #endif

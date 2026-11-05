@@ -72,12 +72,37 @@ void BuzzSaw_StageLoad(void)
     Soundboard_LoadSfx("MMZ/SawSus.wav", true, BuzzSaw_SfxCheck_SawSus, BuzzSaw_SfxUpdate_SawSus);
 }
 
+#if defined RETRO_PS1_BUILD
+// P6 (docs/perf/57): the saws' slots (PS1_CLASS_LIST: two foreach_all walks of ~1,400 slots a frame in MMZ2). Both
+// callbacks only need saws within 640 px: MathHelpers_Distance rounds the root of whole pixels, never below the larger
+// of dx and dy, so a saw past the bound on one axis is skipped before its root (the same answers)
+static PS1ClassList ps1SawList;
+static inline int32 BuzzSaw_PS1Far(EntityBuzzSaw *saw, int32 worldX, int32 worldY)
+{
+    int32 ax = abs(worldX - saw->position.x) >> 16, ay = abs(worldY - saw->position.y) >> 16;
+    return ax > ay ? ax : ay;
+}
+#endif
+
 bool32 BuzzSaw_SfxCheck_SawSus(void)
 {
     int32 worldX = (ScreenInfo->position.x + ScreenInfo->center.x) << 16;
     int32 worldY = (ScreenInfo->position.y + ScreenInfo->center.y) << 16;
 
     int32 count = 0;
+#if defined RETRO_PS1_BUILD
+    PS1_CLASS_LIST_SYNC(ps1SawList, BuzzSaw);
+    if (ps1SawList.count >= 0) {
+        // only count > 0 is returned: the first saw in range answers
+        PS1_FOREACH_LISTED(ps1SawList, BuzzSaw, saw)
+        {
+            if (BuzzSaw_PS1Far(saw, worldX, worldY) <= 640
+                && MathHelpers_Distance(saw->position.x, saw->position.y, worldX, worldY) <= (640 << 16))
+                return true;
+        }
+        return false;
+    }
+#endif
 
     foreach_all(BuzzSaw, saw)
     {
@@ -94,7 +119,20 @@ void BuzzSaw_SfxUpdate_SawSus(int32 sfx)
     int32 worldX = (ScreenInfo->position.x + ScreenInfo->center.x) << 16;
     int32 worldY = (ScreenInfo->position.y + ScreenInfo->center.y) << 16;
 
-    foreach_all(BuzzSaw, saw) { dist = MIN(MathHelpers_Distance(saw->position.x, saw->position.y, worldX, worldY), dist); }
+#if defined RETRO_PS1_BUILD
+    if (ps1SawList.count >= 0 && ps1SawList.adds == ps1ClassAdds) { // (the check collected it this frame)
+        // a saw whose larger axis is already >= the nearest distance cannot lower it
+        PS1_FOREACH_LISTED(ps1SawList, BuzzSaw, saw)
+        {
+            if ((BuzzSaw_PS1Far(saw, worldX, worldY) << 16) < dist)
+                dist = MIN(MathHelpers_Distance(saw->position.x, saw->position.y, worldX, worldY), dist);
+        }
+    }
+    else
+#endif
+    {
+        foreach_all(BuzzSaw, saw) { dist = MIN(MathHelpers_Distance(saw->position.x, saw->position.y, worldX, worldY), dist); }
+    }
 
     RSDK.SetChannelAttributes(Soundboard->sfxChannel[sfx], 1.0 - (MIN(dist >> 16, 640) / 640.0), 0.0, 1.0);
 }

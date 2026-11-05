@@ -312,9 +312,23 @@ void TurboTurtle_HandleFanParticles(uint8 type, int32 strength, int32 length)
     }
 }
 
+#if defined RETRO_PS1_BUILD
+static PS1ClassList ps1TurtleList; // P6 (docs/perf/57): the turtles' slots (PS1_CLASS_LIST: a foreach_all of ~1,100 slots a frame)
+#endif
 bool32 TurboTurtle_SfxCheck_SmallFan(void)
 {
     int32 count = 0;
+#if defined RETRO_PS1_BUILD
+    PS1_CLASS_LIST_SYNC(ps1TurtleList, TurboTurtle);
+    if (ps1TurtleList.count >= 0) {
+        PS1_FOREACH_LISTED(ps1TurtleList, TurboTurtle, turtle)
+        {
+            if (turtle->state == TurboTurtle_State_FanTop || turtle->state == TurboTurtle_State_FanRight || turtle->state == TurboTurtle_State_FanLeft)
+                return true; // (only count > 0 is returned)
+        }
+        return false;
+    }
+#endif
 
     foreach_all(TurboTurtle, turtle)
     {

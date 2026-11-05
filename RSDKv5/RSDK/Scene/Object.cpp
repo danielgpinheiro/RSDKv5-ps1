@@ -2314,6 +2314,7 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
 }
 #if RETRO_PLATFORM == RETRO_PS1
 uint16 RSDK::ps1ClassLo[OBJECT_COUNT], RSDK::ps1ClassHi[OBJECT_COUNT];
+extern "C" uint32 ps1ClassAdds = 0; // P6 (Object.hpp)
 uint32 RSDK::ps1LiveBits[ENTITY_COUNT / 32]; // 9f (Object.hpp)
 uint32 RSDK::ps1SleepBits[(ENTITY_COUNT / 8 + 31) / 32]; // 9f UFO item 2 (Object.hpp, PS1UpdateScan)
 static uint8 s_ps1ClassGen[OBJECT_COUNT], s_ps1ClassGenNow = 1; // a range is measured when its gen is not the frame's

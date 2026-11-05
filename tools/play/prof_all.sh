@@ -8,7 +8,7 @@
 set -u
 cd "$(dirname "$0")/../.."
 TAG=${TAG:-pf}; STEP=${STEP:-1536}; SLOTS=${SLOTS:-1 2}; X0=${X0:-256} # X0 / XEND: one stretch (XEND: the last point)
-O=build/perf9f; mkdir -p $O
+O=build/perf9f; mkdir -p $O build/boss   # (the tree lock lives in build/boss)
 Q=$O/prof_$TAG.queue
 printf '%s\n' "$@" > $Q
 worker() {
