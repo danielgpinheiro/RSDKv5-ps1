@@ -40,6 +40,7 @@ volatile uint32 g_ps1RotoTodo       = 0; // rotozoom draws not done: lines on se
 volatile uint32 g_ps1RotoHbl        = 0; // hblanks spent in them (this frame)
 volatile uint32 g_ps1LayerHblBy[8]  = {}; // hblanks per layer index (this frame)
 volatile int32 g_ps1PalDiffs        = 0;  // 9f: bank-0 entries differing from the CLUTs uploaded this frame (PS1PaletteWrite)
+uint32 g_ps1ClutCopyGen             = 1;  // (non-zero: .data, inside the EXE's 2 KB step; the copies start at ~0) // P4: changes whenever a per-draw CLUT copy could come out different (PS1Sprites.cpp)
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
 volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles a frame): scan, gather, sprites, quads
@@ -1003,6 +1004,7 @@ __attribute__((noinline)) void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
     uint16 old = fullPalette[0][index];
     if (!index || old == value)
         return;
+    ++g_ps1ClutCopyGen; // P4
     int32 was = old != s_palRaw[index], is = value != s_palRaw[index];
     g_ps1PalDiffs = g_ps1PalDiffs + is - was;
     if (!g_ps1PalDiffs && s_palRow0Swapped) {
@@ -1013,9 +1015,11 @@ __attribute__((noinline)) void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
 // (9u.12's PS1PaletteSwapIn, ChaosEmerald's palette swap, is in ChaosEmerald.c since P14: docs/perf/57)
 void RSDK::PS1PaletteRow0Swapped() { s_palRow0Swapped = true; }
 // P3 (docs/perf/57): PS1PaletteWrite for a run of writes (Palette.hpp PS1PalRunNote)
-RSDK::PS1PalRun RSDK::PS1PalRunBegin() { return { s_palRaw, g_ps1PalDiffs, false }; }
+RSDK::PS1PalRun RSDK::PS1PalRunBegin() { return { s_palRaw, g_ps1PalDiffs, false, false }; }
 void RSDK::PS1PalRunEnd(const PS1PalRun &run)
 {
+    if (run.changed)
+        ++g_ps1ClutCopyGen; // P4
     g_ps1PalDiffs = run.diffs;
     if (run.zero && s_palRow0Swapped) {
         s_palRow0Swapped = false;
@@ -1146,6 +1150,7 @@ void RSDK::PS1DrawLayerCut(uint8 cut)
 void RSDK::PS1LayersFrameBegin()
 {
     ++s_layerFrame; // 7b.7: this frame's extra bank is uploaded at its first use
+    ++g_ps1ClutCopyGen; // P4: a new frame (recorded uploads restart)
     s_clutRecCount = s_colourRecCount = 0; // before the frame start: its clear may record a colour word (4.1b)
     s_ps1Faded = s_fadeRecsLost = false;
     memset(s_restored, 0, sizeof(s_restored));
@@ -1261,6 +1266,7 @@ void RSDK::PS1FadeRestoreSlot(uint32 slot)
 extern "C" uint32_t g_ps1VersionFade[4]; // ps1/version_text.cpp: the title's build stamp fades with the frame
 void RSDK::PS1FadeScreen(uint32 color, int32 alphaR, int32 alphaG, int32 alphaB)
 {
+    ++g_ps1ClutCopyGen; // P4: the recorded CLUT uploads so far are rewritten
     g_ps1VersionFade[0] = color, g_ps1VersionFade[1] = (uint32)alphaR, g_ps1VersionFade[2] = (uint32)alphaG,
     g_ps1VersionFade[3] = (uint32)alphaB;
     int32 fr = (int32)((color >> 16) & 0xFF) >> 3, fg = (int32)((color >> 8) & 0xFF) >> 3, fb = (int32)(color & 0xFF) >> 3;
@@ -1344,6 +1350,7 @@ inline uint32 PS1GreyWord(uint32 w) // a GP0 colour word's 8-bit fields (0xBBGGR
 
 void RSDK::PS1TintScreenGrey()
 {
+    ++g_ps1ClutCopyGen; // P4: the recorded CLUT uploads so far are rewritten
     if (!s_clutHeadFull && !s_greyHeld)
         PS1ClutSpliceFull(); // every CLUT at the frame's head, so all of them turn (3.3e); held: VRAM's are grey already
     s_greyThisFrame = true;

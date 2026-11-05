@@ -70,6 +70,7 @@ inline uint32 GetPaletteEntry(uint8 bankID, uint8 index)
 // docs/32 9f: a bank-0 write (RSDK/Scene/PS1/PS1Layers.cpp): counts the entries that now differ from the CLUTs uploaded at
 // the draw phase's start, so the draws after it take CLUTs of the palette as it is (CutsceneHBH: each Heavy's colours)
 void PS1PaletteWrite(uint8 index, uint16 value);
+extern "C" uint32 g_ps1ClutCopyGen; // P4: per-draw CLUT copies (RSDK/Scene/PS1/PS1Layers.cpp)
 // 9m (user 2026-10-09: no hit flash on the Stardust Speedway bosses): every bank-0 write goes through it, not only
 // SetPaletteEntry's (Metal Sonic's flash is a CopyPalette around its draws)
 #define PS1_PAL_SET(bank, index, value)                                                                                 \
@@ -88,6 +89,7 @@ struct PS1PalRun {
     const uint16 *raw; // the values the frame's CLUTs came from (PS1Layers.cpp s_palRaw)
     int32 diffs;
     bool zero;
+    bool changed; // P4: an entry took a new value (g_ps1ClutCopyGen)
 };
 PS1PalRun PS1PalRunBegin();
 void PS1PalRunEnd(const PS1PalRun &run);
@@ -97,6 +99,7 @@ inline void PS1PalRunNote(PS1PalRun &run, uint8 index, uint16 value)
     if (index && old != value) {
         run.diffs += (int32)(value != run.raw[index]) - (int32)(old != run.raw[index]);
         run.zero |= !run.diffs;
+        run.changed = true;
     }
 }
 #else
@@ -115,6 +118,9 @@ inline void SetPaletteEntry(uint8 bankID, uint8 index, uint32 color)
 inline void SetPaletteMask(uint32 color)
 {
     maskColor = rgb32To16_B[(color >> 0) & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
+#if RETRO_PLATFORM == RETRO_PS1
+    ++g_ps1ClutCopyGen; // P4: a CLUT copy's colours depend on the mask colour
+#endif
 }
 
 #if RETRO_REV02

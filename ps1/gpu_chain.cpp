@@ -306,8 +306,10 @@ void PS1ChainTPageRaw(uint16_t attr) {
 
 volatile uint32_t g_ps1VramGen = 0; // immediate GPU operations and loads (VRAM may have changed outside the chains)
 
+extern "C" uint32_t g_ps1ClutCopyGen; // P4 (RSDKv5/RSDK/Scene/PS1/PS1Layers.cpp)
 void PS1GpuImmediate() {
     g_ps1VramGen = g_ps1VramGen + 1;
+    ++g_ps1ClutCopyGen; // P4: VRAM may have changed (a per-draw CLUT copy's scratch slot too)
     if (s_gpu)
         s_gpu->waitChainIdle();
 }

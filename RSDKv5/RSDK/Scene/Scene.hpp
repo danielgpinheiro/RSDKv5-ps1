@@ -238,6 +238,7 @@ void PS1FadeRecordSpan(uint32_t *firstHeader, int32 rects, bool semi);
 void PS1FadeRestore();                     // before a CLUT-using draw: the unfaded CLUTs, once after a fade
 void PS1PaletteRow0Restore();              // 9f: row 240 back to the frame's colours after an INK_SUB copy (PS1Sprites.cpp)
 void PS1PaletteRow0Swapped();              // 9f: PS1BankClut put a per-draw copy of bank 0 into row 240
+extern "C" uint32 g_ps1ClutCopyGen;         // P4: per-draw CLUT copies (PS1Layers.cpp, PS1Sprites.cpp PS1BankClut)
 extern "C" volatile int32 g_ps1PalDiffs;   // 9f: bank-0 entries differing from this frame's CLUTs (PS1PaletteWrite)
 void PS1FadeRestoreSlot(uint32 slot);       // 9b.3: one sprite CLUT back after a fade / the tint (PS1FrameTex)
 // 3.5b: a CLUT row uploaded in the chain now (recorded for a later FillScreen), then the GPU's CLUT cache flushed
