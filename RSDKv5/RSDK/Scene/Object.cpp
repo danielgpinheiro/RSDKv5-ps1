@@ -2315,6 +2315,52 @@ bool32 RSDK::GetActiveEntities(uint16 group, Entity **entity)
 #if RETRO_PLATFORM == RETRO_PS1
 uint16 RSDK::ps1ClassLo[OBJECT_COUNT], RSDK::ps1ClassHi[OBJECT_COUNT];
 extern "C" uint32 ps1ClassAdds = 0; // P6 (Object.hpp)
+// P9 (docs/perf/57, ps1/ps1_limits.h): for each entity of the class, in foreach_all's order, that passes the stock
+// CheckObjectCollisionTouch(entity, hitbox, center, centerHitbox) (the game's CheckObjectCollisionTouchBox): fn(center,
+// entity). The class's slots are kept in list `listID`; when ps1ClassAdds moved, or the class had more than PS1_NEAR_CAP
+// (count -1), the walk itself runs and collects them again. The test is skipped where it cannot pass: it needs |dx| and
+// |dy| (whole pixels, FROM_FIXED as the engine) within both hitboxes' half-extents (a flip mirrors a box, never widens it;
+// |left| + |right| bounds the larger of the two). Resident with its lists in .data inside the EXE's 2 KB step, so a
+// caller in an overlay stays small (FBZ2's overlay is its STG room).
+#define PS1_NEAR_CAP (16)
+static struct {
+    uint32 adds;
+    int16 count;
+    uint16 slot[PS1_NEAR_CAP];
+} s_ps1Near[PS1_NEAR_LISTS] = { { 0, -2 }, { 0, -2 }, { 0, -2 } }; // -2: never collected (non-zero: .data)
+extern "C" __attribute__((optimize("Os"))) void PS1ClassTouching(int32 listID, uint16 classID, void *centerEntity, void *hitbox, void *centerHitbox, PS1NearFn fn)
+{
+    auto &list   = s_ps1Near[listID];
+    Entity *c    = (Entity *)centerEntity, *e = NULL;
+    Hitbox *h    = (Hitbox *)hitbox, *ch = (Hitbox *)centerHitbox;
+    int32 reachX = abs(h->left) + abs(h->right) + abs(ch->left) + abs(ch->right) + 2;
+    int32 reachY = abs(h->top) + abs(h->bottom) + abs(ch->top) + abs(ch->bottom) + 2;
+    bool32 walk  = list.adds != RSDK::ps1ClassAdds || list.count < 0;
+    int32 n      = 0;
+    for (;;) {
+        if (walk) {
+            if (!GetAllEntities(classID, &e))
+                break;
+            if (n < PS1_NEAR_CAP)
+                list.slot[n] = (uint16)GetEntitySlot((EntityBase *)e);
+            ++n;
+        }
+        else {
+            if (n >= list.count)
+                break;
+            e = GetEntity(list.slot[n++]);
+            if (e->classID != classID)
+                continue;
+        }
+        int32 dx = (e->position.x >> 16) - (c->position.x >> 16), dy = (e->position.y >> 16) - (c->position.y >> 16);
+        if (dx <= reachX && -dx <= reachX && dy <= reachY && -dy <= reachY && CheckObjectCollisionTouch(e, h, c, ch))
+            fn(c, e);
+    }
+    if (walk) {
+        list.count = n <= PS1_NEAR_CAP ? n : -1;
+        list.adds  = RSDK::ps1ClassAdds;
+    }
+}
 uint32 RSDK::ps1LiveBits[ENTITY_COUNT / 32]; // 9f (Object.hpp)
 uint32 RSDK::ps1SleepBits[(ENTITY_COUNT / 8 + 31) / 32]; // 9f UFO item 2 (Object.hpp, PS1UpdateScan)
 static uint8 s_ps1ClassGen[OBJECT_COUNT], s_ps1ClassGenNow = 1; // a range is measured when its gen is not the frame's

@@ -7,6 +7,7 @@
 
 #include "Game.h"
 
+
 ObjectElectroMagnet *ElectroMagnet;
 
 void ElectroMagnet_Update(void)
@@ -103,6 +104,30 @@ void ElectroMagnet_State_AwaitInterval(void)
     }
 }
 
+#if defined RETRO_PS1_BUILD
+// P9 (docs/perf/57): an active magnet walked every Blaster, MagSpikeBall and MagPlatform of the act each frame (FBZ1: 57
+// magnets, 39 objects; 46 hblanks of slot-range walks at x 4864). PS1ClassTouching (resident) visits the same objects in
+// the same order from slot lists, runs the same TouchBox test where it can pass and calls these stock loop bodies.
+static void ElectroMagnet_PS1Blaster(void *self, void *entity)
+{
+    EntityBlaster *blaster = (EntityBlaster *)entity;
+    if (blaster->animator.animationID < 2 && blaster->state != Blaster_State_Init) {
+        blaster->state  = Blaster_State_MagnetAttract;
+        blaster->active = ACTIVE_NORMAL;
+    }
+}
+static void ElectroMagnet_PS1SpikeBall(void *self, void *entity)
+{
+    ((EntityMagSpikeBall *)entity)->direction = FLIP_X;
+    ((EntityMagSpikeBall *)entity)->active    = ACTIVE_NORMAL;
+}
+static void ElectroMagnet_PS1Platform(void *self, void *entity)
+{
+    ((EntityMagPlatform *)entity)->state  = MagPlatform_State_Rise;
+    ((EntityMagPlatform *)entity)->active = ACTIVE_NORMAL;
+}
+#endif
+
 void ElectroMagnet_State_MagnetActive(void)
 {
     RSDK_THIS(ElectroMagnet);
@@ -125,6 +150,11 @@ void ElectroMagnet_State_MagnetActive(void)
     else {
         self->timer--;
 
+#if defined RETRO_PS1_BUILD
+        PS1ClassTouching(0, Blaster->classID, self, &ElectroMagnet->hitboxPlayer, &self->hitboxMagnetRange, ElectroMagnet_PS1Blaster);
+        PS1ClassTouching(1, MagSpikeBall->classID, self, &ElectroMagnet->hitboxPlayer, &self->hitboxMagnetRange, ElectroMagnet_PS1SpikeBall);
+        PS1ClassTouching(2, MagPlatform->classID, self, &ElectroMagnet->hitboxPlayer, &self->hitboxMagnetRange, ElectroMagnet_PS1Platform);
+#else
         foreach_all(Blaster, blaster)
         {
             if (RSDK.CheckObjectCollisionTouchBox(blaster, &ElectroMagnet->hitboxPlayer, self, &self->hitboxMagnetRange)
@@ -149,6 +179,8 @@ void ElectroMagnet_State_MagnetActive(void)
                 platform->active = ACTIVE_NORMAL;
             }
         }
+
+#endif
 
         if (RSDK.CheckOnScreen(self, &ElectroMagnet->sfxRange))
             ++ElectroMagnet->magnetSfxTimer;

@@ -122,6 +122,16 @@ typedef struct {
             (list).adds  = ps1ClassAdds;                                                                                                             \
         }                                                                                                                                            \
     } while (0)
+/* P9 (docs/perf/57): PS1ClassTouching (RSDKv5/RSDK/Scene/Object.cpp, resident): fn(center, entity) for each entity of the
+ * class, in foreach_all's order, for which the stock CheckObjectCollisionTouchBox(entity, hitbox, center, centerHitbox)
+ * passes, from resident slot list listID (0 .. PS1_NEAR_LISTS - 1, one per class a caller walks). */
+#define PS1_NEAR_LISTS (3)
+typedef void (*PS1NearFn)(void *center, void *entity);
+#ifdef __cplusplus
+extern "C"
+#endif
+    void
+    PS1ClassTouching(int listID, unsigned short classID, void *centerEntity, void *hitbox, void *centerHitbox, PS1NearFn fn);
 #define PS1_FOREACH_LISTED(list, type, entityOut)                                                                                                    \
     for (int ps1I = 0; ps1I < (list).count; ++ps1I)                                                                                                  \
         for (Entity##type *entityOut = RSDK_GET_ENTITY((list).slot[ps1I], type); entityOut && entityOut->classID == type->classID;                 \
