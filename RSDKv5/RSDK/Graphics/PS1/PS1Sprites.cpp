@@ -1574,27 +1574,25 @@ uint32 *RSDK::PS1Face3DSlot(int32 wpp)
     g_ps1Face3DDrawn = g_ps1Face3DDrawn + 1;
     return s_ps1F3DBase + s_ps1F3DN++ * (wpp + 1);
 }
-// 9f: PS1DrawBlendedFace's triangles for an opaque face (INK_NONE: one pass, no texpage word) into the open Face3D bulk
-void RSDK::PS1BlendedFaceBulk(Vector2 *vertices, uint32 *colors, int32 vertCount)
+// P5 (docs/perf/57): an opaque 4-corner face's fan (PS1DrawBlendedFace's two triangles, INK_NONE) as one GP0 38h
+// gouraud quad into the open Face3D bulk (xy: each corner's screen y << 16 | x, bgr: its GPU colour): the GPU draws a
+// quad as its triangles (v0 v1 v2) then (v1 v2 v3), so the corners go in as 1 0 2 3: (1 0 2) then (0 2 3) are the fan's
+// (0 1 2) then (0 2 3), in the same order; 8 words and one slot instead of 12 and two
+void RSDK::PS1BlendedQuadBulk(const uint32 *xy, const uint32 *bgr)
 {
-    for (int32 v = 1; v + 1 < vertCount; ++v) {
-        const int32 idx[3] = { 0, v, v + 1 };
-        uint32 *w = PS1Face3DSlot(6);
-        if (!w)
-            break;
-        for (int32 k = 0; k < 3; ++k) {
-            uint32 c   = colors[idx[k]];
-            uint32 bgr = (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF);
-            w[2 * k]     = (k == 0 ? 0x30000000 : 0) | bgr;
-            w[2 * k + 1] = (uint32)(uint16)FROM_FIXED(vertices[idx[k]].y) << 16 | (uint16)FROM_FIXED(vertices[idx[k]].x);
-        }
-    }
+    uint32 *w = PS1Face3DSlot(8);
+    if (!w)
+        return;
+    w[0] = 0x38000000 | bgr[1], w[1] = xy[1];
+    w[2] = bgr[0], w[3] = xy[0];
+    w[4] = bgr[2], w[5] = xy[2];
+    w[6] = bgr[3], w[7] = xy[3];
     g_ps1PrimApprox = g_ps1PrimApprox + 1;
 #if PS1_DEBUG_BIGRAM
     { // the host marks the face's bounding box approximate (as PS1DrawBlendedFace)
         int32 x0 = 0x7FFF, y0 = 0x7FFF, x1 = -0x7FFF, y1 = -0x7FFF;
-        for (int32 v = 0; v < vertCount; ++v) {
-            int32 px = FROM_FIXED(vertices[v].x), py = FROM_FIXED(vertices[v].y);
+        for (int32 v = 0; v < 4; ++v) {
+            const int32 px = (int16)xy[v], py = (int32)xy[v] >> 16;
             x0 = px < x0 ? px : x0, x1 = px > x1 ? px : x1, y0 = py < y0 ? py : y0, y1 = py > y1 ? py : y1;
         }
         PS1DrawLogAdd(10, 0, 0, 0, 0, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);

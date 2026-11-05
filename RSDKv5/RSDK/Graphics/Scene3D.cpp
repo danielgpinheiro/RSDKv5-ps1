@@ -1057,8 +1057,8 @@ void RSDK::AddMeshFrameToScene(uint16 modelFrames, uint16 sceneIndex, Animator *
 #if RETRO_PLATFORM == RETRO_PS1
 // docs/ports/mania/32 7.4: the lit modes that don't project (the special ring: S3D_SOLIDCOLOR_SHADED_BLENDED, S3D_WIREFRAME_SHADED),
 // as stock: positions through matWorld (8.8 world pixels), each corner's colour from its normal's y through matNormals
-// with the scene's diffuse / specular, faces far first (stock's depth and insertion sort), drawn by DrawBlendedFace /
-// DrawLine (their GPU paths). Up to PS1_S3D_ORTHO faces a scene (the ring: 80). False: not one of those modes.
+// with the scene's diffuse / specular, faces far first (stock's depth and insertion sort), drawn as gouraud quads / lines
+// into the Face3D bulks. Up to PS1_S3D_ORTHO faces a scene (the ring: 80). False: not one of those modes.
 #define PS1_S3D_ORTHO 128
 static int32 PS1Lit(int32 ny, uint32 colour, int32 shift, int32 diffuse, int32 intensity, int32 specularIntensity)
 {
@@ -1084,14 +1084,22 @@ __attribute__((optimize("O2"))) static uint32 PS1LitColour(const Scene3D *scn, i
 // its visible pixels are all front faces'); the sign a front face's screen winding is checked against (-1, picked by
 // pictures: +1 dropped the visible side), 0: none dropped
 volatile int32 g_ps1S3DOrthoCull = -1;
-volatile int32 g_ps1S3DWireBulk  = 1; // 9o: the wireframe's lines in bulks (0: DrawLine each, for A/B pictures)
 volatile int32 g_ps1S3DAsm = 1; // 9f: the UFO 3D faces / keyframe blend in assembly (ps1/s3d_faces.s, s3d_blend.s; 0: C)
 extern "C" volatile uint32 g_ps1BlendWrong, g_ps1BlendChecked;
 volatile uint32 g_ps1BlendWrong = 0, g_ps1BlendChecked = 0; // 9f: PS1_CHECK_BLEND builds: components compared, wrong
 // 9f: a normal component (int8, x 127) as LoadMesh keeps it (x 0x10000 / 127), from a table: the same quotients
 static int32 s_ps1Nrm127[256];
 static bool s_ps1Nrm127Ok = false;
-static bool PS1Scene3DOrtho(uint16 sceneID)
+// P5 (docs/perf/57-mania-cost-per-act.md, 2026-11-04): the giant ring only (one model in the scene, 16-bit positions,
+// quads, indexed normals, INK_NONE: every model the game draws in these modes and that fits; anything else is counted in
+// g_ps1S3DTodo and not drawn, as before), ~55 -> ~30 hblanks a frame with the same words on screen:
+// - each position's screen coordinates once (FROM_FIXED((p << 8) - (camera << 16)) == (p >> 8) - camera), not once a
+//   corner;
+// - each normal's y and lit colour (as a GPU colour) once, when a drawn face first uses it, not every normal every frame;
+// - a solid face as one gouraud quad (PS1BlendedQuadBulk: stock's two triangles), its lines into the bulks (PS1LineFace);
+// - no per-face model / item lookups (DrawBlendedFace / DrawLine fallbacks and the A/B knobs gone: they drew nothing
+//   the ring needs).
+__attribute__((optimize("O2"))) static bool PS1Scene3DOrtho(uint16 sceneID)
 {
     Scene3D *scn = &scene3DList[sceneID];
     if (scn->drawMode != S3D_SOLIDCOLOR_SHADED_BLENDED && scn->drawMode != S3D_WIREFRAME_SHADED)
@@ -1100,61 +1108,65 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
         for (int32 v = 0; v < 256; ++v) s_ps1Nrm127[v] = (int32)(int8)v * 0x10000 / 127;
         s_ps1Nrm127Ok = true;
     }
-    // the items' positions through their matWorld (8.8 world pixels); each face its depth, item and index (stack:
-    // PS1_S3D_ORTHO positions and faces a scene)
-    int32 px[PS1_S3D_ORTHO], py[PS1_S3D_ORTHO], depth[PS1_S3D_ORTHO];
-    uint16 fIdx[PS1_S3D_ORTHO];
-    uint8 fItem[PS1_S3D_ORTHO];
-    int32 base[PS1_S3D_ITEMS]; // each item's first position
-    int32 faces = 0, positions = 0;
-    for (int32 i = 0; i < g_ps1S3DCount; ++i) {
-        const PS1S3DItem &it = g_ps1S3DItems[i];
-        if (it.scene != sceneID)
-            continue;
-        const Model *mdl = &modelList[it.model];
-        const int32 fvc  = mdl->faceVertCount, nf = mdl->indexCount / fvc;
-        if (!(mdl->flags & PS1_MESH_POS16) || faces + nf > PS1_S3D_ORTHO || positions + mdl->vertCount > PS1_S3D_ORTHO) {
-            g_ps1S3DTodo = g_ps1S3DTodo + 1;
-            continue;
+    const bool solid = scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED;
+    Entity *entity   = sceneInfo.entity;
+    int32 item = -1, n = 0;
+    for (int32 i = 0; i < g_ps1S3DCount; ++i)
+        if (g_ps1S3DItems[i].scene == sceneID)
+            item = i, ++n;
+    if (n != 1) {
+        g_ps1S3DTodo = g_ps1S3DTodo + n;
+        return true;
+    }
+    const PS1S3DItem &it = g_ps1S3DItems[item];
+    const Model *mdl     = &modelList[it.model];
+    const uint8 *data    = PS1MeshData(mdl);
+    const uint8 *nb      = data + mdl->ps1NormOffset;
+    const int32 vc = mdl->vertCount, nf = mdl->indexCount >> 2, U = (mdl->flags & PS1_MESH_NRMIDX) ? *(const uint16 *)nb : 0x7FFF;
+    uint32 f3dBgr, f3dSemi;
+    if (!(mdl->flags & PS1_MESH_POS16) || mdl->faceVertCount != 4 || vc > PS1_S3D_ORTHO || nf > PS1_S3D_ORTHO
+        || U > PS1_S3D_ORTHO || entity->inkEffect != INK_NONE || !PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi)) {
+        g_ps1S3DTodo = g_ps1S3DTodo + 1;
+        return true;
+    }
+    // the positions through matWorld (8.8 world pixels: stock's per-term shifts)
+    const Matrix &m = it.m;
+    const int16 *pos = (const int16 *)PS1MeshPos(mdl); // frame 0
+    int32 px[PS1_S3D_ORTHO], py[PS1_S3D_ORTHO], pz[PS1_S3D_ORTHO];
+    for (int32 v = 0; v < vc; ++v) {
+        int32 x = pos[3 * v], y = pos[3 * v + 1], z = pos[3 * v + 2];
+        px[v] = m.values[0][3] + (z * m.values[0][2] >> 8) + (m.values[0][0] * x >> 8) + (m.values[0][1] * y >> 8);
+        py[v] = m.values[1][3] + (y * m.values[1][1] >> 8) + (z * m.values[1][2] >> 8) + (m.values[1][0] * x >> 8);
+        pz[v] = m.values[2][3] + ((x * m.values[2][0]) >> 8) + ((m.values[2][2] * z >> 8) + (m.values[2][1] * y >> 8));
+    }
+    // the faces kept (the solid closed ring: those turned to the screen, the first three corners' winding in world pixels,
+    // y down), each its depth (stock: the sum of z / 4)
+    const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
+    const int32 cullSign = solid && (mdl->flags & PS1_MESH_CLOSED) ? g_ps1S3DOrthoCull : 0;
+    int32 depth[PS1_S3D_ORTHO];
+    uint8 fIdx[PS1_S3D_ORTHO];
+    int32 faces = 0;
+    for (int32 f = 0; f < nf; ++f) {
+        const uint16 *c = idx + 4 * f;
+        const int32 c0 = c[0], c1 = c[1], c2 = c[2];
+        if (cullSign) {
+            const int64 cross = (int64)(px[c1] - px[c0]) * (py[c2] - py[c0]) - (int64)(px[c2] - px[c0]) * (py[c1] - py[c0]);
+            if (cullSign > 0 ? cross < 0 : cross > 0)
+                continue;
         }
-        const uint8 *data = PS1MeshData(mdl);
-        const uint16 *idx = (const uint16 *)(data + 4 * mdl->indexCount);
-        const int16 *pos  = (const int16 *)PS1MeshPos(mdl); // frame 0
-        const Matrix &m   = it.m;
-        int32 pz[PS1_S3D_ORTHO];
-        base[i] = positions;
-        for (int32 v = 0; v < mdl->vertCount; ++v) {
-            int32 x = pos[3 * v], y = pos[3 * v + 1], z = pos[3 * v + 2];
-            px[positions + v] = m.values[0][3] + (z * m.values[0][2] >> 8) + (m.values[0][0] * x >> 8) + (m.values[0][1] * y >> 8);
-            py[positions + v] = m.values[1][3] + (y * m.values[1][1] >> 8) + (z * m.values[1][2] >> 8) + (m.values[1][0] * x >> 8);
-            pz[v] = m.values[2][3] + ((x * m.values[2][0]) >> 8) + ((m.values[2][2] * z >> 8) + (m.values[2][1] * y >> 8));
-        }
-        // stock's depth: 3 corners ((z0 / 2 + z1 / 2) / 2 + z2 / 2), 4 corners the sum of z / 4
-        const bool cull = g_ps1S3DOrthoCull && (mdl->flags & PS1_MESH_CLOSED) && scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED;
-        for (int32 f = 0; f < nf; ++f) {
-            const uint16 *c = idx + f * fvc;
-            if (cull) { // the first three corners' winding on screen (world pixels, y down)
-                const int32 *X = px + positions, *Y = py + positions;
-                const int64 cross = (int64)(X[c[1]] - X[c[0]]) * (Y[c[2]] - Y[c[0]]) - (int64)(X[c[2]] - X[c[0]]) * (Y[c[1]] - Y[c[0]]);
-                if (g_ps1S3DOrthoCull > 0 ? cross < 0 : cross > 0)
-                    continue;
-            }
-            depth[faces] = fvc == 4 ? (pz[c[0]] >> 2) + (pz[c[1]] >> 2) + (pz[c[2]] >> 2) + (pz[c[3]] >> 2)
-                                    : ((((pz[c[0]] >> 1) + (pz[c[1]] >> 1)) >> 1) + (pz[c[2]] >> 1));
-            fIdx[faces] = (uint16)f, fItem[faces] = (uint8)i;
-            ++faces;
-        }
-        positions += mdl->vertCount;
+        depth[faces] = (pz[c0] >> 2) + (pz[c1] >> 2) + (pz[c2] >> 2) + (pz[c[3]] >> 2);
+        fIdx[faces++] = (uint8)f;
     }
     // far first (stock's insertion sort: equal depths keep their order). 9o: as one key a face, depth << 8 | 255 - its
     // place in the list: a total order whose descending sort is stock's result whatever order it starts from, so it
-    // starts from the previous frame's (the ring turns slowly: nearly sorted, a few moves instead of ~1,600); the
-    // three-array sort when a depth leaves the key's 23 bits or the list is not the previous frame's
+    // starts from the previous frame's (the ring turns slowly: nearly sorted, a few moves instead of ~1,600); the plain
+    // sort when a depth leaves the key's 23 bits
     static uint8 s_prevOrder[PS1_S3D_ORTHO];
     static int32 s_prevFaces = -1;
     static uint16 s_prevScene = 0xFFFF;
-    bool keyed = faces <= 256;
+    bool keyed = true;
     for (int32 i = 0; i < faces && keyed; ++i) keyed = depth[i] >= -(1 << 22) && depth[i] < (1 << 22);
+    uint8 order[PS1_S3D_ORTHO];
     if (keyed) {
         uint32 key[PS1_S3D_ORTHO];
         const bool seed = s_prevFaces == faces && s_prevScene == sceneID;
@@ -1168,117 +1180,68 @@ static bool PS1Scene3DOrtho(uint16 sceneID)
             for (; j >= 0 && key[j] < v; --j) key[j + 1] = key[j];
             key[j + 1] = v;
         }
-        int32 d2[PS1_S3D_ORTHO];
-        uint16 f2[PS1_S3D_ORTHO];
-        uint8 t2[PS1_S3D_ORTHO];
         for (int32 i = 0; i < faces; ++i) {
             const int32 k = 255 - (int32)(key[i] & 0xFF);
-            d2[i] = depth[k], f2[i] = fIdx[k], t2[i] = fItem[k], s_prevOrder[i] = (uint8)k;
+            order[i] = fIdx[k], s_prevOrder[i] = (uint8)k;
         }
-        for (int32 i = 0; i < faces; ++i) depth[i] = d2[i], fIdx[i] = f2[i], fItem[i] = t2[i];
         s_prevFaces = faces, s_prevScene = sceneID;
     }
     else {
         s_prevFaces = -1;
         for (int32 i = 1; i < faces; ++i) {
             int32 d = depth[i], j = i - 1;
-            uint16 f = fIdx[i];
-            uint8 t  = fItem[i];
-            for (; j >= 0 && depth[j] < d; --j) depth[j + 1] = depth[j], fIdx[j + 1] = fIdx[j], fItem[j + 1] = fItem[j];
-            depth[j + 1] = d, fIdx[j + 1] = f, fItem[j + 1] = t;
+            uint8 f = fIdx[i];
+            for (; j >= 0 && depth[j] < d; --j) depth[j + 1] = depth[j], fIdx[j + 1] = fIdx[j];
+            depth[j + 1] = d, fIdx[j + 1] = f;
         }
+        for (int32 i = 0; i < faces; ++i) order[i] = fIdx[i];
     }
-    Entity *entity = sceneInfo.entity;
-    Vector2 vertPos[4];
-    uint32 vertClrs[4];
-    // 9f: an opaque blended scene (the ring) writes its triangles into shared chain bulks (PS1Face3DSlot) instead of a
-    // span each (PS1DrawBlendedFace): the same primitives in the same order
-    uint32 f3dBgr, f3dSemi;
-    const bool bulk = scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED && entity->inkEffect == INK_NONE
-                      && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
-    // 9o: the wireframe (the used giant ring) the same way: its lines into the bulks (PS1LineBulk), the face's colour
-    // through PS1FlatInk once instead of once a line
-    const bool wireBulk = g_ps1S3DWireBulk && scn->drawMode == S3D_WIREFRAME_SHADED && entity->inkEffect == INK_NONE
-                          && PS1Face3DBegin(INK_NONE, entity->alpha, 0, &f3dBgr, &f3dSemi);
-    // 9o: the wireframe's line ends on screen once a position (DrawLine's 16.16 -> screen arithmetic), not twice an edge
-    int32 sxv[PS1_S3D_ORTHO], syv[PS1_S3D_ORTHO];
-    if (wireBulk) {
-        const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
-        for (int32 i = 0; i < positions; ++i) sxv[i] = FROM_FIXED(px[i] << 8) - sx, syv[i] = FROM_FIXED(py[i] << 8) - sy;
-    }
-    // 9o: indexed normals (PS1_MESH_NRMIDX): each unique normal's y through matNormals once for the item being drawn
-    // (and, solid, its lit colour once), not once a corner: the same values
-    int32 nyU[PS1_S3D_ORTHO]; // (a mesh with more unique normals takes the per-corner path)
-    uint32 colU[PS1_S3D_ORTHO];
-    uint8 colHave[PS1_S3D_ORTHO];
-    int32 nyItem = -1;
-    for (int32 f = 0; f < faces; ++f) {
-        const PS1S3DItem &it = g_ps1S3DItems[fItem[f]];
-        const Model *mdl     = &modelList[it.model];
-        const int32 n        = mdl->faceVertCount, first = fIdx[f] * n, b = base[fItem[f]];
-        const uint8 *data    = PS1MeshData(mdl);
-        const uint16 *c      = (const uint16 *)(data + 4 * mdl->indexCount) + first;
-        const bool nidx      = (mdl->flags & PS1_MESH_NRMIDX) && *(const uint16 *)(data + mdl->ps1NormOffset) <= PS1_S3D_ORTHO;
-        int32 nys[4];
-        int32 nk[4] = { -1, -1, -1, -1 }; // (indexed) each corner's normal index, for the colour cache
-        if (nidx) {
-            const uint8 *nb   = data + mdl->ps1NormOffset;
-            const uint32 U    = *(const uint16 *)nb;
-            const uint8 *cidx = nb + 4 + 4 * U + first;
-            if (nyItem != fItem[f]) {
-                nyItem = fItem[f];
-                for (uint32 u = 0; u < U; ++u) {
-                    const int8 *nr = (const int8 *)(nb + 4 + 4 * u);
-                    int32 nx = s_ps1Nrm127[(uint8)nr[0]], ny = s_ps1Nrm127[(uint8)nr[1]], nz = s_ps1Nrm127[(uint8)nr[2]];
-                    nyU[u]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
-                    colHave[u] = 0;
+    // each normal's y through matNormals (LoadMesh keeps normals x 0x10000), then (solid) its lit colour, on first use
+    const uint8 *cidx = nb + 4 + 4 * U; // a normal index a corner
+    int32 nyU[PS1_S3D_ORTHO];
+    uint32 bgrU[PS1_S3D_ORTHO];
+    uint8 have[PS1_S3D_ORTHO]; // bit 0: nyU, bit 1: bgrU
+    for (int32 u = 0; u < U; ++u) have[u] = 0;
+    const int32 n0 = it.n1[0], n1 = it.n1[1], n2 = it.n1[2];
+    auto normalY = [&](int32 u) -> int32 {
+        if (!(have[u] & 1)) {
+            const int8 *nr = (const int8 *)(nb + 4 + 4 * u);
+            int32 nx = s_ps1Nrm127[(uint8)nr[0]], ny = s_ps1Nrm127[(uint8)nr[1]], nz = s_ps1Nrm127[(uint8)nr[2]];
+            nyU[u] = (ny * n1 >> 8) + (nz * n2 >> 8) + (nx * n0 >> 8);
+            have[u] |= 1;
+        }
+        return nyU[u];
+    };
+    const int32 camX = currentScreen->position.x, camY = currentScreen->position.y;
+    if (solid) {
+        for (int32 v = 0; v < vc; ++v) px[v] = (int32)((uint32)(uint16)((py[v] >> 8) - camY) << 16 | (uint16)((px[v] >> 8) - camX));
+        for (int32 i = 0; i < faces; ++i) {
+            const int32 f   = order[i];
+            const uint16 *c = idx + 4 * f;
+            const uint8 *ci = cidx + 4 * f;
+            uint32 xy[4], bgr[4];
+            for (int32 v = 0; v < 4; ++v) {
+                const int32 u = ci[v];
+                if (!(have[u] & 2)) {
+                    const uint32 col = PS1LitColour(scn, normalY(u), it.colour);
+                    bgrU[u] = (col & 0xFF) << 16 | (col & 0xFF00) | ((col >> 16) & 0xFF), have[u] |= 2;
                 }
+                bgr[v] = bgrU[u], xy[v] = (uint32)px[c[v]];
             }
-            for (int32 v = 0; v < n; ++v) nk[v] = cidx[v], nys[v] = nyU[cidx[v]];
-        }
-        else {
-            for (int32 v = 0; v < n; ++v) { // the corner's normal y through matNormals (LoadMesh keeps normals x 0x10000)
-                const int8 *nrm = mdl->ps1NormOffset ? PS1MeshNormal(mdl, (uint32)(first + v)) : NULL;
-                int32 nx = nrm ? s_ps1Nrm127[(uint8)nrm[0]] : 0, ny = nrm ? s_ps1Nrm127[(uint8)nrm[1]] : 0;
-                int32 nz = nrm ? s_ps1Nrm127[(uint8)nrm[2]] : 0;
-                nys[v]   = (ny * it.n1[1] >> 8) + (nz * it.n1[2] >> 8) + (nx * it.n1[0] >> 8);
-            }
-        }
-        if (scn->drawMode == S3D_SOLIDCOLOR_SHADED_BLENDED) {
-            for (int32 v = 0; v < n; ++v) {
-                vertPos[v].x = (px[b + c[v]] << 8) - (currentScreen->position.x << 16);
-                vertPos[v].y = (py[b + c[v]] << 8) - (currentScreen->position.y << 16);
-                if (nk[v] >= 0) {
-                    if (!colHave[nk[v]])
-                        colU[nk[v]] = PS1LitColour(scn, nys[v], it.colour), colHave[nk[v]] = 1;
-                    vertClrs[v] = colU[nk[v]];
-                }
-                else
-                    vertClrs[v] = PS1LitColour(scn, nys[v], it.colour);
-            }
-            if (bulk)
-                PS1BlendedFaceBulk(vertPos, vertClrs, n);
-            else
-                DrawBlendedFace(vertPos, vertClrs, n, entity->alpha, entity->inkEffect);
-        }
-        else { // the face's mean normal, its edges as lines
-            int32 ny = 0;
-            for (int32 v = 0; v < n; ++v) ny += nys[v];
-            uint32 colour = PS1LitColour(scn, ny / n, it.colour);
-            if (wireBulk) { // PS1FlatInk's INK_NONE colour; the face's edges in order (PS1LineFace)
-                const uint32 bgr = (colour & 0xFF) << 16 | (colour & 0xFF00) | ((colour >> 16) & 0xFF);
-                PS1LineFace(sxv + b, syv + b, c, n, bgr);
-                continue;
-            }
-            for (int32 v = 0; v < n; ++v) {
-                int32 w = v + 1 < n ? v + 1 : 0;
-                DrawLine(px[b + c[v]] << 8, py[b + c[v]] << 8, px[b + c[w]] << 8, py[b + c[w]] << 8, colour, entity->alpha,
-                         entity->inkEffect, false);
-            }
+            PS1BlendedQuadBulk(xy, bgr);
         }
     }
-    if (bulk || wireBulk)
-        PS1Face3DEnd();
+    else { // each face's edges in the colour of its corners' mean normal y
+        for (int32 v = 0; v < vc; ++v) px[v] = (px[v] >> 8) - camX, py[v] = (py[v] >> 8) - camY;
+        for (int32 i = 0; i < faces; ++i) {
+            const int32 f   = order[i];
+            const uint8 *ci = cidx + 4 * f;
+            const int32 ny  = normalY(ci[0]) + normalY(ci[1]) + normalY(ci[2]) + normalY(ci[3]);
+            const uint32 colour = PS1LitColour(scn, ny / 4, it.colour);
+            PS1LineFace(px, py, idx + 4 * f, 4, (colour & 0xFF) << 16 | (colour & 0xFF00) | ((colour >> 16) & 0xFF));
+        }
+    }
+    PS1Face3DEnd();
     g_ps1S3DDraws = g_ps1S3DDraws + 1;
     g_ps1S3DFaces = g_ps1S3DFaces + faces;
     return true;
