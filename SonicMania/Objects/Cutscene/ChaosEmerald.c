@@ -9,6 +9,43 @@
 
 ObjectChaosEmerald *ChaosEmerald;
 
+#if defined RETRO_PS1_BUILD
+// P14 (docs/perf/57): the engine's bank-0 palette state (PS1Layers.cpp, Palette.hpp), for ChaosEmerald_Draw's swap
+extern uint16 ChaosEmerald_PS1Palette[] __asm__("_ZN4RSDK11fullPaletteE"); // fullPalette[0]
+extern uint16 ChaosEmerald_PS1To16B[] __asm__("_ZN4RSDK11rgb32To16_BE");
+extern uint16 ChaosEmerald_PS1To16G[] __asm__("_ZN4RSDK11rgb32To16_GE");
+extern uint16 ChaosEmerald_PS1To16R[] __asm__("_ZN4RSDK11rgb32To16_RE");
+extern void ChaosEmerald_PS1ClutRow(const uint16 *row, int32 n, int16 x, int16 y) __asm__("_Z10PS1ClutRowPKtiss");
+extern uint16 ChaosEmerald_PS1PalRaw[] __asm__("s_palRaw");
+extern uint16 ChaosEmerald_PS1Pal16[] __asm__("s_pal16");
+extern uint8 ChaosEmerald_PS1Row0Swapped __asm__("s_palRow0Swapped");
+extern volatile int32 g_ps1PalDiffs;
+static uint16 ChaosEmerald_PS1Colors[36];
+static bool32 ChaosEmerald_PS1Ready = false;
+
+// entries 128 .. 163 of bank 0 = values (save: the old ones first), with PS1PaletteWrite's bookkeeping for each changing write
+static void ChaosEmerald_PS1Swap(uint16 *pal, const uint16 *raw, const uint16 *values, uint16 *save)
+{
+    int32 diffs = g_ps1PalDiffs;
+    bool32 zero = false;
+    for (int32 c = 0; c < 36; ++c) {
+        uint16 old = pal[c], v = values[c];
+        if (save)
+            save[c] = old;
+        if (old != v) {
+            diffs += (int32)(v != raw[c]) - (int32)(old != raw[c]);
+            zero |= !diffs;
+        }
+        pal[c] = v;
+    }
+    g_ps1PalDiffs = diffs;
+    if (zero && ChaosEmerald_PS1Row0Swapped) {
+        ChaosEmerald_PS1Row0Swapped = false;
+        ChaosEmerald_PS1ClutRow(ChaosEmerald_PS1Pal16, 256, 0, 240);
+    }
+}
+#endif
+
 void ChaosEmerald_Update(void)
 {
     RSDK_THIS(ChaosEmerald);
@@ -25,12 +62,24 @@ void ChaosEmerald_Draw(void)
     RSDK_THIS(ChaosEmerald);
 
 #if defined RETRO_PS1_BUILD
-    // docs/ports/mania/32 9u.12: the same palette writes in one engine call each way (RSDKv5/RSDK/Scene/PS1/PS1Layers.cpp)
-    // (colorStorage holds the saved entries as they are: the restore writes the values stock's SetPaletteEntry would)
-    extern void PS1PaletteSwapIn(uint8 start, const uint32 *colors, uint32 *save, int32 n);
-    PS1PaletteSwapIn(128, (const uint32 *)ChaosEmerald->emeraldColors, (uint32 *)ChaosEmerald->colorStorage, 36);
+    // P14 (docs/perf/57; was 9u.12's PS1PaletteSwapIn in the resident engine): the same 36 bank-0 writes each way, here.
+    // Each write does what PS1PaletteWrite (RSDKv5/RSDK/Scene/PS1/PS1Layers.cpp) does: count the entries that differ from
+    // the frame's CLUTs (g_ps1PalDiffs) and, at a write that brings the count to 0 while row 240 holds a per-draw copy,
+    // put row 240 back. The emerald colours are the table's, converted once (SetPaletteEntry's conversion); the saved
+    // entries go back as they were. Nothing is drawn between the writes, so the chain is the same
+    uint16 *pal = ChaosEmerald_PS1Palette + 128;
+    const uint16 *raw = ChaosEmerald_PS1PalRaw + 128;
+    uint16 *save = (uint16 *)ChaosEmerald->colorStorage;
+    if (!ChaosEmerald_PS1Ready) {
+        for (int32 c = 0; c < 36; ++c) {
+            uint32 color = (uint32)ChaosEmerald->emeraldColors[c];
+            ChaosEmerald_PS1Colors[c] = ChaosEmerald_PS1To16B[color & 0xFF] | ChaosEmerald_PS1To16G[(color >> 8) & 0xFF] | ChaosEmerald_PS1To16R[(color >> 16) & 0xFF];
+        }
+        ChaosEmerald_PS1Ready = true;
+    }
+    ChaosEmerald_PS1Swap(pal, raw, ChaosEmerald_PS1Colors, save);
     RSDK.DrawSprite(&self->animator, NULL, false);
-    PS1PaletteSwapIn(128, (const uint32 *)ChaosEmerald->colorStorage, NULL, 36);
+    ChaosEmerald_PS1Swap(pal, raw, save, NULL);
 #else
     for (int32 c = 0; c < 36; ++c) {
         ChaosEmerald->colorStorage[c] = RSDK.GetPaletteEntry(0, c + 128);

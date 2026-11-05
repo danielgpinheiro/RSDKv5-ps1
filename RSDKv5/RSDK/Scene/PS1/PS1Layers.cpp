@@ -1010,26 +1010,7 @@ __attribute__((noinline)) void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
         PS1ClutRow(s_pal16, 256, 0, 240);
     }
 }
-// 9u.12: a game's "save bank-0 entries, set new ones, draw, put them back" (ChaosEmerald_Draw: 36 entries a draw, each a
-// GetPaletteEntry and a SetPaletteEntry through the function table, then a SetPaletteEntry each to restore; ERZ's seven
-// emeralds 504 calls a frame) in one call each way, the same writes in the same order. save != NULL: colors are 32-bit
-// (SetPaletteEntry's conversion) and the entries are saved as they are (16-bit: GetPaletteEntry then SetPaletteEntry gives
-// the same value back, rgb32To16 being the inverse of its expansion); save == NULL: colors are such saved entries
-// (start + n <= 256)
-extern "C" void PS1PaletteSwapIn(uint8 start, const uint32 *colors, uint32 *save, int32 n)
-{
-    uint16 *pal = fullPalette[0] + start;
-    for (int32 c = 0; c < n; ++c) {
-        uint32 color = colors[c];
-        uint16 v     = (uint16)color;
-        if (save) {
-            save[c] = pal[c];
-            v       = rgb32To16_B[color & 0xFF] | rgb32To16_G[(color >> 8) & 0xFF] | rgb32To16_R[(color >> 16) & 0xFF];
-        }
-        PS1PaletteWrite((uint8)(start + c), v); // (returns at once for an unchanged entry)
-        pal[c] = v;
-    }
-}
+// (9u.12's PS1PaletteSwapIn, ChaosEmerald's palette swap, is in ChaosEmerald.c since P14: docs/perf/57)
 void RSDK::PS1PaletteRow0Swapped() { s_palRow0Swapped = true; }
 void RSDK::PS1PaletteRow0Restore()
 {
