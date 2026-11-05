@@ -83,7 +83,7 @@ void RSDK::BlendColors(uint8 destBankID, uint32 *srcColorsA, uint32 *srcColorsB,
 }
 #endif
 
-void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int16 blendAmount, int32 startIndex, int32 endIndex)
+__attribute__((optimize("O2"))) void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int16 blendAmount, int32 startIndex, int32 endIndex)
 {
     if (destBankID >= PALETTE_BANK_COUNT || srcBankA >= PALETTE_BANK_COUNT || srcBankB >= PALETTE_BANK_COUNT)
         return;
@@ -109,6 +109,7 @@ void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int1
         for (int32 k = 0; k < 64; ++k)
             t[64 + k] = (uint16)(blendA * (uint32)(k << 2)), t[128 + k] = (uint16)(blendAmount * (k << 2));
         const uint16 *pa = fullPalette[srcBankA], *pb = fullPalette[srcBankB];
+        PS1PalRun run = PS1PalRunBegin(); // P3: PS1PaletteWrite's bookkeeping in registers (Palette.hpp)
         for (int32 i = startIndex; i <= endIndex; ++i, ++paletteColor) {
             uint32 a = pa[(uint8)i], c = pb[(uint8)i];
             int32 r = t[32 + (c >> 11)] + t[a >> 11];
@@ -116,9 +117,11 @@ void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int1
             int32 b = t[224 + (c & 31)] + t[192 + (a & 31)];
             uint16 v = PACK_RGB888((uint8)(r >> 8), (uint8)(g >> 8), (uint8)(b >> 8));
             if (!destBankID && i < 0x100)
-                PS1PaletteWrite((uint8)i, v); // 9m
+                PS1PalRunNote(run, (uint8)i, v); // 9m
             *paletteColor = v;
         }
+        if (!destBankID)
+            PS1PalRunEnd(run);
         return;
     }
 #endif

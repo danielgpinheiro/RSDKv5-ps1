@@ -70,7 +70,11 @@ __attribute__((optimize("O2"))) void PS1DeformDraw(uint16 sheetID, int32 inkEffe
     // ~a quarter of its strips on some frames); strips starting there are left out, the others keep their words
     const int32 yEnd = mask && g_ps1MaskRowsEnd < y2 ? g_ps1MaskRowsEnd : y2;
     g_ps1MaskRowsEnd = 0x7FFF;
-    for (int32 y = y1; y < yEnd; y += 2) {
+    // P3 (docs/perf/57): a strip is two lines for the masked plasma (UFO7, as before) and four for the blended smog (OOZ:
+    // ~300 strips a frame -> ~150; the smog's wave steps every 4 lines instead of 2, a mild coarsening the user allows,
+    // checked on the pictures)
+    const int32 L = mask ? 2 : 4;
+    for (int32 y = y1; y < yEnd; y += L) {
         const ScanlineInfo *s = &scanlines[y], *t = &scanlines[y + 1 < y2 ? y + 1 : y];
         const int32 dx = s->deform.x;
         if (dx <= 0 || s->deform.y) {
@@ -78,19 +82,27 @@ __attribute__((optimize("O2"))) void PS1DeformDraw(uint16 sheetID, int32 inkEffe
             if (dx <= 0)
                 continue;
         }
-        // the strip's rows: this line's, and twice the step to the next line's at its bottom edge (one line: one row)
+        // the strip's rows: this line's, and the step to the next line's times the strip's lines at its bottom edge (one
+        // line: one row)
         const uint32 vT = (uint32)(s->position.y >> 16) & 127;
         uint32 d        = ((uint32)(t->position.y >> 16) - vT) & 127;
         d               = d > 64 ? 1 : d;
-        const uint32 vB = vT + (y + 1 < y2 ? 2 * d : 1);
-        const int32 yb = y + 2 < y2 ? y + 2 : y2;
+        const int32 yb  = y + L < y2 ? y + L : y2;
+        const uint32 vB = vT + (yb - y > 1 ? (uint32)(yb - y) * d : 1);
         // walk the line: a strip from its texel u (in 0..127: the window wraps) until u would pass 255
+        // (P3, docs/perf/57: one divide a line, not a strip: inv = floor((2^32 - 1) / dx), so num * inv >> 32 is the
+        // quotient or one less (num < 2^24: the error stays under 1), and one test makes it exact)
+        const uint32 inv = 0xFFFFFFFFu / (uint32)dx;
         int32 lx = s->position.x + x1 * dx;
         for (int32 x = x1; x < x2;) {
             const uint32 us = (uint32)(lx >> 16) & 127;
             // pixels until u reaches 255 (9u: a 32-bit divide: (255 - us) << 16 < 2^24 and dx > 0, the same quotient as the
             // int64 one, which called libgcc's __divdi3 for every strip)
-            int32 px = (int32)((255 - us) << 16) / dx;
+            const uint32 num = (255 - us) << 16;
+            uint32 q         = (uint32)(((uint64)num * inv) >> 32);
+            if ((q + 1) * (uint32)dx <= num)
+                ++q;
+            int32 px = (int32)q;
             if (px < 1)
                 px = 1;
             const int32 xe = x + px < x2 ? x + px : x2;

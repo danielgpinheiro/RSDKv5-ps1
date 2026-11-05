@@ -1012,6 +1012,16 @@ __attribute__((noinline)) void RSDK::PS1PaletteWrite(uint8 index, uint16 value)
 }
 // (9u.12's PS1PaletteSwapIn, ChaosEmerald's palette swap, is in ChaosEmerald.c since P14: docs/perf/57)
 void RSDK::PS1PaletteRow0Swapped() { s_palRow0Swapped = true; }
+// P3 (docs/perf/57): PS1PaletteWrite for a run of writes (Palette.hpp PS1PalRunNote)
+RSDK::PS1PalRun RSDK::PS1PalRunBegin() { return { s_palRaw, g_ps1PalDiffs, false }; }
+void RSDK::PS1PalRunEnd(const PS1PalRun &run)
+{
+    g_ps1PalDiffs = run.diffs;
+    if (run.zero && s_palRow0Swapped) {
+        s_palRow0Swapped = false;
+        PS1ClutRow(s_pal16, 256, 0, 240);
+    }
+}
 void RSDK::PS1PaletteRow0Restore()
 {
     if (g_ps1PalDiffs) { // the bank's own draws take copies now (PS1BankClut): put back when the palette is

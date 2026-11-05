@@ -9,6 +9,7 @@
 
 ObjectSmog *Smog;
 
+
 void Smog_Update(void)
 {
     RSDK_THIS(Smog);
@@ -73,6 +74,22 @@ void Smog_Draw(void)
     uint8 scanlineID = ((ScreenInfo->position.y >> 1) + 2 * Zone->timer);
 
     ScanlineInfo *scanline = Smog->scanlines;
+#if defined RETRO_PS1_BUILD
+    // P3 (docs/perf/57): the same 240 entries, the table, the screen's x and the line count held in registers (the loop
+    // reloaded Smog and ScreenInfo for every field: 9.7 hblanks a frame)
+    {
+        const ScanlineInfo *list = Smog->scanlineList;
+        const int32 baseX = TO_FIXED(ScreenInfo->position.x), lines = ScreenInfo->size.y;
+        for (int32 i = 0; i < lines; ++i, ++scanline, ++scanlineID) {
+            const ScanlineInfo *src = &list[scanlineID];
+            scanline->position.x = baseX + src->position.x;
+            scanline->position.y = y;
+            scanline->deform.x   = src->deform.x;
+            scanline->deform.y   = 0;
+            y += list[(uint8)(scanlineID + 1)].deform.y;
+        }
+    }
+#else
     for (int32 i = 0; i < ScreenInfo->size.y; ++i) {
         scanline->position.x = TO_FIXED(ScreenInfo->position.x) + Smog->scanlineList[scanlineID].position.x;
         scanline->position.y = y;
@@ -83,6 +100,7 @@ void Smog_Draw(void)
         scanline++;
         scanlineID++;
     }
+#endif
 
     if (self->alpha >= 0x80)
         RSDK.DrawDeformedSprite(Smog->aniFrames, INK_BLEND, 0xE0);

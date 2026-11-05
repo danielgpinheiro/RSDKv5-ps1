@@ -79,6 +79,26 @@ void PS1PaletteWrite(uint8 index, uint16 value);
             PS1PaletteWrite((uint8)(index), v_);                                                                       \
         fullPalette[bank][index] = v_;                                                                                 \
     } while (0)
+// P3 (docs/perf/57): a run of bank-0 writes with PS1PaletteWrite's bookkeeping done in registers (OOZ's smog fades all
+// 256 entries every frame: 256 noinline calls, each a volatile read-modify-write of g_ps1PalDiffs). For each write,
+// before the entry is assigned: PS1PalRunNote(run, index, value); after the run: PS1PalRunEnd(run). The same count, and
+// the same row 240 restore at a write that brings it to 0 (PS1PaletteWrite's), done once at the end: nothing is drawn
+// inside a run
+struct PS1PalRun {
+    const uint16 *raw; // the values the frame's CLUTs came from (PS1Layers.cpp s_palRaw)
+    int32 diffs;
+    bool zero;
+};
+PS1PalRun PS1PalRunBegin();
+void PS1PalRunEnd(const PS1PalRun &run);
+inline void PS1PalRunNote(PS1PalRun &run, uint8 index, uint16 value)
+{
+    uint16 old = fullPalette[0][index];
+    if (index && old != value) {
+        run.diffs += (int32)(value != run.raw[index]) - (int32)(old != run.raw[index]);
+        run.zero |= !run.diffs;
+    }
+}
 #else
 #define PS1_PAL_SET(bank, index, value) (fullPalette[bank][index] = (value))
 #endif
