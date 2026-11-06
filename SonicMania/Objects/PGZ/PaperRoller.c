@@ -221,7 +221,7 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
 // the rest one by one, before its batch) keeps the stock calls.
 // 9v.6: a segment's end is the next one's start (DrawDeformedLine's second point is current + move, the next segment's
 // first): each of the count + 1 vertices computed once (vx / vy), not twice (two divisions a point)
-static int32 PaperRoller_PS1Points(int32 startX, int32 startY, int32 endX, int32 endY, int32 deformX, int32 deformY, int32 len,
+__attribute__((optimize("O2"))) static int32 PaperRoller_PS1Points(int32 startX, int32 startY, int32 endX, int32 endY, int32 deformX, int32 deformY, int32 len,
                                    int32 *vx, int32 *vy, uint32 *colIndex)
 {
     RSDK_THIS(PaperRoller);
@@ -268,6 +268,9 @@ static int32 PaperRoller_PS1Points(int32 startX, int32 startY, int32 endX, int32
 
 #endif
 
+#if defined RETRO_PS1_BUILD
+__attribute__((optimize("O2"))) // P12 (docs/perf/57): this overlay-only function at -O2 (the paper lines' loops)
+#endif
 void PaperRoller_DrawPaperLines(void)
 {
     RSDK_THIS(PaperRoller);
@@ -340,15 +343,31 @@ void PaperRoller_DrawPaperLines(void)
         int32 sx[2][65], sy[2][65];
         uint32 col[2][64];
         const int32 scrX = ScreenInfo->position.x, scrY = ScreenInfo->position.y;
+        // P12 (docs/perf/57): a side whose every vertex lies past one edge of that area by more than the offsets (at most 2
+        // pixels) would have every line left out below: it is skipped, its colours too (they only feed those lines); the
+        // colour index (timer + c) % n with c in [0, n) as one remainder a side and a subtraction
+        bool32 off[2];
         for (int32 side = 0; side < 2; ++side) {
             int32 n = side ? ps1N2 : ps1N1;
-            for (int32 k = 0; k <= n && n; ++k) sx[side][k] = FROM_FIXED(ps1Vx[side][k]) - scrX, sy[side][k] = FROM_FIXED(ps1Vy[side][k]) - scrY;
-            for (int32 i = 0; i < n; ++i) col[side][i] = PaperRoller->colors[(Zone->timer + ps1Col[side][i]) % n];
+            int32 x0 = 0x7FFFFFFF, x1 = -0x7FFFFFFF, y0 = 0x7FFFFFFF, y1 = -0x7FFFFFFF;
+            for (int32 k = 0; k <= n && n; ++k) {
+                int32 kx = FROM_FIXED(ps1Vx[side][k]) - scrX, ky = FROM_FIXED(ps1Vy[side][k]) - scrY;
+                sx[side][k] = kx, sy[side][k] = ky;
+                x0 = kx < x0 ? kx : x0, x1 = kx > x1 ? kx : x1, y0 = ky < y0 ? ky : y0, y1 = ky > y1 ? ky : y1;
+            }
+            off[side] = !n || x1 + 2 < -4 || x0 - 2 > 324 || y1 + 2 < -4 || y0 - 2 > 244;
+            if (off[side])
+                continue;
+            const uint32 t = (uint32)Zone->timer % (uint32)n;
+            for (int32 i = 0; i < n; ++i) {
+                uint32 ci = t + ps1Col[side][i];
+                col[side][i] = PaperRoller->colors[ci >= (uint32)n ? ci - n : ci];
+            }
         }
         for (int32 v = 0; v < 3; ++v)
             for (int32 side = 0; side < 2; ++side) {
                 int32 n = side ? ps1N2 : ps1N1;
-                if (!n)
+                if (off[side])
                     continue;
                 int32 ox = v * (side ? offsetX2 : offsetX1), oy = v * (side ? offsetY2 : offsetY1);
                 const int32 px = ox >> 16, py = oy >> 16;
