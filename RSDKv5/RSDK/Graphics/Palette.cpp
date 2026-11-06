@@ -83,6 +83,27 @@ void RSDK::BlendColors(uint8 destBankID, uint32 *srcColorsA, uint32 *srcColorsB,
 }
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS1
+// P16 (docs/perf/57, LRZ1Setup's six 2-5 entry fades a frame): SetPaletteFade's full tables cost 192 products; a short
+// range fills only the entries its colours index, with the same products, so the same colours (-Os: resident bytes).
+// Per channel R, G, B: the RGB565 field's shift and mask, the 8-bit expansion's shift, the A table's first entry (B's
+// follows A's mask + 1 entries later)
+static const uint8 s_ps1FadeField[3][4] = { { 11, 31, 3, 0 }, { 5, 63, 2, 64 }, { 0, 31, 3, 192 } };
+static __attribute__((noinline, optimize("Os"))) void PS1FadeFillShort(uint16 *t, const uint16 *pa, const uint16 *pb, uint32 blendA,
+                                                                      uint32 blendB, int32 i, int32 end)
+{
+    for (; i <= end; ++i) {
+        uint32 a = pa[(uint8)i], c = pb[(uint8)i];
+        for (int32 ch = 0; ch < 3; ++ch) {
+            const uint8 *f = s_ps1FadeField[ch];
+            uint32 ka = (a >> f[0]) & f[1], kc = (c >> f[0]) & f[1];
+            t[f[3] + ka]            = (uint16)(blendA * (ka << f[2]));
+            t[f[3] + f[1] + 1 + kc] = (uint16)(blendB * (kc << f[2]));
+        }
+    }
+}
+#endif
+
 __attribute__((optimize("O2"))) void RSDK::SetPaletteFade(uint8 destBankID, uint8 srcBankA, uint8 srcBankB, int16 blendAmount, int32 startIndex, int32 endIndex)
 {
     if (destBankID >= PALETTE_BANK_COUNT || srcBankA >= PALETTE_BANK_COUNT || srcBankB >= PALETTE_BANK_COUNT)
@@ -103,12 +124,16 @@ __attribute__((optimize("O2"))) void RSDK::SetPaletteFade(uint8 destBankID, uint
     // inclusive, GetPaletteEntry's uint8 index (entry 256 reads index 0)
     {
         uint16 *t = (uint16 *)0x1F800000; // R: A 0-31, B 32-63; G: A 64-127, B 128-191; B: A 192-223, B 224-255
-        for (int32 k = 0; k < 32; ++k)
-            t[k] = (uint16)(blendA * (uint32)(k << 3)), t[32 + k] = (uint16)(blendAmount * (k << 3)),
-            t[192 + k] = (uint16)(blendA * (uint32)(k << 3)), t[224 + k] = (uint16)(blendAmount * (k << 3));
-        for (int32 k = 0; k < 64; ++k)
-            t[64 + k] = (uint16)(blendA * (uint32)(k << 2)), t[128 + k] = (uint16)(blendAmount * (k << 2));
         const uint16 *pa = fullPalette[srcBankA], *pb = fullPalette[srcBankB];
+        if (endIndex - startIndex < 32)
+            PS1FadeFillShort(t, pa, pb, blendA, blendAmount, startIndex, endIndex);
+        else {
+            for (int32 k = 0; k < 32; ++k)
+                t[k] = (uint16)(blendA * (uint32)(k << 3)), t[32 + k] = (uint16)(blendAmount * (k << 3)),
+                t[192 + k] = (uint16)(blendA * (uint32)(k << 3)), t[224 + k] = (uint16)(blendAmount * (k << 3));
+            for (int32 k = 0; k < 64; ++k)
+                t[64 + k] = (uint16)(blendA * (uint32)(k << 2)), t[128 + k] = (uint16)(blendAmount * (k << 2));
+        }
         PS1PalRun run = PS1PalRunBegin(); // P3: PS1PaletteWrite's bookkeeping in registers (Palette.hpp)
         for (int32 i = startIndex; i <= endIndex; ++i, ++paletteColor) {
             uint32 a = pa[(uint8)i], c = pb[(uint8)i];

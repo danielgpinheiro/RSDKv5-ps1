@@ -36,7 +36,9 @@ volatile uint32 g_ps1TileMissing    = 0; // DrawTile pieces whose tile has no im
 extern volatile uint32 g_ps1BankTodo; // PS1Layers.cpp: draws under another palette bank not done yet
 extern volatile uint32 g_ps1FlatDraws; // (defined with the flat rectangles below)
 // Per-draw counts (sprites, rotated, tiles, flats: a volatile RAM read-modify-write per draw) only in the builds that read
-// them (docs/perf/57 §8.3): PROFILE / PERF_HUD / the 8 MB link; a release build keeps the variables at 0 for the GDB scripts
+// them (docs/perf/57 §8.3): PROFILE / PERF_HUD / the 8 MB link; a release build keeps the variables at 0 for the GDB scripts.
+// P16: the GDB-only statistics too (clip areas, big-frame clips, wide pieces, tint-invert rectangles, 3D faces: no test
+// reads them), for resident bytes
 #if PS1_PROFILE || PS1_PERF_HUD || PS1_DEBUG_BIGRAM
 #define PS1_DRAW_COUNT(v, n) ((v) = (v) + (n))
 #else
@@ -112,7 +114,7 @@ void PS1ClipBoundsChanged(const ScreenInfo *screen)
         return;
     PS1ChainDrawArea(x1, y1, x2 - 1, y2 - 1);
     s_ps1AreaClipped = true;
-    g_ps1ClipAreas   = g_ps1ClipAreas + 1;
+    PS1_DRAW_COUNT(g_ps1ClipAreas, 1);
 }
 
 #if PS1_DEBUG_BIGRAM
@@ -624,7 +626,7 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         y += (direction & FLIP_Y) ? h - d : c;
         u += a >> shift, v += c >> shift;
         w = b - a, h = d - c, tw = (w + m) >> shift;
-        g_ps1SpriteBigClips = g_ps1SpriteBigClips + 1;
+        PS1_DRAW_COUNT(g_ps1SpriteBigClips, 1);
     }
     // (9f: bank 0 too while a palette write in this draw phase changed it: CutsceneHBH's per-Heavy colours; INK_SUB
     // with its colours inverted)
@@ -654,7 +656,7 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
             int32 sx = (direction & FLIP_X) ? x + w - sx0 - sw : x + sx0;
             drawn |= PS1TexRect(sx, y, sw, h, 0, v, tpage + (uint32)(k * step), clut, direction, shift, ink);
         }
-        g_ps1SpriteWidePieces = g_ps1SpriteWidePieces + 1;
+        PS1_DRAW_COUNT(g_ps1SpriteWidePieces, 1);
     }
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
@@ -912,7 +914,7 @@ void PS1TintInvertRect(int32 x, int32 y, int32 w, int32 h)
 #undef PS1_TINT_FRAG
         PS1ChainSpanEnd(hdr, lastWords, p);
     }
-    g_ps1TintInvertRects = g_ps1TintInvertRects + 1;
+    PS1_DRAW_COUNT(g_ps1TintInvertRects, 1);
 }
 
 // docs/ports/mania/32 9r: INK_UNMASKED over a rectangle (clipped to the screen): the PC writes the colour wherever the frame does not
@@ -1600,7 +1602,7 @@ uint32 *RSDK::PS1Face3DSlot(int32 wpp)
             return NULL;
         s_ps1F3DWpp = wpp;
     }
-    g_ps1Face3DDrawn = g_ps1Face3DDrawn + 1;
+    PS1_DRAW_COUNT(g_ps1Face3DDrawn, 1);
     return s_ps1F3DBase + s_ps1F3DN++ * (wpp + 1);
 }
 // P5 (docs/perf/57): an opaque 4-corner face's fan (PS1DrawBlendedFace's two triangles, INK_NONE) as one GP0 38h
@@ -1679,7 +1681,7 @@ extern "C" void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int
         PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
 #endif
     }
-    g_ps1Face3DDrawn = g_ps1Face3DDrawn + drawn;
+    PS1_DRAW_COUNT(g_ps1Face3DDrawn, drawn);
     g_ps1PrimApprox  = g_ps1PrimApprox + drawn;
     PS1Face3DFlush();
 }
@@ -1708,7 +1710,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1LineFace(const int32 *xs, const in
         PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2);
 #endif
     }
-    g_ps1Face3DDrawn = g_ps1Face3DDrawn + n;
+    PS1_DRAW_COUNT(g_ps1Face3DDrawn, n);
     g_ps1PrimApprox  = g_ps1PrimApprox + n;
 }
 void RSDK::PS1Face3DEnd()
