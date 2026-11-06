@@ -16,6 +16,22 @@ void InvisibleBlock_Update(void)
     foreach_active(Player, player)
     {
         if ((self->planeFilter <= 0 || player->collisionPlane == (((uint8)self->planeFilter - 1) & 1)) && (!self->noChibi || !player->isChibi)) {
+#if defined RETRO_PS1_BUILD
+            // P2 (docs/perf/57): SPZ1's 21 blocks run every frame (activeNormal). CheckObjectCollisionBox finds a side only
+            // where the boxes reach each other on both axes (its ±1 adjustments aside) and writes nothing on C_NONE, so a
+            // player beyond both hitboxes' reach on x or y is C_NONE: skipped before the call
+            {
+                Hitbox *ph = player->outerbox ? player->outerbox : Player_GetHitbox(player);
+                int32 pw   = ph->right > -ph->left ? ph->right : -ph->left;
+                int32 pt   = ph->bottom > -ph->top ? ph->bottom : -ph->top;
+                int32 dx   = (player->position.x >> 16) - (self->position.x >> 16);
+                int32 dy   = (player->position.y >> 16) - (self->position.y >> 16);
+                int32 bw   = self->hitbox.right > -self->hitbox.left ? self->hitbox.right : -self->hitbox.left;
+                int32 bh   = self->hitbox.bottom > -self->hitbox.top ? self->hitbox.bottom : -self->hitbox.top;
+                if (dx > bw + pw + 2 || -dx > bw + pw + 2 || dy > bh + pt + 2 || -dy > bh + pt + 2)
+                    continue;
+            }
+#endif
             switch (Player_CheckCollisionBox(player, self, &self->hitbox)) {
                 case C_TOP:
                     if (!self->noCrush)
