@@ -9,6 +9,22 @@
 
 ObjectWarpDoor *WarpDoor;
 
+#if defined RETRO_PS1_BUILD
+// P15 (docs/perf/57): each door's update walked the players with foreach_all every frame (FBZ2: 23 doors). The same walk
+// inline: the slots of the class's range [ps1ClassLo, ps1ClassHi] (RSDKv5/RSDK/Scene/Object.hpp: a superset kept on every
+// write of a class into a slot), ascending, each whose class is Player: GetAllEntities's slots in its order, without its
+// call, foreach stack and range measure per door. No foreach level is pushed, so the body leaves with a plain return
+extern uint16 WarpDoor_PS1ClassLo[] __asm__("_ZN4RSDK10ps1ClassLoE");
+extern uint16 WarpDoor_PS1ClassHi[] __asm__("_ZN4RSDK10ps1ClassHiE");
+#define WARPDOOR_FOREACH_PLAYER(player)                                                                                                              \
+    for (int32 ps1S = WarpDoor_PS1ClassLo[Player->classID], ps1E = WarpDoor_PS1ClassHi[Player->classID]; ps1S <= ps1E; ++ps1S)                      \
+        for (EntityPlayer *player = RSDK_GET_ENTITY(ps1S, Player); player && player->classID == Player->classID; player = NULL)
+#define WARPDOOR_RETURN return
+#else
+#define WARPDOOR_FOREACH_PLAYER(player) foreach_all(Player, player)
+#define WARPDOOR_RETURN foreach_return
+#endif
+
 void WarpDoor_Update(void)
 {
     RSDK_THIS(WarpDoor);
@@ -21,7 +37,7 @@ void WarpDoor_Update(void)
         if (tag) {
             bool32 warped = false;
             int32 boundID = -1;
-            foreach_all(Player, player)
+            WARPDOOR_FOREACH_PLAYER(player)
             {
                 if (Player_CheckCollisionTouch(player, self, &self->hitbox)) {
                     warped = true;
@@ -117,7 +133,7 @@ void WarpDoor_Update(void)
                                 if (self->effect == OOZ_WARPDOOR_EFFECT_TO_SUB || self->effect == OOZ_WARPDOOR_EFFECT_FROM_SUB) {
                                     OOZSetup->useSmogEffect = self->effect == OOZ_WARPDOOR_EFFECT_FROM_SUB ? 1 : 0;
                                     destroyEntity(self);
-                                    foreach_return;
+                                    WARPDOOR_RETURN;
                                 }
                             }
                             else if (RSDK.CheckSceneFolder("FBZ")) {
@@ -147,6 +163,12 @@ void WarpDoor_LateUpdate(void) {}
 
 void WarpDoor_StaticUpdate(void)
 {
+#if defined RETRO_PS1_BUILD
+    // P15: one foreach_all a frame narrows the players' class range (GetAllEntities measures a range at its first use in a
+    // frame; between, writes only widen it), so the doors' inline walks (WARPDOOR_FOREACH_PLAYER) cover the players' slots,
+    // not the superset an unmeasured range can grow to
+    foreach_all(Player, ps1Player) { foreach_break; }
+#endif
     if (!WarpDoor->hasSetupTags) {
         foreach_all(WarpDoor, warpDoor)
         {

@@ -18,14 +18,47 @@ void Tuesday_Update(void)
 
 void Tuesday_LateUpdate(void) {}
 
+#if defined RETRO_PS1_BUILD
+// P15 (docs/perf/57): the nodes' slots kept (P6's PS1ClassList rule: collected again when ps1ClassAdds moved), not a walk of
+// the class's slot range every frame. When they are collected (or past 48: walked every frame), that walk does the work
+// itself: the same references in the same order either way
+static struct {
+    unsigned int adds;
+    int count;
+    unsigned short slot[48];
+} ps1TuesdayList;
+#endif
 void Tuesday_StaticUpdate(void)
 {
+#if defined RETRO_PS1_BUILD
+    if (ps1TuesdayList.adds == ps1ClassAdds && ps1TuesdayList.count >= 0) {
+        for (int32 i = 0; i < ps1TuesdayList.count; ++i) {
+            EntityTuesday *tuesday = RSDK_GET_ENTITY(ps1TuesdayList.slot[i], Tuesday);
+            if (tuesday->classID == Tuesday->classID && !tuesday->velocity.y)
+                RSDK.AddDrawListRef(Zone->objectDrawGroup[0], ps1TuesdayList.slot[i]);
+        }
+        return;
+    }
+    int32 n = 0;
+    foreach_all(Tuesday, tuesday)
+    {
+        int32 slot = RSDK.GetEntitySlot(tuesday);
+        if (n < 48)
+            ps1TuesdayList.slot[n] = (unsigned short)slot;
+        ++n;
+        if (!tuesday->velocity.y)
+            RSDK.AddDrawListRef(Zone->objectDrawGroup[0], slot);
+    }
+    ps1TuesdayList.count = n <= 48 ? n : -1;
+    ps1TuesdayList.adds  = ps1ClassAdds;
+#else
     foreach_all(Tuesday, tuesday)
     {
         if (!tuesday->velocity.y) {
             RSDK.AddDrawListRef(Zone->objectDrawGroup[0], RSDK.GetEntitySlot(tuesday));
         }
     }
+#endif
 }
 
 void Tuesday_Draw(void)
