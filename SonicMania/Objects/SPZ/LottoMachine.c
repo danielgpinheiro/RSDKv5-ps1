@@ -33,10 +33,27 @@ void LottoMachine_Update(void)
 
 void LottoMachine_LateUpdate(void) {}
 
+#if defined RETRO_PS1_BUILD
+// P10 (docs/perf/57): the machines' slots (P6's PS1ClassList), not a walk of the class's slot range every frame: the same
+// references in the same order
+static PS1ClassList ps1LottoList;
+#endif
 void LottoMachine_StaticUpdate(void)
 {
     LottoMachine->shineAnimator.frameID = SPZ2Setup->stageLightsFrame;
 
+#if defined RETRO_PS1_BUILD
+    PS1_CLASS_LIST_SYNC(ps1LottoList, LottoMachine);
+    if (ps1LottoList.count >= 0) {
+        PS1_FOREACH_LISTED(ps1LottoList, LottoMachine, lottoMachine)
+        {
+            int32 slot = ps1LottoList.slot[ps1I];
+            RSDK.AddDrawListRef(Zone->objectDrawGroup[0], slot);
+            RSDK.AddDrawListRef(lottoMachine->drawGroupHigh, slot);
+        }
+        return;
+    }
+#endif
     foreach_all(LottoMachine, lottoMachine)
     {
         int32 slot = RSDK.GetEntitySlot(lottoMachine);

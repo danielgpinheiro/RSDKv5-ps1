@@ -269,8 +269,20 @@ void Funnel_Update(void)
 
 void Funnel_LateUpdate(void) {}
 
+#if defined RETRO_PS1_BUILD
+// P10 (docs/perf/57): the funnels' slots (P6's PS1ClassList: collected again only when ps1ClassAdds moved; foreach_all
+// past 64), not a walk of the class's slot range every frame: the same references in the same order
+static PS1ClassList ps1FunnelList;
+#endif
 void Funnel_StaticUpdate(void)
 {
+#if defined RETRO_PS1_BUILD
+    PS1_CLASS_LIST_SYNC(ps1FunnelList, Funnel);
+    if (ps1FunnelList.count >= 0) {
+        PS1_FOREACH_LISTED(ps1FunnelList, Funnel, funnel) { RSDK.AddDrawListRef(Zone->objectDrawGroup[0], ps1FunnelList.slot[ps1I]); }
+        return;
+    }
+#endif
     foreach_all(Funnel, funnel) { RSDK.AddDrawListRef(Zone->objectDrawGroup[0], RSDK.GetEntitySlot(funnel)); }
 }
 
