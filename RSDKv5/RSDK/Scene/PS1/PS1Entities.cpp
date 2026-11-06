@@ -520,6 +520,10 @@ struct DormRec {
 #define PS1_DORMANT_DISABLED 1
 #define PS1_DORMANT_SCENEPOS(r) (((r)->flags >> 1) - 1)
 #define PS1_DORMANT_NODIFF 0xFFFF
+// P2: s_dMatRec = the record's index (< SCENEENTITY_COUNT) | frames before its next return compare << 12
+#define PS1_DORMANT_MATREC 0x0FFF
+#define PS1_DORMANT_RETRY  15
+static_assert(SCENEENTITY_COUNT <= PS1_DORMANT_MATREC + 1, "s_dMatRec's index bits");
 // A record's words that differ from what its Create makes (word index in the block, value)
 #define PS1_DORMANT_DIFF_WORDS 7
 struct DormDiff {
@@ -1257,21 +1261,26 @@ bool DormCompare(const DormRec *r, const EntityBase *e, DormDiff *diff)
 // Back to a record: the slot reads as a ghost, the block returns to the pool, the record leaves the live list
 inline void DormRelease(int32 k, bool ghost)
 {
-    uint16 slot = s_dRec[s_dMatRec[k]].slot & ~PS1_DORMANT_GONE;
+    const DormRec *r = &s_dRec[s_dMatRec[k] & PS1_DORMANT_MATREC];
+    uint16 slot      = r->slot & ~PS1_DORMANT_GONE;
     if (ghost)
         objectEntityPtr[slot] = Ghost(slot);
-    int32 band = s_dBandK[s_dUnique[s_dRec[s_dMatRec[k]].unique]->spec];
+    int32 band = s_dBandK[s_dUnique[r->unique]->spec];
     s_dFreeK[band][s_dFreeNK[band]++] = s_dMatBlk[k];
     --s_dMatN;
     s_dMatRec[k] = s_dMatRec[s_dMatN];
     s_dMatBlk[k] = s_dMatBlk[s_dMatN];
 }
 
-// The live records out of every camera's box `box`, as their Create left them, go back to records
-void DormReturn(const int32 (*box)[4])
+// The live records out of every camera's box `box`, as their Create left them, go back to records.
+// P2 (docs/perf/57): a record whose compare failed is compared again only PS1_DORMANT_RETRY frames later (its wait in
+// s_dMatRec's top bits), unless `force` (a record waiting for a pool block). Out of range in its bounds mode it does not
+// run and no other class touches it (the specs' rule): a return that waits only keeps live an entity stock keeps live.
+// The scratch Create of each such record cost SPZ1 ~25 hblanks a frame late in the act.
+void DormReturn(const int32 (*box)[4], bool force)
 {
     for (int32 k = s_dMatN - 1; k >= 0; --k) {
-        DormRec *r      = &s_dRec[s_dMatRec[k]];
+        DormRec *r      = &s_dRec[s_dMatRec[k] & PS1_DORMANT_MATREC];
         uint16 slot     = r->slot & ~PS1_DORMANT_GONE;
         EntityBase *e   = objectEntityPtr[slot];
         EntityBase *blk = s_dMatBlk[k];
@@ -1296,6 +1305,10 @@ void DormReturn(const int32 (*box)[4])
             s_dMatBlk[k] = s_dMatBlk[s_dMatN];
         }
         else if (!InBoxes(box, s_dCams, r->x, r->y, s_dUnique[r->unique]->range)) {
+            if (!force && s_dMatRec[k] > PS1_DORMANT_MATREC) {
+                s_dMatRec[k] -= PS1_DORMANT_MATREC + 1;
+                continue;
+            }
             DormDiff d;
             if (DormCompare(r, e, &d) && (!d.n || s_dDiffFreeN)) {
                 if (d.n) { // its changed words wait in a diff
@@ -1306,6 +1319,8 @@ void DormReturn(const int32 (*box)[4])
                 g_ps1DormantReturned = g_ps1DormantReturned + 1;
                 DormRelease(k, true);
             }
+            else
+                s_dMatRec[k] = (uint16)((s_dMatRec[k] & PS1_DORMANT_MATREC) | (PS1_DORMANT_RETRY * (PS1_DORMANT_MATREC + 1)));
         }
     }
 }
@@ -1406,7 +1421,7 @@ void RSDK::PS1DormantUpdate()
             bandY1 = SatAdd(s_dBoxC[c][3], s_dRange);
     }
 
-    DormReturn(s_dBoxR);
+    DormReturn(s_dBoxR, false);
 
     // the creation band: the x-sorted records in [bandX0, bandX1]
     while (s_dLo > 0 && s_dRec[s_dLo - 1].x >= bandX0) --s_dLo;
@@ -1425,7 +1440,7 @@ void RSDK::PS1DormantUpdate()
             continue;
         int32 band = s_dBandK[s_dUnique[r->unique]->spec];
         if (!s_dFreeNK[band]) // its pool is out: the live ones beyond the creation boxes go first
-            DormReturn(s_dBoxC);
+            DormReturn(s_dBoxC, true);
         if (!s_dFreeNK[band] && s_dExtraK[band] < PS1_DORMANT_EXTRA && s_spare
             && s_spare + sizeof(PS1EntityHeader) + s_dBandCapK[band] <= s_spareEnd) { // 7b.3c: then a block from the spare
             s_dFreeK[band][s_dFreeNK[band]++] = Carve(s_spare, 0, s_dBandCapK[band]);
