@@ -19,6 +19,15 @@
 #include "../../../../ps1/video.hh" // PS1Hblanks
 #include "RSDK/Graphics/PS1/PS1Scene3D.hpp" // g_ps1S3DOps.band: a strip layer's bands (the UFO overlays, ps1-ufo)
 
+// Per-frame drawing statistics (bands, pieces, row tables, CLUT row counts: a volatile RAM read-modify-write each) only in
+// the builds that read them (docs/perf/57 §8.3): PROFILE and the 8 MB link (both rebuild Scene.o); a release build keeps
+// the variables at 0 for the GDB scripts. Guards (g_ps1LayerMisses) and the HUD's g_ps1LayerHbl are always counted.
+#if PS1_PROFILE || PS1_DEBUG_BIGRAM
+#define PS1_LAYER_STAT(v, n) ((v) = (v) + (n))
+#else
+#define PS1_LAYER_STAT(v, n) ((void)0)
+#endif
+
 namespace RSDK
 {
 extern "C" {
@@ -568,8 +577,8 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
         g_ps1FlipFrameUsed = true;
     }
     PS1_LT_ADD(1, PS1T() - tg);
-    g_ps1LayerBands  = g_ps1LayerBands + 1;
-    g_ps1LayerPieces = g_ps1LayerPieces + pieces;
+    PS1_LAYER_STAT(g_ps1LayerBands, 1);
+    PS1_LAYER_STAT(g_ps1LayerPieces, pieces);
 }
 __attribute__((always_inline)) inline void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
 {
@@ -742,9 +751,9 @@ __attribute__((optimize("O2"))) void DrawRowBands(TileLayer *layer, PS1Band *ban
     PS1_LT_ADD(1, PS1T() - tb);
     if (misses)
         g_ps1LayerMisses = g_ps1LayerMisses + misses;
-    g_ps1LayerBands     = g_ps1LayerBands + count;
-    g_ps1LayerPieces    = g_ps1LayerPieces + pieces;
-    g_ps1LayerRowTables = g_ps1LayerRowTables + 1;
+    PS1_LAYER_STAT(g_ps1LayerBands, count);
+    PS1_LAYER_STAT(g_ps1LayerPieces, pieces);
+    PS1_LAYER_STAT(g_ps1LayerRowTables, 1);
 }
 
 // Screen lines [sy, sy + h), one colour (palette index c of bank `bank`): E6h mask on, the rectangle, E6h mask off
@@ -763,7 +772,7 @@ void DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank)
     w[4] = PS1_SCREEN_PX | (uint32)h << 16;
     w[5] = 0xE6000000;
     PS1ChainSpanEnd(w, 5, w + 6);
-    g_ps1LayerSolidRuns = g_ps1LayerSolidRuns + 1;
+    PS1_LAYER_STAT(g_ps1LayerSolidRuns, 1);
     if (sy <= 0 && sy + h >= SCREEN_YSIZE) // ps1-ufo2: the whole screen (UFO7's sky): the clear under it is dead
         PS1FrameClearCovered();
 }
@@ -915,7 +924,7 @@ void PS1ClutUploadChanged()
         for (int32 c = 0; c < na; ++c) PS1ClutRowFrom(row, ac[c].map), PS1ClutRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
         s_clutHeadFull       = true;
         s_clutRow0Full       = false; // (row 240 just went up whole)
-        g_ps1ClutFullUploads = g_ps1ClutFullUploads + 1;
+        PS1_LAYER_STAT(g_ps1ClutFullUploads, 1);
         return;
     }
     s_clutHeadFull = false;
@@ -980,7 +989,7 @@ void PS1ClutUploadChanged()
             hit |= chg[hw & 255] | chg[hw >> 8];
         }
         if (!hit) {
-            g_ps1ClutRowsSkipped = g_ps1ClutRowsSkipped + 1;
+            PS1_LAYER_STAT(g_ps1ClutRowsSkipped, 1);
             continue;
         }
         PS1ClutRowFrom(row, map);
@@ -991,7 +1000,7 @@ void PS1ClutUploadChanged()
     if (s_clutRow0Full)
         lo = 0, hi = 255, s_clutRow0Full = false;
     PS1ClutRow(s_pal16 + lo, hi - lo + 1, (int16_t)lo, 240);
-    g_ps1ClutRowUploads = g_ps1ClutRowUploads + rows;
+    PS1_LAYER_STAT(g_ps1ClutRowUploads, rows);
 }
 
 // 9f: SetPaletteEntry on bank 0 (RSDK/Graphics/Palette.hpp). The PC applies a palette write to the draws after it;
@@ -1082,7 +1091,7 @@ void PS1ClutSpliceFull()
         return;
     }
     s_clutHeadFull   = true;
-    g_ps1ClutSplices = g_ps1ClutSplices + 1;
+    PS1_LAYER_STAT(g_ps1ClutSplices, 1);
 }
 
 // 9b.3: the end of the frame's draw lists: a frame that tinted leaves VRAM's CLUTs grey for the next one; the first frame
@@ -1157,7 +1166,15 @@ void RSDK::PS1LayersFrameBegin()
     s_restoredBank = s_restoredAll = false;
     PS1FrameStart(true);
     g_ps1FrameBufferY = (uint32)PS1ChainBufferY();
-    g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerHbl = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
+    g_ps1LayerHbl = 0;
+#if PS1_PROFILE || PS1_DEBUG_BIGRAM
+    g_ps1LayerBands = g_ps1LayerPieces = g_ps1LayerSolidRuns = g_ps1LayerRowTables = g_ps1LayerUniform = 0;
+#else
+    // every statistic read once: the linker keeps them (the GDB scripts print them by name)
+    (void)g_ps1LayerBands, (void)g_ps1LayerPieces, (void)g_ps1LayerSolidRuns, (void)g_ps1LayerRowTables;
+    (void)g_ps1LayerUniform, (void)g_ps1LayerDirect, (void)g_ps1ClutFullUploads, (void)g_ps1ClutRowUploads;
+    (void)g_ps1ClutRowsSkipped, (void)g_ps1ClutSplices;
+#endif
     g_ps1RotoQuads = g_ps1RotoHbl = 0;
     for (int32 l = 0; l < 8; ++l) g_ps1LayerHblBy[l] = 0;
     PS1SpritesFrameBegin();
@@ -1638,7 +1655,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         uint32 dt         = PS1HblanksSince(t0);
         g_ps1LayerHbl     = g_ps1LayerHbl + dt;
         g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
-        g_ps1LayerUniform = g_ps1LayerUniform + 1;
+        PS1_LAYER_STAT(g_ps1LayerUniform, 1);
         return;
     }
     if (layer->ps1Direct == 2) // ps1-ufo2: a deforming strip layer, drawn by the UFO overlay from its scroll infos
@@ -1651,7 +1668,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
             xOf[i]  = (int16)(x >= widthPx ? x - widthPx : x < 0 ? x + widthPx : x);
         }
         PS1ScanBands<true>(layer, y1, y2, widthPx, heightPx, solid, NULL, xOf, layer->ps1UniformY, oneBank);
-        g_ps1LayerDirect = g_ps1LayerDirect + 1;
+        PS1_LAYER_STAT(g_ps1LayerDirect, 1);
     }
     else {
         PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, sl, NULL, 0, oneBank);

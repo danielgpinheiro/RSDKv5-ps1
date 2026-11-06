@@ -34,6 +34,14 @@ volatile uint32 g_ps1SpriteRotated  = 0; // rotated / scaled rectangles drawn (t
 volatile uint32 g_ps1TileDraws      = 0; // DrawTile pieces drawn (this frame)
 volatile uint32 g_ps1TileMissing    = 0; // DrawTile pieces whose tile has no image (not in the scene's .ptl; total)
 extern volatile uint32 g_ps1BankTodo; // PS1Layers.cpp: draws under another palette bank not done yet
+extern volatile uint32 g_ps1FlatDraws; // (defined with the flat rectangles below)
+// Per-draw counts (sprites, rotated, tiles, flats: a volatile RAM read-modify-write per draw) only in the builds that read
+// them (docs/perf/57 §8.3): PROFILE / PERF_HUD / the 8 MB link; a release build keeps the variables at 0 for the GDB scripts
+#if PS1_PROFILE || PS1_PERF_HUD || PS1_DEBUG_BIGRAM
+#define PS1_DRAW_COUNT(v, n) ((v) = (v) + (n))
+#else
+#define PS1_DRAW_COUNT(v, n) ((void)0)
+#endif
 #if PS1_DEBUG_BIGRAM
 // The frame's draw calls in order (8 MB link only; tools/gfx/layer_reference.gdb dumps them): type 0 = a tile layer
 // (x = its PS1DrawLayerHScroll call number), 1 = an atlas rectangle (binding, size, position, flip, ink), 2 = a tile
@@ -73,7 +81,11 @@ void PS1SpritesFrameBegin()
     // and the GDB scripts that print it would stop)
     (void)g_ps1SpriteMissing, (void)g_ps1SpriteInkTodo, (void)g_ps1SpriteFxTodo, (void)g_ps1SpriteUnbound;
     (void)g_ps1SpriteClipTodo, (void)g_ps1TileMissing;
-    g_ps1SpriteDraws = g_ps1SpriteCulled = g_ps1SpriteRotated = g_ps1TileDraws = 0;
+    (void)g_ps1SpriteDraws, (void)g_ps1SpriteRotated, (void)g_ps1TileDraws, (void)g_ps1FlatDraws;
+#if PS1_PROFILE || PS1_PERF_HUD || PS1_DEBUG_BIGRAM
+    g_ps1SpriteDraws = g_ps1SpriteRotated = g_ps1TileDraws = 0;
+#endif
+    g_ps1SpriteCulled = 0;
 #if PS1_DEBUG_BIGRAM
     g_ps1DrawLogCount = 0;
 #endif
@@ -650,7 +662,7 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         PS1SubClutRestore(frame->ps1Attr, bank);
     if (!drawn)
         return;
-    g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
+    PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
 #if PS1_DEBUG_BIGRAM
     { // 7b.7: the top line's palette bank (bits 4-6: the bank the frame took) and bit 7 when its lines span banks
         int32 bt = PS1LineBank(y), bb = PS1LineBank(y + h - 1);
@@ -692,8 +704,8 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         PS1SubClutRestore(frame->ps1Attr, bank);
     if (!drawn)
         return;
-    g_ps1SpriteDraws   = g_ps1SpriteDraws + 1;
-    g_ps1SpriteRotated = g_ps1SpriteRotated + 1;
+    PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
+    PS1_DRAW_COUNT(g_ps1SpriteRotated, 1);
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(3, (uint8)direction, (uint8)inkEffect, PS1LogAlpha(alpha), frame->ps1U, frame->ps1V, frame->ps1Attr, cx[0], cy[0], w, h);
     PS1DrawLogAdd(4, 0, 0, 0, 0, 0, 0, cx[1], cy[1], (uint16)cx[2], (uint16)cy[2]);
@@ -720,8 +732,8 @@ void RSDK::PS1DrawTile(uint16 tile, int32 x, int32 y, int32 inkEffect, int32 alp
     int32 direction = (tile >> 10) & 3;
     if (!PS1TexRect(x, y, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, direction, 0, ink))
         return;
-    g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
-    g_ps1TileDraws   = g_ps1TileDraws + 1;
+    PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
+    PS1_DRAW_COUNT(g_ps1TileDraws, 1);
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(2, (uint8)direction, (uint8)inkEffect, PS1LogAlpha(alpha), 0, 0, tile & 0x3FF, x, y, TILE_SIZE, TILE_SIZE);
 #endif
@@ -748,9 +760,9 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
     if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, 0, scaleX, scaleY, direction, rotation, ink, cx,
                         cy))
         return;
-    g_ps1SpriteDraws   = g_ps1SpriteDraws + 1;
-    g_ps1SpriteRotated = g_ps1SpriteRotated + 1;
-    g_ps1TileDraws     = g_ps1TileDraws + 1;
+    PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
+    PS1_DRAW_COUNT(g_ps1SpriteRotated, 1);
+    PS1_DRAW_COUNT(g_ps1TileDraws, 1);
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(6, (uint8)direction, (uint8)inkEffect, PS1LogAlpha(alpha), 0, 0, tile & 0x3FF, cx[0], cy[0], TILE_SIZE, TILE_SIZE);
     PS1DrawLogAdd(4, 0, 0, 0, 0, 0, 0, cx[1], cy[1], (uint16)cx[2], (uint16)cy[2]);
@@ -1005,7 +1017,7 @@ void PS1FlatRect(int32 x, int32 y, int32 w, int32 h, uint32 bgr, const PS1Ink &i
     }
     if (ink.forceMask || ink.maskTest)
         PS1ChainMaskControl(false, false);
-    g_ps1FlatDraws = g_ps1FlatDraws + 1;
+    PS1_DRAW_COUNT(g_ps1FlatDraws, 1);
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(7, (uint8)(ink.mode + 1), (uint8)ink.passes, (uint8)ink.maskTest, (uint8)(bgr & 0xFF), (uint8)((bgr >> 8) & 0xFF), (uint16)(bgr >> 16), x, y, w,
                   h);
@@ -1068,7 +1080,7 @@ __attribute__((optimize("O2"))) void PS1FlatBatchFlush(PS1FlatBatch &b, uint32 b
     }
     if (ink.forceMask || ink.maskTest)
         PS1ChainMaskControl(false, false);
-    g_ps1FlatDraws = g_ps1FlatDraws + b.n;
+    PS1_DRAW_COUNT(g_ps1FlatDraws, b.n);
     b.n            = 0;
 }
 
@@ -1095,7 +1107,7 @@ __attribute__((noinline)) void PS1FlatSpanClose(uint32_t *first, uint32_t *hdr, 
 {
     PS1ChainSpanEnd(hdr, 3 * (((n - 1) & 3) + 1) + (semi ? 1 : 0), end);
     PS1FadeRecordSpan(first, n, semi); // 3.6b: one record for the span's colours
-    g_ps1FlatDraws = g_ps1FlatDraws + n;
+    PS1_DRAW_COUNT(g_ps1FlatDraws, n);
 }
 
 // 4.2e: the writer (the ring's, the circle's and the edge spans' loops): its state is the caller's locals (every part
