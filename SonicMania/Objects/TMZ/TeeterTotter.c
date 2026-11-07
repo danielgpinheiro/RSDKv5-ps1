@@ -95,6 +95,22 @@ int32 TeeterTotter_CheckPlayerCollisions(void)
                     player->position.y += 0x10000;
                 }
 
+#if defined RETRO_PS1_BUILD
+                // P16 (docs/perf/57, TMZ1): a player beyond both hitboxes' reach of this segment (x or y; + 2 for the
+                // engine's +-1 adjustments) is C_NONE and Player_CheckCollisionBox writes nothing then (P2's
+                // InvisibleBlock skip): its 2 x length segments x players box checks a frame
+                {
+                    Hitbox *ph = player->outerbox ? player->outerbox : Player_GetHitbox(player);
+                    int32 pw   = ph->right > -ph->left ? ph->right : -ph->left;
+                    int32 pt   = ph->bottom > -ph->top ? ph->bottom : -ph->top;
+                    int32 dx   = (player->position.x >> 16) - (self->position.x >> 16);
+                    int32 dy   = (player->position.y >> 16) - (self->position.y >> 16);
+                    int32 bw   = self->hitbox.right > -self->hitbox.left ? self->hitbox.right : -self->hitbox.left;
+                    int32 bh   = self->hitbox.bottom > -self->hitbox.top ? self->hitbox.bottom : -self->hitbox.top;
+                    if (dx > bw + pw + 2 || -dx > bw + pw + 2 || dy > bh + pt + 2 || -dy > bh + pt + 2)
+                        continue;
+                }
+#endif
                 if (Player_CheckCollisionBox(player, self, &self->hitbox) == C_TOP) {
                     if (!player->sidekick)
                         heaviestSegment = s;
