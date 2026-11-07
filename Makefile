@@ -24,6 +24,7 @@ RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.cpp \
 RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.cpp \
 RSDKv5/RSDK/Graphics/PS1/PS1Deform.cpp \
 RSDKv5/RSDK/Scene/PS1/PS1RotoPage.cpp \
+RSDKv5/RSDK/Scene/PS1/PS1RotoTile.cpp \
 RSDKv5/RSDK/Scene/PS1/PS1ScanSleep.cpp \
 RSDKv5/RSDK/Graphics/Animation.cpp \
 RSDKv5/RSDK/Graphics/Sprite.cpp \
@@ -269,7 +270,7 @@ ps1/mdec.o: CPPFLAGS += -O2
 # Renderer hot paths (tile bands, chain appends): speed over size.
 ps1/gpu_chain.o: CPPFLAGS += -O2
 # docs/32 7.3: the 3D draw (an overlay's: speed over size)
-RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o ps1/gte3d.o RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o: CPPFLAGS += -O2
+RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o ps1/gte3d.o RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o RSDKv5/RSDK/Scene/PS1/PS1RotoTile.o: CPPFLAGS += -O2
 # docs/32 7.3: the UFO stage's objects (an overlay: no resident RAM) call abs() inline (~20 hblanks a frame as calls)
 $(patsubst %.c,%.o,$(wildcard SonicMania/Objects/UFO/*.c)): CPPFLAGS += '-Dabs(n)=__builtin_abs(n)'
 

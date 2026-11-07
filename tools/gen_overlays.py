@@ -51,7 +51,10 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
           'rotopage': ({'TitleBG', 'ERZSetup'}, ['RSDKv5/RSDK/Scene/PS1/PS1RotoPage.o'], 'PS1RotoPageLink'),  # 9e: the title's paged layers; 9u.18 ERZ's sky
           'stamp': ({'TitleSetup'}, ['ps1/version_stamp.o'], 'PS1VersionLink'),  # the title's build stamp (VERSION.TXT)
           # 9w.6: the update scan's sleeping groups, for the stages whose StageLoad asks for them (UFO_Setup)
-          'scansleep': ({'UFO_Setup'}, ['RSDKv5/RSDK/Scene/PS1/PS1ScanSleep.o', 'ps1/scan_sleep.o'], 'PS1ScanSleepLink')}
+          'scansleep': ({'UFO_Setup'}, ['RSDKv5/RSDK/Scene/PS1/PS1ScanSleep.o', 'ps1/scan_sleep.o'], 'PS1ScanSleepLink'),
+          # P1 (docs/perf/57): the rotozoom layers' tile path (8.4 KB) for the act units whose scenes have a LAYER_ROTOZOOM
+          # layer (no class names it: chosen from the scene files in `plan`, by unit: FBZ1 has one, FBZ2 not)
+          'rototile': (set(), ['RSDKv5/RSDK/Scene/PS1/PS1RotoTile.o'], 'PS1RotoTileLink')}
 
 
 # docs/ports/mania/32 7b: folders whose acts get an overlay each (<folder>_<scene id>.bin): an act's overlay leaves out the folder's
@@ -135,6 +138,12 @@ def extra_folders(name):
     return open(p).read().split() if os.path.exists(p) else []
 
 
+def extra_has(name, fo, un=None):
+    """An EXTRAS part goes into folder fo's overlays (its list names the folder), or into act unit un's alone."""
+    ef = extra_folders(name)
+    return fo in ef or (un is not None and un in ef)
+
+
 def video_folders():
     return extra_folders('video')
 
@@ -207,6 +216,13 @@ def plan(argv):
         ef = [st for st in folders if os.path.exists(os.path.join(data, 'Stages', st, 'StageConfig.bin'))
               and objects & set(F.read_stageconfig(os.path.join(data, 'Stages', st, 'StageConfig.bin'))['objects'])]
         open(os.path.join(OVL, '%s_folders.txt' % name), 'w').write('\n'.join(ef) + '\n')
+    # P1: 'rototile' by unit, from the scenes' layer types (LAYER_ROTOZOOM = 2): a split folder's act, else the folder
+    rt = []
+    for un, fo, sid in units():
+        ids = [sid] if sid else sorted(n[5:-4] for n in os.listdir(os.path.join(data, 'Stages', fo)) if re.match(r'Scene.+\.bin$', n))
+        if any(l['type'] == 2 for i in ids for l in F.read_scene(os.path.join(data, 'Stages', fo, 'Scene%s.bin' % i))['layers']):
+            rt.append(un)
+    open(os.path.join(OVL, 'rototile_folders.txt'), 'w').write('\n'.join(rt) + '\n')
     region = game_c_region()
     kept = 0
     with open(os.path.join(REPO, 'ps1', 'rsdk5_objects.inc'), 'w') as f:
@@ -466,7 +482,7 @@ def stubs(argv):
                 f.write('    ps1OvlTable[%d] = (void *)__ovl_%s;\n' % (index[s], s))
             f.write('    g_ps1OvlLeftOut = s_leftOut;\n')
             for name, (_, _, fn) in EXTRAS.items():
-                if fo in extra_folders(name):
+                if extra_has(name, fo, un):
                     f.write('    { extern void %s(void); %s(); } // docs/ports/mania/32: %s\n' % (fn, fn, name))
             f.write('}\n\n')
             f.write('typedef struct { unsigned magic, size; void (*reg)(void); unsigned base; } PS1OverlayHeader;\n')
@@ -586,7 +602,7 @@ def link(argv):
     ro = [os.path.join(REPO, o) for o in resident_game_objs()] if fo in light_folders() else []
     reg = os.path.join(OVL, un + '_reg.o')
     for name, (_, eobjs, _) in EXTRAS.items():  # optional engine parts (not in the resident: nothing there calls them)
-        if fo in extra_folders(name):
+        if extra_has(name, fo, un):
             objs += [os.path.join(REPO, o) for o in eobjs]
 
     def do_link(at):

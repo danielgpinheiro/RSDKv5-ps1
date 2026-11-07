@@ -255,7 +255,7 @@ extern uint8 ps1LayerStep[LAYER_COUNT];
 void PS1DrawLayerCut(uint8 cut);
 void PS1LayerCutsLoad(const char *folder, const char *sceneID);
 void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)
-void PS1RotoTileDraw(TileLayer *layer, uint8 bank, uint32 t0); // (its tile path; 9e: paged layers are drawn from their page)
+extern int32 (*g_ps1RotoTileDraw)(TileLayer *layer, uint8 bank); // (its tile path, an overlay part: PS1RotoTile.cpp; 9e: paged layers are drawn from their page)
 // 9e: a paged layer's draw (PS1RotoPage.cpp, in the overlays of the folders with paged layers; NULL elsewhere)
 extern bool (*g_ps1RotoPageDraw)(TileLayer *layer, const PS1TileImage *img, int32 ox, int32 oy, uint8 bank, uint32 t0);
 extern "C" {

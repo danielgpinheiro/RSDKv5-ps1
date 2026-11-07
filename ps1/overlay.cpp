@@ -91,6 +91,7 @@ void RSDK::PS1LoadOverlay(const char *sceneFolder, const char *scene)
     g_ps1S3DOps   = PS1Scene3DOps{}; // 7.3: and the 3D draw
     g_ps1DeformDraw = NULL;           // 7.5: and the deformed-sprite draw
     g_ps1RotoPageDraw = NULL;         // 9e: and the rotozoom pages' draw
+    g_ps1RotoTileDraw = NULL;         // P1 (docs/perf/57): and the rotozoom layers' tile path (PS1RotoTile.cpp)
     g_ps1VersionDraw  = NULL;         // and the title's build stamp (ps1/version_stamp.cpp)
     RSDK::g_ps1ScanSleepFn = NULL;     // 9w.6: and the update scan's sleeping groups
     (void)ps1OvlStubsRef;
