@@ -908,6 +908,23 @@ inline void PS1ClutRowFrom(uint16 *row, const uint8 *map)
     row[0] = 0;
     for (int32 i = 1; i < 16; ++i) row[i] = map[i] ? s_pal16[map[i]] : 0;
 }
+// P1 (docs/perf/57, TMZ3 x 6400: ~170 rows a frame): a 4-bit CLUT's row written straight into its upload chunk (one: 16
+// halfwords fit PS1ChainReserveRow's 22) and recorded as PS1ClutRow records it, the same words without the row copy and its
+// memcpy; s_pal16[0] is 0 (only entry 0's writer sets it), so map[i] == 0 needs no test
+__attribute__((noinline)) void PS1ClutRowMap(const uint8 *map, int16 x, int16 y)
+{
+    uint16_t *data[1];
+    uint16_t len[1];
+    if (!PS1ChainReserveRow(16, x, y, data, len, 1))
+        return;
+    uint16_t *d = data[0];
+    d[0]        = 0;
+    for (int32 i = 1; i < 16; ++i) d[i] = s_pal16[map[i]];
+    if (s_clutRecCount < PS1_CLUT_RECS)
+        s_clutRecs[s_clutRecCount].data = d, s_clutRecs[s_clutRecCount++].n = 16;
+    else
+        s_fadeRecsLost = true;
+}
 
 // The frame start's CLUTs: every one (full) or those whose entries changed
 void PS1ClutUploadChanged()
@@ -926,9 +943,9 @@ void PS1ClutUploadChanged()
         for (int32 c = 0; c < nt + na && c < PS1_CLUT_MASKS; ++c) s_clutBuckets[c] = PS1ClutBucketsOf(c < nt ? cl[c].map : ac[c - nt].map);
         s_clutSetTiles = cl, s_clutSetAtlas = ac, s_clutSetCounts = nt | na << 16, s_clutGen = g_ps1VramGen, s_clutMask = maskColor;
         s_clutFullNext = false;
-        for (int32 c = 0; c < nt; ++c) PS1ClutRowFrom(row, cl[c].map), PS1ClutRow(row, 16, (int16_t)cl[c].x, (int16_t)cl[c].y);
+        for (int32 c = 0; c < nt; ++c) PS1ClutRowMap(cl[c].map, (int16_t)cl[c].x, (int16_t)cl[c].y);
         PS1ClutRow(s_pal16, 256, 0, 240);
-        for (int32 c = 0; c < na; ++c) PS1ClutRowFrom(row, ac[c].map), PS1ClutRow(row, 16, (int16_t)ac[c].x, (int16_t)ac[c].y);
+        for (int32 c = 0; c < na; ++c) PS1ClutRowMap(ac[c].map, (int16_t)ac[c].x, (int16_t)ac[c].y);
         s_clutHeadFull       = true;
         s_clutRow0Full       = false; // (row 240 just went up whole)
         PS1_LAYER_STAT(g_ps1ClutFullUploads, 1);
@@ -938,8 +955,8 @@ void PS1ClutUploadChanged()
     if (s_greyHeld) { // 9b.3: the rows the last (tinting) frame took back to colour after its tint
         for (int32 c = 0; c < nt + na && c < PS1_RESTORE_WORDS * 32; ++c)
             if ((s_regrey[c >> 5] >> (c & 31)) & 1)
-                PS1ClutRowFrom(row, c < nt ? cl[c].map : ac[c - nt].map),
-                    PS1ClutRow(row, 16, (int16_t)(c < nt ? cl[c].x : ac[c - nt].x), (int16_t)(c < nt ? cl[c].y : ac[c - nt].y));
+                PS1ClutRowMap(c < nt ? cl[c].map : ac[c - nt].map, (int16_t)(c < nt ? cl[c].x : ac[c - nt].x),
+                              (int16_t)(c < nt ? cl[c].y : ac[c - nt].y));
         if (s_regreyBank)
             PS1ClutRow(s_pal16, 256, 0, 240);
     }
@@ -999,8 +1016,7 @@ void PS1ClutUploadChanged()
             PS1_LAYER_STAT(g_ps1ClutRowsSkipped, 1);
             continue;
         }
-        PS1ClutRowFrom(row, map);
-        PS1ClutRow(row, 16, (int16_t)(t ? t->x : a->x), (int16_t)(t ? t->y : a->y));
+        PS1ClutRowMap(map, (int16_t)(t ? t->x : a->x), (int16_t)(t ? t->y : a->y));
         ++rows;
     }
     lo &= ~1, hi |= 1; // an even count of halfwords (two per word)
