@@ -1550,19 +1550,34 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
                 if ((layer->lineScroll && xOf[layer->lineScroll[(ly + h) & lq]] != x) || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
+            else if (!sl) {
+                // P1: X moves only on a block's first row or the water line (rows stay consecutive in a tile row): the
+                // lines before the next such line need only the bank test (none on one bank); the same breaks as line by line
+                const int32 q = s_ps1Df.q, lim = rowEnd < y2 - cy ? rowEnd : y2 - cy;
+                int32 nb = h + ((q + 1 - ((ly + h) & q)) & q), wa = s_ps1Df.a0 - cy; // the next block start at or after h
+                if (wa >= h && wa < nb)
+                    nb = wa;
+                if (nb > lim)
+                    nb = lim;
+                if (oneBank)
+                    h = nb;
+                else
+                    while (h < nb && gfxLineBuffer[cy + h] == bank)
+                        ++h;
+                if (h < nb || h >= lim)
+                    break; // (a bank change, or the band's end)
+                int32 nx = PS1DfX(cy + h);
+                if ((nx != x && ((ly + h) & nq) == 0) || (!oneBank && gfxLineBuffer[cy + h] != bank))
+                    break;
+            }
             else {
-                int32 nx;
-                if (!sl) // P1: X moves only on a block's first row or the water line (rows stay consecutive in a tile row)
-                    nx = (((ly + h) & s_ps1Df.q) == 0 || cy + h == s_ps1Df.a0) ? PS1DfX(cy + h) : x;
-                else {
-                    nx = FROM_FIXED(sl[h].position.x);
-                    if (nx >= widthPx)
-                        nx -= widthPx;
-                    else if (nx < 0)
-                        nx += widthPx;
-                    if (FROM_FIXED(sl[h].position.y) != ly + h)
-                        break;
-                }
+                int32 nx = FROM_FIXED(sl[h].position.x);
+                if (nx >= widthPx)
+                    nx -= widthPx;
+                else if (nx < 0)
+                    nx += widthPx;
+                if (FROM_FIXED(sl[h].position.y) != ly + h)
+                    break;
                 // 9v.7: inside a block of nq + 1 layer rows the block's first X holds (a stepped layer's simpler parallax)
                 if ((nx != x && ((ly + h) & nq) == 0) || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
