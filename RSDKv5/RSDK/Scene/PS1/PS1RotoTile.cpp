@@ -298,7 +298,17 @@ __attribute__((optimize("O2"))) static int32 PS1RotoTileDraw(TileLayer *layer, u
             const uint16 *tcRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2), *tcSel = ps1ChunkPool + (ty & 3);
             int32 tx              = txa & wMask;
             const uint16 *tc      = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
-            while (txa <= txb && tc[tx & 3] == 0xFFFF) {
+            // (a chunk's row of 4 empty tiles at a chunk boundary, inside the span: skipped at once, its two words read;
+            // a row is 8 bytes of the STG-allocated pool, word aligned)
+            while (txa <= txb) {
+                if (!(tx & 3) && txa + 3 <= txb && (((const uint32 *)tc)[0] & ((const uint32 *)tc)[1]) == 0xFFFFFFFF) {
+                    txa += 4;
+                    tx = (tx + 4) & wMask;
+                    tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+                    continue;
+                }
+                if (tc[tx & 3] != 0xFFFF)
+                    break;
                 ++txa;
                 tx = (tx + 1) & wMask;
                 if (!(tx & 3))
@@ -306,7 +316,15 @@ __attribute__((optimize("O2"))) static int32 PS1RotoTileDraw(TileLayer *layer, u
             }
             tx = txb & wMask;
             tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
-            while (txb >= txa && tc[tx & 3] == 0xFFFF) {
+            while (txb >= txa) {
+                if ((tx & 3) == 3 && txb - 3 >= txa && (((const uint32 *)tc)[0] & ((const uint32 *)tc)[1]) == 0xFFFFFFFF) {
+                    txb -= 4;
+                    tx = (tx - 4) & wMask;
+                    tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+                    continue;
+                }
+                if (tc[tx & 3] != 0xFFFF)
+                    break;
                 --txb;
                 tx = (tx - 1) & wMask;
                 if ((tx & 3) == 3)
