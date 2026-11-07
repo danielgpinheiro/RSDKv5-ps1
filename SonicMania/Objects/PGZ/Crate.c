@@ -9,6 +9,106 @@
 
 ObjectCrate *Crate;
 
+#if defined RETRO_PS1_BUILD
+// P16 (docs/perf/57): PSZ1 x 6400 updates ~50 crates a frame (49 hblanks), each colliding every player twice (Crate_Collide,
+// then Platform_Update's Platform_Collision_Solid). A player beyond both hitboxes' reach is skipped where the engine's
+// checks cannot find a side: CheckObjectCollisionBox needs the boxes to reach each other on both axes (its +-1
+// adjustments aside: + 2 here) and writes nothing on C_NONE (P2's InvisibleBlock skip); CheckObjectCollisionPlatform
+// needs them to overlap on x (strictly; its y test uses the previous position, so only x is used there) and writes
+// nothing then (the hitbox flips it makes are undone)
+static int32 Crate_PS1Reach(const Hitbox *h, bool32 yAxis)
+{
+    if (!h)
+        return 0;
+    int32 a = yAxis ? h->top : h->left, b = yAxis ? h->bottom : h->right;
+    a = a < 0 ? -a : a, b = b < 0 ? -b : b;
+    return a > b ? a : b;
+}
+// Far on x (or, with yToo, on y): every box of the player (its outerbox, the animator's) out of reach of `box`
+static bool32 Crate_PS1Far(EntityCrate *crate, const Hitbox *box, EntityPlayer *player, Hitbox *playerHitbox, bool32 yToo)
+{
+    const Hitbox *ob = player->outerbox ? player->outerbox : playerHitbox;
+    int32 pw = Crate_PS1Reach(playerHitbox, false), t = Crate_PS1Reach(ob, false);
+    pw       = pw > t ? pw : t;
+    int32 dx = (player->position.x >> 16) - (crate->position.x >> 16), rx = Crate_PS1Reach(box, false) + pw + 2;
+    if (dx > rx || -dx > rx)
+        return true;
+    if (!yToo)
+        return false;
+    int32 pt = Crate_PS1Reach(playerHitbox, true);
+    t        = Crate_PS1Reach(ob, true);
+    pt       = pt > t ? pt : t;
+    int32 dy = (player->position.y >> 16) - (crate->position.y >> 16), ry = Crate_PS1Reach(box, true) + pt + 2;
+    return dy > ry || -dy > ry;
+}
+// Platform_Collision_Solid with the x-far skip (Crate_Create sets it in its place): the stood / push resets as stock
+static void Crate_PS1Collision_Solid(void)
+{
+    RSDK_THIS(Crate);
+
+    Hitbox *solidHitbox    = RSDK.GetHitbox(&self->animator, 1);
+    Hitbox *platformHitbox = RSDK.GetHitbox(&self->animator, 0);
+    int32 stoodPlayers     = self->stoodPlayers;
+    int32 reach            = Crate_PS1Reach(solidHitbox, false), t = Crate_PS1Reach(platformHitbox, false);
+    Hitbox wide            = { (int16)-(reach > t ? reach : t), 0, (int16)(reach > t ? reach : t), 0 };
+
+    self->stoodPlayers = 0;
+    self->pushPlayersL = 0;
+    self->pushPlayersR = 0;
+    foreach_active(Player, player)
+    {
+        if (Crate_PS1Far(self, &wide, player, Player_GetHitbox(player), false))
+            continue;
+        int32 playerID = RSDK.GetEntitySlot(player);
+        Player_CheckCollisionPlatform(player, self, platformHitbox);
+
+        switch (Player_CheckCollisionBox(player, self, solidHitbox)) {
+            case C_TOP:
+                Platform_HandleStood((EntityPlatform *)self, player, playerID, stoodPlayers);
+
+                if (self->velocity.y <= 0)
+                    player->collisionFlagV |= 1;
+                break;
+
+            case C_LEFT:
+                if (player->onGround && player->right)
+                    self->pushPlayersL |= 1 << playerID;
+
+                if (self->velocity.x <= 0) {
+                    if (player->left) {
+                        player->groundVel  = self->velocity.x;
+                        player->velocity.x = player->groundVel;
+                        player->velocity.x -= player->acceleration;
+                    }
+                    player->collisionFlagH |= 1;
+                }
+                break;
+
+            case C_RIGHT:
+                if (player->onGround && player->left)
+                    self->pushPlayersR |= 1 << playerID;
+
+                if (self->velocity.x >= 0) {
+                    if (player->right) {
+                        player->groundVel  = self->velocity.x;
+                        player->velocity.x = player->groundVel;
+                        player->velocity.x += player->acceleration;
+                    }
+                    player->collisionFlagH |= 2;
+                }
+                break;
+
+            case C_BOTTOM:
+                if (self->velocity.y >= 0)
+                    player->collisionFlagV |= 2;
+                break;
+
+            default: break;
+        }
+    }
+}
+#endif
+
 void Crate_Update(void)
 {
     RSDK_THIS(Crate);
@@ -45,6 +145,10 @@ void Crate_Create(void *data)
 
     Platform_Create(NULL);
     self->frameID = frameID;
+#if defined RETRO_PS1_BUILD
+    if (self->stateCollide == Platform_Collision_Solid)
+        self->stateCollide = Crate_PS1Collision_Solid;
+#endif
 
     if (!SceneInfo->inEditor) {
         self->hitbox.left   = -24;
@@ -141,6 +245,10 @@ bool32 Crate_Collide(void)
         int32 storeVel       = player->groundVel;
         int32 storeGrounded  = player->onGround;
         Hitbox *playerHitbox = Player_GetHitbox(player);
+#if defined RETRO_PS1_BUILD
+        if (Crate_PS1Far(self, &self->hitbox, player, playerHitbox, true))
+            continue; // (C_NONE both times: nothing written, the stores restored unchanged)
+#endif
 
         int32 shieldAnim = RSDK_GET_ENTITY(Player->playerCount + RSDK.GetEntitySlot(player), Shield)->shieldAnimator.animationID;
 
