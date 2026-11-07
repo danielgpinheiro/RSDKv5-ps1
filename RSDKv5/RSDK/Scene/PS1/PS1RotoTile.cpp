@@ -202,16 +202,22 @@ __attribute__((optimize("O2"))) static int32 PS1RotoTileDraw(TileLayer *layer, u
     bool ok = rx || ry;
     for (int32 k = 0; ok && k < n; ++k) {
         const ScanlineInfo *s = &sl[k];
-        int64 cr = (int64)s->deform.x * ry - (int64)s->deform.y * rx;
-        int64 dt = (int64)s->deform.x * rx + (int64)s->deform.y * ry;
-        int32 kd = (int32)(dt >> 12);
-        if (kd <= 0 || (cr < 0 ? -cr : cr) * 256 > dt) {
-            ok = false;
-            break;
+        // P11 (docs/perf/57): a line with the previous line's direction (MMZ1's far plane: all 240) has its test, kd and
+        // 1 / scale too (they depend on D_y alone): reused, no 64-bit products or divide for it
+        if (k && s->deform.x == s[-1].deform.x && s->deform.y == s[-1].deform.y)
+            L[k].inv = L[k - 1].inv;
+        else {
+            int64 cr = (int64)s->deform.x * ry - (int64)s->deform.y * rx;
+            int64 dt = (int64)s->deform.x * rx + (int64)s->deform.y * ry;
+            int32 kd = (int32)(dt >> 12);
+            if (kd <= 0 || (cr < 0 ? -cr : cr) * 256 > dt) {
+                ok = false;
+                break;
+            }
+            L[k].inv = (1 << 30) / kd; // a 32-bit divide (kd > 0)
         }
         L[k].depth = (int32)(((int64)rx * s->position.y - (int64)ry * s->position.x) >> 12);
         L[k].along = (int32)(((int64)rx * s->position.x + (int64)ry * s->position.y) >> 12);
-        L[k].inv   = (1 << 30) / kd; // a 32-bit divide (kd > 0)
         L[k].step  = 0;
     }
     // depths must rise down the lines (a plane seen from one side); falling ones are mirrored into rising ones
@@ -285,11 +291,28 @@ __attribute__((optimize("O2"))) static int32 PS1RotoTileDraw(TileLayer *layer, u
         if (!PS1RotoSpan(E, ty << 20, ((ty + 1) << 20) - 1, xmin, xmax))
             continue;
         int32 txa = (xmin >> 20) - 1, txb = (xmax >> 20) + 1; // a tile of margin each side (the quad's edges are straight)
-        // only the columns between the row's first and last non-empty tiles (a sparse map, as the title's island)
-        while (txa <= txb && *PS1TilePtr(layer, txa & wMask, ty & hMask) == 0xFFFF)
-            ++txa;
-        while (txb >= txa && *PS1TilePtr(layer, txb & wMask, ty & hMask) == 0xFFFF)
-            --txb;
+        // only the columns between the row's first and last non-empty tiles (a sparse map, as the title's island). P11:
+        // through the row's chunks as the tile walk below (one chunk lookup per 4 tiles; PS1TilePtr's element), not a
+        // whole PS1TilePtr per tile
+        {
+            const uint16 *tcRow = PS1ChunkRow(layer, (uint32)(ty & hMask) >> 2), *tcSel = ps1ChunkPool + (ty & 3);
+            int32 tx              = txa & wMask;
+            const uint16 *tc      = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+            while (txa <= txb && tc[tx & 3] == 0xFFFF) {
+                ++txa;
+                tx = (tx + 1) & wMask;
+                if (!(tx & 3))
+                    tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+            }
+            tx = txb & wMask;
+            tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+            while (txb >= txa && tc[tx & 3] == 0xFFFF) {
+                --txb;
+                tx = (tx - 1) & wMask;
+                if ((tx & 3) == 3)
+                    tc = PS1ChunkTiles(tcSel, PS1ChunkAt(layer, tcRow, (uint32)tx >> 2));
+            }
+        }
         if (txa > txb) {
             upN = 0; // no corners kept for the next row
             continue;
