@@ -27,6 +27,13 @@
 #else
 #define PS1_LAYER_STAT(v, n) ((void)0)
 #endif
+// P1: the per-layer hblanks (g_ps1LayerHblBy: tools/play/scene_profile.gdb, PROFILE) count there too, and the layer
+// draws' GDB hook (tools/gfx/layer_reference.gdb) is called only on the 8 MB evidence link: resident bytes
+#if PS1_DEBUG_BIGRAM
+#define PS1_LAYER_HOOK(layer) PS1LayerDebugHook((uint32)((layer) - tileLayers))
+#else
+#define PS1_LAYER_HOOK(layer) ((void)0)
+#endif
 
 namespace RSDK
 {
@@ -1176,7 +1183,9 @@ void RSDK::PS1LayersFrameBegin()
     (void)g_ps1ClutRowsSkipped, (void)g_ps1ClutSplices;
 #endif
     g_ps1RotoQuads = g_ps1RotoHbl = 0;
+#if PS1_PROFILE || PS1_DEBUG_BIGRAM
     for (int32 l = 0; l < 8; ++l) g_ps1LayerHblBy[l] = 0;
+#endif
     PS1SpritesFrameBegin();
     g_ps1LayerT[0] = g_ps1LayerT[1] = g_ps1LayerT[2] = g_ps1LayerT[3] = 0;
     PS1ChainSlot();
@@ -1420,6 +1429,52 @@ extern "C" __attribute__((noinline)) void PS1StripBands(TileLayer *layer, const 
             DrawBand(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank);
 }
 extern "C" void PS1DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank) { DrawSolid(sy, h, c, bank); } // (skyDraw's one-colour runs)
+// P1 (docs/perf/57): a layer whose lines all use one deforming scroll info (HCZ's and LRZ's foregrounds), no scanline
+// callback, no one-colour table: ProcessParallax (Scene.cpp) leaves its 240 scanlines unfilled (ps1Uniform 2) and keeps the
+// fill's inputs here; the scan takes line i's X from PS1DfX, the same value PS1FillHScrollLines would store: the info's X
+// plus the deformation of the line's block (k = i - (row & q) in its segment, the water line starting the second; k >= 0),
+// wrapped once as the scan wraps it. X changes only where k does (a block's first row, the water line): the scan asks there
+struct PS1Df {
+    const int32 *a, *b; // deformationData / deformationDataW at the fill's two starts
+    int32 a0, q, x0, y0, h, w; // the first segment's lines, the block mask, the info's X, the row on line 0, height, width
+};
+static PS1Df s_ps1Df;
+static __attribute__((noinline, optimize("Os"))) int32 PS1DfX(int32 i)
+{
+    const PS1Df &d = s_ps1Df;
+    int32 r = d.y0 + i;
+    while (r >= d.h)
+        r -= d.h;
+    const int32 *t = d.a;
+    int32 k        = i - (r & d.q);
+    if (i >= d.a0)
+        t = d.b, k -= d.a0;
+    int32 x = d.x0 + t[k < 0 ? 0 : k];
+    return x >= d.w ? x - d.w : x < 0 ? x + d.w : x;
+}
+// ProcessParallax's side (Scene.cpp, an H-scroll layer with no scanline callback, after its scroll infos' tilePos): true
+// when the layer qualifies (its lines then left unfilled, ps1Uniform 2), with the fill's inputs kept
+static __attribute__((noinline, optimize("Os"))) bool PS1DfSetup(TileLayer *layer, int32 scrollPos)
+{
+    int32 w = layer->xsize << 4, h = layer->ysize << 4;
+    if (layer->ps1LineScrollOne >= layer->scrollInfoCount || h > 0x7FFF || PS1TileSolidLines((int32)(layer - tileLayers), h))
+        return false; // (reached only when the uniform test failed: one info that deforms)
+    PS1Df &d       = s_ps1Df;
+    const int32 st = ps1LayerStep[layer - tileLayers];
+    int32 above    = currentScreen->waterDrawPos;
+    d.a0           = above > 0 ? above : 0;
+    d.q            = (st ? st : (g_ps1LineStep > 1 ? g_ps1LineStep : 1)) - 1;
+    d.x0           = FROM_FIXED(layer->scrollInfo[layer->ps1LineScrollOne].tilePos);
+    d.y0 = scrollPos, d.h = h, d.w = w;
+    d.a   = &layer->deformationData[(scrollPos + (uint16)layer->deformationOffset) & 0x1FF];
+    int32 r = scrollPos + d.a0; // the fill's row after the first segment
+    while (r >= h)
+        r -= h;
+    d.b                = &layer->deformationDataW[(r + (uint16)layer->deformationOffsetW) & 0x1FF];
+    layer->ps1Uniform  = 2;
+    layer->ps1UniformY = (int16)scrollPos;
+    return true;
+}
 // The bands of a layer's lines [y1, y2) (3.3b), grouped per tile row: from the scanlines ProcessParallax filled, or
 // (Direct, 3.3h) from the layer's lineScroll and each scroll info's X (xOf), the rows consecutive from scrollY on line 0
 template <bool Direct>
@@ -1452,6 +1507,12 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
             // 9v: the line scroll in blocks of g_ps1LineStep layer rows (Scene.cpp: the block's first row's)
             x = xOf[layer->lineScroll ? layer->lineScroll[ly & lq] : layer->ps1LineScrollOne]; // 7b: no table: one value
         }
+        else if (!sl) { // P1: ps1Uniform 2 (PS1DfX); the rows consecutive from scrollY on line 0
+            x  = PS1DfX(cy);
+            ly = scrollY + cy;
+            while (ly >= heightPx)
+                ly -= heightPx;
+        }
         else {
             x = FROM_FIXED(sl->position.x);
             if (x >= widthPx)
@@ -1474,14 +1535,20 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
                     break;
             }
             else {
-                int32 nx = FROM_FIXED(sl[h].position.x);
-                if (nx >= widthPx)
-                    nx -= widthPx;
-                else if (nx < 0)
-                    nx += widthPx;
+                int32 nx;
+                if (!sl) // P1: X moves only on a block's first row or the water line (rows stay consecutive in a tile row)
+                    nx = (((ly + h) & s_ps1Df.q) == 0 || cy + h == s_ps1Df.a0) ? PS1DfX(cy + h) : x;
+                else {
+                    nx = FROM_FIXED(sl[h].position.x);
+                    if (nx >= widthPx)
+                        nx -= widthPx;
+                    else if (nx < 0)
+                        nx += widthPx;
+                    if (FROM_FIXED(sl[h].position.y) != ly + h)
+                        break;
+                }
                 // 9v.7: inside a block of nq + 1 layer rows the block's first X holds (a stepped layer's simpler parallax)
-                if ((nx != x && ((ly + h) & nq) == 0) || FROM_FIXED(sl[h].position.y) != ly + h
-                    || (!oneBank && gfxLineBuffer[cy + h] != bank))
+                if ((nx != x && ((ly + h) & nq) == 0) || (!oneBank && gfxLineBuffer[cy + h] != bank))
                     break;
             }
             ++h;
@@ -1529,7 +1596,8 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
 #endif
         cy += h;
         if constexpr (!Direct)
-            sl += h;
+            if (sl)
+                sl += h;
     }
     {
         uint16 tb = PS1T();
@@ -1552,7 +1620,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
         g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
         return;
     }
-    PS1LayerDebugHook((uint32)(layer - tileLayers));
+    PS1_LAYER_HOOK(layer);
     PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
@@ -1576,7 +1644,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
     EmitClose(e);
     uint32 dt     = PS1HblanksSince(t0);
     g_ps1LayerHbl = g_ps1LayerHbl + dt;
-    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
+    PS1_LAYER_STAT(g_ps1LayerHblBy[(layer - tileLayers) & 7], dt);
 }
 
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
@@ -1587,7 +1655,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         g_ps1LayerNoTiles = g_ps1LayerNoTiles + 1;
         return;
     }
-    PS1LayerDebugHook((uint32)(layer - tileLayers));
+    PS1_LAYER_HOOK(layer);
     PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
@@ -1620,7 +1688,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
     bool oneBank = s_oneBank;
     const PS1StripFn strip = PS1TileStrip((int32)(layer - tileLayers)) ? g_ps1S3DOps.band : NULL;
     layer->ps1Strip        = strip != NULL;
-    if (layer->ps1Uniform) {
+    if (layer->ps1Uniform == 1) {
         // 3.3c: one X for every line, rows consecutive from ps1UniformY: bands are the tile rows (split where the
         // palette bank changes), as the scan below would find them
         int32 x = layer->ps1UniformX;
@@ -1654,7 +1722,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         PS1_LT_ADD(0, PS1T() - tl);
         uint32 dt         = PS1HblanksSince(t0);
         g_ps1LayerHbl     = g_ps1LayerHbl + dt;
-        g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
+        PS1_LAYER_STAT(g_ps1LayerHblBy[(layer - tileLayers) & 7], dt);
         PS1_LAYER_STAT(g_ps1LayerUniform, 1);
         return;
     }
@@ -1671,10 +1739,10 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerHScroll(TileLayer *layer)
         PS1_LAYER_STAT(g_ps1LayerDirect, 1);
     }
     else {
-        PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, sl, NULL, 0, oneBank);
+        PS1ScanBands<false>(layer, y1, y2, widthPx, heightPx, solid, layer->ps1Uniform == 2 ? NULL : sl, NULL, layer->ps1UniformY, oneBank);
     }
     PS1_LT_ADD(0, PS1T() - tl);
     uint32 dt     = PS1HblanksSince(t0);
     g_ps1LayerHbl = g_ps1LayerHbl + dt;
-    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
+    PS1_LAYER_STAT(g_ps1LayerHblBy[(layer - tileLayers) & 7], dt);
 }

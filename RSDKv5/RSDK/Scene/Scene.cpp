@@ -1683,6 +1683,13 @@ void RSDK::ProcessParallax(TileLayer *layer)
                 break;
 #endif
             }
+            // P1 (PS1Layers.cpp PS1DfSetup): one deforming scroll info for every line, no one-colour table: the drawer
+            // computes each line as the fill below would; the 8 MB evidence link still fills (layer_reference)
+            else if (PS1DfSetup(layer, scrollPos)) {
+#if !PS1_DEBUG_BIGRAM
+                break;
+#endif
+            }
 #endif
             uint8 *lsBase = PS1_LS_BASE(layer); // 7b: a one-value layer keeps no table (its value, not advanced)
             const int32 lsStep = PS1_LS_STEP(layer);

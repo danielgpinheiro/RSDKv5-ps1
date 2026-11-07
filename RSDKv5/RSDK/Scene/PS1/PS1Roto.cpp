@@ -39,7 +39,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
     int32 n = y2 - y1, xw = x2 - x1;
     if (!layer->xsize || !layer->ysize || xw <= 0 || n < 2)
         return;
-    PS1LayerDebugHook((uint32)(layer - tileLayers));
+    PS1_LAYER_HOOK(layer);
     PS1FadeRestore();
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(0, 0, 0, 0, 0, 0, 0, (int32)(layer - tileLayers), 0, 0, 0);
@@ -59,7 +59,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
         uint32 dt     = PS1HblanksSince(t0); // (here: an overlay naming the layer counters confuses GDB's lookup of them)
         g_ps1RotoHbl  = g_ps1RotoHbl + dt;
         g_ps1LayerHbl = g_ps1LayerHbl + dt;
-        g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
+        PS1_LAYER_STAT(g_ps1LayerHblBy[(layer - tileLayers) & 7], dt);
         return;
     }
 
@@ -73,6 +73,6 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
     uint32 dt     = PS1HblanksSince(t0);
     g_ps1RotoHbl  = g_ps1RotoHbl + dt;
     g_ps1LayerHbl = g_ps1LayerHbl + dt;
-    g_ps1LayerHblBy[(layer - tileLayers) & 7] += dt;
+    PS1_LAYER_STAT(g_ps1LayerHblBy[(layer - tileLayers) & 7], dt);
 }
 
