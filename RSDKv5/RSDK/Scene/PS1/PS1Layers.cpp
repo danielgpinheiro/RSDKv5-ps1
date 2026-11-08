@@ -1390,6 +1390,29 @@ inline uint32 PS1GreyWord(uint32 w) // a GP0 colour word's 8-bit fields (0xBBGGR
     return (w & 0xFF000000) | v | v << 8 | v << 16;
 }
 
+template <uint32 (*map)(uint32)> static void PS1TintDirectColours()
+{
+    for (int32 r = 0; r < s_colourRecCount; ++r) {
+        PS1ColourRec &rec = s_colourRecs[r];
+        if (rec.n) {
+            uint32_t *f = rec.w;
+            for (int32 left = rec.n; left > 0;) {
+                uint32_t *p = f + 1 + rec.semi;
+                int32 k     = left < 4 ? left : 4;
+                for (int32 j = 0; j < k; ++j) p[3 * j] = map(p[3 * j]);
+                left -= k;
+                f = p + 3 * k;
+            }
+        }
+        else {
+            *rec.w = map(*rec.w);
+        }
+    }
+    uint32 clear = PS1FrameClearColour();
+    if (clear != 0xFFFFFFFF)
+        PS1FrameClearSet(map(clear) & 0xFFFFFF);
+}
+
 void RSDK::PS1TintScreenGrey()
 {
     ++g_ps1ClutCopyGen; // P4: the recorded CLUT uploads so far are rewritten
@@ -1406,24 +1429,7 @@ void RSDK::PS1TintScreenGrey()
             e[i]      = (uint16_t)(0x8000 | v | v << 5 | v << 10);
         }
     }
-    for (int32 r = 0; r < s_colourRecCount; ++r) {
-        PS1ColourRec &rec = s_colourRecs[r];
-        if (rec.n) {
-            uint32_t *f = rec.w;
-            for (int32 left = rec.n; left > 0;) {
-                uint32_t *p = f + 1 + rec.semi;
-                int32 k     = left < 4 ? left : 4;
-                for (int32 j = 0; j < k; ++j) p[3 * j] = PS1GreyWord(p[3 * j]);
-                left -= k;
-                f = p + 3 * k;
-            }
-            continue;
-        }
-        *rec.w = PS1GreyWord(*rec.w);
-    }
-    uint32 clear = PS1FrameClearColour();
-    if (clear != 0xFFFFFFFF)
-        PS1FrameClearSet(PS1GreyWord(clear) & 0xFFFFFF);
+    PS1TintDirectColours<PS1GreyWord>();
     s_ps1Faded     = true;
     g_ps1TintGrey  = g_ps1TintGrey + 1;
     if (s_fadeRecsLost)
@@ -1431,6 +1437,30 @@ void RSDK::PS1TintScreenGrey()
 #if PS1_DEBUG_BIGRAM
     PS1DrawLogAdd(11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); // type 11: the grey tint (tools/gfx/layer_reference.py)
 #endif
+}
+
+static uint32 PS1InvertWord(uint32 colour) { return colour ^ 0x00F8F8F8; }
+
+void RSDK::PS1TintScreenInvert()
+{
+    // The full-screen ruby flash remaps the colours in the chain. Later draws restore their own CLUTs.
+    ++g_ps1ClutCopyGen;
+    if (!s_clutHeadFull)
+        PS1ClutSpliceFull();
+    for (int32 r = 0; r < s_clutRecCount; ++r) {
+        uint16 *entries = s_clutRecs[r].data;
+        for (int32 i = 0; i < s_clutRecs[r].n; ++i) {
+            if (entries[i]) {
+                uint16 inverted = entries[i] ^ 0x7FFF;
+                entries[i] = inverted ? inverted : 0x8000;
+            }
+        }
+    }
+    PS1TintDirectColours<PS1InvertWord>();
+    s_ps1Faded = true;
+    s_clutFullNext = true;
+    if (s_fadeRecsLost)
+        g_ps1FadeOverflow = g_ps1FadeOverflow + 1;
 }
 
 // ps1-ufo: a strip layer's bands through the strip drawer (the UFO overlays), a band it leaves from the tiles; out of
