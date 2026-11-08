@@ -955,6 +955,8 @@ def decode_check(clusters, vram, work, clut_maps, name):
 
 def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     name = '%s%s/%s' % (folder, scene_id, character)
+    # UFO+ layouts reserve native pause labels even when the rest of the atlas uses the text fallback.
+    keep_pause_text = KEEP_TEXT or (folder.startswith('UFO') and scene_id == '2')
     man = read_manifest(folder, scene_id, character)
     sheets = Sheets(data)
     files = []                                  # (path, sprite, [(anim, key)] in record order)
@@ -991,7 +993,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if x1 > x0 and y1 > y0:
                     k = (where, sh, (x0, y0, x1 - x0, y1 - y0))
                     t = HALF_RULES.get(path, HALF_RULES.get(sh))
-                    if (path, ai) in ALWAYS_FULL_ANIMS or ((path, ai) in NEVER_HALF_ANIMS and KEEP_TEXT):
+                    if (path, ai) in ALWAYS_FULL_ANIMS or ((path, ai) in NEVER_HALF_ANIMS and keep_pause_text):
                         t = None
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)
