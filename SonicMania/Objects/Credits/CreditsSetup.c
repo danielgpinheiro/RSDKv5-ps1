@@ -92,7 +92,15 @@ void CreditsSetup_StaticUpdate(void)
                     RSDK.SetScene("Cutscenes", "Mirage Saloon Encore End");
                 }
                 else {
-                    API.CheckDLC(DLC_PLUS) ? RSDK.SetScene("Presentation", "Game Summary") : RSDK.SetScene("Presentation", "Menu");
+                    if (API.CheckDLC(DLC_PLUS))
+                        RSDK.SetScene("Presentation", "Game Summary");
+#if defined RETRO_PS1_BUILD
+                    else
+                        RSDK.SetScene("Presentation", "Thanks For Playing");
+#else
+                    else
+                        RSDK.SetScene("Presentation", "Menu");
+#endif
                 }
 #else
                 if (param->creditsReturnToMenu)
