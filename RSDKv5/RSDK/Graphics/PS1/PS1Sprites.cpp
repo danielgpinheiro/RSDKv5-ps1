@@ -593,6 +593,45 @@ extern "C" void PS1SetFrameShift(const void *frame, int du)
 void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha)
 {
     int32 w = frame->width, h = frame->height;
+#if !PS1_COUNT_SHEETS
+    // P4 (docs/perf/65): the common case in one pass, the stock path's work in its order (the overlay copies P7 / P2 /
+    // P16 made general): unflipped, INK_NONE or INK_ADD, a frame bound at full resolution within one texture page and
+    // under the GPU's size, not the next shifted draw (9b.6), its top line on palette bank 0 with no bank-0 write pending
+    // (no per-draw CLUT copy). Every test before the first side effect; then PS1PcDraws' INK_ADD return, PS1PcClip
+    // (validDraw), PS1FrameTex's CLUT restore, PS1TexRect's cull and its 6 words, the draw count and log. Else: below
+    {
+        const uint32 attr = frame->ps1Attr, u = frame->ps1U;
+        if (direction == FLIP_NONE && (inkEffect == INK_NONE || inkEffect == INK_ADD) && attr != PS1_ATLAS_MISSING
+            && !PS1_ATLAS_HALF(attr) && w > 0 && h > 0 && h <= 511 && u + (uint32)w <= 256 && frame != s_shiftFrame
+            && !PS1LineBank(y) && !g_ps1PalDiffs) {
+            if ((inkEffect == INK_ADD && alpha <= 0) || !PS1PcClip(x, y, w, h))
+                return;
+            const uint32 slot = attr >> 7;
+            PS1FadeRestoreSlot(slot);
+            if (PS1OffScreen(x, y, x + w, y + h))
+                return;
+            uint32 tpage = PS1_ATLAS_COLUMN(attr) | PS1_ATLAS_ROW(attr) << 4 | PS1_ATLAS_8BIT(attr) << 7, cmd = 0x64808080;
+            if (inkEffect == INK_ADD) { // PS1InkOf: mode 1, the rectangle semi-transparent, modulated (alpha + 1) / 2
+                const uint32 mod = (uint32)((alpha > 0xFF ? 0xFF : alpha) + 1) >> 1;
+                tpage |= 1 << 5, cmd = 0x66000000 | mod | mod << 8 | mod << 16;
+            }
+            const uint32 clut =
+                slot == PS1_ATLAS_BANK_CLUT ? (uint32)(240 << 6) : (slot % PS1_SPRITE_CLUTS_PER_ROW) | (496 + slot / PS1_SPRITE_CLUTS_PER_ROW) << 6;
+            uint32_t *wr = PS1ChainSpanBegin(6);
+            if (!wr)
+                return;
+            wr[1] = 0xE1000000 | tpage, wr[2] = cmd, wr[3] = (uint32)(uint16)y << 16 | (uint16)x;
+            wr[4] = clut << 16 | (uint32)frame->ps1V << 8 | u, wr[5] = (uint32)h << 16 | (uint32)w;
+            PS1ChainSpanEnd(wr, 5, wr + 6);
+            PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
+#if PS1_DEBUG_BIGRAM
+            PS1DrawLogAdd(1, (uint8)((PS1LineBank(y + h - 1) != 0) << 7), (uint8)inkEffect, PS1LogAlpha(alpha), (uint8)u,
+                          (uint8)frame->ps1V, frame->ps1Attr, x, y, w, h);
+#endif
+            return;
+        }
+    }
+#endif
     uint32 tpage, clut;
     int32 shift, u = frame->ps1U, v = frame->ps1V;
     PS1Ink ink;
