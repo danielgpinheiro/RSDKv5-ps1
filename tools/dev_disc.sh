@@ -11,6 +11,9 @@
 # Harness runs (tools/emu.sh reads the EXE and the disc from the current directory) start in the shadow, so
 # KEEP_SHADOW=1 keeps it for tools/play/devmenu/run.sh (which deletes it when it ends); by default the shadow is deleted
 # once the disc is copied out (user 2026-10-28: delete the runs' copies after them; the next build is a full one).
+# Licensed by default (2026-11-08: the Makefile's `disc:` rule passes a literal `none`, so `LICENSE ?= ../LICENSE.DAT`
+# -- the `dist:` default -- never reached it and every dev disc came out unlicensed; `../LICENSE.DAT` resolves inside the
+# shadow through the workspace's shim). Pass LICENSE=none for an emulator-only image.
 # Usage: [KEEP_SHADOW=1] tools/dev_disc.sh [BOOT=c,i] [other make switches]
 set -e
 cd "$(dirname "$0")/.."
@@ -37,7 +40,7 @@ export PS1_VERSION_FILE=$SH/VERSION.dev.txt
 cd "$SH"
 # the same switches for both: make reads its stamps at parse time (a bare `make disc` would rebuild the natural EXE)
 make -j8 DEVMENU=1 "$@"
-make disc DEVMENU=1 "$@"
+make disc DEVMENU=1 LICENSE=${LICENSE:-../LICENSE.DAT} "$@"
 [ "$(od -An -tx4 -j48 -N4 rsdkv5.ps-exe | tr -d ' ')" = "807fff00" ] || { echo "not an 8 MB link"; exit 1; }
 
 rm -rf "$OUT/ovl"

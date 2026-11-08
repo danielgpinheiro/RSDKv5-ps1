@@ -117,6 +117,10 @@ MIP_SIZES = (8,)
 # 63 M11: scenes whose floor layers each need a minimap, sharing one 256x256 page (Pinball's two tables). The UFO stages
 # keep their single page-padded Playfield minimap.
 FLOOR_MINIMAP_LAYERS = {'Pinball': ('Table Low', 'Table High')}
+# plan 59 4.2: the layer a 3D-tile pattern page holds -- one 256x256 8-bit page the floor draws as bands of quads. The UFO
+# stages call it "3D Floor" / "3D Roof"; Pinball's scrolling roof is "Background 2" (16x16 tiles exactly).
+PATTERN_LAYERS = {'Pinball': ('Background 2',)}
+UFO_PATTERN_LAYERS = ('3D Floor', '3D Roof')
 STRIP_ATLAS_COLUMNS_DEFORM = {'UFO7': 5}
 
 
@@ -595,7 +599,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
 
     # 7.5: a "3D Floor" / "3D Roof" layer as one 256x256 8-bit page (two columns, the first even, after the minimap's)
     pattern_page, pattern_image = None, 0
-    pl = [L for L in layers if L['name'] in ('3D Floor', '3D Roof') and L['type'] == 2] if folder.startswith('UFO') else []
+    pat_names = PATTERN_LAYERS.get(folder) or (UFO_PATTERN_LAYERS if folder.startswith('UFO') else ())
+    pl = [L for L in layers if L['name'] in pat_names and L['type'] == 2]
     if pl:
         L = pl[0]
         if L['xsize'] * TILE > V.PAGE or L['ysize'] * TILE > V.PAGE:
