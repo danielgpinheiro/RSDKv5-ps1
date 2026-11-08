@@ -11,7 +11,7 @@ end
 break perfTick if g_ps1PerfFrames % 20 == 0
 commands
 silent
-printf "L %u pos=%d loops=%u ends=%u starts=%u resumes=%u forced=%u dataSectors=%u loopFrame=%u state=%d\n", g_ps1PerfFrames, RSDK::channels[0].bufferPos, g_ps1XaLoops, g_ps1XaEnds, g_ps1XaStarts, g_ps1MusicResumes, g_ps1XaForcedStops, g_ps1XaDataSectors, g_ps1XaLoopFrame, RSDK::channels[0].state
+printf "L %u pos=%d loops=%u ends=%u starts=%u resumes=%u forced=%u dataSectors=%u loopFrame=%u gapHbl=%u maxGapHbl=%u state=%d\n", g_ps1PerfFrames, RSDK::channels[0].bufferPos, g_ps1XaLoops, g_ps1XaEnds, g_ps1XaStarts, g_ps1MusicResumes, g_ps1XaForcedStops, g_ps1XaDataSectors, g_ps1XaLoopFrame, g_ps1XaLoopGapHbl, g_ps1XaLoopGapMaxHbl, RSDK::channels[0].state
 if g_ps1PerfFrames >= 600
   quit
 end

@@ -24,6 +24,7 @@ void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow);
 uint32_t PS1XaPositionRows();                       // the playing position, rows from the track's start (timed)
 uint32_t PS1XaTrackRows(int track);                 // a track's audio rows (18.75 per second)
 uint32_t PS1XaTrackPad(int track);                  // the silence before its first sample (37.8 kHz samples)
+uint32_t PS1XaSeamGain();                          // 0..0x7FFF: the loop seam's fade (docs/ports/mania/63 M8)
 int PS1XaCurrentTrack();                            // the last track played, -1 before any
 bool PS1XaCurrentLoop();
 void PS1XaStop();                                   // pause the drive and wait until the action ended
@@ -40,6 +41,11 @@ extern volatile uint32_t g_ps1XaEnds;        // non-looping ends
 extern volatile uint32_t g_ps1XaDataSectors; // data sectors seen (end markers of any channel)
 extern volatile uint32_t g_ps1XaForcedStops; // stopped by a file read (cdrom_fs safety net)
 extern volatile uint32_t g_ps1XaLoopFrame;   // g_ps1PerfFrames at the last loop (gap check)
+extern volatile uint32_t g_ps1XaLoopGapHbl;    // hblanks from the end marker to the drive's ReadS ack (the audible hole)
+extern volatile uint32_t g_ps1XaLoopGapMaxHbl; // the worst one since reset
+extern volatile uint32_t g_ps1XaSeamGainLast;  // the gain the last PS1XaSeamGain() returned
+extern volatile int32_t g_ps1XaSeamOff;        // A/B hook: non-zero plays the seam unfaded
+extern volatile uint32_t g_ps1XaSeamMode;     // the seam's state the last gain saw (0 none, 1 out, 2 hold, 3 in)
 extern volatile uint32_t g_ps1XaStartFrame;  // g_ps1PerfFrames when the current track started
 extern volatile int32_t g_ps1XaChannel;      // channel of the current track
 extern volatile int32_t g_ps1XaTrack;        // current track (Music.bin index)

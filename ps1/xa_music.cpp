@@ -22,6 +22,7 @@ extern volatile uint32_t g_ps1PerfFrames;
 bool PS1FsFind(const char *path, uint32_t *lba, uint32_t *size); // cdrom_fs.cpp
 void PS1FsStopStream();                                          // cdrom_fs.cpp: one CD action at a time
 uint32_t PS1Hblanks();                                           // video.cpp: root counter 1
+uint32_t PS1HblanksSince(uint32_t t0);                            // video.cpp: 16-bit wrap safe
 
 volatile uint32_t g_ps1XaStarts      = 0;
 volatile uint32_t g_ps1XaLoops       = 0;
@@ -31,6 +32,11 @@ volatile uint32_t g_ps1XaForcedStops = 0;
 volatile uint32_t g_ps1XaAborts       = 0; // waits for the drive's PAUSE that timed out: the action was ended by abort()
 volatile uint32_t g_ps1XaGiveUps      = 0; // ... and the drive didn't answer the abort either (last resort)
 volatile uint32_t g_ps1XaLoopFrame   = 0;
+volatile uint32_t g_ps1XaLoopGapHbl    = 0;
+volatile uint32_t g_ps1XaLoopGapMaxHbl = 0;
+volatile uint32_t g_ps1XaSeamGainLast = 0x7FFF;
+volatile uint32_t g_ps1XaSeamMode     = 0; // 0 none, 1 fade out, 2 hold, 3 fade in
+volatile int32_t g_ps1XaSeamOff       = 0;
 volatile uint32_t g_ps1XaStartFrame  = 0;
 volatile int32_t g_ps1XaChannel      = -1;
 volatile int32_t g_ps1XaTrack        = -1;
@@ -73,6 +79,11 @@ struct Xa {
     // rebased at the start, each loop (IRQ) and pause.
     volatile uint32_t posBase = 0;
     volatile uint32_t posT0   = 0;
+    uint32_t gapT0            = 0; // hblanks at the last end marker (where a loop's gap starts)
+    // docs/ports/mania/63 M8: the CD->SPU path reads ahead of what is heard, so a position-derived fade fires early.
+    // The end marker tells the CPU where the drive is, so the seam is timed from it (and from the loop's ReadS ack).
+    volatile uint32_t seamMode = 0;
+    uint32_t seamT0            = 0;
     // docs/ports/mania/32 9f: a stop that doesn't wait (PS1XaStopAsync: the drive's Pause takes ~1,800 hblanks on a real drive /
     // DuckStation, a 7-vblank freeze each time the music stopped or changed) and a start queued until the drive is
     // idle (PS1XaService, each frame)
@@ -175,6 +186,9 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
                 g_ps1XaLoopFrame = g_ps1PerfFrames;
                 s_xa.posBase     = s_xa.loopRow;
                 s_xa.posT0       = nowUs();
+                s_xa.gapT0       = PS1Hblanks();
+                s_xa.seamMode    = 1; // fade out while the buffered tail plays
+                s_xa.seamT0      = s_xa.gapT0;
                 setState(XaState::LOOP_SETLOC);
                 sendSetloc(rowLba(t.startRow + s_xa.loopRow));
             } else {
@@ -216,7 +230,17 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
                 psyqo::Hardware::CDRom::Command.send(CDL::READS);
                 break;
             case XaState::READS:
-            case XaState::LOOP_READS:
+            case XaState::LOOP_READS: {
+                // the drive has the loop's read: this, not the marker, is where the audio comes back
+                uint32_t gap      = PS1HblanksSince(s_xa.gapT0);
+                g_ps1XaLoopGapHbl = gap;
+                if (gap > g_ps1XaLoopGapMaxHbl)
+                    g_ps1XaLoopGapMaxHbl = gap;
+                if (getState() == XaState::LOOP_READS) {
+                    s_xa.posT0    = nowUs(); // the position follows the drive's answer, not the marker
+                    s_xa.seamMode = 2;       // hold, then fade in once the drive's refill is playing
+                    s_xa.seamT0   = s_xa.gapT0;
+                }
                 if (m_pauseRequested) {
                     setState(XaState::PAUSE);
                     psyqo::Hardware::CDRom::Command.send(CDL::PAUSE);
@@ -224,6 +248,7 @@ class XaAction : public psyqo::CDRomDevice::Action<XaState> {
                     setState(XaState::PLAYING);
                 }
                 break;
+            }
             case XaState::PAUSE:
                 setState(XaState::PAUSE_ACK);
                 break;
@@ -369,6 +394,8 @@ void PS1XaPlayAt(int track, bool loop, uint32_t row, uint32_t loopRow) {
     s_xa.loopRow = loopRow < s_tracks[track].rows ? loopRow : 0;
     s_xa.posBase = s_xa.offset;
     s_xa.posT0   = nowUs();
+    s_xa.gapT0   = PS1Hblanks(); // a start's Setloc+ReadS gap reads like a loop's
+    s_xa.seamMode = 0;
     g_ps1XaStarts     = g_ps1XaStarts + 1;
     g_ps1XaStartFrame = g_ps1PerfFrames;
     g_ps1XaChannel    = s_xa.channel;
@@ -385,6 +412,7 @@ void PS1XaStop() {
     }
     s_xa.stopping = false;
     s_xa.paused   = false;
+    s_xa.seamMode = 0; // 63 M8: a stop releases the seam, so the next owner (an ending's STR) starts at full volume
 }
 
 void PS1XaStopAsync() {
@@ -393,7 +421,8 @@ void PS1XaStopAsync() {
         s_action.requestPause();
         s_xa.stopping = true;
     }
-    s_xa.paused = false;
+    s_xa.paused   = false;
+    s_xa.seamMode = 0;
 }
 
 void PS1XaService() {
@@ -431,6 +460,44 @@ uint32_t PS1XaPositionRows() {
         rows += (nowUs() - s_xa.posT0) / 1000 * 3 / 160; // 18.75 rows per second (32-bit: no libgcc 64-bit divide)
     uint32_t n = s_tracks[s_xa.track].rows, from = s_xa.loopRow;
     return n && rows >= n ? from + (rows - n) % (n - from) : rows; // past the end: the loop part again
+}
+
+// docs/ports/mania/63 M8: the loop is a physical seam. The end marker's own row carries no audio for this channel
+// (53 ms), the drive then Setlocs back to the loop row, and the ADPCM history restarts there: cutting the CD input at
+// those edges is a click (the reported peak). Fade it instead, timed by the events that bound the seam -- the marker
+// (where the drive has just read the track's last audio row) and the loop's ReadS ack (where the drive reads again):
+// fade out over one row, hold through the driver's refill, fade in over one row. The CD input is sampled at playback,
+// so scaling it during the fade scales the tail already in flight, which a position-derived fade cannot time: the
+// drive reads ahead of what is heard.
+#define SEAM_HBL      800 // one XA row (2,016 samples at 37.8 kHz = 53 ms = 800 hblanks at 15.7 kHz)
+#define SEAM_HOLD_HBL 200 // ~1/4 row: the drive's refill after its ReadS ack (the fade-in starts just before the
+                          // loop row can be heard; starting early only attenuates the first samples a little)
+uint32_t PS1XaSeamGain() {
+    if (g_ps1XaSeamOff)
+        return g_ps1XaSeamGainLast = 0x7FFF;
+    uint32_t mode = s_xa.seamMode, t = PS1HblanksSince(s_xa.seamT0);
+    uint32_t gain = 0x7FFF;
+    if (mode == 1) { // out
+        if (t >= SEAM_HBL)
+            gain = 0, s_xa.seamMode = 2, s_xa.seamT0 = PS1Hblanks();
+        else
+            gain = 0x7FFF - 0x7FFF * t / SEAM_HBL;
+    }
+    else if (mode == 2) { // hold (the drive's refill)
+        if (t >= SEAM_HOLD_HBL) {
+            s_xa.seamMode = 3;
+            s_xa.seamT0   = PS1Hblanks();
+        }
+        gain = 0;
+    }
+    else if (mode == 3) { // in
+        if (t >= SEAM_HBL)
+            gain = 0x7FFF, s_xa.seamMode = 0;
+        else
+            gain = 0x7FFF * t / SEAM_HBL;
+    }
+    g_ps1XaSeamMode     = mode;
+    return g_ps1XaSeamGainLast = gain;
 }
 
 uint32_t PS1XaTrackRows(int track) { return track >= 0 && track < s_trackCount ? s_tracks[track].rows : 0; }

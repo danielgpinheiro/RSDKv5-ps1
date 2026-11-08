@@ -241,7 +241,9 @@ static void PS1StreamVolume(ChannelInfo *channel)
 {
     int32 v = channel->state == CHANNEL_STREAM
                   ? (int32)(channel->volume * engine.streamVolume * (0x7FFF / 2)) : 0;
-    uint16 cd = (uint16)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v);
+    v = v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v;
+    v = (int32)((uint32)v * PS1XaSeamGain() / 0x7FFF); // 63 M8: the loop seam's fade (xa_music)
+    uint16 cd = (uint16)v;
     if (cd != s_cdVolume)
         PS1SpuSetCdVolume(cd, cd), s_cdVolume = cd;
 }
