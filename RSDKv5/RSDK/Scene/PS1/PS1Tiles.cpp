@@ -45,6 +45,7 @@ uint32 s_solidMaskOff = 0;
 uint32 s_hflipOff = 0, s_hflipCount = 0; // (tile, image) pairs, sorted by tile
 bool s_flipAll = false; // 9f: the scene stores every flipped tile's copy (V / HV keys: the pairs' last is >= 0x800)
 uint32 s_lodInfo = 0;                    // 7.4: lodFirst | pagesW << 16 | pagesH << 24 (0: no minimap)
+uint8 s_lodCount = 0, s_lodFirstLayer = 0, s_lodStep = 0; // 63 M11: the floor layers sharing the page, their step
 uint16 s_patternImage = 0;               // 7.5: the 3D floor / roof texture's image (0: none)
 uint32 s_sheetHash[PS1_TILE_ANI_SHEETS][4]; // MD5 of each sheet's name, as LoadSpriteSheet hashes it
 // 9e (PTL3): rotozoom layers drawn from a 256x256 page: layer index, the page's image, its origin in the map (texels)
@@ -78,6 +79,22 @@ uint16 RSDK::PS1TileImageOf(uint16 tile) { return s_ps1TileBlob && tile < 1024 ?
 bool RSDK::PS1TileFlipCopiesAll() { return s_ps1TileBlob && s_flipAll; }
 const uint16 *RSDK::PS1TileImageTable() { return s_ps1TileBlob ? TileTable() : NULL; }
 uint32 RSDK::PS1TileLodInfo() { return s_ps1TileBlob ? s_lodInfo : 0; }
+// 63 M11: the minimap page a floor layer uses (a single-minimap file answers for any layer; 0: that layer has none)
+uint32 RSDK::PS1TileLodInfoFor(int32 layer)
+{
+    if (!s_ps1TileBlob || !s_lodInfo)
+        return 0;
+    if (!s_lodCount || (layer >= (int32)s_lodFirstLayer && layer < (int32)(s_lodFirstLayer + s_lodCount)))
+        return s_lodInfo;
+    return 0;
+}
+// 63 M11: that layer's origin inside the page, in tiles (ox | oy << 16)
+uint32 RSDK::PS1TileLodOrigin(int32 layer)
+{
+    if (!s_ps1TileBlob || !s_lodCount || layer < (int32)s_lodFirstLayer || layer >= (int32)(s_lodFirstLayer + s_lodCount))
+        return 0;
+    return (uint32)(layer - s_lodFirstLayer) * s_lodStep;
+}
 uint16 RSDK::PS1TilePatternImage() { return s_ps1TileBlob ? s_patternImage : 0; }
 const PS1TileImage *RSDK::PS1TileImages() { return (const PS1TileImage *)(s_ps1TileBlob + s_imgOff); }
 const PS1TileClut *RSDK::PS1TileCluts() { return (const PS1TileClut *)(s_ps1TileBlob + s_clutOff); }
@@ -195,7 +212,8 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
                     + h.aniSheetCount * sizeof(PS1TileSheet) + h.aniCellCount * 2 + h.solidBytes + h.hflipCount * 4;
     uint32 blocksBytes = h.blockCount * sizeof(PS1TileBlock);
     DataStorage *tmp   = &dataStorage[DATASET_TMP];
-    const bool v5      = !memcmp(h.magic, "PTL5", 4); // ps1-ufo: PTL4 + a strip
+    const bool v6      = !memcmp(h.magic, "PTL6", 4); // 63 M11: PTL5 + the floor layers sharing one minimap page
+    const bool v5      = v6 || !memcmp(h.magic, "PTL5", 4); // ps1-ufo: PTL4 + a strip
     const bool v4      = v5 || !memcmp(h.magic, "PTL4", 4); // 9v.3: PTL3 (the table always there) + the tiles' opaque bits
     bool v3            = v4 || !memcmp(h.magic, "PTL3", 4); // PTL2 + the rotozoom pages after the H-flip pairs (9e)
     if ((!v3 && memcmp(h.magic, "PTL2", 4)) || h.aniSheetCount > PS1_TILE_ANI_SHEETS || tmp->usedStorage
@@ -239,6 +257,15 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
         }
         g_ps1TileErrors = g_ps1TileErrors + !s_stripOn;
     }
+    if (v6) { // 63 M11: after the strips -- u8 layers sharing the page, u8 their first layer, u8 origin step, u8 pad
+        uint8 lc[4];
+        ReadBytes(&info, lc, 4);
+        s_lodCount      = lc[0];
+        s_lodFirstLayer = lc[1];
+        s_lodStep       = lc[2];
+    }
+    else // a file without the list clears it: the statics outlive one scene's load
+        s_lodCount = s_lodFirstLayer = s_lodStep = 0;
     s_imageCount = h.imageCount, s_clutCount = h.clutCount, s_sheetCount = h.aniSheetCount, s_cellCount = h.aniCellCount;
     s_stripClutFirst = s_stripOn ? s_stripClutFirst : s_clutCount;
     s_imgOff     = 1024 * 2;

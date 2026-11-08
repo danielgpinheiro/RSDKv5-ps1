@@ -28,6 +28,8 @@ void PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16 srcY,
 uint16 PS1TileImageOf(uint16 tile);          // image of a tile (PS1_TILE_NONE: none)
 const uint16 *PS1TileImageTable();           // the same for tiles 0-1023 as a table (NULL: none loaded)
 uint32 PS1TileLodInfo(); // 7.4: a UFO floor's minimap: first image | pages across << 16 | down << 24 (0: none)
+uint32 PS1TileLodInfoFor(int32 layer); // 63 M11: the minimap page a floor layer uses (0: none)
+uint32 PS1TileLodOrigin(int32 layer);  // 63 M11: that layer's origin in the page, in tiles (ox | oy << 16)
 uint16 PS1TilePatternImage(); // 7.5: a UFO stage's 3D floor / roof texture (256x256, 8-bit), 0: none
 const PS1TileImage *PS1TileImages();
 const PS1TileClut *PS1TileCluts();
