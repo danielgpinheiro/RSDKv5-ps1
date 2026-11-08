@@ -1708,6 +1708,30 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
     int32 widthPx = layer->xsize << 4, heightPx = layer->ysize << 4;
     int32 x       = FROM_FIXED(scanlines[y1].position.x) % widthPx, y0 = FROM_FIXED(scanlines[y1].position.y);
     x             = x < 0 ? x + widthPx : x;
+    // 4.3 (plan 59): a basic layer whose every covered line is one colour (Pinball's Background 1) is one rectangle:
+    // the build's one-colour table says the palette index per line (0: not one colour), so all the clip's lines must
+    // share it and its palette bank. DrawSolid spans the whole line, hence the full-width clip.
+    if (currentScreen->clipBound_X1 == 0 && currentScreen->clipBound_X2 >= PS1_SCREEN_PX) {
+        if (const uint8 *solid = PS1TileSolidLines((int32)(layer - tileLayers), heightPx)) {
+            uint32 bank = gfxLineBuffer[y1];
+            int32 ly = (y0 + y1 - y1) % heightPx;
+            ly       = ly < 0 ? ly + heightPx : ly;
+            uint8 colour = solid[ly];
+            int32 cy     = y1;
+            for (; colour && cy < y2; ++cy) {
+                int32 ly2 = (y0 + cy - y1) % heightPx;
+                ly2       = ly2 < 0 ? ly2 + heightPx : ly2;
+                if (solid[ly2] != colour || gfxLineBuffer[cy] != bank)
+                    break;
+            }
+            if (colour && cy >= y2) {
+                DrawSolid(y1, y2 - y1, colour, (uint8)bank);
+                PS1_LT_ADD(0, PS1T() - t0);
+                g_ps1LayerHbl = g_ps1LayerHbl + PS1HblanksSince(t0);
+                return;
+            }
+        }
+    }
     PS1Emit e;
     EmitOpen(e);
     e.page = 0xFFFFFFFF;
