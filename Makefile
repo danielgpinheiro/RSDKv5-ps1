@@ -251,6 +251,11 @@ $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
 $(call ps1_stamp,dbgovl,$(DEBUG_OVERLAY),$(PS1_OVL_OBJS))
 $(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
+# FLOOR_DEBUG=1 changes the resident counters' object and the floor's overlay object: a switch-on build followed by a
+# plain one used to keep the debug objects, and the "release" EXE carried them (learned 2026-11-08)
+# (PS1Layers.cpp has no object of its own: Scene.cpp includes it, so its object is Scene.o)
+PS1_FLOORDBG_OBJS := RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o RSDKv5/RSDK/Scene/Scene.o
+$(call ps1_stamp,floordbg,$(FLOOR_DEBUG),$(PS1_FLOORDBG_OBJS))
 # (a tree that never built DEVMENU=1 gets its empty stamp dated 2000: its natural objects are kept, not all rebuilt)
 $(shell mkdir -p build/gen; [ -f build/gen/devmenu.txt ] || [ -n "$(DEVMENU)" ] || { echo > build/gen/devmenu.txt; touch -t 200001010000 build/gen/devmenu.txt; })
 $(call ps1_stamp,devmenu,$(DEVMENU),$(PS1_DEVMENU_OBJS))
@@ -262,6 +267,7 @@ $(PS1_SAMPLE_OBJS): build/gen/sample.txt
 $(PS1_HUD_OBJS): build/gen/perfhud.txt
 $(PS1_OVL_OBJS): build/gen/dbgovl.txt
 $(PS1_UFOCUT_OBJS): build/gen/ufocut.txt
+$(PS1_FLOORDBG_OBJS): build/gen/floordbg.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).
