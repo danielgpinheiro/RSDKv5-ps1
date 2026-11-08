@@ -540,6 +540,8 @@ SCOPE_DROP_FOLDER = {'Menu': {'Players/KnuxCutsceneHPZ.bin': {4}},  # the Compet
                      # 4.2d: in the Mania-mode intro no Heavy is on screen (HeavyMystic / CutsceneHBH: no entity in
                      # Scene1, only the Encore intro makes them); HeavyMystic's StageLoad loads its sheets regardless
                      'AIZ': {'MSZ/HeavyMystic.bin': None, 'MSZ/Rogues.bin': None}}
+# Knuckles' act has no Heavy Magician, Rogues or their cutscene. Their StageLoad still loads the files.
+SCOPE_DROP_SCENE = {('MSZ', '1K'): {'MSZ/HeavyMystic.bin': None, 'MSZ/Rogues.bin': None}}
 # 4.2d: CutsceneHBH loads one file per character into self->aniFrames and animates each with its own IDs (reviewed by
 # hand from CutsceneHBH.c: LoadSprites' switch, the *Setup helpers, the states); used where CutsceneHBH is the file's
 # only loader (the entity-field analysis would give every file the union)
@@ -705,6 +707,7 @@ def select(folder, scene_id, character, files):
     for path, spr, _ in files:
         n = len(spr['anims'])
         drop = SCOPE_DROP_FOLDER.get(folder, {}).get(path, SCOPE_DROP.get(path, set()))
+        drop = SCOPE_DROP_SCENE.get((folder, scene_id.upper()), {}).get(path, drop)
         if PLUS_OWN.get(path) == character:  # 9g
             drop = set()
         elif path == 'Global/SignPost.bin' and character in PLUS_SIGNPOST:
@@ -964,7 +967,12 @@ def decode_check(clusters, vram, work, clut_maps, name):
 def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
     name = '%s%s/%s' % (folder, scene_id, character)
     # UFO+ layouts reserve native pause labels even when the rest of the atlas uses the text fallback.
-    keep_pause_text = KEEP_TEXT or (folder.startswith('UFO') and scene_id == '2')
+    msz_knuckles = (folder, scene_id.upper()) == ('MSZ', '1K')
+    keep_pause_text = KEEP_TEXT or (folder.startswith('UFO') and scene_id == '2') or msz_knuckles
+    always_full = ALWAYS_FULL_ANIMS
+    if msz_knuckles or (folder, scene_id) == ('MSZ', '1'):
+        # The two bosses share their head, body and shadow art. The sand puffs can still be reduced.
+        always_full = always_full | {('MSZ/Sandworm.bin', a) for a in range(4)}
     man = read_manifest(folder, scene_id, character)
     sheets = Sheets(data)
     files = []                                  # (path, sprite, [(anim, key)] in record order)
@@ -1001,7 +1009,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                 if x1 > x0 and y1 > y0:
                     k = (where, sh, (x0, y0, x1 - x0, y1 - y0))
                     t = HALF_RULES.get(path, HALF_RULES.get(sh))
-                    if (path, ai) in ALWAYS_FULL_ANIMS or ((path, ai) in NEVER_HALF_ANIMS and keep_pause_text):
+                    if (path, ai) in always_full or ((path, ai) in NEVER_HALF_ANIMS and keep_pause_text):
                         t = None
                     prev = halvable.get(k, 0)
                     halvable[k] = None if (t is None or prev is None) else max(prev, t)
