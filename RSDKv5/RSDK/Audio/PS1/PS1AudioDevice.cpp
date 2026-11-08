@@ -200,6 +200,8 @@ void RSDK::PS1StreamVideoDone()
         channels[s_videoChannel].soundID = -1;
     }
     s_videoChannel = -1;
+    // The STR has released the CD input. Keep its hardware volume and the music cache together.
+    PS1SpuSetCdVolume(0, 0), s_cdVolume = 0;
 }
 
 void RSDK::PS1StreamStart(int32 c)
@@ -235,6 +237,15 @@ void AudioDevice::InitAudioChannels() { AudioDeviceBase::InitAudioChannels(); }
 // The XA follows its stream channel: stopped / paused / resumed with it, the CD volume from its volume (the PC mixer
 // halves stream samples), its position from the XA's timed position, the channel ending with a non-looping track;
 // a track a file read stopped (one CD action at a time) goes on from where it was
+static void PS1StreamVolume(ChannelInfo *channel)
+{
+    int32 v = channel->state == CHANNEL_STREAM
+                  ? (int32)(channel->volume * engine.streamVolume * (0x7FFF / 2)) : 0;
+    uint16 cd = (uint16)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v);
+    if (cd != s_cdVolume)
+        PS1SpuSetCdVolume(cd, cd), s_cdVolume = cd;
+}
+
 static void PS1StreamFrame(ChannelInfo *channel)
 {
     if ((channel->state & ~CHANNEL_PAUSED) != CHANNEL_STREAM) {
@@ -262,10 +273,7 @@ static void PS1StreamFrame(ChannelInfo *channel)
     }
     uint32 at        = PS1XaPositionRows() * 2016;
     channel->bufferPos = at > s_xaPad ? (at - s_xaPad) * 7 / 6 : 0;
-    int32 v          = (int32)(channel->volume * engine.streamVolume * (0x7FFF / 2));
-    uint16 cd        = (uint16)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v);
-    if (cd != s_cdVolume)
-        PS1SpuSetCdVolume(cd, cd), s_cdVolume = cd;
+    PS1StreamVolume(channel);
 }
 
 // Once per engine frame (RunRetroEngine order): the voices follow their channels (see above), then each playing
@@ -294,6 +302,10 @@ void AudioDevice::FrameInit()
     if (!video)
         PS1XaService(); // 9f: a track queued behind a stop that didn't wait
     PS1AudioStartPending();
+    // A video owns the drive, but its PlayStream still owns the music volume. Ending scenes stop
+    // the previous track first (CD volume 0); skipping PS1StreamFrame must not leave the STR muted.
+    if (video && s_videoChannel >= 0)
+        PS1StreamVolume(&channels[s_videoChannel]);
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) {
         ChannelInfo *channel = &channels[c];
         bool sfx             = (channel->state & ~CHANNEL_PAUSED) == CHANNEL_SFX && channel->soundID >= 0;
