@@ -114,9 +114,9 @@ def function_body(code, fname):
 
 
 # 7b.14 (reviewed): stage objects with no entity whose StaticUpdate runs the scene (and creates what it draws): roots.
-# CreditsSetup_StaticUpdate loads the credits and creates their UICreditsText lines. (A general "every StaticUpdate is
-# a root" rule would change the zones' atlases: phase 9b reviews it.)
-STATIC_ROOTS = {'Credits': {'CreditsSetup'}}
+# CreditsSetup loads the credits text, and AIZSetup starts the cutscene that sets Sonic's ANI_FAN at the warp.
+# A general "every StaticUpdate is a root" rule would change the zones' atlases.
+STATIC_ROOTS = {'Credits': {'CreditsSetup'}, 'AIZ': {'AIZSetup'}}
 
 
 def active_objects(folder, scene_id, data=DATA):
