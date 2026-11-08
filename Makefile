@@ -140,6 +140,11 @@ endif
 ifneq ($(SAMPLE),)
 CPPFLAGS += -DPS1_SAMPLE=1
 endif
+# `make FLOOR_DEBUG=1`: the 3D floor's pattern branch records its inputs and outputs in g_ps1FloorDbg, which GDB reads
+# at ps1TestStop (the code is overlay-local otherwise; docs/ports/mania/59 4.2). Off: the UFO stages draw from it too.
+ifneq ($(FLOOR_DEBUG),)
+CPPFLAGS += -DPS1_FLOOR_DEBUG=1
+endif
 # `make PERF_HUD=1`: the frame-timing numbers in the top-left corner (ps1/perf_hud.cpp, docs/32 9f); never in `make dist`.
 ifneq ($(PERF_HUD),)
 CPPFLAGS += -DPS1_PERF_HUD=1

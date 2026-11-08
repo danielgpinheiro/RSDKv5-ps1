@@ -34,6 +34,10 @@ extern volatile uint32 g_ps1FloorDraws, g_ps1FloorQuads, g_ps1FloorHbl, g_ps1Flo
 extern volatile uint32 g_ps1FloorBanks, g_ps1FloorSpanRows, g_ps1FloorSpanWrong, g_ps1FloorLodQuads;
 extern volatile int32 g_ps1FloorFar, g_ps1FloorLodFar, g_ps1FloorAsm, g_ps1FloorMapFar, g_ps1FloorCoarseFar;
 extern volatile int32 g_ps1FloorMip1, g_ps1FloorMip2;
+#if PS1_FLOOR_DEBUG
+extern volatile int32 g_ps1FloorDbg[16];
+extern volatile uint32 g_ps1FloorDbgN;
+#endif
 }
 
 namespace
@@ -823,8 +827,20 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         int32 f0     = fa - 64 > 0 ? fa - 64 : 0;
         int32 R[9] = { -cA * 4, 0, sA * 4, -(sX * sA) >> 8, cX * 4, -(sX * cA) >> 8, (cX * sA) >> 8, sX * 4, (cX * cA) >> 8 };
         PS1Gte3DSetup((const int32_t *)R, 0, 0, 0, 256, cx << 16, cy << 16);
+#if PS1_FLOOR_DEBUG
+        int32 quadsBefore = (int32)g_ps1FloorLodQuads;
+#endif
         PS1ChainDrawArea(x1, y1, x2, y2);
         PS1FloorPattern(pc, f0, f1, (uint32)sl[2].position.y);
+#if PS1_FLOOR_DEBUG // M11 (plan 59 4.2): what the pattern branch saw and produced. Off by default: the UFO stages draw
+                    // from it too. Build with PS1_FLOOR_DEBUG=1 to read g_ps1FloorDbg at ps1TestStop
+        g_ps1FloorDbgN                    = g_ps1FloorDbgN + 1;
+        g_ps1FloorDbg[0] = (int32)minor, g_ps1FloorDbg[1] = sA, g_ps1FloorDbg[2] = cA, g_ps1FloorDbg[3] = sX;
+        g_ps1FloorDbg[4] = cX, g_ps1FloorDbg[5] = camX, g_ps1FloorDbg[6] = camY, g_ps1FloorDbg[7] = hq;
+        g_ps1FloorDbg[8] = y1, g_ps1FloorDbg[9] = y2, g_ps1FloorDbg[10] = cy, g_ps1FloorDbg[11] = lines;
+        g_ps1FloorDbg[12] = f0, g_ps1FloorDbg[13] = f1, g_ps1FloorDbg[14] = fa > 0x7FFF ? 0x7FFF : (int32)fa;
+        g_ps1FloorDbg[15] = (int32)(g_ps1FloorLodQuads - (uint32)quadsBefore);
+#endif
         PS1ChainDrawAreaReset();
         g_ps1FloorDraws = g_ps1FloorDraws + 1;
         g_ps1FloorHbl   = g_ps1FloorHbl + (uint16)(PS1_HBL() - t0);

@@ -78,6 +78,11 @@ volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap'
 // ps1-ufo2 (user 2026-10-30: the floor's textures mipmapped): real tiles from these forward distances drawn from their
 // 8x8 / 4x4 levels (tools/gfx/build_tiles.py MIP_FLOORS / MIP_SIZES: 8x8 alone), tiles (beyond g_ps1FloorFar: none, A/B)
 volatile int32 g_ps1FloorMip1 = 10, g_ps1FloorMip2 = 16;
+#if PS1_FLOOR_DEBUG // M11 (plan 59 4.2): the pattern branch's inputs and outputs, for GDB at ps1TestStop (the roof's
+                    // plane made no quads and the floor's own symbols are unreadable there). Order: PS1UfoFloor.cpp
+volatile int32 g_ps1FloorDbg[16];
+volatile uint32 g_ps1FloorDbgN;
+#endif
 }
 } // namespace RSDK
 
