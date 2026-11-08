@@ -75,6 +75,9 @@ ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), (
 ALWAYS_FULL_ANIMS |= {('Title/Logo.bin', a) for a in (0, 2, 3, 4, 5, 6, 7, 8)}
 # Ice draws the frozen player instead of the player sprite. Keep all four poses for Sonic and Super Sonic.
 ALWAYS_FULL_ANIMS |= {('PSZ2/Ice.bin', a) for a in range(10, 18)}
+# The Menu's mask must retain its one-pixel steps. The sprite drawer already supports adjacent pages.
+DIORAMA_MASK = ('UI/Diorama.bin', 0)
+ALWAYS_FULL_ANIMS.add(DIORAMA_MASK)
 # 9c (MSZ2's title card: the SONIC MANIA strip read garbled): their text strips (<= TEXT_KEEP_H) stay full in the text
 # fallback too
 ALWAYS_TEXT_FILES = {'Global/TitleCard.bin', 'Global/HUD.bin'}
@@ -1006,7 +1009,7 @@ def build(data, disc_data, folder, scene_id, character='sonic', columns=None):
                     # short strip is not text
                     textish[k] = textish.get(k, False) or path in HALF_PRESENT or path in HALF_HUD
                     alltext[k] = alltext.get(k, False) or path in ALWAYS_TEXT_FILES
-                    always_halvable[k] = always_halvable.get(k, True) and (path in HALVABLE or sh in HALVABLE)
+                    always_halvable[k] = always_halvable.get(k, True) and (path, ai) != DIORAMA_MASK and (path in HALVABLE or sh in HALVABLE)
                     quarter[k] = quarter.get(k, True) and path in QUARTER
                     if path in PLAYER_LIKE or path.startswith('Players/'):
                         charart.add(sh)
