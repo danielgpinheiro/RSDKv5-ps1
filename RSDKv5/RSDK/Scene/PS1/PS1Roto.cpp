@@ -23,7 +23,8 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerRotozoom(TileLayer *layer
 {
     if ((uint32)scanlines[0].deform.x == SCANLINE_MAJOR_MAGIC_3DTILES) { // 7.4: a camera for 3D tiles, not lines
         uint32 minor = (uint32)scanlines[0].deform.y;
-        if ((minor == SCANLINE_MINOR_MAGIC_UFO || minor == SCANLINE_MINOR_MAGIC_UFO_FLOOR || minor == SCANLINE_MINOR_MAGIC_ROOF)
+        if ((minor == SCANLINE_MINOR_MAGIC_UFO || minor == SCANLINE_MINOR_MAGIC_UFO_FLOOR || minor == SCANLINE_MINOR_MAGIC_ROOF
+             || minor == SCANLINE_MINOR_MAGIC_PINBALL)
             && g_ps1S3DOps.floor)
             g_ps1S3DOps.floor(layer); // the UFO floor (RSDK/Graphics/PS1/PS1UfoFloor.cpp, in the UFO overlays)
         else

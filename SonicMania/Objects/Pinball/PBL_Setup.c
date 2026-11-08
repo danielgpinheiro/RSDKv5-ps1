@@ -110,6 +110,26 @@ void PBL_Setup_Scanline_TableLow(ScanlineInfo *scanlines)
     EntityPBL_Camera *camera = RSDK_GET_ENTITY(SLOT_PBL_CAMERA, PBL_Camera);
     RSDK.SetClipBounds(0, 0, camera->centerY, ScreenInfo->size.x, ScreenInfo->size.y);
 
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/ports/mania/59 4.1), as the Dreamcast port: the camera for the engine's 3D tile floor
+    // (RSDK/Graphics/PS1/PS1UfoFloor.cpp) instead of 240 deformed lines, each with the palette bank of its distance
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_PINBALL;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = RSDK.Sin1024(camera->angle);
+    scanlines->deform.y   = RSDK.Cos1024(camera->angle);
+    scanlines->position.x = RSDK.Sin1024(-camera->rotationY);
+    scanlines->position.y = RSDK.Cos1024(-camera->rotationY);
+    scanlines++;
+    scanlines->deform.x   = camera->position.x;
+    scanlines->deform.y   = camera->worldY;
+    scanlines->position.x = camera->position.y;
+    scanlines->position.y = (12 | (27 << 8)); // the bank rule: the floor reads shift | bias << 8 (12 + 4, so pos >> 16)
+    return;
+#endif
+
     int32 sin    = RSDK.Sin1024(camera->angle) >> 2;
     int32 cos    = RSDK.Cos1024(camera->angle) >> 2;
     int32 negSin = RSDK.Sin1024(-camera->rotationY) >> 2;
@@ -139,6 +159,26 @@ void PBL_Setup_Scanline_TableHigh(ScanlineInfo *scanlines)
 {
     EntityPBL_Camera *camera = RSDK_GET_ENTITY(SLOT_PBL_CAMERA, PBL_Camera);
     RSDK.SetClipBounds(0, 0, camera->centerY, ScreenInfo->size.x, ScreenInfo->size.y);
+
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/ports/mania/59 4.1), as the Dreamcast port: the camera for the engine's 3D tile floor
+    // (RSDK/Graphics/PS1/PS1UfoFloor.cpp) instead of 240 deformed lines, each with the palette bank of its distance
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_PINBALL;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = RSDK.Sin1024(camera->angle);
+    scanlines->deform.y   = RSDK.Cos1024(camera->angle);
+    scanlines->position.x = RSDK.Sin1024(-camera->rotationY);
+    scanlines->position.y = RSDK.Cos1024(-camera->rotationY);
+    scanlines++;
+    scanlines->deform.x   = camera->position.x;
+    scanlines->deform.y   = (camera->worldY - 0x100000);
+    scanlines->position.x = camera->position.y;
+    scanlines->position.y = (12 | (24 << 8)); // the bank rule: the floor reads shift | bias << 8 (12 + 4, so pos >> 16)
+    return;
+#endif
 
     int32 sin    = RSDK.Sin1024(camera->angle) >> 2;
     int32 cos    = RSDK.Cos1024(camera->angle) >> 2;

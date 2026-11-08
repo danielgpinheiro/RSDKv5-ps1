@@ -19,6 +19,7 @@
 #define SCANLINE_MINOR_MAGIC_UFO     (0x90ABCDEFu)
 #define SCANLINE_MINOR_MAGIC_UFO_FLOOR (0x2345678Bu) /* 7.5: a "3D Floor" layer (UFO2, UFO6) */
 #define SCANLINE_MINOR_MAGIC_ROOF      (0x56789ABCu) /* 7.5: a "3D Roof" layer (UFO4) */
+#define SCANLINE_MINOR_MAGIC_PINBALL   (0x3C4D5E6Fu) /* plan 59 4.1: Pinball's two table floors (PBL_Setup) */
 
 /* docs/ports/mania/32 7b (choice 113): dormant entities. A class listed in the game's ps1DormantSpecs (resident code) may keep no
    entity block while it is out of every camera's reach and still as its Create left it: the engine keeps its scene

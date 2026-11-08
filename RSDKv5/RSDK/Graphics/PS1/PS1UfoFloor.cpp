@@ -428,11 +428,22 @@ inline bool PS1LodCellSet(const TileLayer *layer, const uint16 *chunkRow0, const
 }
 const TileLayer *s_lodLayer = NULL;
 uint32 s_lodWrites = 0, s_lodLoads = 0xFFFFFFFF;
+// 63 M11: the minimap page a floor layer draws from, and the texel offset of its map inside it. The UFO stages' Playfield
+// is the whole page (offset 0); Pinball's two table floors share one page, each with its own origin (plan 59 4.1).
+static inline uint32 PS1LodInfoOf(TileLayer *layer, int32 &ox, int32 &oy)
+{
+    const int32 li = (int32)(layer - tileLayers);
+    const uint32 org = PS1TileLodOrigin(li);
+    ox = (int32)(org & 0xFFFF), oy = (int32)(org >> 16);
+    return PS1TileLodInfoFor(li);
+}
+
 // The minimap cells (8 x 8 tiles, 512 quarter pixels) between forward distances fA (the real tiles' end: cells wholly
 // nearer are skipped) and f1; the GTE is set up. Cells over four empty chunks are skipped.
 __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &c, TileLayer *layer, int32 fA, int32 f1)
 {
-    const uint32 info = PS1TileLodInfo();
+    int32 ox, oy;
+    const uint32 info = PS1LodInfoOf(layer, ox, oy);
     if (!info || f1 <= fA)
         return 0;
     const int32 lodFirst = info & 0xFFFF, pw = (info >> 16) & 0xFF;
@@ -530,7 +541,8 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
                 continue;
             if ((badT || badB) && (!s_zA[i] || !s_zA[i + 1] || !s_zB[i] || !s_zB[i + 1]))
                 continue;
-            const uint32 img = (uint32)(lodFirst + (my >> 8) * pw + (mx >> 8));
+            const int32 mxs = mx + ox, mys = my + oy; // 63 M11: the shared page's origin for this layer
+            const uint32 img = (uint32)(lodFirst + (mys >> 8) * pw + (mxs >> 8));
             int32 bank = fd >> 19;
             bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
             const uint32 k = s_imgClut[img];
@@ -542,7 +554,7 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
                 }
                 clut = PS1FloorClutFill(k, bank, images[img].clut);
             }
-            const uint32 u = mx & 255, vv = my & 255;
+            const uint32 u = (uint32)mxs & 255, vv = (uint32)mys & 255;
             const uint32 uR = u + 8 > 255 ? 255 : u + 8, vB = vv + 8 > 255 ? 255 : vv + 8;
             if (w == wend) {
                 if (w)
@@ -575,7 +587,8 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLod(const PS1FloorCtx &
 // is its centre's. Drawn before PS1FloorLod, which takes the nearer cells up to that distance (and covers the overlap).
 __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLodCoarse(const PS1FloorCtx &c, TileLayer *layer, int32 fA, int32 f1)
 {
-    const uint32 info = PS1TileLodInfo();
+    int32 ox, oy;
+    const uint32 info = PS1LodInfoOf(layer, ox, oy);
     if (!info || f1 <= fA)
         return 0;
     const int32 lodFirst = info & 0xFFFF, pw = (info >> 16) & 0xFF;
@@ -640,7 +653,8 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLodCoarse(const PS1Floo
                 continue;
             if ((badT || badB) && (!zA[i] || !zA[i + 1] || !zB[i] || !zB[i + 1]))
                 continue;
-            const uint32 img = (uint32)(lodFirst + (my >> 8) * pw + (mx >> 8));
+            const int32 mxs = mx + ox, mys = my + oy; // 63 M11: the shared page's origin for this layer
+            const uint32 img = (uint32)(lodFirst + (mys >> 8) * pw + (mxs >> 8));
             int32 bank = fd >> 19;
             bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
             const uint32 k = s_imgClut[img];
@@ -652,7 +666,7 @@ __attribute__((optimize("O2"), noinline)) uint32 PS1FloorLodCoarse(const PS1Floo
                 }
                 clut = PS1FloorClutFill(k, bank, images[img].clut);
             }
-            const uint32 u = mx & 255, vv = my & 255;
+            const uint32 u = (uint32)mxs & 255, vv = (uint32)mys & 255;
             const uint32 uR = u + 16 > 255 ? 255 : u + 16, vB = vv + 16 > 255 ? 255 : vv + 16;
             if (w == wend) {
                 if (w)
