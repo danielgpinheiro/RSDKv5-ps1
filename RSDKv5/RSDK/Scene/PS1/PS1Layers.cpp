@@ -60,6 +60,24 @@ uint32 g_ps1ClutCopyGen             = 1;  // (non-zero: .data, inside the EXE's 
 __attribute__((noinline)) void PS1LayerDebugHook(uint32 index) { __asm__ volatile("" ::"r"(index)); } // GDB: each layer draw
 volatile uint32 g_ps1FrameBufferY = 0;          // the buffer this frame draws into (0 / 256; evidence scripts)
 volatile uint32 g_ps1LayerT[4] = { 0, 0, 0, 0 }; // PROFILE=1 (ticks of 8 cycles a frame): scan, gather, sprites, quads
+// The 3D floor's counters and tunables (RSDK/Graphics/PS1/PS1UfoFloor.cpp's overlay code): here so that GDB reads
+// them at ps1TestStop, where the overlay's own symbols are not loaded (plan 59 4.2, M11's zero-todo check)
+volatile uint32 g_ps1FloorDraws = 0, g_ps1FloorQuads = 0, g_ps1FloorHbl = 0, g_ps1FloorTodo = 0, g_ps1FloorCluts = 0;
+volatile uint32 g_ps1FloorBanks = 0; // bit b: bank b drawn (the last frame)
+volatile uint32 g_ps1FloorSpanRows = 0, g_ps1FloorSpanWrong = 0; // ps1-ufo PS1_CHECK_FLOORSPAN: rows checked / differing
+#if UFO_FLOOR_NEAR // 9f: a detail cut (Makefile UFO_FLOOR_NEAR=1)
+volatile int32 g_ps1FloorFar    = 20;  // (user 2026-10-30: 20 tiles as Sonic CD's special stages, with mip levels; was 12)
+#else
+volatile int32 g_ps1FloorFar    = 24;  // real tiles' distance, tiles (the Dreamcast: 40, then its LOD)
+#endif
+volatile int32 g_ps1FloorLodFar = 96; // the pattern floors (and the minimap, under g_ps1FloorMapFar), tiles (round 3: 160 -> 112 -> 96)
+volatile uint32 g_ps1FloorLodQuads = 0; // minimap cells drawn (total)
+volatile int32 g_ps1FloorAsm = 1;       // 9f: the real tiles' quads through ps1/floor_quads.s (0: the C loop)
+volatile int32 g_ps1FloorMapFar = 48;    // ps1-ufo2 (round 3, B4): the Playfield's minimap ends here, tiles (pattern floors: LodFar; 64 -> 48)
+volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap's 16 x 16 cells from here, tiles (0: none)
+// ps1-ufo2 (user 2026-10-30: the floor's textures mipmapped): real tiles from these forward distances drawn from their
+// 8x8 / 4x4 levels (tools/gfx/build_tiles.py MIP_FLOORS / MIP_SIZES: 8x8 alone), tiles (beyond g_ps1FloorFar: none, A/B)
+volatile int32 g_ps1FloorMip1 = 10, g_ps1FloorMip2 = 16;
 }
 } // namespace RSDK
 
