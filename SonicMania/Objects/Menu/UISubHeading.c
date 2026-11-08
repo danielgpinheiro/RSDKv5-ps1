@@ -115,6 +115,19 @@ void UISubHeading_Initialize(void)
     // (canvas 144 = screen 92) stay where they are
     EntityUIControl *secrets = ManiaModeMenu->secretsMenu;
     if (secrets) {
+        // The last row is & Knuckles. Remove it from both drawing and pad navigation.
+        if (secrets->buttonCount > 3 && secrets->buttons[3]) {
+            OptionsMenu_PS1MoveOut(secrets->buttons[3]);
+            for (int32 i = 4; i < secrets->buttonCount; ++i)
+                secrets->buttons[i - 1] = secrets->buttons[i];
+            --secrets->buttonCount;
+            secrets->buttons[secrets->buttonCount] = NULL;
+            secrets->rowCount = secrets->buttonCount;
+            if (secrets->buttonID >= secrets->buttonCount)
+                secrets->buttonID = 0;
+            if (secrets->startingID >= secrets->buttonCount)
+                secrets->startingID = 0;
+        }
         for (int32 i = 0; i < secrets->buttonCount; ++i) {
             EntityUIButton *row = secrets->buttons[i];
             if (!row || row->choiceCount <= 0)
@@ -150,10 +163,12 @@ void UISubHeading_HandleUnlocks(void)
     peeloutChoice->disabled     = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_PEELOUT);
     instaShieldChoice->disabled = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_INSTASHIELD);
 
+#if !defined RETRO_PS1_BUILD
     EntityUIButton *andKnux = control->buttons[3];
     andKnux->disabled       = !GameProgress_CheckUnlock(GAMEPROGRESS_UNLOCK_ANDKNUX);
     if (andKnux->disabled)
         UIButton_ManageChoices(andKnux);
+#endif
 }
 
 void UISubHeading_SetupActions(void)
@@ -186,7 +201,11 @@ void UISubHeading_HandleMenuReturn(int32 slot)
     SaveRAM *saveGame        = (SaveRAM *)SaveGame_GetDataPtr(slot, false);
 
     UIButton_SetChoiceSelection(control->buttons[0], (saveGame->medalMods & MEDAL_NOTIMEOVER) != 0);
+#if defined RETRO_PS1_BUILD
+    UIButton_SetChoiceSelection(control->buttons[1], (saveGame->medalMods & MEDAL_DEBUGMODE) != 0);
+#else
     UIButton_SetChoiceSelection(control->buttons[1], (saveGame->medalMods & MEDAL_ANDKNUCKLES) != 0);
+#endif
 
     if (saveGame->medalMods & MEDAL_NODROPDASH) {
         if (saveGame->medalMods & MEDAL_PEELOUT)
@@ -198,10 +217,12 @@ void UISubHeading_HandleMenuReturn(int32 slot)
         UIButton_SetChoiceSelection(control->buttons[2], 0);
     }
 
+#if !defined RETRO_PS1_BUILD
     if (saveGame->medalMods & MEDAL_ANDKNUCKLES)
         UIButton_SetChoiceSelection(control->buttons[3], 1);
     else
         UIButton_SetChoiceSelection(control->buttons[3], 0);
+#endif
 }
 
 int32 UISubHeading_GetMedalMods(void)
@@ -224,8 +245,10 @@ int32 UISubHeading_GetMedalMods(void)
         mods |= MEDAL_INSTASHIELD;
     }
 
+#if !defined RETRO_PS1_BUILD
     if (control->buttons[3]->selection == 1)
         mods |= MEDAL_ANDKNUCKLES;
+#endif
 
     return mods;
 }
