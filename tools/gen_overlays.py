@@ -445,6 +445,9 @@ def stubs(argv):
         f.write('        ".set reorder\\n.previous\\n");\n')
         f.write('// the loader reads this: it keeps the stub section in a --gc-sections link (overlays may name stubs no\n'
                 '// resident code does)\nextern char ps1OvlStubsBase[];\nvoid *const ps1OvlStubsRef = ps1OvlStubsBase;\n')
+        # docs/ports/mania/32 7b: the act overlays (ps1/overlay.cpp). Written in the same handle as everything else: a
+        # second open(..., 'a') appended this line again when two jobs regenerated the file together (make -j).
+        f.write('const char *const ps1OvlUnits[] = { %s0 };\n' % ''.join('"%s", ' % un for un, _, sid in units() if sid))
     region = game_c_region()
     res_undef = set(nm_syms([o for o in res_objs if o.startswith('SonicMania/')], '-u'))
     for un, fo, sid in units():
@@ -489,8 +492,6 @@ def stubs(argv):
             f.write('extern char __ps1_ovl_start[], PS1_OVL_SIZE[];\n')
             f.write('__attribute__((section(".ovl_header"), used)) const PS1OverlayHeader ps1OvlHeader = {\n')
             f.write('    0x%08X, (unsigned)PS1_OVL_SIZE, PS1OverlayRegister, (unsigned)__ps1_ovl_start };\n' % MAGIC)
-    with open(out, 'a') as f: # docs/ports/mania/32 7b: the act overlays (ps1/overlay.cpp)
-        f.write('const char *const ps1OvlUnits[] = { %s0 };\n' % ''.join('"%s", ' % un for un, _, sid in units() if sid))
     print('gen_overlays: %d pointers, %d stubbed functions -> %s; %d resident symbols kept for the overlays; overlays %s' % (
         len(others), len(stubbed), out, len(keep), ' '.join(un for un, _, _ in units())))
 
