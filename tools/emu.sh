@@ -33,6 +33,19 @@ EMU_BAK=
 # at start puts it back first (no DuckStation runs then: its holder was killed); the restore removes it.
 EMU_DS_HELD="$EMU_DS_SET.harness"
 
+# docs/ports/mania/63 8.1: an act overlay is linked at fixed addresses against the resident, and the disc carries its
+# own copy (Data/PS1Ovl/*.bin). Rebuild the resident and skip the mastering step and the game boots an EXE with the
+# previous build's overlays: the first overlay call lands in the middle of a different resident function, which reads
+# as a SIGTRAP in random boot code ("the unexplained SIGTRAP" of docs/ports/mania/63 8.1, found 2026-11-08). Re-master
+# when the EXE or any overlay bin is newer than the image: 4 s for the 662 MB disc.
+emu_refresh_disc() {
+  [ -f build/game.bin ] || return 0
+  [ -n "$(find rsdkv5.ps-exe build/ovl -newer build/game.bin -print -quit 2>/dev/null)" ] || return 0
+  echo "emu.sh: the EXE / overlays are newer than build/game.bin: re-mastering the disc (docs/ports/mania/63 8.1)"
+  for f in build/ovl/*.bin; do cp "$f" "build/iso/Data/PS1Ovl/$(basename "$f")"; done
+  /usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game >/dev/null || return 1
+}
+
 # The GDB script's first lines (symbols, then the emulator's stub)
 emu_gdb_header() {
   echo "set pagination off"; echo "set confirm off"; echo "file rsdkv5.elf"; echo "set architecture mips:3000"
@@ -50,6 +63,7 @@ emu_restore() {
 
 # emu_start BACKUP_PREFIX: exits 2 when the emulator already runs (another session)
 emu_start() {
+  emu_refresh_disc || { echo "emu.sh: the disc re-master failed" >&2; exit 1; }
   if [ "$EMU" = ds ]; then
     # the executable by name (-x): -f matched other sessions' shells polling with that path in their own command line
     pgrep -x DuckStation >/dev/null && { echo "DuckStation is already running (another session?): not starting it" >&2; exit 2; }
