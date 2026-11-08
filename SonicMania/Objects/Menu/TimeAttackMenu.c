@@ -142,16 +142,26 @@ void TimeAttackMenu_SetupActions(void)
     EntityUIControl *zoneSelControl      = TimeAttackMenu->taZoneSelControl;
     EntityUIControl *detailsControl      = TimeAttackMenu->taDetailsControl;
 
-    control->menuUpdateCB = TimeAttackMenu_MenuUpdateCB;
-
     EntityUIButton *replaysButton = control->buttons[control->buttonCount - 1];
-    replaysButton->actionCB       = TimeAttackMenu_ReplayButton_ActionCB;
-
-    int32 newCount = (control->buttonCount - 1) + control->columnCount;
-    for (int32 i = control->buttonCount; i < newCount; ++i) {
-        control->buttons[i] = control->buttons[i - 1];
+#if defined RETRO_PS1_BUILD
+    if (PS1_PLUS_CHARS && !API.CheckDLC(DLC_PLUS)) {
+        // The five-character control is available on the PS1 without the Plus replay browser.
+        OptionsMenu_PS1MoveOut(replaysButton);
+        control->buttons[--control->buttonCount] = NULL;
+        control->rowCount = 1;
     }
-    control->buttonCount = newCount;
+    else
+#endif
+    {
+        control->menuUpdateCB   = TimeAttackMenu_MenuUpdateCB;
+        replaysButton->actionCB = TimeAttackMenu_ReplayButton_ActionCB;
+
+        int32 newCount = (control->buttonCount - 1) + control->columnCount;
+        for (int32 i = control->buttonCount; i < newCount; ++i) {
+            control->buttons[i] = control->buttons[i - 1];
+        }
+        control->buttonCount = newCount;
+    }
 
     foreach_all(UICharButton, charButton)
     {
@@ -729,7 +739,9 @@ void TimeAttackMenu_YPressCB_ZoneSel(void)
 
 bool32 TimeAttackMenu_BackPressCB_ZoneSel(void)
 {
-    if (!API.CheckDLC(DLC_PLUS))
+    // docs/ports/mania/63 M15: the disc carries Mighty and Ray (PS1_PLUS_CHARS, the same switch the save select
+    // uses), so backing out returns to the five-character control too. CheckDLC stays the Encore switch.
+    if (!API.CheckDLC(DLC_PLUS) && !PS1_PLUS_CHARS)
         UITransition_SetNewTag("Time Attack Legacy");
     else
         UITransition_SetNewTag("Time Attack");

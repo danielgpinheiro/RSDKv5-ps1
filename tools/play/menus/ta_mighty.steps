@@ -1,0 +1,17 @@
+# Time Attack GHZ1 as Mighty (docs/ports/mania/63 M15): Title, notice, Down, A (Time Attack), Right x3 on the
+# five-character control (Sonic, Tails, Knuckles, Mighty), A, then A (zone), A (act), A (go)
+1 400 0x400 4
+2 400 0x10 4
+2 480 0x2 4
+2 540 0x10 4
+2 600 0x8 4
+2 640 0x8 4
+2 680 0x8 4
+2 780 0x10 4
+2 900 0x10 4
+2 1040 0x10 4
+2 1180 0x10 4
+9 300 0x8 320
+9 460 0x8 320
+0xFFFF 1200 0x400 4
+0xFFFF 1500 0x400 4

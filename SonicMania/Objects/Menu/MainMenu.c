@@ -214,7 +214,10 @@ void MainMenu_MenuButton_ActionCB(void)
             break;
 
         case 1: // Time Attack
-            if (API.CheckDLC(DLC_PLUS)) {
+            // docs/ports/mania/63 M15: the disc carries Mighty and Ray (PS1_PLUS_CHARS, the same switch the save
+            // select uses), so Time Attack opens the five-character control. CheckDLC stays false: Encore and the
+            // replay routes are Plus content this disc does not have.
+            if (API.CheckDLC(DLC_PLUS) || PS1_PLUS_CHARS) {
                 EntityUIControl *control = TimeAttackMenu->timeAttackControl;
                 control->buttonID        = 0;
                 control->menuWasSetup    = false;
