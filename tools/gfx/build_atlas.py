@@ -73,6 +73,8 @@ ALWAYS_FULL_ANIMS = {('Global/TitleCard.bin', 1), ('Global/TitleCard.bin', 2), (
 # 9e: the title's rotozoom pages take 3 columns: of the logo (full since 9c: the user saw its letters blocky) only the
 # ribbon's unfurl (animation 1: red / white stripes and a star, no letters; played once as the logo enters) may be halved
 ALWAYS_FULL_ANIMS |= {('Title/Logo.bin', a) for a in (0, 2, 3, 4, 5, 6, 7, 8)}
+# Ice draws the frozen player instead of the player sprite. Keep all four poses for Sonic and Super Sonic.
+ALWAYS_FULL_ANIMS |= {('PSZ2/Ice.bin', a) for a in range(10, 18)}
 # 9c (MSZ2's title card: the SONIC MANIA strip read garbled): their text strips (<= TEXT_KEEP_H) stay full in the text
 # fallback too
 ALWAYS_TEXT_FILES = {'Global/TitleCard.bin', 'Global/HUD.bin'}
