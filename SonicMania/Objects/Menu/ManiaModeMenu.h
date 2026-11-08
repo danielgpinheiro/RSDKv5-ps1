@@ -18,6 +18,9 @@ struct ObjectManiaModeMenu {
     EntityUIControl *noSaveMenuEncore;
     bool32 inSecretsMenu;
     int32 saveSelLastButtonID;
+#if defined RETRO_PS1_BUILD
+    uint16 timeAttackMusicWait;
+#endif
 };
 
 // Entity Class

@@ -14,7 +14,26 @@ void ManiaModeMenu_Update(void) {}
 
 void ManiaModeMenu_LateUpdate(void) {}
 
-void ManiaModeMenu_StaticUpdate(void) {}
+#if defined RETRO_PS1_BUILD
+extern int32 PS1XaReadingTrack(const char *name);
+enum { PS1_TIME_ATTACK_TRACK = 1, PS1_MUSIC_WAIT_MIN = 12, PS1_MUSIC_WAIT_MAX = 180 };
+#endif
+
+void ManiaModeMenu_StaticUpdate(void)
+{
+#if defined RETRO_PS1_BUILD
+    if (!ManiaModeMenu->timeAttackMusicWait)
+        return;
+
+    uint16 frames = ++ManiaModeMenu->timeAttackMusicWait;
+    bool32 leftMenu = ManiaModeMenu_GetActiveMenu() != MAINMENU_TIMEATTACK;
+    bool32 ready = frames >= PS1_MUSIC_WAIT_MIN && PS1XaReadingTrack(Music->trackNames[PS1_TIME_ATTACK_TRACK]);
+    if (leftMenu || ready || frames >= PS1_MUSIC_WAIT_MAX) {
+        ManiaModeMenu->timeAttackMusicWait = 0;
+        UIWaitSpinner_FinishWait();
+    }
+#endif
+}
 
 void ManiaModeMenu_Draw(void) {}
 
@@ -177,7 +196,14 @@ void ManiaModeMenu_ChangeMenuTrack(void)
         case MAINMENU_SAVESELECT_ENCORE: trackID = 4; break;
     }
 
-    if (!Music_IsPlaying())
+    bool32 isPlaying = Music_IsPlaying();
+#if defined RETRO_PS1_BUILD
+    if (trackID == PS1_TIME_ATTACK_TRACK && (!isPlaying || Music->activeTrack != trackID) && !ManiaModeMenu->timeAttackMusicWait) {
+        ManiaModeMenu->timeAttackMusicWait = 1;
+        UIWaitSpinner_StartWait();
+    }
+#endif
+    if (!isPlaying)
         Music_PlayTrack(trackID);
     else if (Music->activeTrack != trackID)
         Music_TransitionTrack(trackID, 0.12);

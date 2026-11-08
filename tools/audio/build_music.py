@@ -47,8 +47,8 @@ FILLER_CHANNEL = 31
 RATE = 37800
 ROW_SAMPLES = 2016
 GUARD = 4
-# Base Mania's scope (docs/ports/mania/32 user decisions): Encore / competition music is not built
-OUT_OF_SCOPE = {'encoremenu.ogg', 'competition.ogg', 'buddybeat.ogg'}  # (user 2026-10-30: Pinball's in)
+# The Time Attack menu uses Competition.ogg as track 1 even when Competition is disabled.
+OUT_OF_SCOPE = {'encoremenu.ogg', 'buddybeat.ogg'}
 
 
 def fnv1a(name):

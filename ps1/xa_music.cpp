@@ -103,6 +103,7 @@ uint32_t rowLba(uint32_t row) { return s_fileLba + row * XA_INTERLEAVE + (uint32
 class XaAction : public psyqo::CDRomDevice::Action<XaState> {
   public:
     XaAction() : Action("PS1XaAction") {}
+    bool reading() const { return getState() == XaState::PLAYING; }
     void start(bool resume) {
         registerMe(g_ps1CDRom);
         setCallback([](bool) {
@@ -438,6 +439,12 @@ int PS1XaCurrentTrack() { return s_xa.track; }
 bool PS1XaCurrentLoop() { return s_xa.loop; }
 
 bool PS1XaPlaying() { return (s_xa.running && !s_xa.ended && !s_xa.stopping) || s_xa.pend.on; }
+
+// A queued start is not ready for the Time Attack menu. Wait for the drive to accept ReadS.
+extern "C" int32_t PS1XaReadingTrack(const char *name) {
+    return s_xa.running && !s_xa.stopping && !s_xa.ended && s_action.reading() && s_xa.track == PS1XaFindTrack(name);
+}
+
 bool PS1XaEnded() { return s_xa.ended && !s_xa.pend.on && !s_xa.stopping; } // (9f: not the old track a queued start replaces)
 
 // cdrom_fs safety net: a file read while music plays (one CD action at a time).
