@@ -24,7 +24,8 @@ extern "C" void PS1NoteAlloc(void *p, size_t size); // ps1/libc/stdlib.cpp: the 
 // stays allocated after the loads): 3.2 split it into 2 x 25 KB; 3.3b makes it ONE arena of 50 KB: psyqo sends frame
 // N's chain at the flip, before frame N+1 starts, and frame N+1 writes its chain only after its logic, by when the GPU
 // has taken frame N's (a few thousand small primitives: ~30 hblanks). The frame's first write waits for that DMA to be
-// over (arenaReady; g_ps1ChainIdleWaits counts the frames that had to wait).
+// over (arenaReady; g_ps1ChainIdleWaits counts the frames that had to wait). The Title fits in half of the
+// existing allocation, so it alternates halves to build the next chain while DMA still reads the previous half.
 #ifndef PS1_CHAIN_ARENA_KB
 #define PS1_CHAIN_ARENA_KB 60 // a measuring build may pass more (EXTRA_CPPFLAGS=-DPS1_CHAIN_ARENA_KB=128, 8 MB link). 7.1: 50 -> 60: GHZ1's
                               // title card over its busy middle (after Blue Spheres) needs 14,302 words (57 KB)
@@ -84,7 +85,9 @@ struct VarFragment {
 uint32_t *s_arenaMem = nullptr; // s_arenaMemWords (heap); kept while suspended: lent to the CD windows (docs/ports/mania/32 9.2)
 uint32_t s_arenaMemWords = 0;
 uint32_t s_arenaWords = PS1_CHAIN_ARENA_WORDS; // smaller while an FMV plays (PS1ChainSetArenaWords)
-bool s_waitIdle = false; // the frame has not written the arena yet: the last frame's DMA may still read it
+bool s_waitIdle = false; // DMA may still read the memory selected for this frame
+bool s_splitArena = false;
+bool s_upperHalf = false;
 void (*s_hook)() = nullptr;
 extern uint32_t *s_slot;
 
@@ -114,27 +117,33 @@ volatile uint32_t g_ps1ChainExtraWords  = 0; // the block lent this scene (words
 volatile uint32_t g_ps1ChainExtraFrames = 0; // frames that needed it
 volatile uint32_t g_ps1ChainExtraBusy   = 0; // loads begun while this frame's chain used it (must stay 0)
 
+__attribute__((noinline)) void waitForArenaDMA() {
+    if (s_gpu->isChainTransferring()) {
+        uint32_t t0 = PS1Hblanks();
+        s_gpu->waitChainIdle();
+        g_ps1ChainIdleWaits   = g_ps1ChainIdleWaits + 1;
+        g_ps1ChainIdleWaitHbl = g_ps1ChainIdleWaitHbl + PS1HblanksSince(t0);
+    }
+}
+
 inline bool roomFor(size_t words) {
     if (s_cur + words <= s_end)
         return true;
     if (s_inExtra || !s_extra || words > s_extraWords)
         return false;
+    if (s_splitArena)
+        waitForArenaDMA(); // The extra block is shared by both halves.
     s_mainUsed = (uint32_t)(s_cur - s_base);
     s_cur = s_extra, s_end = s_extra + s_extraWords, s_inExtra = true;
     g_ps1ChainExtraFrames = g_ps1ChainExtraFrames + 1;
     return true;
 }
 
-// Before the frame's first arena write: the last frame's chain must be DMA'd (one arena, see above)
+// Before writing memory the previous chain might still use, wait for that DMA.
 inline void arenaReady() {
     if (s_waitIdle) {
         s_waitIdle = false;
-        if (s_gpu->isChainTransferring()) {
-            uint32_t t0 = PS1Hblanks();
-            s_gpu->waitChainIdle();
-            g_ps1ChainIdleWaits   = g_ps1ChainIdleWaits + 1;
-            g_ps1ChainIdleWaitHbl = g_ps1ChainIdleWaitHbl + PS1HblanksSince(t0);
-        }
+        waitForArenaDMA();
     }
 }
 TileBatch *s_batch  = nullptr; // open tile batch (not yet chained)
@@ -197,9 +206,10 @@ volatile uint32_t g_ps1ChainArenaFail = 0; // frames without an arena (heap full
 volatile uint32_t g_ps1ChainSuspends  = 0; // arenas released for a load
 static bool s_suspended = false;
 
-void PS1ChainBegin(psyqo::GPU &gpu) {
+static void beginChain(psyqo::GPU &gpu, bool splitArena) {
     s_gpu = &gpu;
     if (s_arenaMem && s_arenaMemWords != s_arenaWords && !s_suspended) { // (an FMV's smaller arena: PS1ChainSetArenaWords)
+        gpu.waitChainIdle();
         psyqo_free(s_arenaMem);
         s_arenaMem = nullptr;
     }
@@ -215,10 +225,15 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
         s_sbatch = nullptr;
         return;
     }
-    s_base       = s_arenaMem;
-    s_waitIdle   = true;
+    // Entering or leaving split mode can overlap the previous chain's allocation.
+    const bool alternating = splitArena && s_splitArena;
+    const uint32_t words = splitArena ? s_arenaWords / 2 : s_arenaWords;
+    s_upperHalf  = alternating && !s_upperHalf;
+    s_splitArena = splitArena;
+    s_base       = s_arenaMem + (s_upperHalf ? words : 0);
+    s_waitIdle   = !alternating;
     s_cur        = s_base;
-    s_end        = s_base + s_arenaWords;
+    s_end        = s_base + words;
     s_inExtra    = false;
     s_mainUsed   = 0;
     s_batch      = nullptr;
@@ -228,6 +243,8 @@ void PS1ChainBegin(psyqo::GPU &gpu) {
     s_slot       = nullptr;
     g_ps1ChainReplayWords = 0;
 }
+
+void PS1ChainBegin(psyqo::GPU &gpu) { beginChain(gpu, false); }
 
 void PS1ChainEnd() {
     flushBatch();
@@ -291,7 +308,7 @@ void PS1ChainResume() {
 
 // The psyqo-free wrappers (gpu_chain_raw.hh)
 extern psyqo::GPU *g_ps1GPU;
-void PS1ChainBeginFrame() { PS1ChainBegin(*g_ps1GPU); }
+void PS1ChainBeginFrame(bool splitArena) { beginChain(*g_ps1GPU, splitArena); }
 void *PS1ChainClearRGB(uint8_t r, uint8_t g, uint8_t b) { return PS1ChainClear(r, g, b); }
 void PS1ChainClearSetRGB(void *clear, uint8_t r, uint8_t g, uint8_t b) {
     if (clear)

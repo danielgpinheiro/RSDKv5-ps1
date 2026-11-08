@@ -9,7 +9,7 @@
 
 // Frame control without psyqo types: PS1ChainBegin(*g_ps1GPU); a FastFill of the next draw buffer (its colour may
 // still change until the frame ends: PS1ChainClearSetRGB); a raw GPU texpage attribute.
-void PS1ChainBeginFrame();
+void PS1ChainBeginFrame(bool splitArena);
 void *PS1ChainClearRGB(uint8_t r, uint8_t g, uint8_t b);
 void PS1ChainClearSetRGB(void *clear, uint8_t r, uint8_t g, uint8_t b);
 void PS1ChainTPageRaw(uint16_t attr);

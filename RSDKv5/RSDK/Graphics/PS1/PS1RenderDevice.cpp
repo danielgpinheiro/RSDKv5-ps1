@@ -27,7 +27,7 @@ uint32 *s_ps1FrameClearMask = NULL; // ps1-ufo2: the clear's mask rectangle (its
 
 void RSDK::PS1RenderBeginFrame()
 {
-    PS1ChainBeginFrame();
+    PS1ChainBeginFrame(sceneInfo.state == ENGINESTATE_REGULAR && CheckSceneFolder("Title"));
     if (g_ps1VideoOps.beginFrame)
         g_ps1VideoOps.beginFrame(); // (nothing chained yet: it swaps the arenas)
     s_ps1FrameOpen = false;
