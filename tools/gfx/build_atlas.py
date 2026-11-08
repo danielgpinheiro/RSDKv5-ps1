@@ -465,6 +465,10 @@ HALF_BOSS = {'GHZ/DDWrecker.bin', 'GHZ/DERobot.bin', 'Eggman/EggmanAll.bin',
              # 4.2d: the Hard-Boiled Heavies (bosses; in the intro cutscenes through CutsceneHBH)
              'SPZ1/Boss.bin', 'PSZ2/Shinobi.bin', 'MSZ/HeavyMystic.bin', 'LRZ3/HeavyRider.bin', 'LRZ3/HeavyKing.bin',
              'MSZ/Rogues.bin', 'Cutscene/DamagedKing.bin', 'Cutscene/HBHPile.bin', 'Cutscene/KingTMZ2.bin'}
+# 63 M3 (user 2026-11-08: "mantain the low-quality sprites on shield in stages when is necessary only"): the shields are
+# tried at native size first and halved only where the scene needs it, and never by trading a boss -- see
+# SHIELD_FULL_PLAN and build_fit_share.
+HALF_SHIELD = {'Global/Shields.bin'}
 HALF_EFFECT = {'Global/Explosions.bin', 'Global/Shields.bin', 'Global/Water.bin', 'Global/SpecialRing.bin',
                'Global/Invincible.bin', 'Global/SuperSparkle.bin', 'Global/Dust.bin', 'Global/Announcer.bin',
                'TMZ1/Portal.bin'}  # 7b.12: the ruby portal (TMZ2 / TMZ3: 20 frames of 126 x 126, 229 KB at 4-bit)
@@ -510,11 +514,14 @@ HALF_PLAN = [(LOSSY, 0), (HALF_SUPER, 32), (HALF_EFFECT, 64), (HALF_PICTURE, 96)
 # HALF_PLAN as it was (Super halved first), so no scene halves anything it did not before. Measured over every scene as
 # Sonic: GHZ, CPZ, FBZ, OOZ, MMZ, LRZ2, SSZ, TMZ2, the Title keep Super full size
 SUPER_FULL_PLAN = [step for step in HALF_PLAN[:6] if step[0] is not HALF_SUPER]
+# 63 M3: the same ladder with the shields left out of the effect steps (they stay at native size in it)
+HALF_EFFECT_NOSHIELD = HALF_EFFECT - HALF_SHIELD
+SHIELD_FULL_PLAN = [(HALF_EFFECT_NOSHIELD if f is HALF_EFFECT else f, side) for f, side in HALF_PLAN]
 # 7b.12: backdrops far larger than VRAM allows at any plan step, stored at quarter resolution (each texel drawn 4x4) at
 # 15 colours whatever the step: Titanic Monarch's sky backdrop (the Monarch, two 1024 x 1024 frames drawn mirrored)
 QUARTER = {'TMZ1/MonarchBG.bin'}
 QUARTER_CLUT = 0x140
-HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HALF_LEVEL | HALF_SUPER  # files, and (HALF_PICTURE) sheets
+HALVABLE = HALF_BOSS | HALF_EFFECT | HALF_SHIELD | HALF_PRESENT | HALF_HUD | HALF_PICTURE | HALF_LEVEL | HALF_SUPER  # files, and (HALF_PICTURE) sheets
 # reviewed by hand (the literal analysis can't follow a handle stored in an entity): in a stage, UIButton_Create sets
 # list 0 before PauseMenu (10) / UIDialog (9) set theirs; 7 = a disabled button
 ANIM_OVERRIDES = {'UI/TextEN.bin': {0, 7, 9, 10},
@@ -1372,14 +1379,25 @@ def build_fit(data, disc_data, folder, scene_id, character='sonic'):
     return res
 
 
+def boss_side():
+    """63 M3: the smallest side (px) the current HALF_RULES halves the bosses from; larger is sharper."""
+    return min((t for f, t in HALF_RULES.items() if f in HALF_BOSS), default=0x7FFF)
+
+
 def build_fit_share(data, disc_data, folder, scene_id, character='sonic'):
     """build() with the fewest plan steps that fit (full resolution when it all fits): SUPER_FULL_PLAN first (9l), else
-    HALF_PLAN."""
+    HALF_PLAN; 63 M3: the shields stay native when SHIELD_FULL_PLAN fits and costs no boss pixel."""
     if character == 'sonic':
         res = build_fit_plan(data, disc_data, folder, scene_id, character, SUPER_FULL_PLAN, False)
         if res is not None and res[0] is not None:
             return res
-    return build_fit_plan(data, disc_data, folder, scene_id, character, HALF_PLAN, True)
+    base = build_fit_plan(data, disc_data, folder, scene_id, character, HALF_PLAN, True)
+    if base is not None and base[0] is not None:
+        base_boss = boss_side()
+        res       = build_fit_plan(data, disc_data, folder, scene_id, character, SHIELD_FULL_PLAN, False)
+        if res is not None and res[0] is not None and boss_side() >= base_boss:
+            return res
+    return base
 
 
 def build_fit_plan(data, disc_data, folder, scene_id, character, plan, last_resort):
