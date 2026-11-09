@@ -1498,6 +1498,23 @@ extern "C" __attribute__((noinline)) void PS1StripBands(TileLayer *layer, const 
             DrawBand(layer, group[g].sy, group[g].h, group[g].x, group[g].ly, group[g].bank);
 }
 extern "C" void PS1DrawSolid(int32 sy, int32 h, uint8 c, uint8 bank) { DrawSolid(sy, h, c, bank); } // (skyDraw's one-colour runs)
+// M11 (plan 59 4.2): the CLUT of the tile CLUT slot an image names, uploaded in place from the live palette.
+// PS1ClutUploadAll does this for the whole scene, which no scene calls; a layer that samples a slot no tile draws
+// (Pinball's roof page) asks for its own here. The bank copies live in rows 240-255 x 0-240, so this never collides.
+extern "C" void PS1ClutUploadOne(uint16 attr)
+{
+    const int16 x = (int16)((attr & 0x3F) << 4), y = (int16)(attr >> 6);
+    const PS1TileClut *cl = PS1TileCluts();
+    uint16 row[16];
+    row[0] = 0;
+    for (int32 i = 1; i < 16; ++i) row[i] = 0;
+    for (int32 c = 0; cl && c < PS1TileClutCount(); ++c)
+        if ((int16)cl[c].x == x && (int16)cl[c].y == y) {
+            for (int32 i = 1; i < 16; ++i) row[i] = cl[c].map[i] ? PS1Colour(fullPalette[0][cl[c].map[i]]) : 0;
+            break;
+        }
+    PS1ClutRow(row, 16, x, y);
+}
 // P1 (docs/perf/57): a layer whose lines all use one deforming scroll info (HCZ's and LRZ's foregrounds), no scanline
 // callback, no one-colour table: ProcessParallax (Scene.cpp) leaves its 240 scanlines unfilled (ps1Uniform 2) and keeps the
 // fill's inputs here; the scan takes line i's X from PS1DfX, the same value PS1FillHScrollLines would store: the info's X

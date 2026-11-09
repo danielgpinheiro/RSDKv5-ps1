@@ -209,6 +209,28 @@ void PBL_Setup_Scanline_PinballBG(ScanlineInfo *scanlines)
 {
     RSDK.SetClipBounds(0, 0, 0, ScreenInfo->size.x, 112);
 
+#if defined RETRO_PS1_BUILD
+    // PS1 port (docs/ports/mania/59 4.2): the roof as the engine's 3D-tile pattern page, drawn by the floor's pattern
+    // path: a fixed 45-degree camera at the stock scroll. The PC's version curves each row and a plane cannot, so this
+    // is the "cheap, a look a little off" route the user approved (2026-10-31); height and scroll are the two numbers
+    // to fit by eye, and the layer only draws from about frame 709 in the attract act.
+    const int32 scroll    = (PBL_Setup->scanlineTimer >> 1) << 2; // quarter pixels
+    scanlines->deform.x   = (int32)SCANLINE_MAJOR_MAGIC_3DTILES;
+    scanlines->deform.y   = (int32)SCANLINE_MINOR_MAGIC_ROOF;
+    scanlines->position.x = 0;
+    scanlines->position.y = 0;
+    scanlines++;
+    scanlines->deform.x   = 0, scanlines->deform.y = 1024; // no yaw
+    scanlines->position.x = 0;                             // level: the plane stretches to the LOD far
+    scanlines->position.y = 1024;
+    scanlines++;
+    scanlines->deform.x   = scroll;
+    scanlines->deform.y   = -0x600000;                     // the plane 96 px above the camera (quarter pixels)
+    scanlines->position.x = scroll;
+    scanlines->position.y = 14;                            // unused: the page has its own CLUT
+    return;
+#endif
+
     int32 x       = 116 << 16;
     int32 centerX = ScreenInfo->center.x;
     int32 sin     = RSDK.Sin256(32);

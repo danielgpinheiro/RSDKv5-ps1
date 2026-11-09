@@ -34,6 +34,7 @@ extern volatile uint32 g_ps1FloorDraws, g_ps1FloorQuads, g_ps1FloorHbl, g_ps1Flo
 extern volatile uint32 g_ps1FloorBanks, g_ps1FloorSpanRows, g_ps1FloorSpanWrong, g_ps1FloorLodQuads;
 extern volatile int32 g_ps1FloorFar, g_ps1FloorLodFar, g_ps1FloorAsm, g_ps1FloorMapFar, g_ps1FloorCoarseFar;
 extern volatile int32 g_ps1FloorMip1, g_ps1FloorMip2;
+extern "C" void PS1ClutUploadOne(uint16 attr); // RSDK/Scene/PS1/PS1Layers.cpp (a page on its own CLUT)
 #if PS1_FLOOR_DEBUG
 extern volatile int32 g_ps1FloorDbg[20];
 extern volatile uint32 g_ps1FloorDbgN;
@@ -700,6 +701,8 @@ __attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx
     }
     const PS1TileImage &ti = PS1TileImages()[img];
     const bool fixedClut = ti.clut != 0xFFFF; // its own palette: the builder remapped the page to it
+    if (fixedClut)
+        PS1ClutUploadOne(ti.clut); // nothing else samples that slot, so nothing else uploads it (16 colours, a frame)
     const int32 shift = (bankInfo & 0xFF) ? (int32)(bankInfo & 0xFF) + 4 : 19, bias = (int32)((bankInfo >> 8) & 0xFF);
     int32 V[4][2];
     PS1FloorRegion(c, f0, f1, V);
