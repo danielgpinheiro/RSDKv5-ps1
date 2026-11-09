@@ -699,6 +699,7 @@ __attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx
         return;
     }
     const PS1TileImage &ti = PS1TileImages()[img];
+    const bool fixedClut = ti.clut != 0xFFFF; // its own palette: the builder remapped the page to it
     const int32 shift = (bankInfo & 0xFF) ? (int32)(bankInfo & 0xFF) + 4 : 19, bias = (int32)((bankInfo >> 8) & 0xFF);
     int32 V[4][2];
     PS1FloorRegion(c, f0, f1, V);
@@ -742,9 +743,11 @@ __attribute__((optimize("O2"), noinline)) void PS1FloorPattern(const PS1FloorCtx
             int32 fc = fd >> 10;
             if (fc < f0 - 725 || fc > f1 + 725)
                 continue;
+            // a page with its own CLUT (4-bit, the builder remapped it to that palette) needs no bank at all; one on the
+            // palette bank (8-bit, clut 0xFFFF) takes the bank of its distance
             int32 bank = (fd >> shift) - bias;
             bank       = bank < 0 ? 0 : bank > 7 ? 7 : bank;
-            uint32 clut = s_attr[PS1_FLOOR_K8][bank];
+            uint32 clut = fixedClut ? ti.clut : s_attr[PS1_FLOOR_K8][bank];
             if (!clut) {
                 if (w) {
                     PS1ChainBulkEnd((int)((w - bulk) / 10));

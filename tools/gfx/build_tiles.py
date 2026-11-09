@@ -628,10 +628,33 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         if not cands:
             raise TileError('%s%s: no two free columns for the %s texture' % (folder, scene_id, L['name']))
         col, row = cands[0]
-        words = pat[:, 0::2].astype(np.uint16) | (pat[:, 1::2].astype(np.uint16) << 8)
-        vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128] = words
-        back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128].astype(np.int32)
-        if not np.array_equal(np.stack([back & 0xFF, back >> 8], -1).reshape(V.PAGE, V.PAGE), pat.astype(np.int32)):
+        # The page is drawn through ONE CLUT, so its texels must be that CLUT's slots, not the GIF's palette indices:
+        # the tiles' own images are remapped the same way (`lut` below). 4-bit on its own CLUT when the layer has <= 15
+        # colours (Pinball's Background 2: 5), else the page keeps 8-bit raw indices and the bank CLUTs cannot show it.
+        pat_colours = set()
+        for ty in range(L['ysize']):
+            for tx in range(L['xsize']):
+                v = t[ty * L['xsize'] + tx]
+                if v == 0xFFFF:
+                    continue
+                pat_colours |= set(int(c) for c in np.unique(gif[(v & 0x3FF) * TILE:((v & 0x3FF) + 1) * TILE]))
+        pat_colours.discard(0)
+        if len(pat_colours) > 15:
+            raise TileError('%s%s: the %s texture page has %d colours (15 at most on one CLUT)'
+                            % (folder, scene_id, L['name'], len(pat_colours)))
+        if len(clut_maps) >= len(V.TILE_CLUT_SLOTS):
+            raise TileError('%s%s: %d CLUTs > %d slots' % (folder, scene_id, len(clut_maps) + 1, len(V.TILE_CLUT_SLOTS)))
+        page_pal = [0] + sorted(pat_colours)
+        clut_maps.append(page_pal + [0] * (16 - len(page_pal)))
+        page_clut = len(clut_maps) - 1
+        pat_lut = {c: n for n, c in enumerate(page_pal)}
+        pat_lut[0] = 0
+        pat_q = np.vectorize(lambda c: pat_lut[int(c)])(pat).astype(np.uint16)
+        words = pat_q[:, 0::4] | (pat_q[:, 1::4] << 4) | (pat_q[:, 2::4] << 8) | (pat_q[:, 3::4] << 12)
+        vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64] = words
+        back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64].astype(np.uint16)
+        nib = np.stack([back & 0xF, back >> 4 & 0xF, back >> 8 & 0xF, back >> 12 & 0xF], -1).reshape(V.PAGE, V.PAGE)
+        if not np.array_equal(nib.astype(np.int32), pat_q.astype(np.int32)):
             raise TileError('%s%s: the %s texture does not decode back' % (folder, scene_id, L['name']))
         pattern_page = (col, row)
         pattern_image = len(images) + len(lod_pages)
@@ -770,7 +793,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     for (col, row) in lod_pages:
         blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, V.PAGE))
     if pattern_page:
-        blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 128, V.PAGE))
+        blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 64, V.PAGE))
     for (_, _, _, _, (col, row), d) in roto:
         blocks.append((col * V.COL_HW, row * V.PAGE, 64 if d == 4 else 128, V.PAGE))
     for st in strips:
@@ -785,7 +808,8 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     for (col, row) in lod_pages:
         img_tab += struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[lod_clut]))
     if pattern_page:
-        img_tab += struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 8), 0xFFFF)
+        img_tab += struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 4),
+                               V.clut_attr(*V.TILE_CLUT_SLOTS[page_clut]))
     roto_first = len(images) + len(lod_pages) + (1 if pattern_page else 0)
     roto_tab = b''
     for k, (li, img, ox, oy, _, _) in enumerate(roto):
@@ -841,7 +865,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                   2048 + len(img_tab) + len(clut_tab) + len(sheet_tab) + len(cell_tab) + len(solid_tab) + len(hflip_tab),
                   '; minimap %dx%d pages (%s), CLUT %d' % (lod_dims[0], lod_dims[1], ' '.join('%d/%d' % c for c in lod_pages), lod_clut)
                   if lod_pages else '') + ('; floor mips %s of %d images (images %d-%d)' % (' + '.join('%dx%d' % (z, z) for z in MIP_SIZES), mip_n, mip_first, mip_first + len(MIP_SIZES) * mip_n) if mip_n else '')
-              + ('; %s texture page %d/%d' % (pl[0]['name'], pattern_page[0], pattern_page[1]) if pattern_page else '')
+              + ('; %s texture page %d/%d, %d colours' % (pl[0]['name'], pattern_page[0], pattern_page[1], len(pat_colours)) if pattern_page else '')
               + ''.join('; %s page %d-bit %d/%d at texel %d,%d' % (layers[li]['name'], d, c[0], c[1], ox, oy)
                         for li, _, ox, oy, c, d in roto)
               + ''.join('; %s strip rows %d-%d in %s, %d of %d bands' % (layers[st[0]]['name'], st[1], st[1] + STRIP_BANDS * TILE - 1,
