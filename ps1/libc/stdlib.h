@@ -24,7 +24,9 @@ void *calloc(size_t nmemb, size_t size);
 void *realloc(void *ptr, size_t size);
 void  free(void *ptr);
 
-int   abs(int n);
+/* 59 4.6: inline. -fno-builtin makes a call of it, and Pinball's tile-collision sensor loops call it ~5,000 times a
+   frame: 25 hblanks. Every stage gains. */
+static inline int abs(int n) { return n < 0 ? -n : n; }
 long  labs(long n);
 long long llabs(long long n);
 
