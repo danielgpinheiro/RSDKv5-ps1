@@ -425,6 +425,13 @@ void PS1XaStopAsync() {
     s_xa.seamMode = 0;
 }
 
+// 63 M5: the drive is free for another action only when the XA action ended (psyqo asserts on a second registration)
+volatile uint32_t g_ps1XaRunningFlag = 0; // GDB: the action is registered (no calls from the stub)
+bool PS1XaIdle() {
+    g_ps1XaRunningFlag = s_xa.running ? 1u : 0u;
+    return !s_xa.running;
+}
+
 void PS1XaService() {
     if (s_xa.running)
         return;

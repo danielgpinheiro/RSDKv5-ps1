@@ -35,6 +35,10 @@ bool     PS1StreamEnded();                // all sectors delivered and consumed
 bool     PS1StreamError();                // the drive reported an error
 uint32_t PS1StreamDelivered();            // sectors delivered into the ring since open
 void     PS1StreamClose();                // stop reading (sends PAUSE now if running); waits until idle, ~3 s at most
+// The non-waiting variant (ps1/music_stream.cpp): sends PAUSE and returns; PS1StreamRunning() turns false once the
+// action ended, and only then may the next CD action start (the XA music, or a new stream).
+void     PS1StreamCloseAsync();
+bool     PS1StreamRunning();              // the action is still registered (a close is in flight)
 
 // Verification counters (GDB).
 extern volatile uint32_t g_ps1StreamRestarts;     // SETLOC restarts after the ring filled up

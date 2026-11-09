@@ -34,7 +34,11 @@ SPU_SAMPLE_END = 0x80000 - 32
 RATES = (44100, 37800, 32000, 27000, 22050, 18900, 16000, 13000, 11025, 9450, 8000)
 FLOOR = 11025
 assert all(r % 25 == 0 for r in RATES)  # the engine's 32-bit position math (PS1AudioDevice.cpp PS1SfxAddrAt)
-BANK_CAP = int(os.environ.get('PS1_SFX_BANK_CAP') or SPU_SAMPLE_END - SPU_SAMPLE_START)
+# 63 M5: the Super theme streams into a ring above the scene's bank (ps1/music_stream.hh PS1_MUSIC_RING_BYTES), so every
+# bank leaves that much of the sample area free; without it the tightest banks (GHZ1: 519,104 B in 520,160 B) have no
+# room for the ring and the theme falls back to XA. A bank that no longer fits drops its largest rates one step.
+MUSIC_RING = 2048
+BANK_CAP = int(os.environ.get('PS1_SFX_BANK_CAP') or SPU_SAMPLE_END - SPU_SAMPLE_START - MUSIC_RING)
 NAME_LEN = 40
 ENTRY = struct.Struct('<40sIIII')
 

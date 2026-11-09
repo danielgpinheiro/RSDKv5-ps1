@@ -27,6 +27,11 @@ void PS1SpuVoicePlay(int voice, uint32_t addr, uint32_t rate, uint16_t volL, uin
 void PS1SpuVoiceStop(uint32_t voiceMask); // key off
 void PS1SpuVoiceVolume(int voice, uint16_t volL, uint16_t volR); // a playing voice's volumes (no key on)
 void PS1SpuVoicePitch(int voice, uint16_t pitch);                  // a playing voice's pitch (0x1000 = 44.1 kHz; 0 holds it)
+// The loop target: where a block with the loop-end+repeat flags sends the voice back to (psx-spx 1F801C0Ch).
+// A streaming ring sets it to the ring's start so playback wraps inside the ring.
+void PS1SpuVoiceRepeat(int voice, uint32_t addr);
+// The voice's current ADPCM address in bytes (register read). 0 while the voice is not playing.
+uint32_t PS1SpuVoicePosition(int voice);
 // Current ADSR envelope (ENVX). 0 once a key-on'd sample has ended: psxavenc ends every sample
 // with an end-without-repeat block, which releases the voice with a zero envelope (psx-spx);
 // PCSX-Redux stops the channel there. ENDX is not emulated by PCSX-Redux, so it isn't used.

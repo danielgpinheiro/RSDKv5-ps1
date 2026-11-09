@@ -508,6 +508,7 @@ static bool findDir(const char *path, uint32_t *outLba, uint32_t *outSize) { ret
 bool PS1FsFind(const char *path, uint32_t *lba, uint32_t *size) { return findFile(path, lba, size); }
 
 bool PS1XaStopForFileRead(); // xa_music.cpp
+void PS1MusicStreamStopForFileRead(); // music_stream.cpp (63 M5: the streamed music owns the drive like the XA does)
 
 /* Resident files: small files the scripts read during play (LoadPalette), preloaded into RAM
  * so reading them never touches the drive, which may be streaming CD-XA music. */
@@ -672,6 +673,7 @@ FILE *fopen(const char *path, const char *mode) {
     // One CD action at a time: CD-XA music reads continuously; scripts stop it before loads,
     // this is the safety net (counted in g_ps1XaForcedStops).
     PS1XaStopForFileRead();
+    PS1MusicStreamStopForFileRead();
     if (!findLocal(path, &lba, &size) && !findPin(path, &lba, &size) && !findFile(path, &lba, &size))
         return nullptr;
     FILE *f = (FILE *)malloc(sizeof(FILE));

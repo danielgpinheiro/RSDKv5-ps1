@@ -143,6 +143,10 @@ void PS1SpuVoiceVolume(int voice, uint16_t volL, uint16_t volR) {
 
 void PS1SpuVoicePitch(int voice, uint16_t pitch) { SPU_VOICES[voice].sampleRate = pitch; }
 
+void PS1SpuVoiceRepeat(int voice, uint32_t addr) { SPU_VOICES[voice].sampleRepeatAddr = (uint16_t)(addr / 8); }
+
+uint32_t PS1SpuVoicePosition(int voice) { return (uint32_t)SPU_VOICES[voice].sampleRepeatAddr * 8u; }
+
 uint16_t PS1SpuVoiceEnvelope(int voice) { return SPU_VOICES[voice].currentVolume; }
 
 void PS1SpuSetCdVolume(uint16_t left, uint16_t right) {

@@ -280,6 +280,19 @@ uint32_t PS1Hblanks(); // video.cpp: root counter 1
 
 #define CLOSE_TIMEOUT_HBL (3 * 15734) // ~3 s (NTSC hblanks; PAL waits a little longer)
 
+bool PS1StreamRunning() {
+    eastl::atomic_signal_fence(eastl::memory_order_acquire);
+    return s_stream.running;
+}
+
+void PS1StreamCloseAsync() {
+    if (s_stream.running)
+        s_action.requestPause();
+    s_stream.stopping = true;
+    s_stream.open     = false;
+    eastl::atomic_signal_fence(eastl::memory_order_release);
+}
+
 void PS1StreamClose() {
     if (s_stream.running)
         s_action.requestPause(); // PAUSE now (or on the pending ack), never "on the next sector"

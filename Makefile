@@ -63,6 +63,7 @@ ps1/gpu_chain.cpp \
 ps1/gpu_detect.cpp \
 ps1/spu.cpp \
 ps1/xa_music.cpp \
+ps1/music_stream.cpp \
 ps1/mdec.cpp \
 ps1/video.cpp \
 ps1/gte3d.cpp \
@@ -372,6 +373,8 @@ sfx:
 # Build-time music (docs/32 5.2): Data/Music/*.ogg -> build/music/Music/Music.xa (CD-XA, 8 channels) + Music.bin
 music:
 	/usr/bin/python3 tools/audio/build_music.py $(GAME_DATA) build/music
+	# 63 M5: the streamed bodies (Data/Music/<Name>.adp, 22,050 Hz SPU-ADPCM) for the themes no bank can hold
+	/usr/bin/python3 tools/audio/build_stream.py $(GAME_DATA) build/music
 
 # Build-time video (docs/32 6.1): the video sequences with their music -> build/video/Video/<Seq>.str + .sti, PS1Video.bin
 video:
@@ -401,7 +404,8 @@ disc:
 	else rm -f build/iso/Data/Stages/*/*_mighty.* build/iso/Data/Stages/*/*_ray.* build/iso/Data/Stages/*/PS1Sfx*_mighty.bin \
 	build/iso/Data/Stages/*/PS1Sfx*_ray.bin build/iso/Data/Meshes/Special/Mighty*.bin build/iso/Data/Meshes/Special/Ray*.bin; fi
 	if [ -d build/video/Video ]; then mkdir -p build/iso/Data/Video && cp build/video/Video/*.str build/video/Video/*.sti build/video/Video/PS1Video.bin build/iso/Data/Video/; fi
-	if [ -d build/music/Music ]; then mkdir -p build/iso/Data/Music && cp build/music/Music/Music.xa build/music/Music/Music.bin build/iso/Data/Music/; fi
+	if [ -d build/music/Music ]; then mkdir -p build/iso/Data/Music && cp build/music/Music/Music.xa build/music/Music/Music.bin build/iso/Data/Music/; \
+	for f in build/music/Music/*.adp; do [ -e "$$f" ] && cp "$$f" build/iso/Data/Music/; done; true; fi
 	rm -rf build/iso/Data/Stages/*/PS1Local
 	/usr/bin/python3 tools/disc/stage_local.py build/iso
 	/usr/bin/python3 tools/disc/build_disc.py build/iso rsdkv5.ps-exe none build/game

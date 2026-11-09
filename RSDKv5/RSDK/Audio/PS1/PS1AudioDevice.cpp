@@ -1,6 +1,7 @@
 // PS1 port: the AudioDevice (see PS1AudioDevice.hpp). Included by Audio.cpp like the other backends.
 #include "../../../../ps1/spu.hh"
 #include "../../../../ps1/xa_music.hh"
+#include "../../../../ps1/music_stream.hh" // 63 M5: a theme streamed into the SPU instead of XA
 
 // docs/ports/mania/32 5.1: SFX on the SPU. Each scene's bank (tools/audio/build_sfx.py: Data/Stages/<Folder>/PS1Sfx<id>.bin, the
 // samples the objects it runs ask for) is uploaded at the scene load; a registered SFX (LoadSfx: GameConfig's globals,
@@ -26,7 +27,15 @@ volatile uint32 g_ps1MusicReady   = 0; // Music.xa + Music.bin found
 volatile uint32 g_ps1MusicStarts  = 0; // PlayStream -> an XA track
 volatile uint32 g_ps1MusicMissing = 0; // PlayStream of a track not on the disc (the channel keeps its timing only)
 volatile uint32 g_ps1MusicResumes = 0; // a file read stopped the music (one CD action at a time): restarted where it was
+volatile uint32 g_ps1MusicStreamReady = 0; // 63 M5: the streamed Super body was found on the disc at boot
+volatile uint32 g_ps1MusicStreamRequests = 0; // PlayStream of Super.ogg (the hook was reached)
+volatile uint32 g_ps1MusicStreamRefused  = 0; // ... and the stream declined it (no body / ring does not fit)
 }
+
+// 63 M5: the music channel is playing a streamed body (ps1/music_stream) instead of an XA track
+static bool s_musicStream = false;
+static const char *const PS1_STREAM_BODY = "Data/Music/Super.adp"; // the Super theme: 500,976 B, no bank can hold it
+#define PS1_MUSIC_STREAM_RATE 22050
 
 #define PS1_SFX_VOICE(c) ((c) + 1)
 #define PS1_SFX_INFO(s)  ((uint32)(uintptr_t)sfxList[s].buffer) // rate << 16 | SPU address / 8 (0: no sample)
@@ -213,6 +222,20 @@ void RSDK::PS1StreamStart(int32 c)
             s_xaChannel = -1;
         return;
     }
+    // 63 M5: the theme no bank can hold streams into the SPU from a 2 KiB ring on voice 17 (docs/ports/mania/63 M5).
+    // The ring sits above the scene's SFX bank; if it does not fit (or the body is absent) the XA track below plays.
+    const char *name = streamFilePath + (strncmp(streamFilePath, "Data/Music/", 11) ? 0 : 11);
+    if (!strcmp(name, "Super.ogg"))
+        g_ps1MusicStreamRequests = g_ps1MusicStreamRequests + 1;
+    if (!strcmp(name, "Super.ogg") && !g_ps1MusicStreamReady)
+        g_ps1MusicStreamRefused = g_ps1MusicStreamRefused + 1;
+    if (g_ps1MusicStreamReady && !strcmp(name, "Super.ogg")
+        && PS1MusicStreamBegin(streamLoopPoint, PS1_MUSIC_STREAM_RATE,
+                               (PS1_SPU_SAMPLE_START + g_ps1SfxBankBytes + 7) & ~7u)) {
+        s_musicStream = true, s_xaChannel = c, s_xaPaused = false;
+        g_ps1MusicStarts = g_ps1MusicStarts + 1;
+        return;
+    }
     s_xaChannel = c, s_xaTrack = track, s_xaPaused = false;
     s_xaPad     = PS1XaTrackPad(track);
     s_xaLoop    = streamLoopPoint != 0;
@@ -225,6 +248,8 @@ bool32 AudioDevice::Init()
 {
     PS1SpuInit();
     g_ps1MusicReady = PS1XaInit();
+    // 63 M5: find the streamed body now (a directory read), never at the transform
+    g_ps1MusicStreamReady = PS1MusicStreamResolve(PS1_STREAM_BODY); // the ring itself is reserved at the first scene load
     InitAudioChannels();
     for (int32 c = 0; c < CHANNEL_COUNT; ++c) s_voiceSound[c] = -1;
     return true;
@@ -251,9 +276,23 @@ static void PS1StreamVolume(ChannelInfo *channel)
 static void PS1StreamFrame(ChannelInfo *channel)
 {
     if ((channel->state & ~CHANNEL_PAUSED) != CHANNEL_STREAM) {
+        if (s_musicStream) { // 63 M5: the SPU stream ends with its channel (the drive is released without waiting)
+            PS1MusicStreamEnd();
+            s_musicStream = false;
+            s_xaChannel   = -1;
+            return;
+        }
         PS1XaStopAsync(); // (9f: without waiting: a real drive's Pause took ~7 vblanks)
         s_xaChannel = -1;
         PS1SpuSetCdVolume(0, 0), s_cdVolume = 0;
+        return;
+    }
+    if (s_musicStream) { // 63 M5: volume and pause of the SPU music stream (FrameInit pumps it); the CD volume stays 0
+        int32 v = (int32)(channel->volume * engine.streamVolume * (0x7FFF / 2));
+        v       = v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v;
+        PS1MusicStreamVolume((uint16)v, (uint16)v);
+        PS1MusicStreamPause((channel->state & CHANNEL_PAUSED) != 0);
+        channel->bufferPos += AUDIO_FREQUENCY / 60 * g_ps1FrameSteps; // the PC's timing for GetChannelPos
         return;
     }
     if (PS1XaEnded()) {
@@ -288,6 +327,16 @@ void RSDK::PS1AudioStartPending()
 {
     if (s_pendChannel < 0)
         return;
+    // 63 M5: the streamed music owns the drive until its action ends; a track queued behind it starts after that
+    if (s_musicStream || PS1MusicStreamActive()) {
+        if (s_musicStream && channels[s_pendChannel].state == CHANNEL_STREAM) { // another track replaces the stream
+            PS1MusicStreamEnd();
+            s_musicStream = false;
+            s_xaChannel   = -1;
+        }
+    }
+    if (PS1MusicStreamClosing())
+        return; // the drive is still releasing: the queued track starts on a later frame
     if (sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK) // the video owns the CD (ps1/fmv)
         s_videoChannel = s_pendChannel; // its sound plays from the STR
     else if ((channels[s_pendChannel].state & ~CHANNEL_PAUSED) == CHANNEL_STREAM) {
@@ -301,8 +350,9 @@ void AudioDevice::FrameInit()
 {
     const uint32 frameSamples = AUDIO_FREQUENCY / 60 * g_ps1FrameSteps; // one drawn frame = g_ps1FrameSteps logic frames
     bool video                = sceneInfo.state == ENGINESTATE_VIDEOPLAYBACK; // the video owns the CD (ps1/fmv)
-    if (!video)
-        PS1XaService(); // 9f: a track queued behind a stop that didn't wait
+    if (!video && !PS1MusicStreamActive() && !PS1MusicStreamClosing())
+        PS1XaService(); // 9f: a track queued behind a stop that didn't wait (63 M5: never while the stream owns the drive)
+    PS1MusicStreamPump(); // 63 M5: refill the ring, and finish a close even after its channel released the stream
     PS1AudioStartPending();
     // A video owns the drive, but its PlayStream still owns the music volume. Ending scenes stop
     // the previous track first (CD volume 0); skipping PS1StreamFrame must not leave the STR muted.
