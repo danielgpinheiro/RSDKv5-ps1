@@ -35,7 +35,7 @@ extern volatile uint32 g_ps1FloorBanks, g_ps1FloorSpanRows, g_ps1FloorSpanWrong,
 extern volatile int32 g_ps1FloorFar, g_ps1FloorLodFar, g_ps1FloorAsm, g_ps1FloorMapFar, g_ps1FloorCoarseFar;
 extern volatile int32 g_ps1FloorMip1, g_ps1FloorMip2;
 #if PS1_FLOOR_DEBUG
-extern volatile int32 g_ps1FloorDbg[16];
+extern volatile int32 g_ps1FloorDbg[20];
 extern volatile uint32 g_ps1FloorDbgN;
 #endif
 }
@@ -840,6 +840,13 @@ __attribute__((optimize("O2"))) void PS1UfoFloorDraw(TileLayer *layer)
         g_ps1FloorDbg[8] = y1, g_ps1FloorDbg[9] = y2, g_ps1FloorDbg[10] = cy, g_ps1FloorDbg[11] = lines;
         g_ps1FloorDbg[12] = f0, g_ps1FloorDbg[13] = f1, g_ps1FloorDbg[14] = fa > 0x7FFF ? 0x7FFF : (int32)fa;
         g_ps1FloorDbg[15] = (int32)(g_ps1FloorLodQuads - (uint32)quadsBefore);
+        const uint32 patImg = PS1TilePatternImage();
+        if (patImg) { // where the pattern page actually is (texpage, CLUT) and the K8 bank CLUT in use
+            const PS1TileImage &pi = PS1TileImages()[patImg];
+            g_ps1FloorDbg[16] = pi.u | pi.v << 8 | pi.tpage << 16 | (pi.clut == 0xFFFF ? 1 : 0) << 31;
+            g_ps1FloorDbg[17] = (int32)s_attr[PS1_FLOOR_K8][0];
+            g_ps1FloorDbg[18] = (int32)s_attr[PS1_FLOOR_K8][7];
+        }
 #endif
         PS1ChainDrawAreaReset();
         g_ps1FloorDraws = g_ps1FloorDraws + 1;

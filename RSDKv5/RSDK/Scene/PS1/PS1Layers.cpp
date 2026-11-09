@@ -80,7 +80,7 @@ volatile int32 g_ps1FloorCoarseFar = 32; // ps1-ufo2 (round 3, B2): the minimap'
 volatile int32 g_ps1FloorMip1 = 10, g_ps1FloorMip2 = 16;
 #if PS1_FLOOR_DEBUG // M11 (plan 59 4.2): the pattern branch's inputs and outputs, for GDB at ps1TestStop (the roof's
                     // plane made no quads and the floor's own symbols are unreadable there). Order: PS1UfoFloor.cpp
-volatile int32 g_ps1FloorDbg[16];
+volatile int32 g_ps1FloorDbg[20];
 volatile uint32 g_ps1FloorDbgN;
 #endif
 }
