@@ -62,7 +62,6 @@ uint16_t s_rate;        // the body's rate (22,050)
 uint16_t s_volL, s_volR;
 uint8_t *s_cdRing;                     // s_cdSectors * 2048 in main RAM (less when the heap is tight)
 uint32_t s_cdSectors = PS1_MUSIC_CD_SECTORS;
-uint8_t s_half[PS1_MUSIC_HALF_BYTES];  // the staging buffer a half is patched in before the SPU DMA
 
 Phase s_phase;
 uint32_t s_runFrom;   // the body sector the current read run starts at (0, then the loop sector)
@@ -77,11 +76,13 @@ bool s_paused;
 
 uint32_t align8(uint32_t v) { return (v + 7u) & ~7u; }
 
+// The half is DMA'd straight from the sector ring (no staging copy: the resident EXE has no 1 KB to spare): half 1 is
+// the ring's last part, so its final ADPCM block carries the loop-end + loop-repeat flags, patched in the sector's own
+// bytes - the block's flags byte only, which changes no sample.
 void writeHalf(uint32_t half, const uint8_t *src) {
-    memcpy(s_half, src, PS1_MUSIC_HALF_BYTES);
-    if (half == 1) // the ring's last block: loop end + loop repeat -> the voice wraps to the repeat address
-        s_half[PS1_MUSIC_HALF_BYTES - 15] |= 0x03;
-    PS1SpuWrite(s_ringAddr + half * PS1_MUSIC_HALF_BYTES, s_half, PS1_MUSIC_HALF_BYTES);
+    if (half == 1)
+        const_cast<uint8_t *>(src)[PS1_MUSIC_HALF_BYTES - 15] |= 0x03;
+    PS1SpuWrite(s_ringAddr + half * PS1_MUSIC_HALF_BYTES, src, PS1_MUSIC_HALF_BYTES);
     g_ps1MusicStreamBytes = g_ps1MusicStreamBytes + PS1_MUSIC_HALF_BYTES;
 }
 
@@ -170,8 +171,11 @@ bool PS1MusicStreamBegin(uint32_t loopSample44, uint32_t rate, uint32_t spuAddr)
     // The loop restarts at the sector holding the loop point: 44.1 kHz sample -> the body's samples -> ADPCM block
     // (28 samples) -> byte offset (16 bytes a block). Rounding down replays at most one block group (23 ms) at the
     // seam, which is what keeps the seam sector-aligned - a CD read can only start on a sector.
-    uint64_t samples = (uint64_t)loopSample44 * rate / 44100u;
-    uint32_t byteOff = (uint32_t)((samples / 28u) * 16u);
+    // 32-bit only: the resident EXE must not pull in a 64-bit divide (MA-185), and every rate the port uses divides
+    // 44,100 exactly (22,050 -> 2, 11,025 -> 4), so the conversion is a division by that factor.
+    uint32_t div    = rate && !(44100u % rate) ? 44100u / rate : 2u;
+    uint32_t samples = loopSample44 / div;
+    uint32_t byteOff = (samples / 28u) * 16u;
     s_loopSector     = byteOff / SECTOR;
     if (s_loopSector >= s_bodySectors)
         s_loopSector = 0;
@@ -185,7 +189,7 @@ bool PS1MusicStreamBegin(uint32_t loopSample44, uint32_t rate, uint32_t spuAddr)
     s_paused   = false;
     s_runFrom    = 0;
     // the ring's clock: one half (1,024 B = 1,792 samples) at the body's rate, in hblanks
-    s_hblPerHalf = (uint32_t)((uint64_t)1792u * 15734u / rate);
+    s_hblPerHalf = (1792u * 15734u) / rate; // 28,195,328 for any rate the port uses: 32-bit safe
     s_dueHbl     = PS1Hblanks() + s_hblPerHalf;
     s_phase      = PH_WAIT_DRIVE;
     PS1XaStopAsync(); // one CD action at a time; the XA action ends in a few vblanks

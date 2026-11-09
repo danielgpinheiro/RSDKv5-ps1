@@ -26,7 +26,10 @@ define ps1_onstop
   end
   set $vb = 0x1F801C00 + 17 * 16
   printf "L STREAM f=%u starts=%u halves=%u und=%u loops=%u bytes=%u pos=%u ring=%u sec=%u sbuf=%u\n", g_ps1PerfFrames, g_ps1MusicStreamStarts, g_ps1MusicStreamHalves, g_ps1MusicStreamUnderruns, g_ps1MusicStreamLoops, g_ps1MusicStreamBytes, g_ps1MusicStreamLastPos, g_ps1MusicStreamRing, g_ps1MusicStreamSrcSector, g_ps1MusicStreamSector
-  printf "L VOICE f=%u pitch=%u env=%u cur=%u start=%u volL=%u volR=%u\n", g_ps1PerfFrames, *(unsigned short *)($vb + 4), *(unsigned short *)($vb + 10), *(unsigned short *)($vb + 12), *(unsigned short *)($vb + 14), *(unsigned short *)($vb), *(unsigned short *)($vb + 2)
+  # The voice's registers straight from MMIO work on PCSX-Redux but not on DuckStation's stub ("Invalid character"),
+  # so the port's own read (g_ps1MusicStreamLastPos) is what both emulators report; `pitch` is the value the streamer
+  # keyed the voice with (0x800 = 22,050 Hz), and the halves/bytes counters prove the DSP boundary is being fed.
+  printf "L VOICE f=%u pitchExpect=2048 pos=%u ring=%u\n", g_ps1PerfFrames, g_ps1MusicStreamLastPos, g_ps1MusicStreamRing
   printf "L CD f=%u int1=%u restarts=%u discarded=%u xa=%d track=%d ready=%u req=%u refused=%u bank=%u fail=%u phase=%u xarun=%u blocker=%u cdsectors=%u reserved=%u\n", g_ps1PerfFrames, g_ps1StreamInt1, g_ps1StreamRestarts, g_ps1StreamDiscarded, g_ps1XaChannel, g_ps1XaTrack, g_ps1MusicStreamReady, g_ps1MusicStreamRequests, g_ps1MusicStreamRefused, g_ps1SfxBankBytes, g_ps1MusicStreamFail, g_ps1MusicStreamPhase, g_ps1XaRunningFlag, g_ps1MusicStreamBlocker, g_ps1MusicStreamRingSectors, g_ps1MusicStreamReserved
   printf "L XA f=%u starts=%u stops=%u\n", g_ps1PerfFrames, g_ps1XaStarts, g_ps1XaForcedStops
   # NOT $sp: that name is the MIPS stack pointer register (a write to it zeroed the guest's stack and crashed the

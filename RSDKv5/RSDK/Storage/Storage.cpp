@@ -27,7 +27,9 @@ enum {
 DataStorage RSDK::dataStorage[DATASET_MAX];
 
 #if RETRO_PLATFORM == RETRO_PS1
+#if PS1_MUSIC_STREAM
 #include "../../../ps1/music_stream.hh" // 63 M5: the streamed music's CD ring is carved here
+#endif
 extern "C" char __heap_start, __stack_start;
 #include "psyqo/alloc.h" // psyqo_heap_end, psyqo_malloc / psyqo_free (docs/ports/mania/32 9d: inline wrappers in upstream nugget)
 #define PS1_STACK_RESERVE (16 * 1024) // = ps1/stack.hh (its overflow check paints this area, MA-188)
@@ -96,12 +98,15 @@ bool32 RSDK::InitStorage()
 #if RETRO_PLATFORM == RETRO_PS1
     {
         // 2.4a layout (see ps1StgCapacity): reserve placeholder, STG up to the fixed top, guard over the stack
+#if PS1_MUSIC_STREAM
         // 63 M5: the streamed music's CD ring, taken here - before the reserve - so it shrinks STG by 4 KB instead of
         // coming out of the reserve's tail, which the GPU chain arena grows into (an allocation after this point raised
-        // arenaFail in every release scenario, measured 2026-11-09).
+        // arenaFail in every release scenario, measured 2026-11-09). Off by default: the 4 KB also eats the 8 KB
+        // stg-room margin mania-release-fbz2-fit guards (MA-148/149), and the stock 2 MB layout has no 4 KB to spare.
         void *music = malloc(PS1_MUSIC_CD_BYTES);
         if (music)
             PS1MusicStreamSetRing(music, PS1_MUSIC_CD_SECTORS);
+#endif
         void *reserve = malloc(PS1_INIT_RESERVE);
         if (!reserve)
             return false;

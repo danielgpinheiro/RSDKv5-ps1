@@ -63,7 +63,6 @@ ps1/gpu_chain.cpp \
 ps1/gpu_detect.cpp \
 ps1/spu.cpp \
 ps1/xa_music.cpp \
-ps1/music_stream.cpp \
 ps1/mdec.cpp \
 ps1/video.cpp \
 ps1/gte3d.cpp \
@@ -99,6 +98,9 @@ PS1_SRCS += ps1/debug_overlay.cpp
 endif
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
+ifeq ($(STREAM_MUSIC),1)
+SRCS += ps1/music_stream.cpp
+endif
 
 # The smoke test has no engine.
 ifeq ($(PLATFORM_TEST),1)
@@ -390,6 +392,14 @@ meshes:
 # disc without them. The public builder (phase 11) keeps them OFF by default, an option there: the engine's license wants
 # DLC off by default in pre-built executables.
 PLUS ?= 1
+
+# 63 M5: STREAM_MUSIC=1 compiles the streamed Super theme (ps1/music_stream.cpp, docs/ports/mania/63 M5) and carves its
+# 4 KB CD ring out of STG in Storage.cpp. Off by default: the module plus the ring cost the free STG room
+# mania-release-fbz2-fit guards (MA-148/149, `stg-room-8k`); with it off the theme plays as an XA track as before.
+STREAM_MUSIC ?= 0
+ifeq ($(STREAM_MUSIC),1)
+CPPFLAGS += -DPS1_MUSIC_STREAM=1
+endif
 
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
