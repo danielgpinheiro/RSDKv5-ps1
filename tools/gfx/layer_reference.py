@@ -38,13 +38,27 @@ def ps1_colour(c):
 def tile_images(ptl):
     """Each image of a .ptl as 16x16 palette indices, decoded from its VRAM blocks through its CLUT map."""
     d = open(ptl, 'rb').read()
-    magic, ni, nc, ns, ncell, nb, solid, doff, _, nhf = struct.unpack_from('<4sHHHHHHIIH', d, 0)
-    assert magic in (b'PTL2', b'PTL3', b'PTL4'), magic
+    magic, ni, nc, ns, ncell, nb, solid, doff, pix_n, nhf, lod_first, lod_w, lod_h, pat = struct.unpack_from('<4sHHHHHHIIHHBBH', d, 0)
+    assert magic in (b'PTL2', b'PTL3', b'PTL4', b'PTL5', b'PTL6'), magic
     vram = np.zeros((512, 1024), np.uint16)
     # the one-colour tables and the H-flip pairs sit before the blocks (PTL3: then the rotozoom pages, 9e)
     boff = 32 + 2048 + ni * 6 + nc * 20 + ns * 38 + ncell * 2 + solid + 4 * nhf
-    if magic in (b'PTL3', b'PTL4'):
-        boff += 4 + 8 * struct.unpack_from('<H', d, boff)[0] + (128 if magic == b'PTL4' else 0)  # (9v.3: the opaque bits)
+    # The block table is found by its own invariant rather than by arithmetic: its records' offsets run contiguously
+    # from 0 and add up to pix_n. Every format revision has moved what sits before it (PTL3/4 the rotozoom pages and the
+    # opaque bits, PTL5/6 the strips and the LOD list), and Pinball's scene is PTL6 (plan 59 4.2).
+    boff = None
+    for p in range(32 + 2048, doff, 2):
+        o, ok = 0, True
+        for i in range(nb):
+            _x, _y, w, h, oo = struct.unpack_from('<HHHHI', d, p + 12 * i)
+            if oo != o or not 0 < w <= 64 or not 0 < h <= 256:
+                ok = False
+                break
+            o += w * h * 2
+        if ok and o == pix_n:
+            boff = p
+            break
+    assert boff is not None, ('%s: block table not found (%s)' % (ptl, magic))
     for i in range(nb):
         x, y, w, h, o = struct.unpack_from('<HHHHI', d, boff + 12 * i)
         vram[y:y + h, x:x + w] = np.frombuffer(d, '<u2', w * h, doff + o).reshape(h, w)
@@ -57,11 +71,18 @@ def tile_images(ptl):
         u, v, tpage, clut = struct.unpack_from('<BBHH', d, 32 + 2048 + 6 * i)
         col, row, depth8 = tpage & 15, (tpage >> 4) & 1, (tpage >> 7) & 1
         X0, Y0 = col * 64, row * 256 + v
+        row = np.zeros((16, 8 if depth8 else 4), np.uint16)  # (a page can end at the VRAM edge: pad, don't truncate)
+        for r in range(16):
+            y = Y0 + r
+            if y < 512:
+                lo = X0 + u // (2 if depth8 else 4)
+                seg = vram[y, lo:lo + row.shape[1]]
+                row[r, :len(seg)] = seg
         if depth8:
-            w = vram[Y0:Y0 + 16, X0 + u // 2:X0 + u // 2 + 8].astype(np.int32)
+            w = row.astype(np.int32)
             imgs.append(np.stack([w & 0xFF, w >> 8], -1).reshape(16, 16))
         else:
-            w = vram[Y0:Y0 + 16, X0 + u // 4:X0 + u // 4 + 4].astype(np.int32)
+            w = row.astype(np.int32)
             nib = np.stack([(w >> s) & 0xF for s in (0, 4, 8, 12)], -1).reshape(16, 16)
             imgs.append(np.array(cluts[clut], np.int32)[nib] * (nib != 0))
     return imgs
