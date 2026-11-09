@@ -628,9 +628,11 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
         if not cands:
             raise TileError('%s%s: no two free columns for the %s texture' % (folder, scene_id, L['name']))
         col, row = cands[0]
-        # The page is drawn through ONE CLUT, so its texels must be that CLUT's slots, not the GIF's palette indices:
-        # the tiles' own images are remapped the same way (`lut` below). 4-bit on its own CLUT when the layer has <= 15
-        # colours (Pinball's Background 2: 5), else the page keeps 8-bit raw indices and the bank CLUTs cannot show it.
+        # A page listed in PATTERN_LAYERS is drawn through ONE CLUT, so its texels must be that CLUT's slots, not the
+        # GIF's palette indices (the tiles' own images are remapped the same way, `lut` below): 4-bit on its own CLUT
+        # when the layer has <= 15 colours (Pinball's Background 2: 5). The UFO folders' pages (UFO_PATTERN_LAYERS, the
+        # bank CLUT path) keep the 8-bit raw form they ship with, byte for byte.
+        remap = folder in PATTERN_LAYERS
         pat_colours = set()
         for ty in range(L['ysize']):
             for tx in range(L['xsize']):
@@ -639,23 +641,30 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
                     continue
                 pat_colours |= set(int(c) for c in np.unique(gif[(v & 0x3FF) * TILE:((v & 0x3FF) + 1) * TILE]))
         pat_colours.discard(0)
-        if len(pat_colours) > 15:
-            raise TileError('%s%s: the %s texture page has %d colours (15 at most on one CLUT)'
-                            % (folder, scene_id, L['name'], len(pat_colours)))
-        if len(clut_maps) >= len(V.TILE_CLUT_SLOTS):
-            raise TileError('%s%s: %d CLUTs > %d slots' % (folder, scene_id, len(clut_maps) + 1, len(V.TILE_CLUT_SLOTS)))
-        page_pal = [0] + sorted(pat_colours)
-        clut_maps.append(page_pal + [0] * (16 - len(page_pal)))
-        page_clut = len(clut_maps) - 1
-        pat_lut = {c: n for n, c in enumerate(page_pal)}
-        pat_lut[0] = 0
-        pat_q = np.vectorize(lambda c: pat_lut[int(c)])(pat).astype(np.uint16)
-        words = pat_q[:, 0::4] | (pat_q[:, 1::4] << 4) | (pat_q[:, 2::4] << 8) | (pat_q[:, 3::4] << 12)
-        vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64] = words
-        back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64].astype(np.uint16)
-        nib = np.stack([back & 0xF, back >> 4 & 0xF, back >> 8 & 0xF, back >> 12 & 0xF], -1).reshape(V.PAGE, V.PAGE)
-        if not np.array_equal(nib.astype(np.int32), pat_q.astype(np.int32)):
-            raise TileError('%s%s: the %s texture does not decode back' % (folder, scene_id, L['name']))
+        if remap:
+            if len(pat_colours) > 15:
+                raise TileError('%s%s: the %s texture page has %d colours (15 at most on one CLUT)'
+                                % (folder, scene_id, L['name'], len(pat_colours)))
+            if len(clut_maps) >= len(V.TILE_CLUT_SLOTS):
+                raise TileError('%s%s: %d CLUTs > %d slots' % (folder, scene_id, len(clut_maps) + 1, len(V.TILE_CLUT_SLOTS)))
+            page_pal = [0] + sorted(pat_colours)
+            clut_maps.append(page_pal + [0] * (16 - len(page_pal)))
+            page_clut = len(clut_maps) - 1
+            pat_lut = {c: n for n, c in enumerate(page_pal)}
+            pat_lut[0] = 0
+            pat_q = np.vectorize(lambda c: pat_lut[int(c)])(pat).astype(np.uint16)
+            words = pat_q[:, 0::4] | (pat_q[:, 1::4] << 4) | (pat_q[:, 2::4] << 8) | (pat_q[:, 3::4] << 12)
+            vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64] = words
+            back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 64].astype(np.uint16)
+            nib = np.stack([back & 0xF, back >> 4 & 0xF, back >> 8 & 0xF, back >> 12 & 0xF], -1).reshape(V.PAGE, V.PAGE)
+            if not np.array_equal(nib.astype(np.int32), pat_q.astype(np.int32)):
+                raise TileError('%s%s: the %s texture does not decode back' % (folder, scene_id, L['name']))
+        else:  # the UFO folders: the 8-bit page on the bank CLUTs, as shipped
+            words = pat[:, 0::2].astype(np.uint16) | (pat[:, 1::2].astype(np.uint16) << 8)
+            vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128] = words
+            back = vram[row * V.PAGE:(row + 1) * V.PAGE, col * V.COL_HW:col * V.COL_HW + 128].astype(np.int32)
+            if not np.array_equal(np.stack([back & 0xFF, back >> 8], -1).reshape(V.PAGE, V.PAGE), pat.astype(np.int32)):
+                raise TileError('%s%s: the %s texture does not decode back' % (folder, scene_id, L['name']))
         pattern_page = (col, row)
         pattern_image = len(images) + len(lod_pages)
 
@@ -793,7 +802,7 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     for (col, row) in lod_pages:
         blocks.append((col * V.COL_HW, row * V.PAGE, V.COL_HW, V.PAGE))
     if pattern_page:
-        blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 64, V.PAGE))
+        blocks.append((pattern_page[0] * V.COL_HW, pattern_page[1] * V.PAGE, 64 if remap else 128, V.PAGE))
     for (_, _, _, _, (col, row), d) in roto:
         blocks.append((col * V.COL_HW, row * V.PAGE, 64 if d == 4 else 128, V.PAGE))
     for st in strips:
@@ -808,8 +817,9 @@ def build(data, folder, scene_id, columns=TILE_COLUMNS):
     for (col, row) in lod_pages:
         img_tab += struct.pack('<BBHH', 0, 0, V.texpage(col, row, 4), V.clut_attr(*V.TILE_CLUT_SLOTS[lod_clut]))
     if pattern_page:
-        img_tab += struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 4),
-                               V.clut_attr(*V.TILE_CLUT_SLOTS[page_clut]))
+        img_tab += (struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 4),
+                                V.clut_attr(*V.TILE_CLUT_SLOTS[page_clut]))
+                    if remap else struct.pack('<BBHH', 0, 0, V.texpage(pattern_page[0], pattern_page[1], 8), 0xFFFF))
     roto_first = len(images) + len(lod_pages) + (1 if pattern_page else 0)
     roto_tab = b''
     for k, (li, img, ox, oy, _, _) in enumerate(roto):
