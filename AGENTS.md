@@ -101,6 +101,9 @@ make DEBUG_OVERLAY=1 [BOOT=c,s] # FPS / RAM / VRAM / SPU top-right, zero VRAM (G
                                 # (zero-VRAM / cost / toggle A/B), overlay_heap.gdb, overlay_check.py (docs/ports/mania/32 "Debug
                                 # overlay"); dist / export refuse it
 make UFO_NO_DECOR=0 UFO_NO_SHADOWS=0   # the UFO stages' stock look (both 1 by default)
+make STREAM_MUSIC=1             # the Super theme streamed into a 2 KB SPU ring (ps1/music_stream.cpp); off by default:
+                                # the module costs 4,248 B of STG, which mania-release-fbz2-fit's stg-room-8k guard fails
+                                # (plan 63 M5); make dist and tools/export_builder.sh refuse a build with it on
 python3 tools/build_assets.py --rsdk Data.rsdk --exe ... --ovl ... --work W --out O   # the builder's whole pipeline
 tools/export_builder.sh ../Sonic-Mania-PS1-ISO-Builder   # refresh the builder (natural EXE only)
 # Build stamp: every disc gets VERSION.TXT (tools/gen_version.py: commit, -dirty; the builder: bin/VERSION.TXT from the

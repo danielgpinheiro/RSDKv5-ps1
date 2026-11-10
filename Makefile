@@ -206,6 +206,13 @@ ifneq ($(FLIPAB_OFF),)
 CPPFLAGS += -DPS1_FLIP_AB_OFF=1
 endif
 endif
+# 63 M5: STREAM_MUSIC=1 compiles the streamed Super theme (ps1/music_stream.cpp, docs/ports/mania/63 M5) and carves its
+# 4 KB CD ring out of STG in Storage.cpp. Off by default: the module plus the ring cost the free STG room
+# mania-release-fbz2-fit guards (MA-148/149, `stg-room-8k`); with it off the theme plays as an XA track as before.
+STREAM_MUSIC ?= 0
+ifeq ($(STREAM_MUSIC),1)
+CPPFLAGS += -DPS1_MUSIC_STREAM=1
+endif
 ifneq ($(DEVMENU),)
 CPPFLAGS += -DPS1_DEVMENU=1
 ifneq ($(SAMPLE),)
@@ -259,6 +266,12 @@ $(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
 # (PS1Layers.cpp has no object of its own: Scene.cpp includes it, so its object is Scene.o)
 PS1_FLOORDBG_OBJS := RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o RSDKv5/RSDK/Scene/Scene.o
 $(call ps1_stamp,floordbg,$(FLOOR_DEBUG),$(PS1_FLOORDBG_OBJS))
+# STREAM_MUSIC=1 changes three always-built objects (Audio.o includes Audio/PS1/PS1AudioDevice.cpp; cdrom_fs.cpp reads the
+# stream's sectors; Storage.cpp carves the ring): without a stamp a stream-on build followed by a plain one kept them and
+# the link failed on PS1MusicStream* (learned 2026-11-10; ps1/music_stream.o itself is only in SRCS with the switch on)
+PS1_STREAM_OBJS := RSDKv5/RSDK/Audio/Audio.o RSDKv5/RSDK/Storage/Storage.o ps1/cdrom_fs.o
+$(call ps1_stamp,streammusic,$(if $(filter 1,$(STREAM_MUSIC)),1),$(PS1_STREAM_OBJS))
+# (the stamp is written at parse time, so `dist` / tools/export_builder.sh refuse a stream-on EXE by its PS1MusicStream symbols)
 # (a tree that never built DEVMENU=1 gets its empty stamp dated 2000: its natural objects are kept, not all rebuilt)
 $(shell mkdir -p build/gen; [ -f build/gen/devmenu.txt ] || [ -n "$(DEVMENU)" ] || { echo > build/gen/devmenu.txt; touch -t 200001010000 build/gen/devmenu.txt; })
 $(call ps1_stamp,devmenu,$(DEVMENU),$(PS1_DEVMENU_OBJS))
@@ -271,6 +284,7 @@ $(PS1_HUD_OBJS): build/gen/perfhud.txt
 $(PS1_OVL_OBJS): build/gen/dbgovl.txt
 $(PS1_UFOCUT_OBJS): build/gen/ufocut.txt
 $(PS1_FLOORDBG_OBJS): build/gen/floordbg.txt
+$(PS1_STREAM_OBJS): build/gen/streammusic.txt
 # nugget's hardware-measured memcpy/memset (8-word / 4-word blocks).
 LDFLAGS   += -Wl,-wrap,memcpy -Wl,-wrap,memset
 # operator new stops at PS1OutOfMemory instead of returning NULL (ps1/libc/new_guard.cpp).
@@ -393,14 +407,6 @@ meshes:
 # DLC off by default in pre-built executables.
 PLUS ?= 1
 
-# 63 M5: STREAM_MUSIC=1 compiles the streamed Super theme (ps1/music_stream.cpp, docs/ports/mania/63 M5) and carves its
-# 4 KB CD ring out of STG in Storage.cpp. Off by default: the module plus the ring cost the free STG room
-# mania-release-fbz2-fit guards (MA-148/149, `stg-room-8k`); with it off the theme plays as an XA track as before.
-STREAM_MUSIC ?= 0
-ifeq ($(STREAM_MUSIC),1)
-CPPFLAGS += -DPS1_MUSIC_STREAM=1
-endif
-
 # Test disc (phase 0): a hand-picked subset of ../SonicMania_Extracted/Data (tools/smoke_disc.sh),
 # then mkpsxiso + the byte-level verifier. The real asset pipeline arrives in phase 1.
 disc:
@@ -431,6 +437,7 @@ dist:
 	@if [ "$$(cat build/gen/ram.txt)" != "2M" ]; then echo "dist: rsdkv5.ps-exe is a MEASURE_RAM= link"; exit 1; fi
 	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
 	@if [ -n "$$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then echo "dist: a DEBUG_OVERLAY= build"; exit 1; fi
+	@if mipsel-none-elf-nm rsdkv5.elf | grep -q PS1MusicStream; then echo "dist: a STREAM_MUSIC= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
 	@# the DEVMENU debug build (8 MB): its stamp, its marker symbol and the EXE header's stack pointer, each on its own
 	@if [ -n "$$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "dist: a DEVMENU= build"; exit 1; fi
