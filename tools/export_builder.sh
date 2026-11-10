@@ -20,6 +20,7 @@ if [ -n "$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "a DEVMENU= buil
 if mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DevMenuBuild; then echo "rsdkv5.elf holds the dev menu (DEVMENU=): run make first"; exit 1; fi
 if [ -n "$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then
   echo "a DEBUG_OVERLAY= build: run make first"; exit 1; fi
+if mipsel-none-elf-nm rsdkv5.elf | grep -q PS1MusicStream; then echo "a STREAM_MUSIC= build: run make first"; exit 1; fi
 if [ "$(od -An -tx4 -j48 -N4 rsdkv5.ps-exe | tr -d ' ')" != "801fff00" ]; then echo "rsdkv5.ps-exe's stack is not the 2 MB one: run make first"; exit 1; fi
 # (the Dreamcast tree sits beside PS1/: three levels up from ports/RSDKv5-ps1 since the 2026-10-26 reorganisation, two before)
 OPTSRC=${DC_MESH_OPT_SRC:-$( [ -f ../../../Dreamcast/mania-mesh-optimizer/CMakeLists.txt ] && echo ../../../Dreamcast/mania-mesh-optimizer || echo ../../Dreamcast/mania-mesh-optimizer)}
@@ -30,7 +31,8 @@ mkdir -p "$B/tools" "$DEST/bin/ovl"
 for f in build_assets.py extract_rsdk.py rsdkv5_filelist.txt rsdk5_formats.py data_disc.py gen_version.py; do cp tools/$f "$B/tools/"; done
 sed -n 's/^STAGES ?= //p' Makefile | tr ',' '\n' > "$B/tools/stages.txt"
 mkdir -p "$B/tools/gfx" "$B/tools/audio" "$B/tools/fmv" "$B/tools/mesh" "$B/tools/disc"
-cp tools/gfx/build_atlas.py tools/gfx/build_tiles.py tools/gfx/vram_plan.py tools/gfx/scene_usage.py tools/gfx/ps1_text.py "$B/tools/gfx/"
+cp tools/gfx/build_atlas.py tools/gfx/build_tiles.py tools/gfx/vram_plan.py tools/gfx/scene_usage.py tools/gfx/ps1_text.py \
+   tools/gfx/ps1_art.py "$B/tools/gfx/"
 cp -R tools/gfx/manifests "$B/tools/gfx/"
 cp tools/audio/build_sfx.py tools/audio/sfx_sets.py tools/audio/build_music.py tools/audio/xa_adpcm.py "$B/tools/audio/"
 cp tools/fmv/build_str.py "$B/tools/fmv/"
