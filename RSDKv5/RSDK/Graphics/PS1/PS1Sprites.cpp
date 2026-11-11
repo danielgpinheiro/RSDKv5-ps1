@@ -590,9 +590,23 @@ extern "C" void PS1SetFrameShift(const void *frame, int du)
     s_shiftU     = du;
 }
 
+// 9b.6b: the same for the vertical axis, one draw only (AmoebaDroid_Draw_BigBlob's per-scanline sprY rewrite)
+static const void *s_shiftVFrame = NULL;
+static int32 s_shiftV            = 0;
+extern "C" void PS1SetFrameVShift(const void *frame, int dv)
+{
+    s_shiftVFrame = frame;
+    s_shiftV      = dv;
+}
+
 void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direction, int32 inkEffect, int32 alpha)
 {
     int32 w = frame->width, h = frame->height;
+    // 9b.6b: consumed in one step, so at most this draw takes it (the fast path cannot carry a shifted v)
+    const bool vshift = frame == s_shiftVFrame;
+    const int32 dv    = vshift ? s_shiftV : 0;
+    if (vshift)
+        s_shiftVFrame = NULL;
 #if !PS1_COUNT_SHEETS
     // P4 (docs/perf/65): the common case in one pass, the stock path's work in its order (the overlay copies P7 / P2 /
     // P16 made general): unflipped, INK_NONE or INK_ADD, a frame bound at full resolution within one texture page and
@@ -602,7 +616,7 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
     {
         const uint32 attr = frame->ps1Attr, u = frame->ps1U;
         if (direction == FLIP_NONE && (inkEffect == INK_NONE || inkEffect == INK_ADD) && attr != PS1_ATLAS_MISSING
-            && !PS1_ATLAS_HALF(attr) && w > 0 && h > 0 && h <= 511 && u + (uint32)w <= 256 && frame != s_shiftFrame
+            && !PS1_ATLAS_HALF(attr) && w > 0 && h > 0 && h <= 511 && u + (uint32)w <= 256 && frame != s_shiftFrame && !vshift
             && !PS1LineBank(y) && !g_ps1PalDiffs) {
             if ((inkEffect == INK_ADD && alpha <= 0) || !PS1PcClip(x, y, w, h))
                 return;
@@ -639,6 +653,8 @@ void RSDK::PS1DrawFrame(const SpriteFrame *frame, int32 x, int32 y, int32 direct
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    if (vshift)
+        v += dv >> shift;
     if (frame == s_shiftFrame) {
         u += s_shiftU >> shift;
         s_shiftFrame = NULL;
@@ -718,6 +734,11 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
                                 int32 inkEffect, int32 alpha)
 {
     int32 w = frame->width, h = frame->height;
+    // 9b.6b: the AmoebaDroid blob's path (FX_SCALE), one draw only
+    const bool vshift = frame == s_shiftVFrame;
+    const int32 dv    = vshift ? s_shiftV : 0;
+    if (vshift)
+        s_shiftVFrame = NULL;
     uint32 tpage, clut;
     int32 shift;
     PS1Ink ink;
@@ -727,6 +748,9 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
+    int32 u = frame->ps1U, v = frame->ps1V;
+    if (vshift)
+        v += dv >> shift;
     // (9f: bank 0 too while a palette write in this draw phase changed it; INK_SUB with its colours inverted)
     const bool sub   = inkEffect == INK_SUB;
     const int32 bank = PS1LineBank(y);
@@ -737,8 +761,8 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
     }
     if (ink.maskTest)
         PS1ChainMaskControl(false, true);
-    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, frame->ps1U, frame->ps1V, tpage, clut, shift, scaleX, scaleY,
-                                direction, rotation, ink, cx, cy);
+    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, u, v, tpage, clut, shift, scaleX, scaleY, direction,
+                                rotation, ink, cx, cy);
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
     if (sub)

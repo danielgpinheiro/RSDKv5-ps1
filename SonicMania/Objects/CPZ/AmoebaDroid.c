@@ -279,6 +279,10 @@ void AmoebaDroid_Draw_BigBlob(void)
     for (int32 y = sprY << 8; y < maxY; angle += 2) {
         self->scale.x = 0x200 + (RSDK.Sin256(frame->sprY + 2 * angle) >> 2);
         frame->sprY   = y >> 8;
+#if defined RETRO_PS1_BUILD && !defined PS1_SHOT_NOVSHIFT
+        // the atlas binds the frame to fixed texels: the scanline reads further down its stored strip (docs/ports/mania/32 9b.6b)
+        PS1SetFrameVShift(frame, frame->sprY - sprY);
+#endif
 
         if ((y >> 8) >= sprY)
             RSDK.DrawSprite(&self->animator, &drawPos, false);

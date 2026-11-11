@@ -168,6 +168,13 @@ extern "C"
 #endif
 void PS1SetFrameShift(const void *frame, int du);
 
+/* docs/ports/mania/32 9b.6b: the next draw of one frame samples `dv` texels further down its stored strip (the atlas
+ * binding's v is fixed: AmoebaDroid_Draw_BigBlob rewrites frame->sprY per scanline, which the binding cannot follow). */
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1SetFrameVShift(const void *frame, int dv);
+
 /* docs/ports/mania/32 9r / choice 185: every-other-frame visuals under the 30 fps cap (two logic steps a drawn frame). A
  * draw-time `counter & 1` on a counter that ticks once a logic step always shows the same parity there, and a
  * `visible ^= true` in an update toggles twice: the flicker sticks on or off (boss hit flashes, debris, the shield over
