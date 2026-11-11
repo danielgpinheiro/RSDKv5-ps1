@@ -67,6 +67,7 @@ ALWAYS = {'Player', 'Camera', 'HUD', 'PauseMenu', 'Zone', 'Music', 'Soundboard',
           'UIButton', 'UIControl', 'UIDialog', 'DialogRunner', 'Explosion', 'Shield', 'ImageTrail', 'Dust', 'Debris',
           'Animals', 'ScoreBonus', 'InvincibleStars', 'SuperSparkle', 'TitleCard', 'GameOver', 'DebugMode',
           'CutsceneRules'}  # (placed ones -- rings, item boxes, sign posts, water -- come from the scene files)
+# (a Blue Spheres scene runs BSS_Player without a Player entity: `sets` adds its own sounds itself, not this set)
 CREATES = re.compile(r'(?:CREATE_ENTITY\s*\(\s*|->classID|RSDK_GET_ENTITY\([^)]*,\s*)(\w+)')
 CLASS_REF = re.compile(r'\b(\w+)->classID')
 CALLS = re.compile(r'\b([A-Z]\w*?)_[A-Z]\w*\s*\(')
@@ -117,6 +118,10 @@ def sets(data, folders=None, character=None):
         placed_any = set().union(*scenes.values()) if scenes else set()
         # stage code that runs without entities: the folder's *Setup objects (the rest are created by live code)
         setup = {o for o in set(sc['objects']) - placed_any if o.endswith('Setup')}
+        # a scene with no `Player` entity runs the Blue Spheres player instead (the engine creates BSS_Player at slot 1):
+        # its own sounds (Global/Jump.wav, in no SpecialBS bank before) are added below; following its links would drag
+        # in the whole ALWAYS set's sounds and cost every bonus-stage bank a rate step
+        bss_player = 'Player' not in placed_any and 'BSS_Player' in linked
         for sid, placed in scenes.items():
             live = (placed | setup | (ALWAYS if 'Player' in placed_any else set())) & linked
             todo = list(live)
@@ -128,6 +133,8 @@ def sets(data, folders=None, character=None):
             wanted = set()
             for o in live:
                 wanted |= object_sfx(o)
+            if bss_player:
+                wanted |= object_sfx('BSS_Player')
             wanted -= OUT_OF_SCOPE - PLUS_OWN_SFX.get(character, set())
             loaded = [p for p, _ in gc['sfx']] + [p for p, _ in sc['sfx']]
             seen, lst = set(), []
