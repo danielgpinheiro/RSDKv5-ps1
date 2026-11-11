@@ -281,7 +281,14 @@ SUPER_FROM_START = {('ERZ', '1')}
 BOSS_SHARE = {('PSZ1', '1'): {'PSZ1/Enemies.gif'},
               ('PSZ2', '2'): {'PSZ2/Enemies.gif', 'PSZ2/Objects2.gif', 'PSZ2/Objects4.gif', 'PSZ2/Objects-Temp.gif'},
               ('MSZ', '2'): {'MSZ/Enemies.gif', 'MSZ/Objects1.gif', 'MSZ/Train.gif'},
-              ('SPZ2', '1'): {'SPZ2/Enemies.gif', 'SPZ2/Objects2.gif', 'SPZ2/Objects3.gif', 'SPZ2/Electric.gif'}}
+              ('SPZ2', '1'): {'SPZ2/Enemies.gif', 'SPZ2/Objects2.gif', 'SPZ2/Objects3.gif', 'SPZ2/Electric.gif'},
+              # 63 M3b (2026-11-10, forum QA): the column CPZ1's native shields need. Sheet counts over the AmoebaDroid
+              # fight (fight_sheets.py bs_cpz1): CPZ/Enemies.gif 0 draws, CPZ/Objects.gif 0 during the fight and the act
+              # clear (157 before the warp). With them in the start group CPZ1 fits the shield ladder at its deepest
+              # step, all 163 shield frames native (start 58.2 KB against the boss group's 70 KB: the event region does
+              # not grow). CPZ2 cannot pay this way - its fight draws CPZ/Objects.gif 2132 times - and needs one more
+              # 32 KB column than its VRAM has (docs/ports/mania/32 "Forum QA reports", section 3).
+              ('CPZ', '1'): {'CPZ/Enemies.gif', 'CPZ/Objects.gif'}}
 # per folder: event groups, one at a time in the event region: the title card at the act start, the boss where the boss
 # music starts, the sign post / prison where the act-clear music starts
 # 9b.2b: the boss explosions (Explosions.bin 2 / 3) stay resident where level objects make them too: FBZ's missiles and
@@ -517,6 +524,10 @@ SUPER_FULL_PLAN = [step for step in HALF_PLAN[:6] if step[0] is not HALF_SUPER]
 # 63 M3: the same ladder with the shields left out of the effect steps (they stay at native size in it)
 HALF_EFFECT_NOSHIELD = HALF_EFFECT - HALF_SHIELD
 SHIELD_FULL_PLAN = [(HALF_EFFECT_NOSHIELD if f is HALF_EFFECT else f, side) for f, side in HALF_PLAN]
+# 63 M3b (user 2026-11-10: shields sharp, Super Sonic sharp too; the VRAM comes from the resident set): 9l's ladder with
+# the shields out of its effect steps as well, so a scene that fits it keeps both native (CPZ1 / CPZ2 keyed their shield
+# ladders to effects >= 48, which halved them: the white rim turns into 2x2 blocks)
+SUPER_SHIELD_FULL_PLAN = [(HALF_EFFECT_NOSHIELD if f is HALF_EFFECT else f, side) for f, side in SUPER_FULL_PLAN]
 # 7b.12: backdrops far larger than VRAM allows at any plan step, stored at quarter resolution (each texel drawn 4x4) at
 # 15 colours whatever the step: Titanic Monarch's sky backdrop (the Monarch, two 1024 x 1024 frames drawn mirrored)
 QUARTER = {'TMZ1/MonarchBG.bin'}
@@ -1385,9 +1396,14 @@ def boss_side():
 
 
 def build_fit_share(data, disc_data, folder, scene_id, character='sonic'):
-    """build() with the fewest plan steps that fit (full resolution when it all fits): SUPER_FULL_PLAN first (9l), else
-    HALF_PLAN; 63 M3: the shields stay native when SHIELD_FULL_PLAN fits and costs no boss pixel."""
+    """build() with the fewest plan steps that fit (full resolution when it all fits): SUPER_SHIELD_FULL_PLAN first (63
+    M3b: the shields native, which costs Chemical Plant's two acts one more effect step - the player region has no column
+    left to give), then SUPER_FULL_PLAN (9l), else HALF_PLAN; 63 M3: the shields stay native when SHIELD_FULL_PLAN fits
+    and costs no boss pixel."""
     if character == 'sonic':
+        res = build_fit_plan(data, disc_data, folder, scene_id, character, SUPER_SHIELD_FULL_PLAN, False)
+        if res is not None and res[0] is not None:
+            return res
         res = build_fit_plan(data, disc_data, folder, scene_id, character, SUPER_FULL_PLAN, False)
         if res is not None and res[0] is not None:
             return res
