@@ -285,17 +285,24 @@ def player_anims(active, names, scene=None, character=None):
     """the player animation IDs the scene's code can set; with `character` (9b.1: Tails' / Knuckles' atlases), another
     character's ability aliases don't count (their slots are this character's other poses)"""
     owners = player_anim_owners() if character else {}
-    used = set()
+    val = player_anim_values()
+    values = set(val.values())
+    used, ids = set(), set()
     for f in code_closure(active, set(names), sources()):
+        text = code_of(f)
         obj = os.path.basename(f)[:-2]
-        for a in set(re.findall(r'\bANI_\w+\b', NONSET.sub(' ', code_of(f)))):
+        for a in set(re.findall(r'\bANI_\w+\b', NONSET.sub(' ', text))):
             if owners.get(a, character) != character:
                 continue
             g = POSE_GATES.get((obj, a))
             if g is None or gate_open(g, obj, active, scene):
                 used.add(a)
-    val = player_anim_values()
-    return {v for n, v in val.items() if n in used}, val
+        # an animation ID passed through a local variable (StickyPlatform_Interact's `animID = 36`, then
+        # SetSpriteAnimation(player->aniFrames, animID, ...)): the ANI_* scan above cannot see it, and a dropped pose
+        # leaves the player on the atlas's empty frame (CPZ2's ANI_STICK: Sonic vanishes on the vertical platforms)
+        for var in set(re.findall(r'SetSpriteAnimation\(\s*[a-z]\w*->aniFrames\s*,\s*([A-Za-z_]\w*)\s*,', text)):
+            ids.update(int(n) for n in re.findall(r'\b%s\s*=\s*(\d+)\s*;' % re.escape(var), text) if int(n) in values)
+    return {v for n, v in val.items() if n in used} | ids, val
 
 
 def itembox_types(folder, data=DATA):
