@@ -170,6 +170,11 @@ void RockemSockem_Create(void *data)
         self->visible       = true;
         self->drawGroup     = Zone->objectDrawGroup[0];
         self->drawFX        = FX_ROTATE | FX_FLIP;
+#if defined RETRO_PS1_BUILD
+        // Dormancy compares against Create. These 18 derived joint words must match an
+        // idle bumper, rather than consume its seven-word state diff and pin a pool block.
+        RockemSockem_HandleJointPositions();
+#endif
     }
 }
 
