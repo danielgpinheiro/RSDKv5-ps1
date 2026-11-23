@@ -1715,43 +1715,77 @@ void RSDK::PS1LineBulk(int32 x1, int32 y1, int32 x2, int32 y2, uint32 bgr)
     PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
 #endif
 }
-// 9q: DrawLine(x1, y1, x2, y2, colors[i], alpha, INK_NONE, false) for n lines in world coordinates (16.16; xy: 4 a line),
-// the lines in one Face3D bulk instead of a chain span each (PS1DrawLine): the same GP0 40h words, in the same order.
-// PSZ's paper rollers draw up to 6 x 64 four-pixel lines each a frame. A mask colour set: each through DrawLine.
-extern "C" void PS1DrawLinesWorld(const int *xy, const unsigned int *colors, int n)
+// P12b (docs/perf/57): a strip of n lines (vertex i to i + 1) written as 9q's PS1DrawLinesWorld wrote them (DrawLine's
+// INK_NONE GP0 40h words in one Face3D bulk; that world-coordinate function is gone: PaperRoller was its only user), from the vertices
+// already in screen space: (sx[i] + px, sy[i] + py). Each vertex gets an outcode (bits 0-3: past the left / right / top /
+// bottom of the caller's cull, x < -4, x > 324, y < -4, y > 244; bit 4: outside the GPU's -1024..1023), 0 without a test
+// where inner[i] is set: the caller's mark for a vertex inside both at every offset it uses. A line whose two ends share
+// a side bit is left out (the caller's cull, before the call as it was), one with an end outside the range too
+// (PS1DrawLinesWorld's test). cmds[i]: line i's GP0 40h word. The bulk is flushed only when a line passed the cull, as
+// the caller called PS1DrawLinesWorld only then. Returns 0 with nothing written when a mask colour is set (the caller
+// draws each line through DrawLine, as PS1DrawLinesWorld did then). Each vertex is packed and tested once, the previous one kept in registers. The open
+// line bulk lives in w (next record) / wend (its end; NULL: none open, or the open bulk is not a 3-word one), so the
+// bulk reopens at the same lines as PS1DrawLinesWorld's test per line (no bulk, another kind, 32 records); s_ps1F3DN
+// is written back only at a reopen and at the end, s_ps1F3DBase when it changes. drawn's top bit: a line passed the cull.
+static inline uint32 PS1LineOutcode(int32 x, int32 y)
 {
-    if (maskColor) {
-        for (int32 i = 0; i < n; ++i, xy += 4) DrawLine(xy[0], xy[1], xy[2], xy[3], colors[i], 0x7F, INK_NONE, false);
-        return;
-    }
-    // 9u: PS1LineBulk + PS1Face3DSlot inline (the same range check, words and order; the two totals added once): two calls
-    // and two volatile counters a 4-pixel line were most of PSZ1's ~200 hblanks of paper lines
-    const int32 sx = currentScreen->position.x, sy = currentScreen->position.y;
+    uint32 o = (uint32)(x < -4) | (uint32)(x > 324) << 1 | (uint32)(y < -4) << 2 | (uint32)(y > 244) << 3;
+    if ((uint32)(x + 1024) > 2047u || (uint32)(y + 1024) > 2047u)
+        o |= 16;
+    return o;
+}
+extern "C" __attribute__((optimize("O2", "no-unswitch-loops"))) int PS1DrawLineStrip(const int *sx, const int *sy, const unsigned char *inner,
+                                                                                    int px, int py, const unsigned int *cmds, int n)
+{
+    if (maskColor)
+        return 0;
+    uint32 *w = NULL, *wend = NULL;
+    if (s_ps1F3DBase && s_ps1F3DWpp == 3)
+        w = s_ps1F3DBase + s_ps1F3DN * 4, wend = s_ps1F3DBase + 32 * 4;
     uint32 drawn = 0;
-    for (int32 i = 0; i < n; ++i, xy += 4) {
-        const int32 x1 = FROM_FIXED(xy[0]) - sx, y1 = FROM_FIXED(xy[1]) - sy, x2 = FROM_FIXED(xy[2]) - sx, y2 = FROM_FIXED(xy[3]) - sy;
-        if (x1 < -1024 || x1 > 1023 || x2 < -1024 || x2 > 1023 || y1 < -1024 || y1 > 1023 || y2 < -1024 || y2 > 1023)
+    const int32 *sxEnd = sx + n;
+    int32 x = *sx + px, y = *sy + py;
+    uint32 pb = (uint32)y << 16 | ((uint32)x & 0xFFFF);
+    uint32 ob = *inner ? 0 : PS1LineOutcode(x, y);
+    while (sx != sxEnd) {
+        const uint32 pa = pb, a = ob, cmd = *cmds++;
+        x = *++sx + px, y = *++sy + py;
+        pb = (uint32)y << 16 | ((uint32)x & 0xFFFF);
+        ob = *++inner ? 0 : PS1LineOutcode(x, y);
+        if (a & ob & 15)
             continue;
-        if (!s_ps1F3DBase || s_ps1F3DWpp != 3 || s_ps1F3DN == 32) {
+        drawn |= 0x80000000u;
+        if ((a | ob) & 16)
+            continue;
+        if (w == wend) {
+            if (wend)
+                s_ps1F3DN = 32;
             PS1Face3DFlush();
-            s_ps1F3DBase = (uint32 *)PS1ChainBulkBegin(32, 3);
-            if (!s_ps1F3DBase)
-                continue; // (as PS1LineBulk: every later line asks again)
+            w = (uint32 *)PS1ChainBulkBegin(32, 3);
+            s_ps1F3DBase = w;
+            wend = w ? w + 32 * 4 : NULL;
+            if (!w)
+                continue; // (as PS1DrawLinesWorld did: every later line asks again)
             s_ps1F3DWpp = 3;
         }
-        const uint32 c = colors[i];
-        uint32 *w = s_ps1F3DBase + s_ps1F3DN++ * 4;
-        w[0] = 0x40000000 | (c & 0xFF) << 16 | (c & 0xFF00) | ((c >> 16) & 0xFF);
-        w[1] = (uint32)(uint16)y1 << 16 | (uint16)x1;
-        w[2] = (uint32)(uint16)y2 << 16 | (uint16)x2;
+        w[0] = cmd;
+        w[1] = pa;
+        w[2] = pb;
+        w += 4;
         ++drawn;
 #if PS1_DEBUG_BIGRAM
-        PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, x1, y1, x2, y2); // the host marks the line's pixels approximate
+        PS1DrawLogAdd(9, 0, 0, 0, 0, 0, 0, (int16)pa, (int16)(pa >> 16), (int16)pb, (int16)(pb >> 16));
 #endif
     }
-    PS1_DRAW_COUNT(g_ps1Face3DDrawn, drawn);
-    g_ps1PrimApprox  = g_ps1PrimApprox + drawn;
-    PS1Face3DFlush();
+    if (wend)
+        s_ps1F3DN = 32 - (int32)((wend - w) >> 2);
+    if (drawn) {
+        drawn &= 0x7FFFFFFFu;
+        PS1_DRAW_COUNT(g_ps1Face3DDrawn, drawn);
+        g_ps1PrimApprox = g_ps1PrimApprox + drawn;
+        PS1Face3DFlush();
+    }
+    return 1;
 }
 // 9o: a face's edges (corner v to v + 1, the last to the first) as PS1LineBulk would write them, with the bulk's slot
 // bookkeeping inline: xs / ys the positions' screen coordinates, c the face's position indices
