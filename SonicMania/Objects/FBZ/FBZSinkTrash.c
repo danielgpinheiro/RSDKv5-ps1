@@ -144,10 +144,121 @@ void FBZSinkTrash_LateUpdate(void) {}
 
 void FBZSinkTrash_StaticUpdate(void) {}
 
+#if defined RETRO_PS1_BUILD
+// docs/perf/57 §9 P20: a pile draws up to ~90 sprites (its body tiles and 64 trash copies) every frame it is in range,
+// and most lie off the screen (FBZ2: 10-16 piles drawn a frame, FBZSinkTrash 139-243 hblanks). A copy whose rectangle
+// misses the screen's clip box draws nothing and changes nothing in DrawSprite (PS1DrawFrame returns at PS1PcClip, before
+// any side effect; FX_FLIP, no rotation), so it is left out here with DrawSprite's own arithmetic: (position >> 16) less
+// the screen, the pivot, the flipped axes. The copies that touch the box still go through DrawSprite: exact chain words.
+static inline bool32 FBZSinkTrash_PS1Hits(const SpriteFrame *frame, int32 sx, int32 sy, int32 dir, const RSDKScreenInfo *screen)
+{
+    const int32 w = frame->width, h = frame->height;
+    const int32 x = (dir & FLIP_X) ? sx - w - frame->pivotX : sx + frame->pivotX;
+    const int32 y = (dir & FLIP_Y) ? sy - h - frame->pivotY : sy + frame->pivotY;
+    return w > 0 && h > 0 && x < screen->clipBound_X2 && x + w > screen->clipBound_X1 && y < screen->clipBound_Y2 && y + h > screen->clipBound_Y1;
+}
+// P20b: the trash copies' words written here, the ones PS1DrawFrame sends for them (RSDKv5/RSDK/Graphics/PS1/PS1Sprites.cpp):
+// an unflipped full-resolution copy as its 6-word rectangle, a flipped or half-resolution one (the old GPU: no flip rectangles) as PS1TexRect's
+// one quad (10 words, its span of 40 asked for as there). Before each, what those paths do first: validDraw (PS1PcClip),
+// the frame's CLUT back after a fade (PS1FadeRestoreSlot), the draw count (PROFILE / PERF_HUD builds). A copy outside
+// that case (no binding, quarter resolution, a full-resolution quad edge past its page, a palette bank or pending palette write on its top
+// line, flip rectangles live, another ink, a clip box smaller than the screen, the 8 MB link's draw log) goes through
+// DrawSprite as before. The engine's frame (SpriteFrame + hitboxCount / hitboxOffset / ps1U / ps1V / ps1Attr, 26 bytes)
+#if PS1_DEBUG_BIGRAM
+#define FBZSINKTRASH_PS1_LOG 1
+#else
+#define FBZSINKTRASH_PS1_LOG 0
+#endif
+typedef struct {
+    int16 sprX, sprY, width, height, pivotX, pivotY;
+    uint16 delay;
+    int16 id;
+    uint8 sheetID, basePad; // the game's 17 bytes padded to 18 (a C++ base's tail padding is not reused)
+    uint8 hitboxCount, pad;
+    uint16 hitboxOffset;
+    uint8 ps1U, ps1V;
+    uint16 ps1Attr;
+} FBZSinkTrashPS1Frame;
+extern uint32 *FBZSinkTrash_SpanBegin(int32 maxWords) __asm__("_Z17PS1ChainSpanBegini");
+extern void FBZSinkTrash_SpanEnd(uint32 *lastHeader, int32 lastWords, uint32 *end) __asm__("_Z15PS1ChainSpanEndPmiS_");
+extern void FBZSinkTrash_FadeRestoreSlot(uint32 slot) __asm__("_ZN4RSDK18PS1FadeRestoreSlotEj");
+extern bool32 FBZSinkTrash_validDraw __asm__("_ZN4RSDK9validDrawE");
+extern uint8 FBZSinkTrash_lineBank[] __asm__("_ZN4RSDK13gfxLineBufferE");
+extern volatile int32 g_ps1PalDiffs;
+extern volatile uint32 g_ps1FlipRectsOn, g_ps1FlipRectsForce, g_ps1SpriteDraws;
+extern bool g_ps1FlipRectsGpu;
+
+// True: the copy's words were written (or nothing was to be drawn); false: DrawSprite draws it
+static bool32 FBZSinkTrash_PS1Copy(const FBZSinkTrashPS1Frame *f, int32 x, int32 y, int32 dir, const RSDKScreenInfo *screen)
+{
+    const int32 w = f->width, h = f->height;
+    const int32 attr = f->ps1Attr, u = f->ps1U, v = f->ps1V, slot = attr >> 7, half = attr >> 6 & 1;
+    // (PS1FrameTex's binding; half resolution = shift 1, the quarter one left to DrawSprite; PS1DrawFrame's wide pieces too)
+    if (attr == 0xFFFF) return false;
+    if (half && slot >= 0x140 && slot != 0x1FF) return false;
+    if (h > 511) return false;
+    if (g_ps1PalDiffs) return false;
+    if (FBZSinkTrash_lineBank[y < 0 ? 0 : y >= screen->size.y ? screen->size.y - 1 : y]) return false;
+    const int32 tw = (w + half) >> half, th = (h + half) >> half;
+    const bool32 fx = dir & FLIP_X, fy = dir & FLIP_Y;
+    if (u + tw > 256) return false;
+    if (!half && (fx || fy) && (g_ps1FlipRectsGpu || g_ps1FlipRectsForce) && g_ps1FlipRectsOn) return false;
+    // PS1TexRect's quad: a flipped axis from its last texel to one before its first; an edge past the page clamped when
+    // halved, else its own strip (left to DrawSprite)
+    int32 uL = fx ? u + tw - 1 : u, uR = fx ? u - 1 : u + tw, vT = fy ? v + th - 1 : v, vB = fy ? v - 1 : v + th;
+    if (uR < 0 || uR > 255) {
+        if (!half) return false;
+        uR = uR < 0 ? 0 : 255;
+    }
+    if (vB < 0 || vB > 255) {
+        if (!half) return false;
+        vB = vB < 0 ? 0 : 255;
+    }
+    FBZSinkTrash_validDraw = true;
+    FBZSinkTrash_FadeRestoreSlot((uint32)slot);
+    const uint32 tpage = (attr & 15) | (attr >> 4 & 1) << 4 | (attr >> 5 & 1) << 7;
+    const uint32 clut  = slot == 0x1FF ? (uint32)(240 << 6) : (uint32)(slot % 20) | (uint32)(496 + slot / 20) << 6;
+    const uint32 xy0 = (uint32)(uint16)y << 16 | (uint16)x, xy1 = (uint32)(uint16)y << 16 | (uint16)(x + w);
+    if (!half && !dir) {
+        uint32 *wr = FBZSinkTrash_SpanBegin(6);
+        if (!wr)
+            return true;
+        wr[1] = 0xE1000000 | tpage, wr[2] = 0x64808080, wr[3] = xy0, wr[4] = clut << 16 | (uint32)v << 8 | (uint32)u;
+        wr[5] = (uint32)h << 16 | (uint32)w;
+        FBZSinkTrash_SpanEnd(wr, 5, wr + 6);
+    }
+    else {
+        const uint32 xy2 = (uint32)(uint16)(y + h) << 16 | (uint16)x, xy3 = (uint32)(uint16)(y + h) << 16 | (uint16)(x + w);
+        const uint32 tl = (uint32)(uint8)vT << 8, bl = (uint32)(uint8)vB << 8;
+        uint32 *wr = FBZSinkTrash_SpanBegin(4 * 10);
+        if (!wr)
+            return true;
+        wr[1] = 0x2C808080, wr[2] = xy0, wr[3] = clut << 16 | tl | (uint8)uL, wr[4] = xy1, wr[5] = tpage << 16 | tl | (uint8)uR;
+        wr[6] = xy2, wr[7] = bl | (uint8)uL, wr[8] = xy3, wr[9] = bl | (uint8)uR;
+        FBZSinkTrash_SpanEnd(wr, 9, wr + 10);
+    }
+#if PS1_PROFILE || PS1_PERF_HUD
+    g_ps1SpriteDraws = g_ps1SpriteDraws + 1;
+#endif
+    return true;
+}
+#define FBZSINKTRASH_PS1_DRAW(animator, pos, frame)                                                                    \
+    do {                                                                                                               \
+        if (FBZSinkTrash_PS1Hits(frame, ((pos)->x >> 16) - screen->position.x, ((pos)->y >> 16) - screen->position.y,  \
+                                 self->direction, screen))                                                             \
+            RSDK.DrawSprite(animator, pos, false);                                                                     \
+    } while (0)
+#else
+#define FBZSINKTRASH_PS1_DRAW(animator, pos, frame) RSDK.DrawSprite(animator, pos, false)
+#endif
+
 void FBZSinkTrash_Draw(void)
 {
     RSDK_THIS(FBZSinkTrash);
     Vector2 drawPos;
+#if defined RETRO_PS1_BUILD
+    const RSDKScreenInfo *screen = &ScreenInfo[SceneInfo->currentScreenID];
+#endif
 
     self->direction = FLIP_NONE;
     int32 drawX     = self->position.x - (self->size.x >> 1);
@@ -160,7 +271,7 @@ void FBZSinkTrash_Draw(void)
         if (self->size.x - i < 0x400000)
             frame->width = (self->size.x - i) >> 16;
 
-        RSDK.DrawSprite(&self->topAnimator, &drawPos, false);
+        FBZSINKTRASH_PS1_DRAW(&self->topAnimator, &drawPos, frame);
 
         drawPos.x += 0x400000;
     }
@@ -178,7 +289,7 @@ void FBZSinkTrash_Draw(void)
             if (self->size.x - x < 0x400000)
                 frame->width = (self->size.x - x) >> 16;
 
-            RSDK.DrawSprite(&self->mainAnimator, &drawPos, false);
+            FBZSINKTRASH_PS1_DRAW(&self->mainAnimator, &drawPos, frame);
 
             drawPos.x += 0x400000;
         }
@@ -194,14 +305,33 @@ void FBZSinkTrash_Draw(void)
         if (self->size.x - i < 0x400000)
             frame->width = (self->size.x - i) >> 16;
 
-        RSDK.DrawSprite(&self->topAnimator, &drawPos, false);
+        FBZSINKTRASH_PS1_DRAW(&self->topAnimator, &drawPos, frame);
 
         drawPos.x += 0x400000;
     }
 
     if (self->type < FBZSINKTRASH_SOLID) {
+#if defined RETRO_PS1_BUILD
+        // the copies' frames by the engine's stride (its SpriteFrame is longer than the game's), the screen in pixels
+        const uint8 *frame0  = (const uint8 *)RSDK.GetFrame(FBZSinkTrash->aniFrames, 0, 0);
+        const int32 stride   = (int32)((const uint8 *)RSDK.GetFrame(FBZSinkTrash->aniFrames, 0, 1) - frame0);
+        const int32 sx0      = (self->position.x >> 16) - screen->position.x;
+        const int32 sy0      = (self->position.y >> 16) - screen->position.y;
+        // the direct words: the default ink, the screen's whole clip box, the engine's frame layout; the 8 MB link logs draws
+        const bool32 direct = !FBZSINKTRASH_PS1_LOG && self->inkEffect == INK_NONE && stride == (int32)sizeof(FBZSinkTrashPS1Frame)
+                              && !screen->clipBound_X1 && !screen->clipBound_Y1 && screen->clipBound_X2 == screen->size.x
+                              && screen->clipBound_Y2 == screen->size.y;
+#endif
         for (int32 i = 0; i < 64; ++i) {
 #if defined RETRO_PS1_BUILD
+            const FBZSinkTrashPS1Frame *f = (const FBZSinkTrashPS1Frame *)(frame0 + self->trashFrame[i] * stride);
+            const int32 sx = sx0 + self->ps1TrashX[i], sy = sy0 + self->ps1TrashY[i], dir = self->trashDir[i];
+            if (!FBZSinkTrash_PS1Hits((const SpriteFrame *)f, sx, sy, dir, screen))
+                continue;
+            if (direct && dir <= FLIP_XY
+                && FBZSinkTrash_PS1Copy(f, (dir & FLIP_X) ? sx - f->width - f->pivotX : sx + f->pivotX,
+                                        (dir & FLIP_Y) ? sy - f->height - f->pivotY : sy + f->pivotY, dir, screen))
+                continue;
             drawPos.x = self->position.x + (self->ps1TrashX[i] << 16);
             drawPos.y = self->position.y + (self->ps1TrashY[i] << 16);
 #else
@@ -212,6 +342,9 @@ void FBZSinkTrash_Draw(void)
             self->direction             = self->trashDir[i];
             RSDK.DrawSprite(&self->trashAnimator, &drawPos, false);
         }
+#if defined RETRO_PS1_BUILD
+        self->trashAnimator.frameID = self->trashFrame[63]; // the loop's last write, as when every copy was drawn
+#endif
 
         self->direction = FLIP_NONE;
     }
