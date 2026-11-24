@@ -203,6 +203,9 @@ void PaperRoller_DrawDeformedLine(int32 startX, int32 startY, int32 endX, int32 
 #ifndef PS1_PAPER_RANGE
 #define PS1_PAPER_RANGE 1 // P12c: a straight side's vertices made and handled only around its on-screen run (0: every vertex)
 #endif
+#ifndef PS1_PAPER_PACKED
+#define PS1_PAPER_PACKED PS1_PAPER_RANGE // P12d: a straight side's run as packed vertex words, written by PaperRoller_PS1Packed
+#endif
 // docs/ports/mania/32 9u: PaperRoller_DrawPaperLines' three DrawDeformedLine calls a side compute the same points (only the final
 // offset and the colour differ): the points once (the sines / cosines of the two angles read once, every expression as
 // DrawDeformedLine's), then the three calls' line batches in their order, the offset added to each end as there. PSZ1's
@@ -285,6 +288,54 @@ static int32 PaperRoller_PS1Run(int32 v0, int32 mv, int32 n, int32 scr, int32 lo
     }
     *last = a;
     return *first <= *last;
+}
+#endif
+#if PS1_PAPER_PACKED
+// P12d (docs/perf/57): a straight side's lines from one packed vertex list, b[k] = y << 16 | ((x + 0x8000) & 0xFFFF)
+// (screen x, y; |x|, |y| < 1024 at every vertex of the run), and d = (py << 16) + px the pass's offset (|px| <= 2: no carry
+// or borrow out of the biased x; ^ 0x8000 gives the GPU word). A straight side's vertices are monotonic in x and in y, so
+// the lines PS1DrawLineStrip would cull (both ends past one edge of [-4, 324] x [-4, 244]) are a run at each end of the
+// list: trimmed there, and every line between written with no test, into the resident's open line bulk (PS1LineBegin /
+// Next / End). The same lines, the same words, the same bulk bookkeeping as PS1DrawLineStrip (0: a mask colour)
+static inline uint32 PaperRoller_PS1Cull(uint32 a, uint32 b)
+{
+    a ^= 0x8000, b ^= 0x8000;
+    const int32 ax = (int16)a, ay = (int32)a >> 16, bx = (int16)b, by = (int32)b >> 16;
+    return (ax < -4 && bx < -4) || (ax > 324 && bx > 324) || (ay < -4 && by < -4) || (ay > 244 && by > 244);
+}
+__attribute__((optimize("O2"))) static int32 PaperRoller_PS1Packed(const uint32 *b, uint32 d, const uint32 *cmds, int32 n)
+{
+    uint32 *w, *wend;
+    if (!PS1LineBegin(&w, &wend))
+        return 0;
+    const uint32 *e = b + n;
+    for (; b != e; ++b, ++cmds)
+        if (!PaperRoller_PS1Cull(b[0] + d, b[1] + d))
+            break;
+    if (b == e)
+        return 1;
+    while (PaperRoller_PS1Cull(e[-1] + d, e[0] + d))
+        --e; // (stops at the first line, which is not culled)
+    int32 drawn = (int32)(e - b);
+    uint32 pb   = (*b + d) ^ 0x8000;
+    while (b != e) {
+        if (w == wend) {
+            w = PS1LineNext(wend);
+            if (!w) { // (the arena is full: nothing more goes in, as with PS1DrawLineStrip)
+                drawn -= (int32)(e - b), wend = NULL;
+                break;
+            }
+            wend = w + 32 * 4;
+        }
+        const uint32 pa = pb;
+        pb   = (*++b + d) ^ 0x8000;
+        w[0] = *cmds++;
+        w[1] = pa;
+        w[2] = pb;
+        w += 4;
+    }
+    PS1LineEnd(w, wend, drawn);
+    return 1;
 }
 #endif
 
@@ -382,6 +433,14 @@ void PaperRoller_DrawPaperLines(void)
         // P12c: the lines handed on are lo[side] .. hi[side] - 1 (vertices lo .. hi); every other line has both ends past
         // one edge of the cull (below) at every pass, so the writer would have left it out: the same lines, the same words
         int32 lo[2] = { 0, 0 }, hi[2] = { ps1N1, ps1N2 };
+#if PS1_PAPER_PACKED
+        // P12d (docs/perf/57): a straight side's run as one packed word a vertex (y << 16 | (x + 0x8000) & 0xFFFF: every
+        // pass's offset is one add, the GPU word one xor), its lines written by PaperRoller_PS1Packed with no per-line test;
+        // the world / screen arrays are filled only if a mask colour sends the side to DrawLine (flatFill)
+        uint32 pk[2][65];
+        bool32 flat[2] = { false, false }, flatFill[2] = { false, false };
+        int32 fv0x[2], fv0y[2], fmvx[2], fmvy[2];
+#endif
         for (int32 side = 0; side < 2; ++side) {
             int32 n = side ? ps1N2 : ps1N1;
             int32 x0 = 0x7FFFFFFF, x1 = -0x7FFFFFFF, y0 = 0x7FFFFFFF, y1 = -0x7FFFFFFF;
@@ -416,12 +475,18 @@ void PaperRoller_DrawPaperLines(void)
                 sx[side][0] = ax, sy[side][0] = ay, inner[side][0] = (uint8)((uint32)(ax + 2) <= 324u && (uint32)(ay + 2) <= 244u);
                 sx[side][n] = bx, sy[side][n] = by, inner[side][n] = (uint8)((uint32)(bx + 2) <= 324u && (uint32)(by + 2) <= 244u);
                 int32 wx = v0x + k0 * mvx, wy = v0y + k0 * mvy;
+#if PS1_PAPER_PACKED
+                flat[side] = true, fv0x[side] = v0x, fv0y[side] = v0y, fmvx[side] = mvx, fmvy[side] = mvy;
+                for (int32 k = k0; k <= k1; ++k, wx += mvx, wy += mvy)
+                    pk[side][k] = (uint32)(FROM_FIXED(wy) - scrY) << 16 | ((uint32)(FROM_FIXED(wx) - scrX + 0x8000) & 0xFFFF);
+#else
                 for (int32 k = k0; k <= k1; ++k, wx += mvx, wy += mvy) {
                     vx[k] = wx, vy[k] = wy; // (the world positions: the mask-colour lines below)
                     int32 kx = FROM_FIXED(wx) - scrX, ky = FROM_FIXED(wy) - scrY;
                     sx[side][k] = kx, sy[side][k] = ky;
                     inner[side][k] = (uint8)((uint32)(kx + 2) <= 324u && (uint32)(ky + 2) <= 244u);
                 }
+#endif
             }
             else
 #endif
@@ -487,6 +552,14 @@ void PaperRoller_DrawPaperLines(void)
                     }
                     else
 #endif
+#if PS1_PAPER_PACKED
+                    if (flat[side]) {
+                        if (PaperRoller_PS1Packed(pk[side] + lo[side], (uint32)((py << 16) + px), (v == 2 ? ps1Pale : cmd[side]) + lo[side],
+                                              hi[side] - lo[side]))
+                            continue;
+                    }
+                    else
+#endif
                     if (PS1DrawLineStrip(sxs + lo[side], sys + lo[side], inner[side] + lo[side], px, py,
                                          (v == 2 ? ps1Pale : cmd[side]) + lo[side], hi[side] - lo[side]))
                         continue;
@@ -494,6 +567,16 @@ void PaperRoller_DrawPaperLines(void)
                 }
                 // (a mask colour set: each line through DrawLine, as PS1DrawLinesWorld drew them then; P12c: the lines out
                 // of lo .. hi - 1 fail this cull)
+#if PS1_PAPER_PACKED
+                if (flat[side] && !flatFill[side]) {
+                    flatFill[side] = true;
+                    int32 *wvx = ps1Vx[side], *wvy = ps1Vy[side], *wsx = sx[side], *wsy = sy[side];
+                    for (int32 k = lo[side]; k <= hi[side]; ++k) {
+                        wvx[k] = fv0x[side] + k * fmvx[side], wvy[k] = fv0y[side] + k * fmvy[side];
+                        wsx[k] = FROM_FIXED(wvx[k]) - scrX, wsy[k] = FROM_FIXED(wvy[k]) - scrY;
+                    }
+                }
+#endif
                 for (int32 i = lo[side]; i < hi[side]; ++i) {
                     int32 sx1 = sxs[i] + px, sy1 = sys[i] + py, sx2 = sxs[i + 1] + px, sy2 = sys[i + 1] + py;
                     if ((sx1 < -4 && sx2 < -4) || (sx1 > 324 && sx2 > 324) || (sy1 < -4 && sy2 < -4) || (sy1 > 244 && sy2 > 244))

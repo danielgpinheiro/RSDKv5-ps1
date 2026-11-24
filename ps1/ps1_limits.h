@@ -150,6 +150,18 @@ extern "C"
 #endif
 int PS1DrawLineStrip(const int *sx, const int *sy, const unsigned char *inner, int px, int py, const unsigned int *cmds,
                      int n); // docs/perf/57 P12b: PaperRoller's lines (DrawLine's GP0 40h words) from screen vertices (0: mask colour)
+#ifdef __cplusplus
+extern "C"
+#endif
+int PS1LineBegin(unsigned int **w, unsigned int **wend); // docs/perf/57 P12d: the open line bulk's slots (0: mask colour)
+#ifdef __cplusplus
+extern "C"
+#endif
+unsigned int *PS1LineNext(unsigned int *wend); // P12d: a new line bulk (NULL: the arena is full)
+#ifdef __cplusplus
+extern "C"
+#endif
+void PS1LineEnd(unsigned int *w, unsigned int *wend, int drawn); // P12d: the slots used, the lines' count
 void PS1DrawLinesInk(const int *xy, int n, unsigned int color, int alpha, int inkEffect); // 9v.9: DrawLine x n, one ink
 #ifndef PS1_LINE_BATCH
 #define PS1_LINE_BATCH 1 // docs/ports/mania/32 9q / docs/perf/57 P12b: PaperRoller's lines through PS1DrawLineStrip (identical words)

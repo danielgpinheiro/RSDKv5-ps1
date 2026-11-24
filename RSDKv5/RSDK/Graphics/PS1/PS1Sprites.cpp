@@ -1787,6 +1787,38 @@ extern "C" __attribute__((optimize("O2", "no-unswitch-loops"))) int PS1DrawLineS
     }
     return 1;
 }
+// P12d (docs/perf/57): the open Face3D line bulk handed to a caller that writes DrawLine's GP0 40h lines itself (PaperRoller's
+// straight sides, PSZ's overlay), with PS1DrawLineStrip's bookkeeping: PS1LineBegin gives the open bulk's next 4-word slot
+// and its end (both NULL when none is open for lines; 0: a mask colour, the caller's DrawLine path), PS1LineNext a new bulk
+// when the slot reaches the end (NULL: the arena is full), PS1LineEnd the slots used and the lines' count
+extern "C" int PS1LineBegin(unsigned int **w, unsigned int **wend)
+{
+    if (maskColor)
+        return 0;
+    *w = *wend = NULL;
+    if (s_ps1F3DBase && s_ps1F3DWpp == 3)
+        *w = s_ps1F3DBase + s_ps1F3DN * 4, *wend = s_ps1F3DBase + 32 * 4;
+    return 1;
+}
+extern "C" unsigned int *PS1LineNext(unsigned int *wend)
+{
+    if (wend)
+        s_ps1F3DN = 32;
+    PS1Face3DFlush();
+    uint32 *w = (uint32 *)PS1ChainBulkBegin(32, 3);
+    s_ps1F3DBase = w;
+    if (w)
+        s_ps1F3DWpp = 3;
+    return w;
+}
+extern "C" void PS1LineEnd(unsigned int *w, unsigned int *wend, int drawn)
+{
+    if (wend)
+        s_ps1F3DN = 32 - (int32)((wend - w) >> 2);
+    PS1_DRAW_COUNT(g_ps1Face3DDrawn, (uint32)drawn);
+    g_ps1PrimApprox = g_ps1PrimApprox + drawn;
+    PS1Face3DFlush();
+}
 // 9o: a face's edges (corner v to v + 1, the last to the first) as PS1LineBulk would write them, with the bulk's slot
 // bookkeeping inline: xs / ys the positions' screen coordinates, c the face's position indices
 __attribute__((optimize("O2"))) void RSDK::PS1LineFace(const int32 *xs, const int32 *ys, const uint16 *c, int32 n, uint32 bgr)
