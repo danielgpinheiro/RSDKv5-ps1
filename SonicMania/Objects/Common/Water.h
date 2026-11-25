@@ -149,4 +149,23 @@ void Water_Draw_Countdown(void);
 void Water_Draw_Bubbler(void);
 void Water_Draw_Bubble(void);
 
+#if defined RETRO_PS1_BUILD
+// docs/perf/57-mania-cost-per-act.md P21: foreach_active(Water, e) as one loop over the same type-group slots in the same
+// order (the group foreach_active walks, rebuilt once a frame after the update pass; an entry whose class is no longer
+// Water skipped as there), without an engine call per entry. HCZ's bubbles each walk every active Water (themselves
+// included) to find the pools: GetActiveEntities was 25.7 hblanks a frame at HCZ1 x 11008. A body must not `break`
+// (only the inner loop would stop) nor use foreach_return (it pops foreach_active's stack); a plain `return` is fine.
+typedef struct {
+    uint16 *entries;
+    int32 entryCount;
+} WaterPS1TypeGroup;
+extern WaterPS1TypeGroup Water_PS1TypeGroups[] __asm__("_ZN4RSDK10typeGroupsE");
+extern EntityWater *Water_PS1Entities[] __asm__("_ZN4RSDK15objectEntityPtrE");
+#define WATER_PS1_FOREACH_ACTIVE(entity)                                                                                                             \
+    for (const uint16 *entity##PS1S = Water_PS1TypeGroups[Water->classID].entries,                                                                \
+                      *entity##PS1End = entity##PS1S + Water_PS1TypeGroups[Water->classID].entryCount;                                           \
+         entity##PS1S < entity##PS1End; ++entity##PS1S)                                                                                            \
+        for (EntityWater *entity = Water_PS1Entities[*entity##PS1S]; entity && entity->classID == Water->classID; entity = NULL)
+#endif
+
 #endif //! OBJ_WATER_H

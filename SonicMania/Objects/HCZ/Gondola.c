@@ -93,7 +93,11 @@ int32 Gondola_GetWaterLevel(void)
     RSDK_THIS(Gondola);
 
     if (self->position.y < Water->waterLevel) {
+#if defined RETRO_PS1_BUILD
+        WATER_PS1_FOREACH_ACTIVE(water)
+#else
         foreach_active(Water, water)
+#endif
         {
             if (water->type == WATER_POOL && RSDK.CheckObjectCollisionTouchBox(water, &water->hitbox, self, &Water->hitboxPoint)) {
                 return water->position.y + (water->hitbox.top << 16);

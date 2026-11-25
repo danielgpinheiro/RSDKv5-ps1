@@ -676,7 +676,11 @@ void Water_HandleBubbleMovement(void)
 
     if (self->position.y < Water->waterLevel) {
         bool32 inWater = false;
+#if defined RETRO_PS1_BUILD
+        WATER_PS1_FOREACH_ACTIVE(pool)
+#else
         foreach_active(Water, pool)
+#endif
         {
             if (pool->type == WATER_POOL && RSDK.CheckObjectCollisionTouchBox(pool, &pool->hitbox, self, &Water->hitboxPoint))
                 inWater = true;
@@ -1124,7 +1128,11 @@ void Water_State_Bubbler(void)
     if (self->position.y > Water->waterLevel)
         self->visible = true;
 
+#if defined RETRO_PS1_BUILD
+    WATER_PS1_FOREACH_ACTIVE(pool)
+#else
     foreach_active(Water, pool)
+#endif
     {
         if (pool->type == WATER_POOL && RSDK.CheckObjectCollisionTouchBox(pool, &pool->hitbox, self, &Water->hitboxPoint))
             self->visible = true;
@@ -1194,7 +1202,11 @@ void Water_State_Countdown(void)
         isActive = true;
     }
     else {
+#if defined RETRO_PS1_BUILD
+        WATER_PS1_FOREACH_ACTIVE(pool)
+#else
         foreach_active(Water, pool)
+#endif
         {
             if (pool->type == WATER_POOL && RSDK.CheckObjectCollisionTouchBox(pool, &pool->hitbox, self, &Water->hitboxPoint)) {
                 isActive = true;

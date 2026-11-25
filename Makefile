@@ -244,8 +244,8 @@ PS1_SAMPLE_OBJS  := ps1/rsdk5_main.o ps1/pc_sampler.o
 PS1_HUD_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/perf_hud.o SonicMania/Objects/FBZ/FBZSinkTrash.o
 PS1_OVL_OBJS     := RSDKv5/RSDK/Graphics/Drawing.o ps1/gpu_chain.o ps1/debug_overlay.o ps1/libc/new_guard.o \
                     RSDKv5/RSDK/Scene/Scene.o RSDKv5/RSDK/Graphics/Animation.o RSDKv5/RSDK/Audio/Audio.o
-PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o \
-                    SonicMania/Objects/FBZ/FBZSinkTrash.o
+# (one line: tests/host/test_mania_build.py reads the list from this line)
+PS1_RAM_OBJS     := ps1/vram.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Graphics/Drawing.o RSDKv5/RSDK/Scene/Scene.o SonicMania/Objects/FBZ/FBZSinkTrash.o
 PS1_UFOCUT_OBJS  := RSDKv5/RSDK/Graphics/PS1/PS1Scene3D.o RSDKv5/RSDK/Graphics/PS1/PS1UfoFloor.o \
                     SonicMania/Objects/UFO/UFO_Decoration.o SonicMania/Objects/UFO/UFO_Shadow.o
 PS1_PROFILE_OBJS := ps1/rsdk5_main.o RSDKv5/RSDK/Storage/Storage.o RSDKv5/RSDK/Core/RetroEngine.o RSDKv5/RSDK/Scene/Object.o \
