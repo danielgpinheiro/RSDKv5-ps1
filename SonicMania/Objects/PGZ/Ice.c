@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------
 
 #include "Game.h"
+#include "../../../ps1/ps1_direct_sprite.h" // docs/perf/57 P22: the plain-ink block and shard sprites
 
 ObjectIce *Ice;
 
@@ -1288,11 +1289,19 @@ void Ice_Draw_IceBlock(void)
     drawPos.x       = self->position.x + self->contentsOffset.x;
     drawPos.y       = self->position.y + self->contentsOffset.y;
     self->direction = self->subFlip;
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->contentsAnimator, &drawPos);
+#else
     RSDK.DrawSprite(&self->contentsAnimator, &drawPos, false);
+#endif
 
     self->direction = dirStore;
     drawPos.y -= 0x30000;
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->altContentsAnimator, &drawPos);
+#else
     RSDK.DrawSprite(&self->altContentsAnimator, &drawPos, false);
+#endif
 
 #if MANIA_USE_PLUS
     if (!SceneInfo->inEditor) {
@@ -1305,7 +1314,11 @@ void Ice_Draw_IceBlock(void)
     }
 #endif
 
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->blockAnimator, NULL);
+#else
     RSDK.DrawSprite(&self->blockAnimator, NULL, false);
+#endif
 
     self->inkEffect = INK_ADD;
     RSDK.DrawSprite(&self->glintAnimator, NULL, false);
@@ -1331,8 +1344,16 @@ void Ice_Draw_PlayerBlock(void)
     self->inkEffect             = INK_NONE;
 #endif
 
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->contentsAnimator, &drawPos);
+#else
     RSDK.DrawSprite(&self->contentsAnimator, &drawPos, false);
+#endif
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->blockAnimator, NULL);
+#else
     RSDK.DrawSprite(&self->blockAnimator, NULL, false);
+#endif
 
     self->inkEffect = INK_ADD;
     RSDK.DrawSprite(&self->altContentsAnimator, NULL, false);
@@ -1356,7 +1377,11 @@ void Ice_Draw_Shard(void)
 {
     RSDK_THIS(Ice);
 
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->blockAnimator, NULL);
+#else
     RSDK.DrawSprite(&self->blockAnimator, NULL, false);
+#endif
 }
 
 #if GAME_INCLUDE_EDITOR
