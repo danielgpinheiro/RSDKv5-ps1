@@ -1710,8 +1710,11 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
 #undef PS1_FLUSH_GROUP
 }
 
-// 4.1c: DrawLayerBasic: the clip rectangle's lines from the first line's scroll position (the rows consecutive from it),
-// every line with palette bank 0 (the PC draws with fullPalette[0] whatever gfxLineBuffer holds)
+// 4.1c: DrawLayerBasic: the clip rectangle's rows consecutive from the first line's, every line with palette bank 0 (the PC
+// draws with fullPalette[0] whatever gfxLineBuffer holds). Each tile row takes the x of its own first line, as stock's
+// DrawLayerBasic re-reads the scanline at every row: a layer with several scroll infos (PSZ1 Background 2's bands at
+// 48 / 64 / 80, SPZ1 Background 1) moves each band at its speed (MA-226; until then every row took the first line's x,
+// so the bands slid against each other and jumped when the camera's y crossed a band edge)
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
 {
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
@@ -1754,6 +1757,8 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
             }
         }
     }
+    // MA-226: a row's scroll info from the layer's lineScroll (no table: one info for every line, 7b)
+    const uint8 *ls = layer->scrollInfoCount > 1 ? layer->lineScroll : nullptr;
     PS1Emit e;
     EmitOpen(e);
     e.page = 0xFFFFFFFF;
@@ -1763,7 +1768,12 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
         int32 h  = TILE_SIZE - (ly & 15);
         if (h > y2 - cy)
             h = y2 - cy;
-        DrawBandInto(e, layer, cy, h, x, ly, 0);
+        int32 rx = x;
+        if (ls) {
+            rx = FROM_FIXED(layer->scrollInfo[ls[ly]].tilePos) % widthPx; // ProcessParallax keeps it in [0, width)
+            rx = rx < 0 ? rx + widthPx : rx;
+        }
+        DrawBandInto(e, layer, cy, h, rx, ly, 0);
         cy += h;
     }
     EmitClose(e);

@@ -453,15 +453,17 @@ def render(cap, folder, scene_id):
             clip[max(0, cy1):min(240, cy2), max(0, cx1):min(320, cx2)] = True
             mask[near & clip] = 2
             continue
-        basic = L.get('type') == 3  # LAYER_BASIC: the first line's scroll position for every line, bank 0
+        # LAYER_BASIC: the rows consecutive from the first line's, each tile row at the x of its own first line (stock
+        # re-reads the scanline at every row, MA-226), bank 0
+        basic = L.get('type') == 3
         for y in range(240):
             if y < cy1 or y >= cy2:
                 continue
             if lb[y] and not basic:
                 other_bank += 1
             if basic:
-                x0 = (sl[cy1, 0] >> 16) % (xs * 16)
                 ly = ((sl[cy1, 1] >> 16) + y - cy1) % (ys * 16)
+                x0 = (sl[max(cy1, y - (ly & 15)), 0] >> 16) % (xs * 16)
             else:
                 x0 = (sl[y, 0] >> 16) % (xs * 16)
                 ly = (sl[y, 1] >> 16) % (ys * 16)
