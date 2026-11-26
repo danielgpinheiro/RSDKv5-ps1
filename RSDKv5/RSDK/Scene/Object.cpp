@@ -80,7 +80,17 @@ void RSDK::RegisterObject(Object **staticVars, const char *name, uint32 entityCl
         classInfo->entityClassSize = entityClassSize;
         classInfo->staticClassSize = staticClassSize;
         classInfo->update          = update;
+#if RETRO_PLATFORM != RETRO_PS1
         classInfo->lateUpdate      = lateUpdate;
+#else
+        // docs/perf/57 P25: an empty LateUpdate (`jr ra; nop`: 572 of the game's classes) registered as NULL. The late
+        // passes skip a NULL one as stock does, and leave the same state (each slot's onScreen cleared, sceneInfo.entity
+        // the last slot visited, entitySlot ENTITY_COUNT): only the call per active entity a frame goes (PSZ1's ~35
+        // PrintBlocks, 45 Platforms...). Every class registers with its own code loaded (resident or its overlay)
+        // (one store, no branch past the loads: the resident EXE's 2 KB step had 44 B left)
+        const uint32 *lu      = (const uint32 *)lateUpdate;
+        classInfo->lateUpdate = (lu && !((lu[0] ^ 0x03E00008u) | lu[1])) ? NULL : lateUpdate;
+#endif
         classInfo->staticUpdate    = staticUpdate;
         classInfo->draw            = draw;
         classInfo->create          = create;

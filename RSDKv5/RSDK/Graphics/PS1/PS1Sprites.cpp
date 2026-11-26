@@ -485,14 +485,17 @@ uint32 PS1BankClut(uint16 attr, int32 bank, bool invert = false)
     // the same atlas CLUT of bank 0, not inverted, with nothing since its upload that could change the copy or the slot
     // (g_ps1ClutCopyGen: a bank-0 write, the mask colour, a FillScreen or the pause tint rewriting the recorded uploads,
     // VRAM written outside the chains, the frame start), so the slot holds the words this copy would write
+    // P25: an inverted copy (INK_SUB) too, keyed by its slot and the invert bit: PSZ1's ~35 PrintBlock shadows a frame
+    // each rebuilt and uploaded the same 16 inverted colours
     static uint32 s_copyGen[2]  = { ~0u, ~0u }; // (non-zero: .data, inside the EXE's 2 KB step, not BSS)
     static uint16 s_copySlot[2] = { 0xFFFF, 0xFFFF };
-    const bool cacheable = !bank && !invert;
+    const bool cacheable = !bank;
+    const uint16 key     = (uint16)(slot | (invert ? 0x8000u : 0u)); // (slot < 0x200)
     if (cacheable) {
         const uint32 g = g_ps1ClutCopyGen;
-        if (s_copyGen[0] == g && s_copySlot[0] == slot)
+        if (s_copyGen[0] == g && s_copySlot[0] == key)
             return (PS1_SPRITE_CLUT_SCRATCH % PS1_SPRITE_CLUTS_PER_ROW) | (496 + PS1_SPRITE_CLUT_SCRATCH / PS1_SPRITE_CLUTS_PER_ROW) << 6;
-        if (s_copyGen[1] == g && s_copySlot[1] == slot)
+        if (s_copyGen[1] == g && s_copySlot[1] == key)
             return ((PS1_SPRITE_CLUT_SCRATCH + 1) % PS1_SPRITE_CLUTS_PER_ROW) | (496 + (PS1_SPRITE_CLUT_SCRATCH + 1) / PS1_SPRITE_CLUTS_PER_ROW) << 6;
     }
     s_row[0] = 0;
@@ -504,7 +507,7 @@ uint32 PS1BankClut(uint16 attr, int32 bank, bool invert = false)
     uint32 scratch = PS1_SPRITE_CLUT_SCRATCH + (uint32)s_flip;
     int16 x = (int16)((scratch % PS1_SPRITE_CLUTS_PER_ROW) * 16), y = (int16)(496 + scratch / PS1_SPRITE_CLUTS_PER_ROW);
     PS1UploadClut(s_row, 16, x, y);
-    s_copyGen[s_flip] = cacheable ? g_ps1ClutCopyGen : 0, s_copySlot[s_flip] = (uint16)slot;
+    s_copyGen[s_flip] = cacheable ? g_ps1ClutCopyGen : 0, s_copySlot[s_flip] = key;
     return (uint32)(x >> 4) | (uint32)y << 6;
 }
 

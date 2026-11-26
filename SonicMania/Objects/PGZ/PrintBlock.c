@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------
 
 #include "Game.h"
+#include "../../../ps1/ps1_direct_sprite.h" // docs/perf/57 P25: the block's plain-ink sprite
 
 ObjectPrintBlock *PrintBlock;
 
@@ -75,7 +76,11 @@ void PrintBlock_Draw(void)
 {
     RSDK_THIS(PrintBlock);
 
+#if defined RETRO_PS1_BUILD
+    PS1_DRAW_SPRITE(&self->animator, &self->drawPos); // P25: PSZ1's ~35 on-screen blocks (the words PS1DrawFrame sends)
+#else
     RSDK.DrawSprite(&self->animator, &self->drawPos, false);
+#endif
 
     self->inkEffect              = INK_SUB;
     PrintBlock->animator.frameID = self->animator.frameID;
