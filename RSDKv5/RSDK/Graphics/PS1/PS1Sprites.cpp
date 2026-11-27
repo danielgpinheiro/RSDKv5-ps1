@@ -217,55 +217,73 @@ inline bool PS1PcClip(int32 x, int32 y, int32 w, int32 h)
     return true;
 }
 
-// DrawSpriteRotozoom's clip: its corners with a 2-pixel margin, the bounds starting from (pitch, 0, size.y, 0) as it
-// does; a box of at least 1 x 1 sets validDraw
-bool PS1PcClipRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32 h, int32 scaleX, int32 scaleY, int32 direction,
-                       int32 rotation)
+// docs/perf/80 R5 (with R2 and R3): DrawSpriteRotozoom's corners and its clip box from one set of products. The PC
+// computes each corner as x + ((X * sxc + Y * sys) >> 9), y + ((Y * syc - X * sxs) >> 9) with x, y the integer screen
+// position: the clip's corners are the texture's corners with a 2-pixel margin, X0 - 2 / X1 + 2 and Y0 - 2 / Y1 + 2
+// (FLIP_X: X0 = -pivotX - w; the PC's own order of corners differs but the set is the same), so their products are the
+// texture's products plus 2 * the scale terms, and every corner is a constant offset from (x, y) given the key below.
+// R2: the offsets of the last transform are kept (FBZStorm's rain, a crate stack: many draws, one transform).
+// R3: a transform not kept is first bounded, |X * sxc + Y * sys| <= (|X| + |Y|) * max(scale) (|sin|, |cos| <= 512):
+// a box that lies wholly before the clip's left / top or wholly past its right / bottom gives the PC an empty box too
+// (its bounds start from (pitch, 0, size.y, 0), which are on the screen), so nothing is computed and validDraw stays.
+struct PS1Rozo {
+    int32 w, h, pivotX, pivotY, scaleX, scaleY, fx, angle; // R2's key (w = 0: none; every draw has w > 0)
+    int32 ox[4], oy[4];                                    // the texture's corners A B C D, relative to (x, y)
+    int32 bl, br, bt, bb;                                  // the PC's corners (with the margin): min / max, relative
+};
+PS1Rozo s_rz;
+
+// DrawSpriteRotozoom's clip: the bounds start from (pitch, 0, size.y, 0) as it does; a box of at least 1 x 1 sets
+// validDraw. True: s_rz holds this draw's corners (PS1RozoDraw)
+bool PS1RozoClip(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32 h, int32 scaleX, int32 scaleY, int32 direction,
+                 int32 rotation)
 {
-    int32 angle = 0x200 - (rotation & 0x1FF);
-    if (!(rotation & 0x1FF))
-        angle = rotation & 0x1FF;
-    int32 sine = sin512LookupTable[angle], cosine = cos512LookupTable[angle];
+    const int32 angle = (0x200 - (rotation & 0x1FF)) & 0x1FF;
+    const int32 fx    = direction & FLIP_X; // (callers pass FLIP_NONE or FLIP_X only: the PC's clip tests == FLIP_X)
+    PS1Rozo &z        = s_rz;
+    if (z.w != w || z.h != h || z.pivotX != pivotX || z.pivotY != pivotY || z.scaleX != scaleX || z.scaleY != scaleY || z.fx != fx
+        || z.angle != angle) {
+        const int32 X0 = fx ? -pivotX - w : pivotX, X1 = X0 + w, Y0 = pivotY, Y1 = pivotY + h;
+        {
+            int32 ax = X0 < 2 ? 2 - X0 : X0 - 2, t = X1 < -2 ? -2 - X1 : X1 + 2;
+            ax       = t > ax ? t : ax;
+            int32 ay = Y0 < 2 ? 2 - Y0 : Y0 - 2;
+            t        = Y1 < -2 ? -2 - Y1 : Y1 + 2;
+            ay       = t > ay ? t : ay;
+            const int32 b = ((ax + ay) * (scaleX > scaleY ? scaleX : scaleY) >> 9) + 1;
+            if (x + b <= currentScreen->clipBound_X1 || x - b >= currentScreen->clipBound_X2 || y + b <= currentScreen->clipBound_Y1
+                || y - b >= currentScreen->clipBound_Y2)
+                return false;
+        }
+        // terms: a = X * sxc, d = X * sxs (X0, X1), b = Y * sys, e = Y * syc (Y0, Y1); the margin's (X0 - 2, X1 + 2,
+        // Y0 - 2, Y1 + 2) are the same plus / minus twice the scale terms. Scaled only (sine 0: the UFO rings / spheres,
+        // AmoebaDroid's lines) leaves the sine terms 0 without their products
+        const int32 s = sin512LookupTable[angle], c = cos512LookupTable[angle];
+        const int32 sxc = scaleX * c >> 9, syc = scaleY * c >> 9;
+        int32 sxs = 0, sys = 0, a[2], b[2] = {}, d[2] = {}, e[2];
+        a[0] = X0 * sxc, a[1] = X1 * sxc, e[0] = Y0 * syc, e[1] = Y1 * syc;
+        if (s) {
+            sxs = scaleX * s >> 9, sys = scaleY * s >> 9;
+            d[0] = X0 * sxs, d[1] = X1 * sxs, b[0] = Y0 * sys, b[1] = Y1 * sys;
+        }
+        const int32 ma[2] = { a[0] - 2 * sxc, a[1] + 2 * sxc }, mb[2] = { b[0] - 2 * sys, b[1] + 2 * sys };
+        const int32 md[2] = { d[0] - 2 * sxs, d[1] + 2 * sxs }, me[2] = { e[0] - 2 * syc, e[1] + 2 * syc };
+        z.bl = z.bt = 0x7FFFFFFF, z.br = z.bb = -0x7FFFFFFF;
+#pragma GCC unroll 1
+        for (int32 k = 0; k < 4; ++k) {
+            const int32 i = k & 1, j = k >> 1;
+            z.ox[k] = (a[i] + b[j]) >> 9, z.oy[k] = (e[j] - d[i]) >> 9;
+            const int32 px = (ma[i] + mb[j]) >> 9, py = (me[j] - md[i]) >> 9;
+            z.bl = px < z.bl ? px : z.bl, z.br = px > z.br ? px : z.br;
+            z.bt = py < z.bt ? py : z.bt, z.bb = py > z.bb ? py : z.bb;
+        }
+        z.w = w, z.h = h, z.pivotX = pivotX, z.pivotY = pivotY, z.scaleX = scaleX, z.scaleY = scaleY, z.fx = fx, z.angle = angle;
+    }
     int32 left = currentScreen->pitch, right = 0, top = currentScreen->size.y, bottom = 0;
-    if (!sine && cosine == 512) { // ps1-ufo: scaled only (UFO rings / spheres): the same corners, the zero terms left out
-        const int32 sx = scaleX * 512 >> 9, sy = scaleY * 512 >> 9;
-        const int32 xa = x + ((direction == FLIP_X ? sx * (2 - pivotX) : sx * (pivotX - 2)) >> 9);
-        const int32 xb = x + (sx * (direction == FLIP_X ? -2 - pivotX - w : pivotX + 2 + w) >> 9);
-        const int32 ya = y + (sy * (pivotY - 2) >> 9), yb = y + (sy * (pivotY + 2 + h) >> 9);
-        left = xa < left ? xa : left, left = xb < left ? xb : left;
-        right = xa > right ? xa : right, right = xb > right ? xb : right;
-        top = ya < top ? ya : top, top = yb < top ? yb : top;
-        bottom = ya > bottom ? ya : bottom, bottom = yb > bottom ? yb : bottom;
-        goto clip;
-    }
-    {
-    int32 fullScaleXS = scaleX * sine >> 9, fullScaleXC = scaleX * cosine >> 9;
-    int32 fullScaleYS = scaleY * sine >> 9, fullScaleYC = scaleY * cosine >> 9;
-    int32 posX[4], posY[4], xMax, scaledX1, scaledX2, scaledY1, scaledY2;
-    if (direction == FLIP_X) {
-        scaledX1 = fullScaleXS * (2 - pivotX), scaledX2 = fullScaleXC * (2 - pivotX);
-        xMax     = -2 - pivotX - w;
-    }
-    else {
-        scaledX1 = fullScaleXS * (pivotX - 2), scaledX2 = fullScaleXC * (pivotX - 2);
-        xMax     = pivotX + 2 + w;
-    }
-    scaledY1 = fullScaleYS * (pivotY - 2), scaledY2 = fullScaleYC * (pivotY - 2);
-    posX[0]  = x + ((scaledX2 + scaledY1) >> 9);
-    posY[0]  = y + ((fullScaleYC * (pivotY - 2) - scaledX1) >> 9);
-    int32 scaledXMaxS = fullScaleXS * xMax, scaledXMaxC = fullScaleXC * xMax;
-    int32 scaledYMaxC = fullScaleYC * (pivotY + 2 + h), scaledYMaxS = fullScaleYS * (pivotY + 2 + h);
-    posX[1] = x + ((scaledXMaxC + scaledY1) >> 9), posY[1] = y + ((scaledY2 - scaledXMaxS) >> 9);
-    posX[2] = x + ((scaledYMaxS + scaledX2) >> 9), posY[2] = y + ((scaledYMaxC - scaledX1) >> 9);
-    posX[3] = x + ((scaledXMaxC + scaledYMaxS) >> 9), posY[3] = y + ((scaledYMaxC - scaledXMaxS) >> 9);
-    for (int32 i = 0; i < 4; ++i) {
-        left   = posX[i] < left ? posX[i] : left;
-        right  = posX[i] > right ? posX[i] : right;
-        top    = posY[i] < top ? posY[i] : top;
-        bottom = posY[i] > bottom ? posY[i] : bottom;
-    }
-    }
-clip:
+    left   = x + z.bl < left ? x + z.bl : left;
+    right  = x + z.br > right ? x + z.br : right;
+    top    = y + z.bt < top ? y + z.bt : top;
+    bottom = y + z.bb > bottom ? y + z.bb : bottom;
     left   = left < currentScreen->clipBound_X1 ? currentScreen->clipBound_X1 : left;
     right  = right > currentScreen->clipBound_X2 ? currentScreen->clipBound_X2 : right;
     top    = top < currentScreen->clipBound_Y1 ? currentScreen->clipBound_Y1 : top;
@@ -403,32 +421,16 @@ bool PS1TexRect(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpa
     return true;
 }
 
-// A rectangle rotated / scaled on DrawSpriteRotozoom's corners: pivot space [pivotX, pivotX + w) x [pivotY, pivotY + h)
-// (FLIP_X: [-pivotX - w, -pivotX), texels mirrored), scale 0x200 = 1, rotation 512 per turn. cx / cy: the corners
-// A B C D (for the log). False: culled / too big for the GPU
-bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32 h, int32 u, int32 v, uint32 tpage, uint32 clut,
-                    int32 shift, int32 scaleX, int32 scaleY, int32 direction, int32 rotation, const PS1Ink &ink, int32 *cx, int32 *cy)
+// The rectangle on the corners PS1RozoClip left in s_rz (pivot space [pivotX, pivotX + w) x [pivotY, pivotY + h); FLIP_X:
+// [-pivotX - w, -pivotX), texels mirrored). cx / cy: the corners A B C D (for the log). False: culled / too big for the GPU
+bool PS1RozoDraw(int32 x, int32 y, int32 w, int32 h, int32 u, int32 v, uint32 tpage, uint32 clut, int32 shift, int32 direction,
+                 const PS1Ink &ink, int32 *cx, int32 *cy)
 {
-    int32 angle = 0x200 - (rotation & 0x1FF);
-    if (!(rotation & 0x1FF))
-        angle = 0;
-    angle &= 0x1FF;
-    int32 s = sin512LookupTable[angle], c = cos512LookupTable[angle];
-    int32 sxs = scaleX * s >> 9, sxc = scaleX * c >> 9, sys = scaleY * s >> 9, syc = scaleY * c >> 9;
-    bool fx   = direction & FLIP_X;
-    int32 X0 = fx ? -pivotX - w : pivotX, X1 = X0 + w, Y0 = pivotY, Y1 = pivotY + h;
-    int32 xs[2] = { X0, X1 }, ys[2] = { Y0, Y1 };
+    const PS1Rozo &z = s_rz;
     int32 minX = 0x7FFFFFFF, minY = 0x7FFFFFFF, maxX = -0x7FFFFFFF, maxY = -0x7FFFFFFF;
-    if (!s && c == 512) { // ps1-ufo: scaled only: the same corners, the zero terms left out
-        const int32 xa = x + (X0 * sxc >> 9), xb = x + (X1 * sxc >> 9), ya = y + (Y0 * syc >> 9), yb = y + (Y1 * syc >> 9);
-        cx[0] = cx[2] = xa, cx[1] = cx[3] = xb, cy[0] = cy[1] = ya, cy[2] = cy[3] = yb;
-        minX = xa < xb ? xa : xb, maxX = xa < xb ? xb : xa, minY = ya < yb ? ya : yb, maxY = ya < yb ? yb : ya;
-    }
-    else
+#pragma GCC unroll 1
     for (int32 k = 0; k < 4; ++k) {
-        int32 X = xs[k & 1], Y = ys[k >> 1];
-        cx[k] = x + ((X * sxc + Y * sys) >> 9);
-        cy[k] = y + ((Y * syc - X * sxs) >> 9);
+        cx[k] = x + z.ox[k], cy[k] = y + z.oy[k];
         minX = cx[k] < minX ? cx[k] : minX, maxX = cx[k] > maxX ? cx[k] : maxX;
         minY = cy[k] < minY ? cy[k] : minY, maxY = cy[k] > maxY ? cy[k] : maxY;
     }
@@ -439,9 +441,10 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
         return false;
     }
     // texels: the far edges one texel in (nothing from the neighbours when the quad is not axis-aligned)
+    const bool fx = direction & FLIP_X;
     int32 m = (1 << shift) - 1, tw = (w + m) >> shift, th = (h + m) >> shift;
-    int32 u0 = fx ? u + tw - 1 : u, u1 = fx ? u : u + tw - 1;
-    int32 tu[4] = { u0, u1, u0, u1 }, tv[4] = { v, v, v + th - 1, v + th - 1 };
+    uint32 uL = (uint8)(fx ? u + tw - 1 : u), uR = (uint8)(fx ? u : u + tw - 1);
+    uint32 vT = (uint32)(uint8)v << 8, vB = (uint32)(uint8)(v + th - 1) << 8;
     uint32 semi = 0, colour = ink.mod | ink.mod << 8 | ink.mod << 16;
     if (ink.mode >= 0)
         tpage |= (uint32)ink.mode << 5, semi = 0x02000000;
@@ -449,13 +452,20 @@ bool PS1TexRotozoom(int32 x, int32 y, int32 pivotX, int32 pivotY, int32 w, int32
         uint32_t *wr = PS1ChainSpanBegin(10);
         if (!wr)
             return false;
-        PS1QuadWords(wr + 1, 0x2C000000 | semi | colour, cx, cy, tu, tv, clut, tpage);
+        wr[1] = 0x2C000000 | semi | colour;
+        wr[2] = (uint32)(uint16)cy[0] << 16 | (uint16)cx[0], wr[3] = clut << 16 | vT | uL;
+        wr[4] = (uint32)(uint16)cy[1] << 16 | (uint16)cx[1], wr[5] = tpage << 16 | vT | uR;
+        wr[6] = (uint32)(uint16)cy[2] << 16 | (uint16)cx[2], wr[7] = vB | uL;
+        wr[8] = (uint32)(uint16)cy[3] << 16 | (uint16)cx[3], wr[9] = vB | uR;
         PS1ChainSpanEnd(wr, 9, wr + 10);
     }
     return true;
 }
 
-#define PS1_SPRITE_CLUT_SCRATCH 318 // two spare sprite CLUT slots (318, 319: row 511, x 256 / 272) for other banks
+// two spare sprite CLUT slots (316, 317: row 511, x 256 / 272) for other banks. MA-224: they were 318 / 319 (x 288 / 304)
+// while this comment, tools/gfx/vram_plan.py and ps1/version_stamp.cpp all said x 256-287, so slot 318 sat on the build
+// stamp's CLUT at (288, 511): a bank copy drawn on the Title overwrote the stamp's colours until the next overlay load
+#define PS1_SPRITE_CLUT_SCRATCH 316
 
 // The frame's CLUT when its top line uses palette bank `bank` != 0 (SetActivePalette: the PC draws each line with its
 // bank as it is now), or bank 0 when a palette write in this draw phase changed it (9f): the same palette indices from that bank, uploaded in the chain right before the draw (an 8-bit
@@ -747,7 +757,7 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
     PS1Ink ink;
     int32 cx[4], cy[4];
     if (w <= 0 || h <= 0 || scaleX <= 0 || scaleY <= 0 || !PS1PcDraws(inkEffect, alpha)
-        || !PS1PcClipRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, scaleX, scaleY, direction, rotation))
+        || !PS1RozoClip(x, y, frame->pivotX, frame->pivotY, w, h, scaleX, scaleY, direction, rotation))
         return;
     if (!PS1FrameTex(frame, tpage, clut, shift) || !PS1InkOf(inkEffect, alpha, ink))
         return;
@@ -764,8 +774,7 @@ void RSDK::PS1DrawFrameRotozoom(const SpriteFrame *frame, int32 x, int32 y, int3
     }
     if (ink.maskTest)
         PS1ChainMaskControl(false, true);
-    bool drawn = PS1TexRotozoom(x, y, frame->pivotX, frame->pivotY, w, h, u, v, tpage, clut, shift, scaleX, scaleY, direction,
-                                rotation, ink, cx, cy);
+    bool drawn = PS1RozoDraw(x, y, w, h, u, v, tpage, clut, shift, direction, ink, cx, cy);
     if (ink.maskTest)
         PS1ChainMaskControl(false, false);
     if (sub)
@@ -817,7 +826,7 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
     PS1Ink ink;
     int32 cx[4], cy[4];
     if (scaleX <= 0 || scaleY <= 0 || !PS1PcDraws(inkEffect, alpha)
-        || !PS1PcClipRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, scaleX, scaleY, direction, rotation))
+        || !PS1RozoClip(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, scaleX, scaleY, direction, rotation))
         return;
     if (!PS1TileTex(tile, u, v, tpage, clut) || !PS1InkOf(inkEffect, alpha, ink))
         return;
@@ -825,8 +834,7 @@ void RSDK::PS1DrawTileRotozoom(uint16 tile, int32 x, int32 y, int32 pivotX, int3
         g_ps1SpriteInkTodo = g_ps1SpriteInkTodo + 1;
         return;
     }
-    if (!PS1TexRotozoom(x, y, pivotX, pivotY, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, 0, scaleX, scaleY, direction, rotation, ink, cx,
-                        cy))
+    if (!PS1RozoDraw(x, y, TILE_SIZE, TILE_SIZE, u, v, tpage, clut, 0, direction, ink, cx, cy))
         return;
     PS1_DRAW_COUNT(g_ps1SpriteDraws, 1);
     PS1_DRAW_COUNT(g_ps1SpriteRotated, 1);

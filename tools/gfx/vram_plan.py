@@ -17,8 +17,9 @@ BANK_CLUT_Y = 240              # bank b at (0, 240 + b)
 TILE_CLUT_SLOTS = [(x, y) for y in range(240, 248) for x in range(256, 320, 16)] + \
                   [(x, y) for y in range(248, 256) for x in range(0, 320, 16)]
 SPRITE_CLUT_SLOTS = [(x, y) for y in range(496, 512) for x in range(0, 320, 16)]
-# slots an atlas may use: row 510 (slots 280-299) is the runtime's INK_TINT scratch row (4.2d), row 511 x 256-287 (318,
-# 319) its bank-CLUT scratch (PS1Sprites.cpp)
+# slots an atlas may use: row 510 (slots 280-299) is the runtime's INK_TINT scratch row (4.2d), row 511 x 256-287 (316,
+# 317) its bank-CLUT scratch (PS1Sprites.cpp; MA-224), row 511 x 0-255 and (288, 511) the Title's build stamp
+# (ps1/version_stamp.cpp)
 SPRITE_CLUT_USABLE = 280
 
 

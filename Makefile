@@ -97,6 +97,11 @@ endif
 ifneq ($(DEBUG_OVERLAY),)
 PS1_SRCS += ps1/debug_overlay.cpp
 endif
+# `make CHAINCRC=1` (docs/perf/80): every frame's GPU command words hashed into g_ps1ChainCrc (ps1/chain_crc.cpp), for
+# exact A/B proofs over a whole run (tools/play/chain_crc.sh). A test build: `make dist` refuses it.
+ifneq ($(CHAINCRC),)
+PS1_SRCS += ps1/chain_crc.cpp
+endif
 
 SRCS = ps1/rsdk5_main.cpp $(ENGINE_SRCS) $(GAME_SRCS) $(PS1_SRCS)
 ifeq ($(STREAM_MUSIC),1)
@@ -152,6 +157,9 @@ endif
 # `make PERF_HUD=1`: the frame-timing numbers in the top-left corner (ps1/perf_hud.cpp, docs/32 9f); never in `make dist`.
 ifneq ($(PERF_HUD),)
 CPPFLAGS += -DPS1_PERF_HUD=1
+endif
+ifneq ($(CHAINCRC),)
+CPPFLAGS += -DPS1_CHAIN_CRC=1
 endif
 # docs/32 9f (UFO 60 fps plan, step C): the UFO stages' detail cuts, each its own switch (off: the stock look)
 #   UFO_FLOOR_NEAR=1  the floor's real tiles to 12 rows (24), the rest from the minimap; ON by default
@@ -262,6 +270,7 @@ $(call ps1_stamp,ram,$(MEASURE_RAM),$(PS1_RAM_OBJS))
 $(call ps1_stamp,profile,$(PROFILE),$(PS1_PROFILE_OBJS))
 $(call ps1_stamp,sample,$(SAMPLE),$(PS1_SAMPLE_OBJS))
 $(call ps1_stamp,perfhud,$(PERF_HUD),$(PS1_HUD_OBJS))
+$(call ps1_stamp,chaincrc,$(CHAINCRC),RSDKv5/RSDK/Graphics/Drawing.o ps1/chain_crc.o)
 $(call ps1_stamp,dbgovl,$(DEBUG_OVERLAY),$(PS1_OVL_OBJS))
 $(call ps1_stamp,ufocut,$(UFO_CUTS),$(PS1_UFOCUT_OBJS))
 # FLOOR_DEBUG=1 changes the resident counters' object and the floor's overlay object: a switch-on build followed by a
@@ -441,6 +450,7 @@ dist:
 	@if [ -n "$$(cat build/gen/profile.txt)$$(cat build/gen/sample.txt)$$(cat build/gen/perfhud.txt)" ]; then echo "dist: a PROFILE= / SAMPLE= / PERF_HUD= build"; exit 1; fi
 	@if [ -n "$$(cat build/gen/dbgovl.txt 2>/dev/null)" ] || mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1DbgVisible; then echo "dist: a DEBUG_OVERLAY= build"; exit 1; fi
 	@if mipsel-none-elf-nm rsdkv5.elf | grep -q PS1MusicStream; then echo "dist: a STREAM_MUSIC= build"; exit 1; fi
+	@if mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1ChainCrc; then echo "dist: a CHAINCRC= build"; exit 1; fi
 	@if ! mipsel-none-elf-nm rsdkv5.elf | grep -q g_ps1InitDone; then echo "dist: rsdkv5.ps-exe is not the game (PLATFORM_TEST?)"; exit 1; fi
 	@# the DEVMENU debug build (8 MB): its stamp, its marker symbol and the EXE header's stack pointer, each on its own
 	@if [ -n "$$(cat build/gen/devmenu.txt 2>/dev/null)" ]; then echo "dist: a DEVMENU= build"; exit 1; fi

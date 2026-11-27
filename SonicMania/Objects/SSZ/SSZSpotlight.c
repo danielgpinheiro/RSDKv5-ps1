@@ -17,14 +17,17 @@ void SSZSpotlight_Update(void)
     self->rotation = RSDK.Sin512(self->angle) >> 2;
 
     Vector2 *vertices = self->spotlightVertices;
+    // docs/perf/80 R8: the rotation's sine and cosine once (the loop asked for the same two values 32 times)
+    int32 sine   = RSDK.Sin1024(self->rotation);
+    int32 cosine = RSDK.Cos1024(self->rotation);
     for (int32 i = 0; i < 8; ++i) {
         self->drawVertices[i].x = vertices[i].x;
         self->drawVertices[i].y = vertices[i].y;
 
         int32 distX             = (self->drawVertices[i].x - self->originPos.x) >> 4;
         int32 distY             = (self->drawVertices[i].y - self->originPos.y) >> 4;
-        self->drawVertices[i].x = self->originPos.x + (distY * RSDK.Sin1024(self->rotation) >> 6) + (distX * RSDK.Cos1024(self->rotation) >> 6);
-        self->drawVertices[i].y = self->originPos.y + (distY * RSDK.Cos1024(self->rotation) >> 6) - (distX * RSDK.Sin1024(self->rotation) >> 6);
+        self->drawVertices[i].x = self->originPos.x + (distY * sine >> 6) + (distX * cosine >> 6);
+        self->drawVertices[i].y = self->originPos.y + (distY * cosine >> 6) - (distX * sine >> 6);
     }
 
     if (self->flashSpeed)

@@ -134,6 +134,9 @@ extern "C" {
 extern void (*g_ps1VersionDraw)(uint32_t colour, int32_t aR, int32_t aG, int32_t aB); // ps1/version_text.cpp
 extern uint32_t g_ps1VersionFade[4];
 }
+#if PS1_CHAIN_CRC
+void PS1ChainCrcFrame();
+#endif
 void RSDK::PS1RenderEndFrame()
 {
     if (!s_ps1FrameOpen)
@@ -154,6 +157,9 @@ void RSDK::PS1RenderEndFrame()
         PS1ChainTPageRaw(0);
     }
     PS1ChainEnd();
+#if PS1_CHAIN_CRC
+    PS1ChainCrcFrame(); // docs/perf/80: the frame's GPU words hashed (`make CHAINCRC=1`, ps1/chain_crc.cpp)
+#endif
 }
 
 #define PS1_SCREEN_W 320 // user decision: 320 px (PC 424)
