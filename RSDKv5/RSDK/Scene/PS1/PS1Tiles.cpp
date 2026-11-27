@@ -35,6 +35,10 @@ struct PS1TileBlock {
 };
 
 #define PS1_TILE_ANI_SHEETS (4)
+} // namespace
+uint8 *RSDK::g_ps1TileOpaqueDst = NULL; // docs/perf/57 P25 (Scene.hpp)
+namespace
+{
 uint8 *s_ps1TileBlob = NULL; // STG: tileImage[1024], images, CLUTs, sheets, cells, one-colour lines
 uint16 s_imageCount = 0, s_clutCount = 0, s_sheetCount = 0, s_cellCount = 0;
 uint32 s_imgOff = 0, s_clutOff = 0, s_sheetOff = 0, s_cellOff = 0;
@@ -240,8 +244,10 @@ bool RSDK::PS1TilesLoad(const char *folder, const char *sceneID)
             }
         }
     }
-    if (v4)
-        Seek_Cur(&info, 128); // 9v.3's opaque bits (u8[128], bit t: tile t's pixels all opaque): no runtime user yet
+    if (v4 && g_ps1TileOpaqueDst) // docs/perf/57 P25: into the occlusion overlay's table (Scene.hpp PS1OcclRows)
+        ReadBytes(&info, g_ps1TileOpaqueDst, 128);
+    else if (v4)
+        Seek_Cur(&info, 128); // 9v.3's opaque bits (u8[128], bit t: tile t's pixels all opaque; every scene is PTL4+)
     if (v5) { // u16 count (1-3), u16 clutFirst, the records
         uint16 sc[2];
         ReadBytes(&info, sc, 4);
@@ -349,6 +355,8 @@ void RSDK::PS1TilesAniTile(uint16 sheetID, uint16 tileIndex, uint16 srcX, uint16
         for (int32 fx = 0; fx < width; fx += TILE_SIZE, ++t) {
             int32 cx = (srcX + fx) >> 4;
             if (t < TILE_COUNT) {
+                if (g_ps1TileOpaqueDst) // docs/perf/57 P25: an animated tile is never taken as covering
+                    g_ps1TileOpaqueDst[t >> 3] &= ~(1 << (t & 7));
                 TileTable()[t] = (cx < sheet->cellsW && cy < sheet->cellsH) ? Cells()[sheet->firstCell + cy * sheet->cellsW + cx] : PS1_TILE_NONE;
                 if (s_solidMaskOff && (s_ps1TileBlob[s_solidMaskOff + (t >> 3)] >> (t & 7) & 1))
                     PS1TileSolidDrop(-1); // a tile on a one-colour line changed its picture

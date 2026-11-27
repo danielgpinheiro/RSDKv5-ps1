@@ -52,6 +52,8 @@ EXTRAS = {'video': ({'TitleSetup', 'UIVideo'}, ['ps1/fmv.o', 'ps1/video.o', 'ps1
           'stamp': ({'TitleSetup'}, ['ps1/version_stamp.o'], 'PS1VersionLink'),  # the title's build stamp (VERSION.TXT)
           # 9w.6: the update scan's sleeping groups, for the stages whose StageLoad asks for them (UFO_Setup)
           'scansleep': ({'UFO_Setup'}, ['RSDKv5/RSDK/Scene/PS1/PS1ScanSleep.o', 'ps1/scan_sleep.o'], 'PS1ScanSleepLink'),
+          # docs/perf/57 P25: the hidden background pieces' foreground cells (PSZ1's paper rollers)
+          'occlude': ({'PSZ1Setup'}, ['RSDKv5/RSDK/Scene/PS1/PS1Occlude.o'], 'PS1OccludeLink'),
           # P1 (docs/perf/57): the rotozoom layers' tile path (8.4 KB) for the act units whose scenes have a LAYER_ROTOZOOM
           # layer (no class names it: chosen from the scene files in `plan`, by unit: FBZ1 has one, FBZ2 not)
           'rototile': (set(), ['RSDKv5/RSDK/Scene/PS1/PS1RotoTile.o'], 'PS1RotoTileLink')}

@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------
 
 #include "Game.h"
+#include "../../../ps1/ps1_direct_sprite.h" // docs/perf/57 P25: the rollers' plain-ink sprites
 
 ObjectPaperRoller *PaperRoller;
 
@@ -52,8 +53,41 @@ void PaperRoller_LateUpdate(void) {}
 
 void PaperRoller_StaticUpdate(void) {}
 
+#if defined RETRO_PS1_BUILD
+// P25 (docs/perf/57): a roller whose whole picture is off screen draws nothing: its two rollers, four divots and the
+// paper's lines all fail their own culls (PS1PcClip; a line's two ends past one edge of [-4, 324] x [-4, 244]). It is
+// still in range (updateRange: 128 px past its ends) and drawn, so PSZ1's clusters paid ~2 dozen culled draws a frame.
+// The box: both rollers' centres, grown by the largest of the roller frame's and the divots' extents (their centres
+// 9 px out) and the paper's (24 px out, the passes 2 more), then 16 px more than the line cull's margin. A deformed
+// side (a player on the paper, near the camera) is not judged here
+static int32 PaperRoller_PS1Ext(const Animator *a)
+{
+    const PS1EngineFrame *f = (const PS1EngineFrame *)a->frames + a->frameID;
+    int32 m = abs(f->pivotX), t = abs(f->pivotX + f->width);
+    m = t > m ? t : m, t = abs(f->pivotY), m = t > m ? t : m, t = abs(f->pivotY + f->height);
+    return t > m ? t : m;
+}
+static bool32 PaperRoller_PS1OffScreen(void)
+{
+    RSDK_THIS(PaperRoller);
+    if (self->deformPosTop.y || self->deformPosBottom.y || !self->rollerAnimator.frames || !self->divotAnimator.frames)
+        return false;
+    const RSDKScreenInfo *screen = &ScreenInfo[SceneInfo->currentScreenID];
+    int32 m = PaperRoller_PS1Ext(&self->rollerAnimator), t = PaperRoller_PS1Ext(&self->divotAnimator) + 10;
+    m = (t > m ? t : m) < 27 ? 27 : (t > m ? t : m);
+    m += 4 + 16;
+    const int32 hx = FROM_FIXED((RSDK.Cos256(self->angle) << 7) * self->length), hy = FROM_FIXED((RSDK.Sin256(self->angle) << 7) * self->length);
+    const int32 cx = FROM_FIXED(self->position.x) - screen->position.x, cy = FROM_FIXED(self->position.y) - screen->position.y;
+    const int32 ax = abs(hx) + 1 + m, ay = abs(hy) + 1 + m;
+    return cx + ax < 0 || cx - ax > screen->size.x || cy + ay < 0 || cy - ay > screen->size.y;
+}
+#endif
 void PaperRoller_Draw(void)
 {
+#if defined RETRO_PS1_BUILD
+    if (PaperRoller_PS1OffScreen())
+        return;
+#endif
     PaperRoller_DrawPaperLines();
     PaperRoller_DrawRollers();
 }
@@ -529,12 +563,18 @@ void PaperRoller_DrawPaperLines(void)
                     q = q ? q - 1 : un - 1;
                 }
         }
-        for (int32 v = 0; v < 3; ++v)
+        // PS1_PAPER_PASSES 2 (the default: the simpler roller, user 2026-11-26 from before / after pictures): one coloured
+        // pass, the pale one a pixel in (the paper a pixel thinner); 3: stock's two coloured passes and the pale one
+#ifndef PS1_PAPER_PASSES
+#define PS1_PAPER_PASSES 2
+#endif
+        for (int32 v = 0; v < 3; v += (PS1_PAPER_PASSES == 2 ? 2 : 1))
             for (int32 side = 0; side < 2; ++side) {
                 int32 n = side ? ps1N2 : ps1N1;
                 if (off[side])
                     continue;
-                int32 ox = v * (side ? offsetX2 : offsetX1), oy = v * (side ? offsetY2 : offsetY1);
+                const int32 m = (PS1_PAPER_PASSES == 2 && v == 2) ? 1 : v;
+                int32 ox = m * (side ? offsetX2 : offsetX1), oy = m * (side ? offsetY2 : offsetY1);
                 const int32 px = ox >> 16, py = oy >> 16;
                 const int32 *vx = ps1Vx[side], *vy = ps1Vy[side], *sxs = sx[side], *sys = sy[side];
                 if (strip) {
@@ -600,6 +640,23 @@ void PaperRoller_DrawPaperLines(void)
     PaperRoller_DrawDeformedLine(startX2, startY2, endX2, endY2, offsetX2, offsetY2, self->deformPosBottom.x, self->deformPosBottom.y, len, &color);
 }
 
+// P25 (docs/perf/57): on the PS1 the rollers' sprites through PS1_DRAW_SPRITE (the same words: plain ink, no FX);
+// PS1_PAPER_DIVOTS 0 (the default: the simpler roller, user 2026-11-26 from before / after pictures) leaves the two
+// divots of each roller out (the dots that show it spin); 1 draws them as stock
+#if defined RETRO_PS1_BUILD
+#ifndef PS1_PAPER_DIVOTS
+#define PS1_PAPER_DIVOTS 0
+#endif
+#define PS1_PAPER_SPRITE(a, p) PS1_DRAW_SPRITE(a, p)
+#if PS1_PAPER_DIVOTS
+#define PS1_PAPER_DIVOT(a, p) PS1_DRAW_SPRITE(a, p)
+#else
+#define PS1_PAPER_DIVOT(a, p) ((void)0)
+#endif
+#else
+#define PS1_PAPER_SPRITE(a, p) RSDK.DrawSprite(a, p, false)
+#define PS1_PAPER_DIVOT(a, p)  RSDK.DrawSprite(a, p, false)
+#endif
 void PaperRoller_DrawRollers(void)
 {
     RSDK_THIS(PaperRoller);
@@ -610,32 +667,32 @@ void PaperRoller_DrawRollers(void)
     rollerPos = self->position;
     rollerPos.x -= (RSDK.Cos256(self->angle) << 7) * self->length;
     rollerPos.y -= (RSDK.Sin256(self->angle) << 7) * self->length;
-    RSDK.DrawSprite(&self->rollerAnimator, &rollerPos, false);
+    PS1_PAPER_SPRITE(&self->rollerAnimator, &rollerPos);
 
     divotPos = rollerPos;
     divotPos.x += -0x900 * RSDK.Cos256(self->divotAngle);
     divotPos.y += -0x900 * RSDK.Sin256(self->divotAngle);
-    RSDK.DrawSprite(&self->divotAnimator, &divotPos, false);
+    PS1_PAPER_DIVOT(&self->divotAnimator, &divotPos);
 
     divotPos = rollerPos;
     divotPos.x += 0x900 * RSDK.Cos256(self->divotAngle);
     divotPos.y += 0x900 * RSDK.Sin256(self->divotAngle);
-    RSDK.DrawSprite(&self->divotAnimator, &divotPos, false);
+    PS1_PAPER_DIVOT(&self->divotAnimator, &divotPos);
 
     rollerPos = self->position;
     rollerPos.x += (RSDK.Cos256(self->angle) << 7) * self->length;
     rollerPos.y += (RSDK.Sin256(self->angle) << 7) * self->length;
-    RSDK.DrawSprite(&self->rollerAnimator, &rollerPos, false);
+    PS1_PAPER_SPRITE(&self->rollerAnimator, &rollerPos);
 
     divotPos = rollerPos;
     divotPos.x += -0x900 * RSDK.Cos256(self->divotAngle);
     divotPos.y += -0x900 * RSDK.Sin256(self->divotAngle);
-    RSDK.DrawSprite(&self->divotAnimator, &divotPos, false);
+    PS1_PAPER_DIVOT(&self->divotAnimator, &divotPos);
 
     divotPos = rollerPos;
     divotPos.x += 0x900 * RSDK.Cos256(self->divotAngle);
     divotPos.y += 0x900 * RSDK.Sin256(self->divotAngle);
-    RSDK.DrawSprite(&self->divotAnimator, &divotPos, false);
+    PS1_PAPER_DIVOT(&self->divotAnimator, &divotPos);
 }
 
 void PaperRoller_HandleRollerCollisions(void)

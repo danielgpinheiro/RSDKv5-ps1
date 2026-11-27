@@ -505,7 +505,12 @@ bool32 UIButtonPrompt_CheckTouch(void)
 
     EntityUIControl *control = (EntityUIControl *)self->parent;
     if (control && !control->dialogHasFocus && !control->selectionDisabled) {
+#if defined RETRO_PS1_BUILD
+        // docs/perf/57 P25: no PS1 input writes touchInfo (count stays 0): only the no-touch branch below
+        if (false) {
+#else
         if (TouchInfo->count) {
+#endif
             int32 screenX = (ScreenInfo->position.x << 16);
             int32 screenY = (ScreenInfo->position.y << 16);
             int32 sizeX   = self->touchSize.x >> 1;

@@ -462,8 +462,12 @@ extern "C" int32 PS1BandFastAsm(PS1BandAsmCtx *c);
 
 // 9u: Fast = a whole 16-line tile row on bank 0 (most bands): the piece's command, size and row are constants and the bank
 // lookups go, so the loop keeps its state in registers (the general version reloaded 7 values from the stack a piece)
+// docs/perf/57 P25: skip / sxEnd leave out the band's first `skip` pieces and those at or right of screen x sxEnd (hidden
+// by opaque foreground cells: PS1DrawLayerBasic), in a whole tile row (Fast); a trimmed end takes the C loop, the
+// assembly's ends at the screen's
 template <bool Fast>
-__attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+__attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank,
+                                                   int32 skip, int32 sxEnd)
 {
     if constexpr (Fast)
         h = TILE_SIZE, ly &= ~15, bank = 0;
@@ -478,6 +482,9 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     int32 ty = ly >> 4, v0 = ly & 15;
     int32 tx = x >> 4, sx = -(x & 15);
     int32 xsize            = layer->xsize;
+    if constexpr (Fast) // (P25: whole tile rows only; a partial row is drawn whole)
+        for (sx += skip << 4, tx += skip; tx >= xsize;)
+            tx -= xsize;
     const uint16 *chunkRow = PS1ChunkRow(layer, (uint32)ty >> 2); // (x wraps at xsize: its columns are all in the index)
     const uint16 *rowSel   = ps1ChunkPool + (ty & 3); // 7b.3: the chunks' row ty & 3
     const uint16 *chunk    = PS1ChunkTiles(rowSel, PS1ChunkIdx(chunkRow, tx >> 2));
@@ -566,7 +573,7 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     };
     bool walked = false;
 #if !PS1_BAND_C_ONLY
-    if constexpr (Fast) {
+    if (Fast && sxEnd >= PS1_SCREEN_PX) {
         { // 9u.15: the assembly loop (ps1/band_fast.s), the C body for the tiles it hands back (9v.10: also in scenes with
           // flip copies, their flipped tiles handed back: the UFO stages' backgrounds ran the C loop for every tile)
             PS1BandAsmCtx c;
@@ -587,7 +594,7 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
         }
     }
 #endif
-    for (; !walked && sx < PS1_SCREEN_PX; sx += TILE_SIZE) {
+    for (; !walked && sx < (Fast ? sxEnd : PS1_SCREEN_PX); sx += TILE_SIZE) {
         uint16 t = chunk[sub];
         if (++tx >= xsize) { // wrap: the layer repeats
             tx = 0, sub = 0;
@@ -610,12 +617,13 @@ __attribute__((optimize("O2"))) void DrawBandIntoT(PS1Emit &e, TileLayer *layer,
     PS1_LAYER_STAT(g_ps1LayerBands, 1);
     PS1_LAYER_STAT(g_ps1LayerPieces, pieces);
 }
-__attribute__((always_inline)) inline void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
+__attribute__((always_inline)) inline void DrawBandInto(PS1Emit &e, TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank,
+                                                        int32 skip = 0, int32 sxEnd = PS1_SCREEN_PX)
 {
     if (h == TILE_SIZE && !bank)
-        DrawBandIntoT<true>(e, layer, sy, h, x, ly, bank);
+        DrawBandIntoT<true>(e, layer, sy, h, x, ly, bank, skip, sxEnd);
     else
-        DrawBandIntoT<false>(e, layer, sy, h, x, ly, bank);
+        DrawBandIntoT<false>(e, layer, sy, h, x, ly, bank, skip, sxEnd);
 }
 // One band in its own span (a lone band of a tile row, DrawRowBands' fallback)
 void DrawBand(TileLayer *layer, int32 sy, int32 h, int32 x, int32 ly, uint8 bank)
@@ -1715,6 +1723,7 @@ __attribute__((always_inline)) inline void PS1ScanBands(TileLayer *layer, int32 
 // DrawLayerBasic re-reads the scanline at every row: a layer with several scroll infos (PSZ1 Background 2's bands at
 // 48 / 64 / 80, SPZ1 Background 1) moves each band at its speed (MA-226; until then every row took the first line's x,
 // so the bands slid against each other and jumped when the camera's y crossed a band edge)
+const RSDK::PS1OcclRows *(*RSDK::g_ps1OcclFn)(TileLayer *layer, uint32 frame) = NULL; // docs/perf/57 P25 (Scene.hpp)
 __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
 {
     int32 y1 = currentScreen->clipBound_Y1, y2 = currentScreen->clipBound_Y2;
@@ -1759,6 +1768,7 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
     }
     // MA-226: a row's scroll info from the layer's lineScroll (no table: one info for every line, 7b)
     const uint8 *ls = layer->scrollInfoCount > 1 ? layer->lineScroll : nullptr;
+    const PS1OcclRows *oc = g_ps1OcclFn ? g_ps1OcclFn(layer, s_layerFrame) : NULL; // docs/perf/57 P25 (Scene.hpp)
     PS1Emit e;
     EmitOpen(e);
     e.page = 0xFFFFFFFF;
@@ -1773,7 +1783,24 @@ __attribute__((optimize("O2"))) void RSDK::PS1DrawLayerBasic(TileLayer *layer)
             rx = FROM_FIXED(layer->scrollInfo[ls[ly]].tilePos) % widthPx; // ProcessParallax keeps it in [0, width)
             rx = rx < 0 ? rx + widthPx : rx;
         }
-        DrawBandInto(e, layer, cy, h, rx, ly, 0);
+        int32 skip = 0, sxEnd = PS1_SCREEN_PX;
+        if (oc) {
+            // docs/perf/57 P25: piece k (screen x sx0 + 16k) overlaps cells a = (sx0 + 16k + fx) >> 4 and a + 1 (just a when
+            // it starts on a cell's edge), bits a + 1 and a + 2 of the band's rows; a piece every cell of which is opaque
+            // is hidden: the hidden ones at the band's two ends are left out (the same pixels: the foreground covers them)
+            const int32 sx0 = -(rx & 15), a = sx0 + oc->fx + TILE_SIZE, n = (PS1_SCREEN_PX - sx0 + 15) >> 4;
+            uint32 m = oc->row[(cy + oc->fy) >> 4] & oc->row[(cy + h - 1 + oc->fy) >> 4];
+            if (a & 15)
+                m &= m >> 1;
+            const uint32 all = (1u << n) - 1, vis = ~(m >> (a >> 4)) & all;
+            if (!vis) {
+                cy += h;
+                continue;
+            }
+            skip  = __builtin_ctz(vis);
+            sxEnd = sx0 + ((32 - __builtin_clz(vis)) << 4);
+        }
+        DrawBandInto(e, layer, cy, h, rx, ly, 0, skip, sxEnd);
         cy += h;
     }
     EmitClose(e);

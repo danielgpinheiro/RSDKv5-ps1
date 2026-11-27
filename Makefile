@@ -26,6 +26,7 @@ RSDKv5/RSDK/Graphics/PS1/PS1Deform.cpp \
 RSDKv5/RSDK/Scene/PS1/PS1RotoPage.cpp \
 RSDKv5/RSDK/Scene/PS1/PS1RotoTile.cpp \
 RSDKv5/RSDK/Scene/PS1/PS1ScanSleep.cpp \
+RSDKv5/RSDK/Scene/PS1/PS1Occlude.cpp \
 RSDKv5/RSDK/Graphics/Animation.cpp \
 RSDKv5/RSDK/Graphics/Sprite.cpp \
 RSDKv5/RSDK/Graphics/Palette.cpp \

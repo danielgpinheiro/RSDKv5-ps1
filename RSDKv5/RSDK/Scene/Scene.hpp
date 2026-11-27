@@ -254,6 +254,16 @@ extern uint8 ps1LayerCut[LAYER_COUNT];
 // two; 0: g_ps1LineStep), from the same table; a non-zero step also applies to a layer a scanline callback scrolls
 extern uint8 ps1LayerStep[LAYER_COUNT];
 void PS1DrawLayerCut(uint8 cut);
+// docs/perf/57 P25 (PSZ1's paper rollers): hidden background pieces. A scene's overlay that carries PS1Occlude.cpp
+// (gen_overlays EXTRAS 'occlude') sets both pointers (cleared with every overlay, ps1/overlay.cpp): the tile load reads
+// the .ptl's opaque bits (PTL4, 9v.3) into its table, and PS1DrawLayerBasic asks it for the screen's opaque foreground
+// cells this frame (NULL: none or not this layer) and leaves out the pieces at each band's ends that they hide
+struct PS1OcclRows {
+    int32 fx, fy;     // the foregrounds' x / y phase (pixels, 0-15): screen line y is in cell row (y + fy) >> 4
+    uint32 row[16];   // bit j: the cell at screen x (j - 1) * 16 - fx (16 x 16) is opaque in a foreground drawn later
+};
+extern const PS1OcclRows *(*g_ps1OcclFn)(TileLayer *layer, uint32 frame);
+extern uint8 *g_ps1TileOpaqueDst;
 void PS1LayerCutsLoad(const char *folder, const char *sceneID);
 void PS1DrawLayerRotozoom(TileLayer *layer); // 4.1d: DrawLayerRotozoom (a quad per tile, corners placed by the scanlines)
 extern int32 (*g_ps1RotoTileDraw)(TileLayer *layer, uint8 bank); // (its tile path, an overlay part: PS1RotoTile.cpp; 9e: paged layers are drawn from their page)

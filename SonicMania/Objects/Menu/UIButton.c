@@ -420,6 +420,14 @@ void UIButton_ProcessButtonCB_Scroll(void)
 
 bool32 UIButton_ProcessTouchCB_Multi(void)
 {
+#if defined RETRO_PS1_BUILD
+    // docs/perf/57 P25: never called on the PS1: UIControl_ProcessButtonInput calls a touch callback only while
+    // TouchInfo->count or UIControl->hasTouchInput is set, and no PS1 input writes touchInfo (count stays 0, so
+    // hasTouchInput, set only from it, stays false); the only other call is this function's own, for a child. Its 2.2 KB
+    // (with _Multi and UIButtonPrompt_CheckTouch's touch loop) left the resident EXE: room inside its 2 KB step for the
+    // hidden background pieces (PS1Layers.cpp), whose step FBZ2's STG room depends on
+    return false;
+#else
     RSDK_THIS(UIButton);
 
     EntityUIControl *control = (EntityUIControl *)self->parent;
@@ -465,10 +473,19 @@ bool32 UIButton_ProcessTouchCB_Multi(void)
     self->touchPressed = touched;
 
     return touched;
+#endif
 }
 
 bool32 UIButton_ProcessTouchCB_Single(void)
 {
+#if defined RETRO_PS1_BUILD
+    // docs/perf/57 P25: never called on the PS1: UIControl_ProcessButtonInput calls a touch callback only while
+    // TouchInfo->count or UIControl->hasTouchInput is set, and no PS1 input writes touchInfo (count stays 0, so
+    // hasTouchInput, set only from it, stays false); the only other call is this function's own, for a child. Its 2.2 KB
+    // (with _Multi and UIButtonPrompt_CheckTouch's touch loop) left the resident EXE: room inside its 2 KB step for the
+    // hidden background pieces (PS1Layers.cpp), whose step FBZ2's STG room depends on
+    return false;
+#else
     RSDK_THIS(UIButton);
 
     EntityUIControl *control = (EntityUIControl *)self->parent;
@@ -540,6 +557,7 @@ bool32 UIButton_ProcessTouchCB_Single(void)
     }
 
     return touched || childTouched;
+#endif
 }
 
 void UIButton_ProcessButtonCB(void)

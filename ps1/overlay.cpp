@@ -94,6 +94,7 @@ void RSDK::PS1LoadOverlay(const char *sceneFolder, const char *scene)
     g_ps1RotoTileDraw = NULL;         // P1 (docs/perf/57): and the rotozoom layers' tile path (PS1RotoTile.cpp)
     g_ps1VersionDraw  = NULL;         // and the title's build stamp (ps1/version_stamp.cpp)
     RSDK::g_ps1ScanSleepFn = NULL;     // 9w.6: and the update scan's sleeping groups
+    RSDK::g_ps1OcclFn = NULL, RSDK::g_ps1TileOpaqueDst = NULL; // docs/perf/57 P25: and the hidden background pieces
     (void)ps1OvlStubsRef;
     strncpy(g_ps1OvlFolder, folder, sizeof(g_ps1OvlFolder) - 1);
     g_ps1OvlLoads = g_ps1OvlLoads + 1;
